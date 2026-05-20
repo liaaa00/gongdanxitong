@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+**/node_modules/
+package-lock.json
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+*.err.log
+*.out.log
+
+# Temporary files
+tmp/
+.temp_extract.ps1
+_docx_extract/
+_imgs/
+
+# Database backups
+*.sql
+
+# Test files
+test_*.xlsx
+test_*.json
+phase3-e2e-results.json
+
+# Build outputs
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude
+.claude/
+
+# Other
+resolve-lnks.ps1
+read_excel.js
+配置防火墙.ps1

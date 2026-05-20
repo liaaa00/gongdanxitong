@@ -1,0 +1,440 @@
+{
+  "generatedAt": "2026-05-17T14:28:09.860Z",
+  "note": "Plan A cleanup backup. To restore, INSERT rows back from this JSON.",
+  "defaultActiveRules": [
+    {
+      "id": "39bd05fc-0d4b-402c-a640-a49472a855b5",
+      "rule_name": "onboarding-default-data-entry",
+      "order_type": "onboarding",
+      "trigger_conditions": null,
+      "target_module": "data_entry",
+      "dispatch_strategy": "fixed",
+      "is_active": true,
+      "priority": 10,
+      "created_at": "2026-05-13T08:25:24.357Z",
+      "customer_id": null,
+      "department_id": null,
+      "sub_module": null,
+      "assignee_user_id": null,
+      "fallback_user_id": null,
+      "allow_manual_override": true
+    },
+    {
+      "id": "2e1f3ead-e26e-4cb5-8b1f-47d2724ce9f9",
+      "rule_name": "renewal-default-contract",
+      "order_type": "renewal",
+      "trigger_conditions": null,
+      "target_module": "renewal_contract",
+      "dispatch_strategy": "fixed",
+      "is_active": true,
+      "priority": 10,
+      "created_at": "2026-05-13T08:25:24.370Z",
+      "customer_id": null,
+      "department_id": null,
+      "sub_module": null,
+      "assignee_user_id": null,
+      "fallback_user_id": null,
+      "allow_manual_override": true
+    },
+    {
+      "id": "2e80c87e-40ce-434c-8394-ed111e566407",
+      "rule_name": "resignation-default-contact",
+      "order_type": "resignation",
+      "trigger_conditions": null,
+      "target_module": "resignation_contact",
+      "dispatch_strategy": "fixed",
+      "is_active": true,
+      "priority": 10,
+      "created_at": "2026-05-13T08:25:24.374Z",
+      "customer_id": null,
+      "department_id": null,
+      "sub_module": null,
+      "assignee_user_id": null,
+      "fallback_user_id": null,
+      "allow_manual_override": true
+    },
+    {
+      "id": "6f3f1552-40c2-4992-a081-510a091985a7",
+      "rule_name": "benefit-default-apply",
+      "order_type": "benefit",
+      "trigger_conditions": null,
+      "target_module": "benefit_apply",
+      "dispatch_strategy": "fixed",
+      "is_active": true,
+      "priority": 10,
+      "created_at": "2026-05-13T08:25:24.383Z",
+      "customer_id": null,
+      "department_id": null,
+      "sub_module": null,
+      "assignee_user_id": null,
+      "fallback_user_id": null,
+      "allow_manual_override": true
+    },
+    {
+      "id": "06b80e6f-f12d-4845-8ef5-3615eccbedd1",
+      "rule_name": "onboarding-default-social-insurance",
+      "order_type": "onboarding",
+      "trigger_conditions": null,
+      "target_module": "social_insurance",
+      "dispatch_strategy": "fixed",
+      "is_active": true,
+      "priority": 20,
+      "created_at": "2026-05-15T12:23:29.937Z",
+      "customer_id": null,
+      "department_id": null,
+      "sub_module": null,
+      "assignee_user_id": null,
+      "fallback_user_id": null,
+      "allow_manual_override": true
+    }
+  ],
+  "inactiveRules": [
+    {
+      "id": "591bc790-4189-458a-bb9c-dc2d9514ac3c",
+      "rule_name": "入职联系条件派发",
+      "order_type": "onboarding",
+      "trigger_conditions": {
+        "op": "AND",
+        "children": [
+          {
+            "op": "EQ",
+            "field": "need_onboarding_contact",
+            "value": "是"
+          }
+        ]
+      },
+      "target_module": "onboarding_contact",
+      "dispatch_strategy": "fixed",
+      "is_active": false,
+      "priority": 30,
+      "created_at": "2026-05-11T08:59:08.645Z",
+      "customer_id": null,
+      "department_id": null,
+      "sub_module": null,
+      "assignee_user_id": null,
+      "fallback_user_id": null,
+      "allow_manual_override": true
+    },
+    {
+      "id": "94ee2232-5f5d-43cb-b048-850781a1c40a",
+      "rule_name": "劳动合同条件派发",
+      "order_type": "onboarding",
+      "trigger_conditions": {
+        "op": "AND",
+        "children": [
+          {
+            "op": "EQ",
+            "field": "need_company_contract",
+            "value": "是"
+          }
+        ]
+      },
+      "target_module": "contract",
+      "dispatch_strategy": "fixed",
+      "is_active": false,
+      "priority": 40,
+      "created_at": "2026-05-11T08:59:08.648Z",
+      "customer_id": null,
+      "department_id": null,
+      "sub_module": null,
+      "assignee_user_id": null,
+      "fallback_user_id": null,
+      "allow_manual_override": true
+    },
+    {
+      "id": "e5e0bba9-0f07-4c10-bb5a-efa7014cc8f7",
+      "rule_name": "QA dispatch config merge 1779023503476",
+      "order_type": "onboarding",
+      "trigger_conditions": null,
+      "target_module": "qa_rule_23503476",
+      "dispatch_strategy": "fixed",
+      "is_active": false,
+      "priority": 9999,
+      "created_at": "2026-05-17T13:11:43.832Z",
+      "customer_id": "7e1092bf-8ef0-4a39-a58f-69c5f54ffe05",
+      "department_id": null,
+      "sub_module": "qa_rule_23503476",
+      "assignee_user_id": "bf2abd38-3ba1-4ca3-b624-8c653d735728",
+      "fallback_user_id": "bf2abd38-3ba1-4ca3-b624-8c653d735728",
+      "allow_manual_override": true
+    },
+    {
+      "id": "d97bc665-44fd-4f2f-8404-377ddcec6ec9",
+      "rule_name": "QA-pool-contract-8805607526",
+      "order_type": "onboarding",
+      "trigger_conditions": {
+        "op": "AND",
+        "children": [
+          {
+            "op": "EQ",
+            "field": "qa_pool_marker",
+            "value": "pool-8805607526"
+          }
+        ]
+      },
+      "target_module": "contract",
+      "dispatch_strategy": "pool",
+      "is_active": false,
+      "priority": 1,
+      "created_at": "2026-05-15T00:40:09.022Z",
+      "customer_id": null,
+      "department_id": null,
+      "sub_module": null,
+      "assignee_user_id": null,
+      "fallback_user_id": null,
+      "allow_manual_override": true
+    },
+    {
+      "id": "d52afad4-3b39-47c3-a8e3-5dbef46928d1",
+      "rule_name": "QA-pool-contract-8805832050",
+      "order_type": "onboarding",
+      "trigger_conditions": {
+        "op": "AND",
+        "children": [
+          {
+            "op": "EQ",
+            "field": "qa_pool_marker",
+            "value": "pool-8805832050"
+          }
+        ]
+      },
+      "target_module": "contract",
+      "dispatch_strategy": "pool",
+      "is_active": false,
+      "priority": 1,
+      "created_at": "2026-05-15T00:43:53.776Z",
+      "customer_id": null,
+      "department_id": null,
+      "sub_module": null,
+      "assignee_user_id": null,
+      "fallback_user_id": null,
+      "allow_manual_override": true
+    },
+    {
+      "id": "67cce1f0-db9f-4096-a1cb-34673321ec76",
+      "rule_name": "QA-pool-contract-8806800172",
+      "order_type": "onboarding",
+      "trigger_conditions": {
+        "op": "AND",
+        "children": [
+          {
+            "op": "EQ",
+            "field": "qa_pool_marker",
+            "value": "pool-8806800172"
+          }
+        ]
+      },
+      "target_module": "contract",
+      "dispatch_strategy": "pool",
+      "is_active": false,
+      "priority": 1,
+      "created_at": "2026-05-15T01:00:01.797Z",
+      "customer_id": null,
+      "department_id": null,
+      "sub_module": null,
+      "assignee_user_id": null,
+      "fallback_user_id": null,
+      "allow_manual_override": true
+    },
+    {
+      "id": "b2feadd1-28f7-41a1-973e-7c76b611ae2c",
+      "rule_name": "QA dispatch config merge 1779023630738",
+      "order_type": "onboarding",
+      "trigger_conditions": null,
+      "target_module": "qa_rule_23630738",
+      "dispatch_strategy": "fixed",
+      "is_active": false,
+      "priority": 9999,
+      "created_at": "2026-05-17T13:13:51.086Z",
+      "customer_id": "7e1092bf-8ef0-4a39-a58f-69c5f54ffe05",
+      "department_id": null,
+      "sub_module": "qa_rule_23630738",
+      "assignee_user_id": "bf2abd38-3ba1-4ca3-b624-8c653d735728",
+      "fallback_user_id": "bf2abd38-3ba1-4ca3-b624-8c653d735728",
+      "allow_manual_override": true
+    },
+    {
+      "id": "ae7c45f0-c31f-4c38-9518-174cf3be59d0",
+      "rule_name": "QA-pool-contract-8807041327",
+      "order_type": "onboarding",
+      "trigger_conditions": {
+        "op": "AND",
+        "children": [
+          {
+            "op": "EQ",
+            "field": "qa_pool_marker",
+            "value": "pool-8807041327"
+          }
+        ]
+      },
+      "target_module": "contract",
+      "dispatch_strategy": "pool",
+      "is_active": false,
+      "priority": 1,
+      "created_at": "2026-05-15T01:04:03.031Z",
+      "customer_id": null,
+      "department_id": null,
+      "sub_module": null,
+      "assignee_user_id": null,
+      "fallback_user_id": null,
+      "allow_manual_override": true
+    },
+    {
+      "id": "5e0f75cb-c9e2-40fa-a1f3-17ae2736666b",
+      "rule_name": "QA-pool-contract-8807168243",
+      "order_type": "onboarding",
+      "trigger_conditions": {
+        "op": "AND",
+        "children": [
+          {
+            "op": "EQ",
+            "field": "qa_pool_marker",
+            "value": "pool-8807168243"
+          }
+        ]
+      },
+      "target_module": "contract",
+      "dispatch_strategy": "pool",
+      "is_active": false,
+      "priority": 1,
+      "created_at": "2026-05-15T01:06:09.808Z",
+      "customer_id": null,
+      "department_id": null,
+      "sub_module": null,
+      "assignee_user_id": null,
+      "fallback_user_id": null,
+      "allow_manual_override": true
+    },
+    {
+      "id": "d3b6be9b-1810-4074-9b2b-99c37aaf4a77",
+      "rule_name": "QA-pool-contract-8807350730",
+      "order_type": "onboarding",
+      "trigger_conditions": {
+        "op": "AND",
+        "children": [
+          {
+            "op": "EQ",
+            "field": "qa_pool_marker",
+            "value": "pool-8807350730"
+          }
+        ]
+      },
+      "target_module": "contract",
+      "dispatch_strategy": "pool",
+      "is_active": false,
+      "priority": 1,
+      "created_at": "2026-05-15T01:09:12.028Z",
+      "customer_id": null,
+      "department_id": null,
+      "sub_module": null,
+      "assignee_user_id": null,
+      "fallback_user_id": null,
+      "allow_manual_override": true
+    },
+    {
+      "id": "a3b1c8a0-89b8-4ea6-aabf-b773083c50dc",
+      "rule_name": "入职工单默认派发-数据录入",
+      "order_type": "onboarding",
+      "trigger_conditions": null,
+      "target_module": "data_entry",
+      "dispatch_strategy": "fixed",
+      "is_active": false,
+      "priority": 10,
+      "created_at": "2026-05-11T08:59:08.639Z",
+      "customer_id": null,
+      "department_id": null,
+      "sub_module": null,
+      "assignee_user_id": null,
+      "fallback_user_id": null,
+      "allow_manual_override": true
+    },
+    {
+      "id": "ffd0aac9-d0f6-4fc9-89b4-05ae63eb48e9",
+      "rule_name": "QA dispatch config merge 1779023711206",
+      "order_type": "onboarding",
+      "trigger_conditions": null,
+      "target_module": "qa_rule_23711206",
+      "dispatch_strategy": "fixed",
+      "is_active": false,
+      "priority": 9999,
+      "created_at": "2026-05-17T13:15:11.578Z",
+      "customer_id": "7e1092bf-8ef0-4a39-a58f-69c5f54ffe05",
+      "department_id": null,
+      "sub_module": "qa_rule_23711206",
+      "assignee_user_id": "bf2abd38-3ba1-4ca3-b624-8c653d735728",
+      "fallback_user_id": "bf2abd38-3ba1-4ca3-b624-8c653d735728",
+      "allow_manual_override": true
+    },
+    {
+      "id": "3172ad2e-7851-40b3-87be-43a9e2010121",
+      "rule_name": "QA dispatch config merge 1779023799978",
+      "order_type": "onboarding",
+      "trigger_conditions": null,
+      "target_module": "qa_rule_23799978",
+      "dispatch_strategy": "fixed",
+      "is_active": false,
+      "priority": 9999,
+      "created_at": "2026-05-17T13:16:40.334Z",
+      "customer_id": "7e1092bf-8ef0-4a39-a58f-69c5f54ffe05",
+      "department_id": null,
+      "sub_module": "qa_rule_23799978",
+      "assignee_user_id": "bf2abd38-3ba1-4ca3-b624-8c653d735728",
+      "fallback_user_id": "bf2abd38-3ba1-4ca3-b624-8c653d735728",
+      "allow_manual_override": true
+    },
+    {
+      "id": "8d783525-1a32-4cd1-8b33-4c4064888ddd",
+      "rule_name": "QA dispatch config merge 1779024145582",
+      "order_type": "onboarding",
+      "trigger_conditions": null,
+      "target_module": "qa_rule_24145582",
+      "dispatch_strategy": "fixed",
+      "is_active": false,
+      "priority": 9999,
+      "created_at": "2026-05-17T13:22:25.962Z",
+      "customer_id": "7e1092bf-8ef0-4a39-a58f-69c5f54ffe05",
+      "department_id": null,
+      "sub_module": "qa_rule_24145582",
+      "assignee_user_id": "bf2abd38-3ba1-4ca3-b624-8c653d735728",
+      "fallback_user_id": "bf2abd38-3ba1-4ca3-b624-8c653d735728",
+      "allow_manual_override": true
+    },
+    {
+      "id": "fe013f51-8d08-4b9b-b878-a4066cbc237f",
+      "rule_name": "入职工单默认派发-社保公积金",
+      "order_type": "onboarding",
+      "trigger_conditions": null,
+      "target_module": "social_security",
+      "dispatch_strategy": "fixed",
+      "is_active": false,
+      "priority": 20,
+      "created_at": "2026-05-11T08:59:08.642Z",
+      "customer_id": null,
+      "department_id": null,
+      "sub_module": null,
+      "assignee_user_id": null,
+      "fallback_user_id": null,
+      "allow_manual_override": true
+    }
+  ],
+  "compatHandlers": [
+    {
+      "id": "01db0f09-88f5-4e08-99bb-bb187fc3a00f",
+      "module_code": "social_insurance",
+      "handler_id": "ea01d84e-c624-48e7-b43c-c80fd607017a",
+      "weight": 10,
+      "is_backup": false,
+      "is_active": true,
+      "rr_cursor_version": 0
+    },
+    {
+      "id": "9e0588b1-917a-4cc8-a38a-c2a321ff434e",
+      "module_code": "social_insurance",
+      "handler_id": "db69023e-b0b3-4f12-938d-e4b90da15c8a",
+      "weight": 1,
+      "is_backup": true,
+      "is_active": true,
+      "rr_cursor_version": 0
+    }
+  ]
+}

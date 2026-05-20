@@ -1,0 +1,277 @@
+import { useRef, useState } from 'react';
+import { PageContainer } from '@ant-design/pro-components';
+import type { ProColumns, ActionType } from '@ant-design/pro-components';
+import { ProTable } from '@ant-design/pro-components';
+import { Button, Tag, Space, App, Popconfirm, Modal, Form, Input, Switch, Select, Alert, Collapse } from 'antd';
+import { LockOutlined, StopOutlined, CheckCircleOutlined, PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { getUsers, resetUserPassword, toggleUserActive, createUser, updateUser, deleteUser, getUserPasswordStatus } from '@/services/users';
+import type { UserItem } from '@/services/users';
+import { getRoles, flattenRoles } from '@/services/roles';
+import type { RoleItem } from '@/services/roles';
+import type { PageParams } from '@/services/mock';
+import { useAuth } from '@/hooks/useAuth';
+
+// ★ 动态颜色分配：基于组名称 hash，支持任意数量业务组，不写死具体组名
+const GROUP_COLORS = ['blue', 'cyan', 'green', 'geekblue', 'purple', 'orange', 'lime', 'volcano', 'magenta', 'gold'];
+
+function getGroupColor(name: string): string {
+  if (!name) return 'default';
+  // 固定角色组颜色优先
+  if (name === '系统管理') return 'gold';
+  if (name === '业务团队') return 'purple';
+  if (name === '共享团队') return 'magenta';
+  // 业务组用 hash 分配颜色
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0;
+  return GROUP_COLORS[Math.abs(hash) % GROUP_COLORS.length];
+}
+
+const AdminUsers: React.FC = () => {
+  const { message } = App.useApp();
+  const { hasRole } = useAuth();
+  const isAdmin = hasRole('admin');
+  const actionRef = useRef<ActionType>();
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<UserItem | null>(null);
+  const [form] = Form.useForm();
+  const [roleOptions, setRoleOptions] = useState<{ value: string; label: string }[]>([]);
+
+  const handleResetPassword = async (user: UserItem) => {
+    try {
+      await resetUserPassword(user.id);
+      message.success('密码已重置为默认密码');
+    } catch { message.error('重置失败'); }
+  };
+
+  const handleToggleActive = async (user: UserItem) => {
+    try {
+      const result = await toggleUserActive(user.id);
+      message.success(result.is_active ? '已启用' : '已禁用');
+      actionRef.current?.reload();
+    } catch { message.error('操作失败'); }
+  };
+
+  const handleDelete = async (user: UserItem) => {
+    try { await deleteUser(user.id); message.success('已删除'); actionRef.current?.reload(); }
+    catch { message.error('删除失败'); }
+  };
+
+  const openCreate = async () => {
+    setEditing(null); form.resetFields();
+    const result = await getRoles();
+    const roles = Array.isArray(result) ? result : (result as any).list || [];
+    setRoleOptions(flattenRoles(roles));
+    setOpen(true);
+  };
+  const openEdit = async (u: UserItem) => {
+    setEditing(u);
+    const result = await getRoles();
+    const roles = Array.isArray(result) ? result : (result as any).list || [];
+    setRoleOptions(flattenRoles(roles));
+    form.setFieldsValue({ ...u, role_ids: u.roles?.map(r => r.role_id) ?? [] });
+    setOpen(true);
+  };
+
+  const onSave = async () => {
+    const v = await form.validateFields();
+    const { role_ids, ...rest } = v;
+    const result = await getRoles();
+    const allRoles: RoleItem[] = Array.isArray(result) ? result : (result as any).list || [];
+    const rolesMap = new Map(allRoles.map((r: RoleItem) => [r.id, r]));
+    const roles = (role_ids || []).map((rid: string) => ({
+      role_id: rid,
+      role_name: rolesMap.get(rid)?.name || '',
+    }));
+    const data = { ...rest, roles };
+    try {
+      if (editing) await updateUser(editing.id, data);
+      else await createUser(data);
+      message.success('保存成功');
+      setOpen(false); setEditing(null); form.resetFields();
+      actionRef.current?.reload();
+    } catch (error: any) {
+      // 显示具体的错误信息（如重复性检查的错误）
+      const errorMsg = error?.message || '保存失败';
+      message.error(errorMsg);
+    }
+  };
+
+  const columns: ProColumns<UserItem>[] = [
+    { title: '用户名', dataIndex: 'username', key: 'username', width: 120,
+      render: (_: unknown, r: UserItem) => (r.username || (r as any).userName || '—') },
+    { title: '姓名', dataIndex: 'real_name', key: 'real_name', width: 100,
+      render: (_: unknown, r: UserItem) => (r.real_name || (r as any).realName || r.username || '—') },
+    { title: '部门/小组', dataIndex: 'group_name', key: 'group_name', width: 110,
+      render: (_: unknown, r: UserItem) => {
+        const gn = r.group_name || (r as any).groupName || '';
+        const dn = r.department_name || '';
+        const displayName = gn || dn || '';
+        return <Tag color={getGroupColor(displayName)}>{displayName || '—'}</Tag>;
+      },
+    },
+    { title: '岗位', dataIndex: 'position', key: 'position', width: 100,
+      render: (_: unknown, r: UserItem) => {
+        const pos = r.position || (r as any).jobTitle || (r as any).job_title || '';
+        return pos || '—';
+      },
+    },
+    { title: '邮箱', dataIndex: 'email', key: 'email', width: 180 },
+    { title: '手机', dataIndex: 'phone', key: 'phone', width: 130 },
+    { title: '角色', dataIndex: 'roles', key: 'roles', width: 280, hideInSearch: true,
+      render: (_, record) => {
+        const roles = Array.isArray(record.roles) ? record.roles : [];
+        if (!roles.length) {
+          // 兜底：展示 "无角色"，并用 tooltip 提示
+          const reason = record.real_name ? '请为该用户分配角色' : '用户数据加载中...';
+          return <Tag color="error" title={reason}>无角色</Tag>;
+        }
+        const roleColors: Record<string, string> = {
+          'admin': 'gold', '系统管理员': 'gold',
+          'business_owner': 'purple', 'manager': 'purple', '业务负责人': 'purple',
+          'business_group_leader': 'blue', 'biz_group': 'blue', '业务组长': 'blue',
+          'business_group_member': 'default', 'salesperson': 'default', '业务员': 'default',
+          'shared_team_owner': 'magenta', '共享团队负责人': 'magenta',
+          'labor_contract_member': 'green', 'contract_team': 'green', '合同专员': 'green',
+          'onboarding_resignation_member': 'cyan', 'onboarding_team': 'cyan', '入离职联系专员': 'cyan',
+          'data_entry_leader': 'orange', 'data_entry_team': 'orange', '数据录入组长': 'orange',
+        };
+        return (
+          <Space size={[0, 4]} wrap>
+            {roles.map((r, idx) => {
+              const roleName = r.role_name || (r as any).roleName || (r as any).name || '未知角色';
+              const roleCode = r.role_code || (r as any).roleCode || (r as any).code || '';
+              const roleId = r.role_id || (r as any).roleId || String(idx);
+              const color = roleColors[roleName] || roleColors[roleCode] || 'blue';
+              const display = roleCode ? `${roleName} (${roleCode})` : roleName;
+              return <Tag key={roleId} color={color} title={`代码: ${roleCode || roleName}`}>{display}</Tag>;
+            })}
+          </Space>
+        );
+      },
+    },
+    { title: '状态', dataIndex: 'is_active', key: 'is_active', width: 80,
+      render: (_: unknown, r: UserItem) => {
+        const active = r.is_active === true || r.is_active === ('true' as any) || (r as any).isActive === true;
+        return <Tag color={active ? 'green' : 'red'}>{active ? '启用' : '禁用'}</Tag>;
+      },
+    },
+    {
+      title: '密码', key: 'password_status', width: 90, hideInSearch: true,
+      render: (_, r) => {
+        const status = getUserPasswordStatus(r.username);
+        return status.has_password
+          ? <Tag color="green">已设置</Tag>
+          : <Tag color="red">未设置</Tag>;
+      },
+    },
+    {
+      title: '操作', key: 'actions', width: 320, hideInSearch: true,
+      render: (_, r) => (
+        <Space>
+          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(r)}>编辑</Button>
+          <Button type="link" size="small" icon={<LockOutlined />} onClick={() => handleResetPassword(r)}>重置密码</Button>
+          <Popconfirm title={r.is_active ? '确定禁用该用户？' : '确定启用该用户？'} onConfirm={() => handleToggleActive(r)}>
+            <Button type="link" size="small" danger={r.is_active} icon={r.is_active ? <StopOutlined /> : <CheckCircleOutlined />}>
+              {r.is_active ? '禁用' : '启用'}
+            </Button>
+          </Popconfirm>
+          {isAdmin && (
+            <Popconfirm title="确定删除该用户？" onConfirm={() => handleDelete(r)}>
+              <Button type="link" size="small" danger icon={<DeleteOutlined />}>删除</Button>
+            </Popconfirm>
+          )}
+        </Space>
+      ),
+    },
+  ];
+
+  return (
+    <PageContainer header={{ title: '用户管理' }}>
+      <Collapse style={{ marginBottom: 16 }}
+        items={[{
+          key: 'perm-desc',
+          label: '权限说明',
+          children: (
+              <div style={{ fontSize: 13, lineHeight: 2, color: '#555' }}>
+                <p><Tag color="gold">系统管理员</Tag><strong>李占博、王梓曦</strong> — 拥有系统最高权限，可管理全部工单和所有系统配置。</p>
+                <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
+                <p><Tag color="purple">业务负责人</Tag><strong>敖蕾、薛锟、余琴霞</strong> — 可查看<em>全部业务工单</em>、全局看板、导出数据，<strong>不可直接操作工单</strong>（不接单/不修改/不退回）。</p>
+                <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
+                <p><Tag color="blue">业务组长</Tag><strong>沈文君、陈宇辰、高璐璐、刘程、余维维</strong> — 可查看<em>本组所有工单</em>；自己作为业务员时<strong>可发起/修改/撤回</strong>工单。</p>
+                <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
+                <p><Tag color="default">业务员</Tag><strong>姚怡萍、闫秋月、程裕、周琦青、吴宇飞、赵天琪、许靖、陶明月、徐嘉胤、张埔微</strong> — <em>只看自己发起的工单</em>，可发起和跟踪本组客户信息。</p>
+                <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
+                <p><Tag color="magenta">共享团队负责人</Tag><strong>江璐</strong> — <em>合同签订 + 入离职联系模块全量</em>，可接单/完成/退回/补充/团队查看/改派。</p>
+                <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
+                <p><Tag color="green">合同专员</Tag><strong>杨纯</strong> — <em>合同新签 / 续签 / 待遇申报</em>，负责劳动合同全生命周期管理。</p>
+                <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
+                <p><Tag color="cyan">入离职联系专员</Tag><strong>毛雅妮</strong> — <em>入职联系 / 离职联系 / 离职证明</em>，负责入职联络、离职面谈与证明开具。</p>
+                <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
+                <p><Tag color="orange">数据录入组长</Tag><strong>安娜祯</strong> — <em>数据录入模块全量</em>，执行员工信息和社保公积金录入 + 审核管理。</p>
+              </div>
+          ),
+        }]}
+      />
+      <ProTable<UserItem>
+        actionRef={actionRef}
+        columns={columns}
+        request={async (params: PageParams) => {
+          try {
+            const result = await getUsers(params);
+            return { data: result.list, success: true, total: result.total };
+          } catch {
+            // ★ 后端异常时返回空数据，防止 ProTable 崩溃显示 "Something went wrong"
+            return { data: [], success: false, total: 0 };
+          }
+        }}
+        rowKey="id"
+        search={{ labelWidth: 'auto' }}
+        headerTitle="用户列表"
+        toolBarRender={() => [
+          <Button key="add" type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建用户</Button>,
+        ]}
+        pagination={{ defaultPageSize: 20 }}
+        dateFormatter="string"
+      />
+      <Modal title={editing ? '编辑用户' : '新建用户'} open={open} onOk={onSave}
+        onCancel={() => { setOpen(false); setEditing(null); form.resetFields(); }} destroyOnHidden>
+        <Form form={form} layout="vertical" initialValues={{ is_active: true }}>
+          <Form.Item name="username" label="用户名" rules={[{ required: true }]}><Input /></Form.Item>
+          {!editing && (
+            <Form.Item
+              name="password"
+              label="密码"
+              rules={[
+                { required: true, message: '请输入密码' },
+                { min: 6, message: '密码至少6位' }
+              ]}
+            >
+              <Input.Password placeholder="请设置登录密码（至少6位）" />
+            </Form.Item>
+          )}
+          {editing && (
+            <Form.Item
+              name="password"
+              label="修改密码"
+              rules={[{ min: 6, message: '新密码至少6位' }]}
+              extra="留空则不修改密码"
+            >
+              <Input.Password placeholder="输入新密码（至少6位，留空不修改）" />
+            </Form.Item>
+          )}
+          <Form.Item name="real_name" label="姓名" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="group_name" label="部门/小组"><Input placeholder="如：业务1组、共享团队、系统管理" /></Form.Item>
+          <Form.Item name="position" label="岗位"><Input placeholder="如：业务主管、客服专员" /></Form.Item>
+          <Form.Item name="email" label="邮箱"><Input type="email" /></Form.Item>
+          <Form.Item name="phone" label="手机"><Input /></Form.Item>
+          <Form.Item name="role_ids" label="角色" rules={[{ required: true, message: '请选择至少一个角色' }]}>
+            <Select mode="multiple" placeholder="选择用户角色" options={roleOptions} optionFilterProp="label" />
+          </Form.Item>
+          <Form.Item name="is_active" label="启用" valuePropName="checked"><Switch /></Form.Item>
+        </Form>
+      </Modal>
+    </PageContainer>
+  );
+};
+
+export default AdminUsers;
