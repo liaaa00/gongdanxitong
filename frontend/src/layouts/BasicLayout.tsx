@@ -100,40 +100,11 @@ const RAW_MENU: MenuItem[] = [
   { path: '/dashboard', name: '仪表盘', icon: <DashboardOutlined /> },
   {
     path: '/work-orders',
-    name: '入职管理',
+    name: '主工单',
     icon: <FileTextOutlined />,
-    roles: [...ONBOARDING_ROLES],
+    roles: [...BUSINESS_ORDER_ROLES],
     children: [
       { path: '/work-orders', name: '主工单列表', key: 'work-orders-main', roles: [...BUSINESS_ORDER_ROLES] },
-      { path: '/onboarding/contract', name: '合同签订子工单', roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.LABOR_CONTRACT_MEMBER] },
-      { path: '/onboarding/onboarding_contact', name: '入职联系子工单', roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.ONBOARDING_RESIGNATION_MEMBER] },
-      { path: '/onboarding/data_entry', name: '数据录入子工单', roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.DATA_ENTRY_LEADER, ROLE.SHARED_TEAM_OWNER] },
-      { path: '/onboarding/social_insurance', name: '社保公积金办理子工单', roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SOCIAL_INSURANCE_SPECIALIST] },
-    ],
-  },
-  {
-    path: '/renewal',
-    name: '在职管理',
-    icon: <FileTextOutlined />,
-    roles: [...IN_SERVICE_ROLES],
-    children: [
-      { path: '/renewal', name: '续签主工单列表', key: 'renewal-list', roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.LABOR_CONTRACT_MEMBER] },
-      { path: '/onboarding/renewal_contract', name: '续签合同子工单', key: 'renewal-contract-sub-list', roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.LABOR_CONTRACT_MEMBER] },
-      { path: '/benefit', name: '待遇申报主工单列表', key: 'benefit-list', roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.DATA_ENTRY_LEADER, ROLE.SHARED_TEAM_OWNER, ROLE.SOCIAL_INSURANCE_SPECIALIST] },
-      { path: '/onboarding/benefit_apply', name: '待遇申报子工单', key: 'benefit-apply-sub-list', roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.DATA_ENTRY_LEADER, ROLE.SHARED_TEAM_OWNER, ROLE.SOCIAL_INSURANCE_SPECIALIST] },
-    ],
-  },
-  {
-    path: '/resignation',
-    name: '离职管理',
-    icon: <FileTextOutlined />,
-    roles: [...OFFBOARDING_ROLES],
-    children: [
-      { path: '/resignation', name: '离职主工单列表', key: 'resignation-list', roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.ONBOARDING_RESIGNATION_MEMBER] },
-      { path: '/onboarding/resignation_contact', name: '离职联系子工单', key: 'resignation-contact-sub-list', roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.ONBOARDING_RESIGNATION_MEMBER] },
-      { path: '/onboarding/resignation_cert', name: '离职证明子工单', key: 'resignation-cert-sub-list', roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.ONBOARDING_RESIGNATION_MEMBER] },
-      { path: '/onboarding/data_entry_resign', name: '社保停保子工单', key: 'data-entry-resign-sub-list', roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.DATA_ENTRY_LEADER, ROLE.SHARED_TEAM_OWNER, ROLE.SOCIAL_INSURANCE_SPECIALIST] },
-      { path: '/resignation/:id/cert', name: '离职证明', key: 'resignation-cert', menuVisible: false, roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.ONBOARDING_RESIGNATION_MEMBER] },
     ],
   },
   {

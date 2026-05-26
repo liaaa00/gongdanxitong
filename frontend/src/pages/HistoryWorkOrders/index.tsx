@@ -19,6 +19,17 @@ const PRIORITY_OPTIONS = [
   { label: '普通', value: 'normal', color: 'blue' },
 ];
 
+const WORK_TYPE_OPTIONS = [
+  { label: '数据录入子工单', value: 'data_entry' },
+  { label: '社保公积金办理子工单', value: 'social_insurance' },
+  { label: '入职联系子工单', value: 'onboarding_contact' },
+  { label: '劳动合同签订子工单', value: 'contract' },
+  { label: '续签合同子工单', value: 'renewal_contract' },
+  { label: '离职联系子工单', value: 'resignation_contact' },
+  { label: '离职证明子工单', value: 'resignation_cert' },
+  { label: '待遇申报子工单', value: 'benefit_apply' },
+];
+
 function getPriorityMeta(priority?: string | null) {
   return PRIORITY_OPTIONS.find((item) => item.value === priority) || PRIORITY_OPTIONS[1];
 }
@@ -30,7 +41,14 @@ const HistoryWorkOrders: React.FC = () => {
 
   const columns = useMemo<ProColumns<DispatchedOrderItem>[]>(() => [
     { title: '工单编号', dataIndex: 'order_no', width: 160, copyable: true },
-    { title: '子工单类型', dataIndex: 'module_code', width: 150, render: (_, row) => <Tag>{getModuleLabel(row.module_code)}</Tag> },
+    {
+      title: '子工单类型',
+      dataIndex: 'moduleCode',
+      width: 170,
+      valueType: 'select',
+      fieldProps: { options: WORK_TYPE_OPTIONS, placeholder: '按模块筛选' },
+      render: (_, row) => <Tag>{getModuleLabel(row.module_code)}</Tag>,
+    },
     { title: '员工姓名', dataIndex: 'employee_name', width: 110 },
     { title: '员工证件号', dataIndex: 'employee_id_card', width: 170, ellipsis: true },
     { title: '客户代码', dataIndex: 'customer_code', width: 120 },
@@ -79,8 +97,10 @@ const HistoryWorkOrders: React.FC = () => {
         pagination={{ defaultPageSize: 20, pageSizeOptions: ['20', '50', '100'], showSizeChanger: true }}
         dateFormatter="string"
         request={async (params: PageParams & Record<string, unknown>) => {
+          const moduleValue = params.moduleCode || params.module_code;
           const result = await getDispatchedOrders({
             ...params,
+            moduleCode: moduleValue ? String(moduleValue) : undefined,
             pageSize: Math.min(Number(params.pageSize || 20), 100),
             includeReturned: true,
             orderMonth: (month || dayjs()).format('YYYY-MM'),
