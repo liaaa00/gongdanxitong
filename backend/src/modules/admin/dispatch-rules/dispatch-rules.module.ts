@@ -8,7 +8,7 @@ import { DispatchRulesService } from './dispatch-rules.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([DispatchRule, ModuleHandler]),
+    TypeOrmModule.forFeature([DispatchRule, ModuleHandler, WorkOrderModuleConfig]),
     DispatchModule,
   ],
   controllers: [DispatchRulesController, DispatchConfigController],
