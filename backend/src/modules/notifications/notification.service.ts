@@ -32,9 +32,23 @@ export interface QueryNotificationsDto extends PaginationQueryDto {
   unread?: boolean;
   bizType?: string;
   biz_type?: string;
+  includeDispatch?: boolean | string;
   priority?: string;
   groupBy?: string;
   group_by?: string;
+  /** 按 bucket 分类过滤（与 countUnreadByBucket 口径一致）。 */
+  bucket?: string;
+}
+
+type SalespersonNotificationBucket = 'field_changed' | 'returned' | 'urge_feedback' | 'withdraw_void_result' | 'system';
+type BackendNotificationBucket = 'todo' | 'urge' | 'sla_warning' | 'sla_breached' | 'creator_modified' | 'withdraw_void_request' | 'system';
+type NotificationBucket = SalespersonNotificationBucket | BackendNotificationBucket;
+
+export interface UnreadCountByBucketResult {
+  total: number;
+  salesperson: Record<Exclude<SalespersonNotificationBucket, 'system'>, number>;
+  backend: Record<Exclude<BackendNotificationBucket, 'system'>, number>;
+  system: number;
 }
 
 export interface NotificationListItem {
@@ -302,13 +316,18 @@ export class NotificationService {
     const rows = await this.notificationRepository.find({
       where: {
         userId,
-        ...(bizType ? { bizType } : {}),
         ...(typeof isRead === 'boolean' ? { isRead } : {}),
       },
       order: { createdAt: 'DESC' },
     });
 
-    const items = rows.map((row) => this.toListItem(row));
+    const filteredRows = query.bucket
+      ? rows.filter((row) => this.toNotificationBucket(row.bizType) === query.bucket)
+      : bizType
+        ? rows.filter((row) => this.matchesBizTypeFilter(row.bizType, bizType))
+        : rows;
+
+    const items = filteredRows.map((row) => this.toListItem(row));
     const groups = query.groupBy === 'biz_type' || query.group_by === 'biz_type'
       ? this.groupByBizType(items)
       : undefined;
@@ -349,14 +368,55 @@ export class NotificationService {
     return { success: true, unread_count: await this.countUnread(userId) };
   }
 
+  async markReadByQuery(userId: string, query: QueryNotificationsDto): Promise<{ success: boolean; affected: number; unread_count: number }> {
+    const rows = await this.notificationRepository.find({ where: { userId, isRead: false } });
+    const bizType = query.bizType ?? query.biz_type;
+    const filteredRows = query.bucket
+      ? rows.filter((row) => this.toNotificationBucket(row.bizType) === query.bucket)
+      : bizType
+        ? rows.filter((row) => this.matchesBizTypeFilter(row.bizType, bizType))
+        : rows;
+
+    for (const row of filteredRows) {
+      row.isRead = true;
+      row.readAt = new Date();
+      await this.notificationRepository.save(row);
+    }
+    return { success: true, affected: filteredRows.length, unread_count: await this.countUnread(userId) };
+  }
+
   async remove(id: string, userId: string): Promise<{ success: boolean }> {
     const row = await this.loadOwnedNotification(id, userId);
     await this.notificationRepository.remove(row);
     return { success: true };
   }
 
-  async countUnread(userId: string): Promise<number> {
-    return this.notificationRepository.count({ where: { userId, isRead: false } });
+  async countUnread(userId: string, query: Partial<QueryNotificationsDto> = {}): Promise<number> {
+    const rows = await this.notificationRepository.find({
+      where: { userId, isRead: false },
+      select: { bizType: true },
+    });
+    const bizType = query.bizType ?? query.biz_type;
+    if (query.bucket) {
+      return rows.filter((row) => this.toNotificationBucket(row.bizType) === query.bucket).length;
+    }
+    if (bizType) {
+      return rows.filter((row) => this.matchesBizTypeFilter(row.bizType, bizType)).length;
+    }
+    return rows.length;
+  }
+
+  async countUnreadByBucket(userId: string): Promise<UnreadCountByBucketResult> {
+    const rows = await this.notificationRepository.find({
+      where: { userId, isRead: false },
+      select: { bizType: true },
+    });
+
+    const counts = this.emptyUnreadCountByBucket();
+    for (const row of rows) {
+      this.incrementUnreadBucket(counts, this.toNotificationBucket(row.bizType));
+    }
+    return counts;
   }
 
   async countUnreadByType(userId: string): Promise<Record<string, number>> {
@@ -464,6 +524,50 @@ export class NotificationService {
       entity_type: (notification.payload as Record<string, unknown> | null)?.entityType as string | null ?? null,
       entity_id: (notification.payload as Record<string, unknown> | null)?.entityId as string | null ?? null,
     };
+  }
+
+  private matchesBizTypeFilter(rowBizType: string, filter: string): boolean {
+    const allowed = filter.split(',').map((item) => item.trim()).filter(Boolean);
+    return allowed.length === 0 || allowed.includes(rowBizType) || allowed.includes(rowBizType.toLowerCase().replace(/[.:]/g, '_'));
+  }
+
+  private emptyUnreadCountByBucket(): UnreadCountByBucketResult {
+    return {
+      total: 0,
+      salesperson: { field_changed: 0, returned: 0, urge_feedback: 0, withdraw_void_result: 0 },
+      backend: { todo: 0, urge: 0, sla_warning: 0, sla_breached: 0, creator_modified: 0, withdraw_void_request: 0 },
+      system: 0,
+    };
+  }
+
+  private incrementUnreadBucket(counts: UnreadCountByBucketResult, bucket: NotificationBucket): void {
+    counts.total += 1;
+    if (bucket === 'system') {
+      counts.system += 1;
+      return;
+    }
+    if (bucket === 'field_changed' || bucket === 'returned' || bucket === 'urge_feedback' || bucket === 'withdraw_void_result') {
+      counts.salesperson[bucket] += 1;
+      return;
+    }
+    counts.backend[bucket] += 1;
+  }
+
+  private toNotificationBucket(bizType: string): NotificationBucket {
+    const normalized = bizType.toLowerCase().replace(/[.:]/g, '_');
+    if (normalized.includes('system')) return 'system';
+    if (normalized.includes('sla_breached') || normalized.includes('sla_breach') || normalized.includes('breached') || normalized.includes('breach')) return 'sla_breached';
+    if (normalized.includes('sla_warning') || normalized.includes('sla_warn') || normalized.includes('warning') || normalized.includes('timeout')) return 'sla_warning';
+    if (normalized.includes('urge_feedback') || normalized.includes('urge_replied') || normalized.includes('urge_result')) return 'urge_feedback';
+    if (normalized.includes('urge')) return 'urge';
+    if (normalized.includes('withdraw_request') || normalized.includes('void_request')) return 'withdraw_void_request';
+    if (normalized.includes('withdraw_void_result') || normalized.includes('withdraw_approved') || normalized.includes('withdraw_rejected') || normalized.includes('void_approved') || normalized.includes('void_rejected')) return 'withdraw_void_result';
+    if (normalized.includes('dispatched_returned') || normalized.includes('returned') || normalized.includes('return')) return 'returned';
+    if (normalized.includes('dispatched_accepted') || normalized.includes('dispatched_completed') || normalized.includes('field_supplement') || normalized.includes('field_supplemented') || normalized.includes('backend_supplemented') || normalized.includes('supplement')) return 'field_changed';
+    if (normalized.includes('order_field_changed') || normalized.includes('creator_modified') || normalized.includes('completed_modified') || normalized.includes('modified_by_creator') || normalized.includes('field_changed_by_creator') || normalized.includes('initiator_modified')) return 'creator_modified';
+    if (normalized.includes('dispatch') || normalized.includes('dispatched') || normalized.includes('claim') || normalized.includes('todo') || normalized.includes('task')) return 'todo';
+    if (normalized.includes('field_changed') || normalized.includes('field_change')) return 'field_changed';
+    return 'system';
   }
 
   private toUnreadBucket(bizType: string): string {

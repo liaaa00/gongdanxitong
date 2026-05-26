@@ -60,24 +60,77 @@ describe('NotificationService read response', () => {
     const repo = {
       findOne: jest.fn(async () => row),
       save: jest.fn(async (input: Notification) => input),
-      count: jest.fn(async () => 2),
+      find: jest.fn(async () => [makeNotification({ id: 'n2' }), makeNotification({ id: 'n3' })]),
     };
     const service = makeService(repo as unknown as Partial<Repository<Notification>>);
 
     await expect(service.markRead('n1', 'user-1')).resolves.toEqual({ success: true, unread_count: 2 });
     expect(repo.save).toHaveBeenCalledWith(expect.objectContaining({ isRead: true, readAt: expect.any(Date) }));
-    expect(repo.count).toHaveBeenCalledWith({ where: { userId: 'user-1', isRead: false } });
+    expect(repo.find).toHaveBeenCalledWith({ where: { userId: 'user-1', isRead: false }, select: { bizType: true } });
   });
 
   it('markAllRead returns success and unread_count after updating unread rows', async () => {
     const repo = {
-      find: jest.fn(async () => [makeNotification({ id: 'n1' }), makeNotification({ id: 'n2' })]),
+      find: jest.fn()
+        .mockResolvedValueOnce([makeNotification({ id: 'n1' }), makeNotification({ id: 'n2' })])
+        .mockResolvedValueOnce([]),
       save: jest.fn(async (input: Notification) => input),
-      count: jest.fn(async () => 0),
     };
     const service = makeService(repo as unknown as Partial<Repository<Notification>>);
 
     await expect(service.markAllRead('user-1')).resolves.toEqual({ success: true, unread_count: 0 });
     expect(repo.save).toHaveBeenCalledTimes(2);
+  });
+
+  it('countUnreadByBucket classifies completed and accepted dispatched notifications as salesperson field_changed', async () => {
+    const repo = {
+      find: jest.fn(async () => [
+        makeNotification({ id: 'n1', bizType: 'dispatched_completed' }),
+        makeNotification({ id: 'n2', bizType: 'dispatched_accepted' }),
+        makeNotification({ id: 'n3', bizType: 'order.field_changed' }),
+      ]),
+    };
+    const service = makeService(repo as unknown as Partial<Repository<Notification>>);
+
+    await expect(service.countUnreadByBucket('user-1')).resolves.toMatchObject({
+      total: 3,
+      salesperson: { field_changed: 2 },
+      backend: { creator_modified: 1 },
+    });
+  });
+
+  it('list filters by the same bucket used by unread counts', async () => {
+    const repo = {
+      find: jest.fn(async () => [
+        makeNotification({ id: 'n1', bizType: 'dispatched_completed' }),
+        makeNotification({ id: 'n2', bizType: 'dispatched_accepted' }),
+        makeNotification({ id: 'n3', bizType: 'order.field_changed' }),
+      ]),
+    };
+    const service = makeService(repo as unknown as Partial<Repository<Notification>>);
+
+    await expect(service.list('user-1', { bucket: 'field_changed', page: 1, pageSize: 20 })).resolves.toMatchObject({
+      total: 2,
+      list: [
+        expect.objectContaining({ id: 'n1', biz_type: 'dispatched_completed' }),
+        expect.objectContaining({ id: 'n2', biz_type: 'dispatched_accepted' }),
+      ],
+    });
+  });
+
+  it('markReadByQuery marks only unread notifications in the requested bucket', async () => {
+    const rows = [
+      makeNotification({ id: 'n1', bizType: 'dispatched_completed' }),
+      makeNotification({ id: 'n2', bizType: 'order.field_changed' }),
+    ];
+    const repo = {
+      find: jest.fn(async () => rows),
+      save: jest.fn(async (input: Notification) => input),
+    };
+    const service = makeService(repo as unknown as Partial<Repository<Notification>>);
+
+    await expect(service.markReadByQuery('user-1', { bucket: 'field_changed', page: 1, pageSize: 20 })).resolves.toMatchObject({ success: true, affected: 1 });
+    expect(repo.save).toHaveBeenCalledTimes(1);
+    expect(repo.save).toHaveBeenCalledWith(expect.objectContaining({ id: 'n1', isRead: true, readAt: expect.any(Date) }));
   });
 });

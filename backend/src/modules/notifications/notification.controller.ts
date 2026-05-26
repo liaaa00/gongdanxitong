@@ -14,8 +14,13 @@ export class NotificationController {
   }
 
   @Get('unread-count')
-  async unreadCount(@CurrentUser() user: JwtUserPayload) {
-    return { count: await this.notificationService.countUnread(user.sub) };
+  async unreadCount(@Query() query: QueryNotificationsDto, @CurrentUser() user: JwtUserPayload) {
+    return { count: await this.notificationService.countUnread(user.sub, query) };
+  }
+
+  @Get('unread-count-by-bucket')
+  unreadCountByBucket(@CurrentUser() user: JwtUserPayload) {
+    return this.notificationService.countUnreadByBucket(user.sub);
   }
 
   @Get('unread-by-type')
@@ -44,6 +49,17 @@ export class NotificationController {
   @Patch('read-all')
   patchAllRead(@CurrentUser() user: JwtUserPayload) {
     return this.notificationService.markAllRead(user.sub);
+  }
+
+  @Post('read-by-query')
+  @HttpCode(200)
+  markReadByQuery(@Query() query: QueryNotificationsDto, @CurrentUser() user: JwtUserPayload) {
+    return this.notificationService.markReadByQuery(user.sub, query);
+  }
+
+  @Patch('read-by-query')
+  markReadByQueryPatch(@Query() query: QueryNotificationsDto, @CurrentUser() user: JwtUserPayload) {
+    return this.notificationService.markReadByQuery(user.sub, query);
   }
 
   @Delete(':id')

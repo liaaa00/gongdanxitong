@@ -23,8 +23,18 @@ export class QueryNotificationsDto extends PaginationQueryDto {
   biz_type?: string;
 
   @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  includeDispatch?: boolean;
+
+  @IsOptional()
   @IsString()
   priority?: string;
+
+  /** 按 bucket 分类过滤（与 countUnreadByBucket 口径一致）。 */
+  @IsOptional()
+  @IsString()
+  bucket?: string;
 
   @IsOptional()
   @IsIn(['biz_type'])

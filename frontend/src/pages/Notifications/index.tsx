@@ -1,43 +1,124 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageContainer } from '@ant-design/pro-components';
 import type { ProColumns, ActionType } from '@ant-design/pro-components';
 import { ProTable } from '@ant-design/pro-components';
-import { Tag, Button, Space, App, Badge, Tabs, Popconfirm, Switch, Modal, Descriptions, Typography } from 'antd';
+import { Tag, Button, Space, App, Badge, Tabs, Popconfirm, Modal, Descriptions, Typography, Segmented } from 'antd';
 import { BellOutlined, DeleteOutlined, CheckOutlined, EyeOutlined, LinkOutlined } from '@ant-design/icons';
-import { getNotifications, markNotificationRead, markAllRead, deleteNotification, getUnreadCount } from '@/services/notifications';
+import { getNotifications, markNotificationRead, markAllRead, markNotificationsReadByQuery, deleteNotification, getUnreadCountByBucket } from '@/services/notifications';
 import type { NotificationItem } from '@/services/notifications';
 import type { PageParams } from '@/services/mock';
 
 const { Text, Paragraph } = Typography;
 
-const BIZ_COLOR: Record<string, string> = { sla: 'red', task: 'blue', system: 'default', field_change: 'purple', claim: 'orange' };
-const PRI_COLOR: Record<string, string> = { urgent: 'red', normal: 'blue', low: 'default' };
+type NotificationTabKey =
+  | 'all'
+  | 'salesperson_field_changed'
+  | 'salesperson_returned'
+  | 'salesperson_urge_feedback'
+  | 'salesperson_withdraw_void_result'
+  | 'backend_creator_modified'
+  | 'backend_urge'
+  | 'backend_sla_warning'
+  | 'backend_sla_breached'
+  | 'backend_withdraw_void_request'
+  | 'system';
+
+const TAB_BUCKET_MAP: Record<NotificationTabKey, string | undefined> = {
+  all: undefined,
+  // 后道补充、接单、完成等结果反馈给业务员查看
+  salesperson_field_changed: 'field_changed',
+  salesperson_returned: 'returned',
+  salesperson_urge_feedback: 'urge_feedback',
+  salesperson_withdraw_void_result: 'withdraw_void_result',
+  // 业务员修改公共字段后通知后道办理人
+  backend_creator_modified: 'creator_modified',
+  backend_urge: 'urge',
+  backend_sla_warning: 'sla_warning',
+  backend_sla_breached: 'sla_breached',
+  backend_withdraw_void_request: 'withdraw_void_request',
+  system: 'system',
+};
+
+const BIZ_COLOR: Record<string, string> = {
+  all: 'default',
+  salesperson_field_changed: 'purple',
+  salesperson_returned: 'orange',
+  salesperson_urge_feedback: 'gold',
+  salesperson_withdraw_void_result: 'blue',
+  backend_creator_modified: 'purple',
+  backend_urge: 'gold',
+  backend_sla_warning: 'orange',
+  backend_sla_breached: 'red',
+  backend_withdraw_void_request: 'volcano',
+  system: 'default',
+};
+
+const BIZ_LABEL: Record<string, string> = {
+  all: '全部消息',
+  salesperson_field_changed: '后道数据修改',
+  salesperson_returned: '退回',
+  salesperson_urge_feedback: '催办反馈',
+  salesperson_withdraw_void_result: '撤回/作废结果',
+  backend_creator_modified: '业务员数据修改',
+  backend_urge: '催办',
+  backend_sla_warning: '即将超时',
+  backend_sla_breached: '已超时',
+  backend_withdraw_void_request: '撤回/作废申请',
+  system: '系统',
+};
+
+
+const PRI_COLOR: Record<string, string> = { urgent: 'red', high: 'red', normal: 'blue', low: 'default' };
+
+function normalizeBizType(value: string | undefined | null): string {
+  return String(value || '').toLowerCase().replace(/[.:]/g, '_');
+}
+
+function classifyNotification(item: Pick<NotificationItem, 'biz_type' | 'type' | 'title' | 'content'>): NotificationTabKey {
+  const raw = `${normalizeBizType(item.biz_type)} ${normalizeBizType(item.type)} ${item.title || ''} ${item.content || ''}`.toLowerCase();
+  if (raw.includes('system')) return 'system';
+  if (raw.includes('sla_breached') || raw.includes('sla_breach') || raw.includes('breached') || raw.includes('breach') || raw.includes('已超时') || raw.includes('超期')) return 'backend_sla_breached';
+  if (raw.includes('sla_warning') || raw.includes('sla_warn') || raw.includes('warning') || raw.includes('timeout') || raw.includes('即将超时') || raw.includes('预警')) return 'backend_sla_warning';
+  if (raw.includes('urge_feedback') || raw.includes('urge_replied') || raw.includes('urge_result')) return 'salesperson_urge_feedback';
+  if (raw.includes('urge_received') || raw.includes('urge') || raw.includes('催办')) return 'backend_urge';
+  if (raw.includes('withdraw_request') || raw.includes('void_request') || raw.includes('creator_withdraw') || raw.includes('creator_void') || raw.includes('撤回申请') || raw.includes('作废申请')) return 'backend_withdraw_void_request';
+  if (raw.includes('withdraw_approved') || raw.includes('withdraw_rejected') || raw.includes('void_approved') || raw.includes('void_rejected') || raw.includes('withdraw_void_result')) return 'salesperson_withdraw_void_result';
+  if (raw.includes('dispatched_returned') || raw.includes('returned') || raw.includes('return') || raw.includes('退回')) return 'salesperson_returned';
+  if (raw.includes('dispatched_accepted') || raw.includes('dispatched_completed') || raw.includes('order_supplement_filled') || raw.includes('field_supplement') || raw.includes('field_supplemented') || raw.includes('backend_supplemented') || raw.includes('补充')) return 'salesperson_field_changed';
+  if (raw.includes('order_field_changed') || raw.includes('creator_modified') || raw.includes('completed_modified') || raw.includes('modified_by_creator') || raw.includes('field_changed_by_creator') || raw.includes('initiator_modified') || raw.includes('业务员') && raw.includes('修改')) return 'backend_creator_modified';
+  return 'system';
+}
 
 const NotificationsPage: React.FC = () => {
   const navigate = useNavigate();
   const { message } = App.useApp();
   const actionRef = useRef<ActionType>();
-  const [activeTab, setActiveTab] = useState('all');
+  const [activeTab, setActiveTab] = useState<NotificationTabKey>('all');
   const [unreadTotal, setUnreadTotal] = useState(0);
   const [unreadByType, setUnreadByType] = useState<Record<string, number>>({});
-  const [unreadOnly, setUnreadOnly] = useState(false);
+  const [readFilter, setReadFilter] = useState<'all' | 'unread' | 'read'>('all');
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailItem, setDetailItem] = useState<NotificationItem | null>(null);
 
   const refreshCounts = async () => {
     try {
-      const count = await getUnreadCount();
-      setUnreadTotal(count);
-      const result = await getNotifications({ unread: true, page: 1, pageSize: 100 });
-      const list = Array.isArray(result?.list) ? result.list : [];
-      setUnreadByType({
-        all: list.filter((n) => !n.is_read).length,
-        sla: list.filter((n) => n.biz_type === 'sla' && !n.is_read).length,
-        task: list.filter((n) => n.biz_type === 'task' && !n.is_read).length,
-        system: list.filter((n) => n.biz_type === 'system' && !n.is_read).length,
-        field_change: list.filter((n) => n.biz_type === 'field_change' && !n.is_read).length,
-      });
+      const counts = await getUnreadCountByBucket();
+      const next: Record<string, number> = {
+        salesperson_field_changed: counts.salesperson.field_changed || 0,
+        salesperson_returned: counts.salesperson.returned || 0,
+        salesperson_urge_feedback: counts.salesperson.urge_feedback || 0,
+        salesperson_withdraw_void_result: counts.salesperson.withdraw_void_result || 0,
+        backend_creator_modified: counts.backend.creator_modified || 0,
+        backend_urge: counts.backend.urge || 0,
+        backend_sla_warning: counts.backend.sla_warning || 0,
+        backend_sla_breached: counts.backend.sla_breached || 0,
+        backend_withdraw_void_request: counts.backend.withdraw_void_request || 0,
+        system: counts.system || 0,
+      };
+      next.all = Object.values(next).reduce((sum, value) => sum + value, 0);
+      setUnreadByType(next);
+      setUnreadTotal(next.all || 0);
     } catch { /* ignore */ }
   };
 
@@ -70,6 +151,18 @@ const NotificationsPage: React.FC = () => {
     actionRef.current?.reload();
   };
 
+  const handleMarkCurrentCategoryRead = async () => {
+    try {
+      const result = await markNotificationsReadByQuery({ bucket: TAB_BUCKET_MAP[activeTab] }) as { affected?: number } | void;
+      const affected = result && typeof result.affected === 'number' ? result.affected : 0;
+      message.success(activeTab === 'all' ? '已将当前可见消息标为已读' : `已将当前分类 ${affected} 条未读消息标为已读`);
+    } catch {
+      message.error('标记当前分类失败');
+    }
+    refreshCounts();
+    actionRef.current?.reload();
+  };
+
   /** ★ 点击通知行 → 打开弹窗/跳转 */
   const handleRowClick = (record: NotificationItem) => {
     setDetailItem(record);
@@ -88,10 +181,10 @@ const NotificationsPage: React.FC = () => {
 
   const columns: ProColumns<NotificationItem>[] = [
     { title: '标题', dataIndex: 'title', key: 'title', width: 180 },
-    { title: '类型', dataIndex: 'biz_type', key: 'biz_type', width: 90,
+    { title: '分类', dataIndex: 'biz_type', key: 'biz_type', width: 130,
       render: (_, r) => {
-        const labels: Record<string, string> = { sla: '服务时限告警', task: '任务', system: '系统', field_change: '变更', claim: '认领' };
-        return <Tag color={BIZ_COLOR[r.biz_type]}>{labels[r.biz_type] || r.biz_type}</Tag>;
+        const bucket = classifyNotification(r);
+        return <Tag color={BIZ_COLOR[bucket]}>{BIZ_LABEL[bucket]}</Tag>;
       },
     },
     { title: '优先级', dataIndex: 'priority', key: 'priority', width: 70,
@@ -135,38 +228,54 @@ const NotificationsPage: React.FC = () => {
     },
   ];
 
-  const tabItems = [
-    { key: 'all', label: <Badge count={unreadByType.all || 0} size="small" offset={[6, -2]}>全部</Badge> },
-    { key: 'sla', label: <Badge count={unreadByType.sla || 0} size="small" offset={[6, -2]}><Tag color="red" style={{ margin: 0 }}>服务时限</Tag></Badge> },
-    { key: 'task', label: <Badge count={unreadByType.task || 0} size="small" offset={[6, -2]}>任务</Badge> },
-    { key: 'system', label: <Badge count={unreadByType.system || 0} size="small" offset={[6, -2]}>系统</Badge> },
-    { key: 'field_change', label: <Badge count={unreadByType.field_change || 0} size="small" offset={[6, -2]}><Tag color="purple" style={{ margin: 0 }}>变更</Tag></Badge> },
-  ];
+  const tabItems = useMemo(() => (Object.keys(TAB_BUCKET_MAP) as NotificationTabKey[]).map((key) => ({
+    key,
+    label: key === 'all'
+      ? <Badge count={unreadByType.all || 0} size="small" offset={[6, -2]}>{BIZ_LABEL[key]}</Badge>
+      : <Badge count={unreadByType[key] || 0} size="small" offset={[6, -2]}><Tag color={BIZ_COLOR[key]} style={{ margin: 0 }}>{BIZ_LABEL[key]}</Tag></Badge>,
+  })), [unreadByType]);
 
   return (
     <PageContainer
       header={{
         title: '消息通知',
+        subTitle: '分类数字和列表均按同一 bucket 口径筛选，红点只会在标记已读后消失。',
         extra: [
-          <span key="unreadToggle">
-            只看未读 <Switch size="small" checked={unreadOnly} onChange={setUnreadOnly} style={{ marginLeft: 4, marginRight: 12 }} />
-          </span>,
+          <Segmented
+            key="readFilter"
+            size="small"
+            value={readFilter}
+            onChange={(value) => { setReadFilter(value as 'all' | 'unread' | 'read'); actionRef.current?.reload(); }}
+            options={[
+              { label: '全部', value: 'all' },
+              { label: '未读', value: 'unread' },
+              { label: '已读', value: 'read' },
+            ]}
+          />,
           <Badge key="total" count={unreadTotal}><BellOutlined style={{ fontSize: 16 }} /></Badge>,
-          <Button key="readAll" size="small" onClick={handleMarkAll}>全部已读</Button>,
         ],
       }}
     >
-      <Tabs activeKey={activeTab} onChange={setActiveTab} items={tabItems} style={{ marginBottom: -16 }} />
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', marginBottom: -16 }}>
+        <Tabs activeKey={activeTab} onChange={(key) => { setActiveTab(key as NotificationTabKey); actionRef.current?.reload(); }} items={tabItems} style={{ flex: 1, minWidth: 0 }} />
+        <Space size="small" style={{ paddingBottom: 16 }}>
+          <Button size="small" icon={<CheckOutlined />} onClick={handleMarkCurrentCategoryRead}>当前分类已读</Button>
+          <Button size="small" onClick={handleMarkAll}>全部已读</Button>
+        </Space>
+      </div>
       <ProTable<NotificationItem>
         actionRef={actionRef}
         columns={columns}
         request={async (params: PageParams) => {
+          const bucket = TAB_BUCKET_MAP[activeTab];
           const result = await getNotifications({
             ...params,
-            biz_type: activeTab === 'all' ? undefined : activeTab,
-            unread: unreadOnly ? true : undefined,
+            bucket,
+            includeDispatch: activeTab === 'all' ? true : undefined,
+            unread: readFilter === 'unread' ? true : undefined,
+            isRead: readFilter === 'read' ? true : undefined,
           });
-          return { data: result.list, success: true, total: result.total };
+          return { data: result.list || [], success: true, total: result.total ?? (result.list || []).length };
         }}
         rowKey="id"
         search={{ labelWidth: 'auto' }}
@@ -198,8 +307,11 @@ const NotificationsPage: React.FC = () => {
       >
         {detailItem && (
           <Descriptions column={1} bordered size="small">
-            <Descriptions.Item label="类型">
-              <Tag color={BIZ_COLOR[detailItem.biz_type]}>{detailItem.biz_type}</Tag>
+            <Descriptions.Item label="分类">
+              {(() => {
+                const bucket = classifyNotification(detailItem);
+                return <Tag color={BIZ_COLOR[bucket]}>{BIZ_LABEL[bucket]}</Tag>;
+              })()}
             </Descriptions.Item>
             <Descriptions.Item label="优先级">
               <Tag color={PRI_COLOR[detailItem.priority]}>{detailItem.priority}</Tag>

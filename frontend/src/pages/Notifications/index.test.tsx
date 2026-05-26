@@ -1,20 +1,27 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import NotificationsPage from './index';
+import { getNotifications, markNotificationsReadByQuery } from '@/services/notifications';
 
 vi.mock('@/services/notifications', () => ({
   getNotifications: vi.fn().mockResolvedValue({
     list: [
-      { id: 'n-1', type: 'task', biz_type: 'task', priority: 'normal', title: 'Test Notification', content: 'Test content', is_read: false, created_at: new Date().toISOString() },
+      { id: 'n-1', type: 'info', biz_type: 'dispatched_completed', priority: 'normal', title: 'Test Notification', content: 'Test content', is_read: false, created_at: new Date().toISOString() },
     ],
     page: 1, pageSize: 20, total: 1, totalPages: 1, success: true,
   }),
   markNotificationRead: vi.fn().mockResolvedValue(undefined),
   markAllRead: vi.fn().mockResolvedValue(undefined),
+  markNotificationsReadByQuery: vi.fn().mockResolvedValue({ success: true, affected: 1, unread_count: 0 }),
   deleteNotification: vi.fn().mockResolvedValue(undefined),
-  getUnreadCount: vi.fn().mockResolvedValue(5),
-  getUnreadCountByType: vi.fn().mockResolvedValue({ sla: 2, task: 2, system: 1 }),
+  getUnreadCountByBucket: vi.fn().mockResolvedValue({
+    total: 2,
+    salesperson: { field_changed: 1, returned: 0, urge_feedback: 0, withdraw_void_result: 0 },
+    backend: { todo: 0, urge: 0, sla_warning: 0, sla_breached: 0, creator_modified: 1, withdraw_void_request: 0 },
+    system: 0,
+  }),
+  getUnreadCountByType: vi.fn().mockResolvedValue({ sla: 0, task: 0, system: 0 }),
 }));
 
 describe('Notifications Page', () => {
@@ -47,7 +54,9 @@ describe('Notifications Page', () => {
       </MemoryRouter>,
     );
     await waitFor(() => {
-      expect(screen.getByText('全部')).toBeTruthy();
+      expect(screen.getByText('全部消息')).toBeTruthy();
+      expect(screen.getByText('后道数据修改')).toBeTruthy();
+      expect(screen.getByText('业务员数据修改')).toBeTruthy();
     }, { timeout: 5000 });
   });
 
@@ -70,6 +79,31 @@ describe('Notifications Page', () => {
     );
     await waitFor(() => {
       expect(screen.getByText('Test Notification')).toBeTruthy();
+    }, { timeout: 5000 });
+  });
+
+  it('uses the field_changed bucket when opening the backend data modification tab', async () => {
+    render(
+      <MemoryRouter>
+        <NotificationsPage />
+      </MemoryRouter>,
+    );
+    fireEvent.click(await screen.findByText('后道数据修改'));
+    await waitFor(() => {
+      expect(getNotifications).toHaveBeenCalledWith(expect.objectContaining({ bucket: 'field_changed' }));
+    }, { timeout: 5000 });
+  });
+
+  it('marks the current category read with the active bucket', async () => {
+    render(
+      <MemoryRouter>
+        <NotificationsPage />
+      </MemoryRouter>,
+    );
+    fireEvent.click(await screen.findByText('后道数据修改'));
+    fireEvent.click(await screen.findByText('当前分类已读'));
+    await waitFor(() => {
+      expect(markNotificationsReadByQuery).toHaveBeenCalledWith({ bucket: 'field_changed' });
     }, { timeout: 5000 });
   });
 });

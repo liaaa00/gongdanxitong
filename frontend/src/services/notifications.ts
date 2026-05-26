@@ -4,8 +4,8 @@ import { isMockMode, mockDelay, type PageParams, type PageResult } from './mock'
 export interface NotificationItem {
   id: string;
   type: string;
-  biz_type: 'sla' | 'task' | 'system' | 'field_change' | 'claim';
-  priority: 'urgent' | 'normal' | 'low';
+  biz_type: string;
+  priority: 'urgent' | 'normal' | 'low' | 'high';
   title: string;
   content: string;
   entity_type: string | null;
@@ -19,6 +19,89 @@ export interface NotificationItem {
   ref_order_id?: string;
   ref_order_no?: string;
   order_no?: string;
+}
+
+export type SalespersonNotificationBucket = 'field_changed' | 'returned' | 'urge_feedback' | 'withdraw_void_result';
+export type BackendNotificationBucket = 'todo' | 'urge' | 'sla_warning' | 'sla_breached' | 'creator_modified' | 'withdraw_void_request';
+export type NotificationBucketKey = SalespersonNotificationBucket | BackendNotificationBucket | 'system';
+
+export interface UnreadCountByBucket {
+  total: number;
+  salesperson: Record<SalespersonNotificationBucket, number>;
+  backend: Record<BackendNotificationBucket, number>;
+  system: number;
+}
+
+function createEmptyBucketCounts(): UnreadCountByBucket {
+  return {
+    total: 0,
+    salesperson: { field_changed: 0, returned: 0, urge_feedback: 0, withdraw_void_result: 0 },
+    backend: { todo: 0, urge: 0, sla_warning: 0, sla_breached: 0, creator_modified: 0, withdraw_void_request: 0 },
+    system: 0,
+  };
+}
+
+function normalizeBizType(value: string | undefined | null): string {
+  return String(value || '').toLowerCase().replace(/[.:]/g, '_');
+}
+
+export function getNotificationBucket(item: Pick<NotificationItem, 'biz_type' | 'type' | 'title' | 'content'>): NotificationBucketKey {
+  const raw = `${normalizeBizType(item.biz_type)} ${normalizeBizType(item.type)} ${item.title || ''} ${item.content || ''}`.toLowerCase();
+  if (raw.includes('system')) return 'system';
+  if (raw.includes('sla_breached') || raw.includes('sla_breach') || raw.includes('breached') || raw.includes('breach') || raw.includes('已超时') || raw.includes('超期')) return 'sla_breached';
+  if (raw.includes('sla_warning') || raw.includes('sla_warn') || raw.includes('warning') || raw.includes('timeout') || raw.includes('即将超时') || raw.includes('预警')) return 'sla_warning';
+  if (raw.includes('urge_feedback') || raw.includes('urge_replied') || raw.includes('urge_result')) return 'urge_feedback';
+  if (raw.includes('urge_received') || raw.includes('urge') || raw.includes('催办')) return 'urge';
+  if (raw.includes('withdraw_request') || raw.includes('void_request') || raw.includes('creator_withdraw') || raw.includes('creator_void') || raw.includes('撤回申请') || raw.includes('作废申请')) return 'withdraw_void_request';
+  if (raw.includes('withdraw_approved') || raw.includes('withdraw_rejected') || raw.includes('void_approved') || raw.includes('void_rejected') || raw.includes('withdraw_void_result')) return 'withdraw_void_result';
+  if (raw.includes('dispatched_returned') || raw.includes('returned') || raw.includes('return') || raw.includes('退回')) return 'returned';
+  if (raw.includes('dispatched_accepted') || raw.includes('dispatched_completed') || raw.includes('order_supplement_filled') || raw.includes('field_supplement') || raw.includes('field_supplemented') || raw.includes('backend_supplemented') || raw.includes('补充')) return 'field_changed';
+  if (raw.includes('order_field_changed') || raw.includes('creator_modified') || raw.includes('completed_modified') || raw.includes('modified_by_creator') || raw.includes('field_changed_by_creator') || raw.includes('initiator_modified') || raw.includes('业务员') && raw.includes('修改')) return 'creator_modified';
+  if (raw.includes('dispatch') || raw.includes('dispatched') || raw.includes('claim') || raw.includes('todo') || raw.includes('task')) return 'todo';
+  if (raw.includes('field_changed') || raw.includes('field_change')) return 'field_changed';
+  return 'system';
+}
+
+function buildUnreadCountByBucket(list: NotificationItem[]): UnreadCountByBucket {
+  const counts = createEmptyBucketCounts();
+  const unread = list.filter((n) => !n.is_read);
+  counts.total = unread.length;
+  for (const item of unread) {
+    const bucket = getNotificationBucket(item);
+    if (bucket === 'system') counts.system += 1;
+    else if (bucket in counts.salesperson) counts.salesperson[bucket as SalespersonNotificationBucket] += 1;
+    else if (bucket in counts.backend) counts.backend[bucket as BackendNotificationBucket] += 1;
+  }
+  return counts;
+}
+
+function normalizeUnreadCountByBucket(raw: unknown): UnreadCountByBucket {
+  const source = (raw || {}) as Partial<UnreadCountByBucket> & Record<string, unknown>;
+  const salesperson = (source.salesperson || {}) as Record<string, unknown>;
+  const backend = (source.backend || {}) as Record<string, unknown>;
+  const counts: UnreadCountByBucket = {
+    total: Number(source.total ?? 0),
+    salesperson: {
+      field_changed: Number(salesperson.field_changed ?? 0),
+      returned: Number(salesperson.returned ?? 0),
+      urge_feedback: Number(salesperson.urge_feedback ?? 0),
+      withdraw_void_result: Number(salesperson.withdraw_void_result ?? 0),
+    },
+    backend: {
+      todo: Number(backend.todo ?? 0),
+      urge: Number(backend.urge ?? 0),
+      sla_warning: Number(backend.sla_warning ?? backend.slaWarning ?? 0),
+      sla_breached: Number(backend.sla_breached ?? backend.sla_breach ?? backend.slaBreached ?? backend.sla ?? 0),
+      creator_modified: Number(backend.creator_modified ?? 0),
+      withdraw_void_request: Number(backend.withdraw_void_request ?? 0),
+    },
+    system: Number(source.system ?? 0),
+  };
+  const bucketSum = Object.values(counts.salesperson).reduce((sum, value) => sum + value, 0)
+    + Object.values(counts.backend).reduce((sum, value) => sum + value, 0)
+    + counts.system;
+  counts.total = Number(source.total ?? bucketSum) || bucketSum;
+  return counts;
 }
 
 const mockNotifications: NotificationItem[] = [
@@ -67,15 +150,28 @@ export function addMockNotification(item: NotificationItem): void {
   mockNotifications.push(item);
 }
 
-export async function getNotifications(params: { unread?: boolean; biz_type?: string; priority?: string } & PageParams): Promise<PageResult<NotificationItem>> {
+export async function getNotifications(params: { unread?: boolean; isRead?: boolean; biz_type?: string; priority?: string; includeDispatch?: boolean; bucket?: string; current?: number } & PageParams): Promise<PageResult<NotificationItem>> {
+  const safeParams = {
+    ...params,
+    pageSize: Math.min(Number(params.pageSize ?? 20) || 20, 100),
+  };
   if (isMockMode) {
     let list = mockNotifications;
-    if (params.unread) list = list.filter((n) => !n.is_read);
-    if (params.biz_type) list = list.filter((n) => n.biz_type === params.biz_type);
-    if (params.priority) list = list.filter((n) => n.priority === params.priority);
-    return mockDelay({ list, page: 1, pageSize: 20, total: list.length, totalPages: 1, success: true });
+    if (safeParams.unread) list = list.filter((n) => !n.is_read);
+    if (typeof safeParams.isRead === 'boolean') list = list.filter((n) => n.is_read === safeParams.isRead);
+    if (safeParams.bucket) list = list.filter((n) => getNotificationBucket(n) === safeParams.bucket);
+    if (safeParams.biz_type) {
+      const bizTypes = safeParams.biz_type.split(',').map((item) => item.trim()).filter(Boolean);
+      list = list.filter((n) => bizTypes.includes(n.biz_type) || bizTypes.includes(n.type));
+    }
+    if (safeParams.priority) list = list.filter((n) => n.priority === safeParams.priority);
+    const currentPage = Math.max(1, Number(safeParams.current ?? safeParams.page ?? 1) || 1);
+    const pageSize = safeParams.pageSize;
+    const total = list.length;
+    const pageList = list.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+    return mockDelay({ list: pageList, page: currentPage, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)), success: true });
   }
-  return request.get('/notifications', { params }) as Promise<PageResult<NotificationItem>>;
+  return request.get('/notifications', { params: safeParams }) as Promise<PageResult<NotificationItem>>;
 }
 
 export async function markNotificationRead(id: string): Promise<void> {
@@ -96,6 +192,20 @@ export async function markAllRead(): Promise<void> {
   return request.post('/notifications/read-all') as Promise<void>;
 }
 
+export async function markNotificationsReadByQuery(params: { biz_type?: string; bucket?: string; includeDispatch?: boolean }): Promise<{ success: boolean; affected: number; unread_count: number } | void> {
+  if (isMockMode) {
+    let list = mockNotifications.filter((n) => !n.is_read);
+    if (params.bucket) list = list.filter((n) => getNotificationBucket(n) === params.bucket);
+    if (params.biz_type) {
+      const bizTypes = params.biz_type.split(',').map((item) => item.trim()).filter(Boolean);
+      list = list.filter((n) => bizTypes.includes(n.biz_type) || bizTypes.includes(n.type));
+    }
+    list.forEach((n) => { n.is_read = true; });
+    return mockDelay({ success: true, affected: list.length, unread_count: mockNotifications.filter((n) => !n.is_read).length });
+  }
+  return request.post('/notifications/read-by-query', null, { params }) as Promise<{ success: boolean; affected: number; unread_count: number }>;
+}
+
 export async function deleteNotification(id: string): Promise<void> {
   if (isMockMode) return mockDelay(undefined);
   return request.delete('/notifications/' + id) as Promise<void>;
@@ -107,13 +217,24 @@ export async function getUnreadCount(): Promise<number> {
   return result.count;
 }
 
+export async function getUnreadCountByBucket(): Promise<UnreadCountByBucket> {
+  if (isMockMode) return mockDelay(buildUnreadCountByBucket(mockNotifications));
+  try {
+    const result = await request.get('/notifications/unread-count-by-bucket');
+    return normalizeUnreadCountByBucket(result);
+  } catch {
+    const unread = await getNotifications({ unread: true, page: 1, pageSize: 100 });
+    return buildUnreadCountByBucket(Array.isArray(unread?.list) ? unread.list : []);
+  }
+}
+
 export async function getUnreadCountByType(): Promise<{ sla: number; task: number; system: number }> {
   if (isMockMode) {
     const unread = mockNotifications.filter((n) => !n.is_read);
     return mockDelay({
-      sla: unread.filter((n) => n.biz_type === 'sla').length,
-      task: unread.filter((n) => n.biz_type === 'task').length,
-      system: unread.filter((n) => n.biz_type === 'system').length,
+      sla: unread.filter((n) => getNotificationBucket(n) === 'sla_warning' || getNotificationBucket(n) === 'sla_breached').length,
+      task: unread.filter((n) => getNotificationBucket(n) === 'todo').length,
+      system: unread.filter((n) => getNotificationBucket(n) === 'system').length,
     });
   }
   return request.get('/notifications/unread-by-type') as Promise<{ sla: number; task: number; system: number }>;
