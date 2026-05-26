@@ -85,12 +85,20 @@ export class WorkOrderValidationService {
     const customerCode = this.readText(extraData.customer_code);
     const customerName = this.readText(extraData.customer_name);
     const customer = await this.findCustomer(customerCode, customerName);
-    if (!customer) {
-      throw businessException(3000, HttpStatus.BAD_REQUEST, '客户信息缺失', {
-        field: 'customerId',
-      });
+    if (customer) {
+      return customer.id;
     }
-    return customer.id;
+
+    if (customerCode && customerName) {
+      const created = await this.createCustomerFromWorkOrder(customerCode, customerName);
+      return created.id;
+    }
+
+    throw businessException(3000, HttpStatus.BAD_REQUEST, '客户信息缺失：请填写客户名称和客户代码', {
+      field: 'customerId',
+      customerCode,
+      customerName,
+    });
   }
 
   async resolveBranchId(branchId: string | undefined, customerId: string, extraData: Record<string, unknown>): Promise<string | null> {
@@ -207,6 +215,23 @@ export class WorkOrderValidationService {
 
   normalizeHeader(value: string): string {
     return value.trim().toLowerCase().replace(/\s+/g, '');
+  }
+
+  private async createCustomerFromWorkOrder(
+    customerCode: string,
+    customerName: string,
+  ): Promise<{ id: string }> {
+    const rows = await this.dataSource.query(
+      `
+        INSERT INTO customers (customer_code, customer_name, is_active)
+        VALUES ($1, $2, true)
+        ON CONFLICT (customer_code)
+        DO UPDATE SET customer_name = EXCLUDED.customer_name, is_active = true
+        RETURNING id
+      `,
+      [customerCode, customerName],
+    );
+    return { id: String(rows[0].id) };
   }
 
   private async findCustomer(

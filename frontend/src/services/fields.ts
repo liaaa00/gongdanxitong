@@ -91,8 +91,7 @@ const mockFields: FieldConfigItem[] = [
   { id: '49', field_code: 'onboarding_feedback', field_name: '入职联系反馈', field_type: 'dropdown', is_required: false, default_required: false, validation_regex: null, validation_msg: null, dropdown_options: FEEDBACK_OPTIONS, placeholder: '请选择入职联系反馈', help_text: '由入职联系子工单办理岗完成时填写', order_type: 'onboarding', source_category: 'agent_supplemented', sub_ticket_scope: 'onboarding_contact', collection_group: '入职联系', business_context: ['onboarding'], display_order: 49, is_active: true },
   { id: '50', field_code: 'need_company_payroll', field_name: '是否企服发薪', field_type: 'dropdown', is_required: true, default_required: true, validation_regex: null, validation_msg: null, dropdown_options: YES_NO_OPTIONS, placeholder: '请选择是否企服发薪', help_text: '选择“是”时发薪地为必填', order_type: 'onboarding', source_category: 'process_judgment', sub_ticket_scope: 'data_entry', collection_group: '发薪信息', business_context: ['onboarding'], display_order: 50, is_active: true },
   { id: '51', field_code: 'payroll_location', field_name: '发薪地', field_type: 'text', is_required: false, default_required: false, validation_regex: null, validation_msg: null, dropdown_options: null, placeholder: '请输入发薪地', help_text: '当“是否企服发薪”为是时必填', order_type: 'onboarding', source_category: 'agent_supplemented', sub_ticket_scope: 'data_entry', collection_group: '发薪信息', business_context: ['onboarding'], display_order: 51, is_active: true },
-  { id: '52', field_code: 'social_urge', field_name: '社保公积金未办是否需要催办', field_type: 'dropdown', is_required: true, default_required: true, validation_regex: null, validation_msg: null, dropdown_options: YES_NO_OPTIONS, placeholder: '请选择是否需要催办', help_text: '归属暂未确认，暂不硬挂任何子单', order_type: 'onboarding', source_category: 'process_judgment', sub_ticket_scope: null, collection_group: '社保公积金类', business_context: ['onboarding'], display_order: 52, is_active: true },
-  { id: '53', field_code: 'special_remark', field_name: '特殊备注', field_type: 'textarea', is_required: false, default_required: false, validation_regex: null, validation_msg: null, dropdown_options: null, placeholder: '请输入特殊备注', help_text: '归属暂未确认，暂不硬挂任何子单', order_type: 'onboarding', source_category: 'agent_supplemented', sub_ticket_scope: null, collection_group: '社保公积金类', business_context: ['onboarding'], display_order: 53, is_active: true },
+   { id: '53', field_code: 'special_remark', field_name: '特殊备注', field_type: 'textarea', is_required: false, default_required: false, validation_regex: null, validation_msg: null, dropdown_options: null, placeholder: '请输入特殊备注', help_text: '归属暂未确认，暂不硬挂任何子单', order_type: 'onboarding', source_category: 'agent_supplemented', sub_ticket_scope: null, collection_group: '社保公积金类', business_context: ['onboarding'], display_order: 53, is_active: true },
   { id: '54', field_code: 'data_entry_feedback', field_name: '数据录入反馈', field_type: 'dropdown', is_required: false, default_required: false, validation_regex: null, validation_msg: null, dropdown_options: FEEDBACK_OPTIONS, placeholder: '请选择数据录入反馈', help_text: '由数据录入岗在子单完成时填写', order_type: 'onboarding', source_category: 'agent_supplemented', sub_ticket_scope: 'data_entry', collection_group: '社保公积金类', business_context: ['onboarding'], display_order: 54, is_active: true },
 
   // ── 通用字段（非入职专用） ──
@@ -102,6 +101,14 @@ const mockFields: FieldConfigItem[] = [
 ];
 
 // ======================== API ========================
+
+export function getFallbackFields(orderType?: string): FieldConfigItem[] {
+  let list = mockFields.filter((f) => f.is_active);
+  if (orderType) {
+    list = list.filter((f) => f.order_type === orderType || f.order_type === null);
+  }
+  return list;
+}
 
 export async function getFields(orderType?: string): Promise<FieldConfigItem[]> {
   if (isMockMode) {
@@ -116,11 +123,15 @@ export async function getFields(orderType?: string): Promise<FieldConfigItem[]> 
   try {
     // 后端字段接口默认 pageSize=20，会导致入职 54 字段只返回前 20 条；页面提交时后续必填字段根本没渲染。
     // 后端当前最大 pageSize 为 100，足够覆盖入职/续签/离职字段清单。
-    const result = await request.get('/admin/fields', { params: { orderType, page: 1, pageSize: 100 } }) as any;
+    const result = await request.get('/admin/fields', { params: { orderType, page: 1, pageSize: 100 }, silentError: true } as any) as any;
     const rawList = Array.isArray(result) ? result : (result?.list || result?.items || result?.data || []);
     return (Array.isArray(rawList) ? rawList : []).map(normalizeField).filter((f) => f.is_active);
   } catch {
-    return [];
+    let list = mockFields.filter((f) => f.is_active);
+    if (orderType) {
+      list = list.filter((f) => f.order_type === orderType || f.order_type === null);
+    }
+    return list;
   }
 }
 

@@ -309,6 +309,35 @@ describe('WorkOrderService unit tests', () => {
     expect(result.items).toHaveLength(2);
   });
 
+  it('includes dispatched order summaries in list response after parent pagination', async () => {
+    const rows = [makeWorkOrder({ id: 'wo-1' }), makeWorkOrder({ id: 'wo-2', orderNo: 'ON20260511002' })];
+    const qb = createQueryBuilderMock(rows, 2);
+    workOrderRepository.createQueryBuilder.mockReturnValue(qb);
+    dispatchedOrderRepository.find.mockResolvedValue([
+      makeDispatched({
+        id: 'do-social',
+        parentOrderId: 'wo-1',
+        moduleCode: 'social_insurance',
+        status: DispatchedOrderStatus.PROCESSING,
+        handlerId: 'handler-social-1',
+        handler: { id: 'handler-social-1', realName: 'Social Handler' } as never,
+      }),
+      makeDispatched({ id: 'do-contract', parentOrderId: 'wo-1', moduleCode: 'contract' }),
+    ]);
+
+    const result = await service.findAll({ page: 1, pageSize: 20 }, makeUser());
+
+    expect(dispatchedOrderRepository.find).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ parentOrderId: expect.any(Object) }),
+      relations: { handler: true },
+    }));
+    expect(result.items).toHaveLength(2);
+    expect(result.items[0].dispatched_orders?.map((item) => item.moduleCode)).toEqual(['contract', 'social_insurance']);
+    expect(result.items[0].sub_orders?.map((item) => item.handlerName)).toEqual(['Contract Handler', 'Social Handler']);
+    expect(result.items[0].dispatchedOrders).toBe(result.items[0].subOrders);
+    expect(result.items[1].dispatched_orders).toEqual([]);
+  });
+
   it('allows business owners to read all business-team work orders within their department tree', async () => {
     const rows = [makeWorkOrder({ id: 'wo-1' })];
     const qb = createQueryBuilderMock(rows, 1);
@@ -341,6 +370,58 @@ describe('WorkOrderService unit tests', () => {
     await expect(
       service.findOne('wo-1', makeUser({ sub: 'other-1', roles: ['salesperson'] })),
     ).rejects.toBeInstanceOf(HttpException);
+  });
+
+  it('allows salesperson to update a processing work order and resubmit it to pending', async () => {
+    const resubmitService = {
+      resubmit: jest.fn(async () => ({
+        workOrder: { id: 'wo-1', status: WorkOrderStatus.PENDING },
+        dispatchedOrders: [],
+      })),
+    };
+    service = new WorkOrderService(
+      workOrderRepository as unknown as Repository<WorkOrder>,
+      dispatchedOrderRepository as unknown as Repository<DispatchedOrder>,
+      fieldConfigRepository as unknown as Repository<FieldConfig>,
+      importJobRepository as unknown as Repository<ImportJob>,
+      notificationRepository as unknown as Repository<Notification>,
+      operationLogRepository as unknown as Repository<OperationLog>,
+      validationService as unknown as WorkOrderValidationService,
+      { getVisibleFieldsForScenario: jest.fn(async () => []) } as never,
+      resubmitService as never,
+    );
+    const processing = makeWorkOrder({
+      status: WorkOrderStatus.PROCESSING,
+      extraData: { employee_name: 'Alice', id_card_no: '110101199001011234', mobile: 'old' },
+    });
+    workOrderRepository.findOne
+      .mockResolvedValueOnce(processing)
+      .mockResolvedValueOnce(makeWorkOrder({
+        status: WorkOrderStatus.PROCESSING,
+        extraData: { employee_name: 'Alice', id_card_no: '110101199001011234', mobile: '13800000000' },
+      }));
+
+    await service.update('wo-1', { extraData: { mobile: '13800000000' } }, makeUser());
+    const result = await service.resubmit('wo-1', {}, makeUser());
+
+    expect(resubmitService.resubmit).toHaveBeenCalledWith('wo-1', {}, expect.objectContaining({ sub: 'user-sales-1' }));
+    expect(result.workOrder.status).toBe(WorkOrderStatus.PENDING);
+    expect(workOrderRepository.save).toHaveBeenCalledWith(expect.objectContaining({ status: WorkOrderStatus.PENDING }));
+    expect(operationLogRepository.save).toHaveBeenCalledWith(expect.objectContaining({
+      actionType: 'salesperson_modify_resubmit',
+      afterData: expect.objectContaining({
+        auditTitle: '业务员修改后重提',
+        contextFields: expect.objectContaining({
+          oldStatus: WorkOrderStatus.PROCESSING,
+          newStatus: WorkOrderStatus.PENDING,
+        }),
+      }),
+    }));
+  });
+
+  it('does not expose the legacy confirmImport bypass on WorkOrderService', () => {
+    expect('confirmImport' in service).toBe(false);
+    expect((service as unknown as { confirmImport?: unknown }).confirmImport).toBeUndefined();
   });
 
 });

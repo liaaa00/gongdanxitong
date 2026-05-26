@@ -9,8 +9,8 @@ import { FieldSupplementRule, WorkOrderFieldDirtyMark } from 'src/entities';
 
 type HttpServer = Parameters<typeof request>[0];
 
-const ADMIN_USERNAME = process.env.E2E_ADMIN_USERNAME ?? 'admin';
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? 'admin123';
+const ADMIN_USERNAME = process.env.E2E_ADMIN_USERNAME ?? 'lizhanbo';
+const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? '123456';
 const SEED_PASSWORD = process.env.E2E_SEED_PASSWORD ?? '123456';
 const EXTERNAL_BASE_URL = process.env.E2E_BASE_URL;
 
@@ -104,8 +104,8 @@ async function createOnboardingOrder(token: string, overrides: Record<string, un
   const extraData = {
     employee_name: uniqueEmployeeName('员工'),
     id_card_no: uniqueIdCard(),
-    customer_code: 'C001',
-    customer_name: '示例客户',
+    customer_code: 'CUST_NB001',
+    customer_name: '宁波某制造集团',
     mobile: '13800000000',
     need_onboarding_contact: '是',
     need_company_contract: '是',
@@ -190,26 +190,26 @@ describe('业务闭环 E2E', () => {
       expect(dispatched.length).toBe(4);
     });
 
-    it('模拟后道处理人补全 data_entry.bank_open_account → 反向同步回主工单 extraData', async () => {
+    it('模拟后道处理人补全 onboarding_contact.bank_account → 反向同步回主工单 extraData', async () => {
       if (!dataSource) {
         // Without local DataSource we cannot insert the supplement rule; skip.
         return;
       }
       const adminToken = tokens[ADMIN_USERNAME];
-      const dataEntryChild = dispatched.find((d) => d.moduleCode === 'data_entry');
-      expect(dataEntryChild).toBeDefined();
+      const onboardingContactChild = dispatched.find((d) => d.moduleCode === 'onboarding_contact');
+      expect(onboardingContactChild).toBeDefined();
 
-      // Insert a FieldSupplementRule allowing data_entry to supplement bank_open_account
+      // Insert a FieldSupplementRule allowing onboarding_contact to supplement bank_account
       // and reverse-sync to social_insurance + main order.
       const ruleRepo = dataSource.getRepository(FieldSupplementRule);
       const existing = await ruleRepo.findOne({
-        where: { fieldCode: 'bank_open_account', supplementerModule: 'data_entry' },
+        where: { fieldCode: 'bank_account', supplementerModule: 'onboarding_contact' },
       });
       if (!existing) {
         await ruleRepo.save(
           ruleRepo.create({
-            fieldCode: 'bank_open_account',
-            supplementerModule: 'data_entry',
+            fieldCode: 'bank_account',
+            supplementerModule: 'onboarding_contact',
             syncToModules: ['social_insurance'],
             isActive: true,
           }),
@@ -222,7 +222,7 @@ describe('业务闭环 E2E', () => {
 
       // Admin accepts then supplements (admin bypasses handler/role checks).
       await request(server)
-        .post(`/api/dispatched-orders/${dataEntryChild!.id}/accept`)
+        .post(`/api/dispatched-orders/${onboardingContactChild!.id}/accept`)
         .set(auth(adminToken))
         .send({})
         .expect((r) => {
@@ -231,11 +231,11 @@ describe('业务闭环 E2E', () => {
           }
         });
 
-      const newBank = '中国银行上海分行';
+      const newBank = '6222026052100000000';
       const supplementRes = await request(server)
-        .post(`/api/dispatched-orders/${dataEntryChild!.id}/supplement`)
+        .post(`/api/dispatched-orders/${onboardingContactChild!.id}/supplement`)
         .set(auth(adminToken))
-        .send({ fieldCode: 'bank_open_account', newValue: newBank });
+        .send({ fieldCode: 'bank_account', newValue: newBank });
       if (![200, 201].includes(supplementRes.status)) {
         throw new Error(`supplement failed: ${supplementRes.status} ${JSON.stringify(supplementRes.body)}`);
       }
@@ -243,7 +243,7 @@ describe('业务闭环 E2E', () => {
       // Reverse-sync: main work order's extraData should now contain the supplemented value.
       const mainOrder = await getWorkOrder(tokens['yaoyiping'], workOrderId);
       const extraData = asRecord(mainOrder.extraData) ?? {};
-      expect(extraData.bank_open_account).toBe(newBank);
+      expect(extraData.bank_account).toBe(newBank);
     });
   });
 

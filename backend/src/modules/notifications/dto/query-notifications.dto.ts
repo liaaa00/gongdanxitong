@@ -31,7 +31,7 @@ export class QueryNotificationsDto extends PaginationQueryDto {
   @IsString()
   priority?: string;
 
-  /** 按 bucket 分类过滤（与 countUnreadByBucket 口径一致）。 */
+  /** Filter by notification bucket, aligned with countUnreadByBucket. */
   @IsOptional()
   @IsString()
   bucket?: string;

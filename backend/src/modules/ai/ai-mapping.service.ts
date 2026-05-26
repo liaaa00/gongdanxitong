@@ -64,7 +64,6 @@ const FIELD_ALIASES: Record<string, string[]> = {
   need_onboarding_contact: ['入职材料是否需要集约收集', '是否需要入职联系', '是否收集入职材料', '是否需要收集入职材料', '是否集约收集', '入职材料收集'],
   onboarding_feedback: ['入职联系反馈', '联系反馈', '入职材料反馈'],
   need_company_payroll: ['是否企服发薪', '是否公司发薪', '是否代发薪', '是否发薪'],
-  social_urge: ['社保公积金未办是否需要催办', '社保公积金是否催办', '社保是否催办', '公积金是否催办'],
   special_remark: ['特殊备注', '特别备注', '特殊说明'],
   data_entry_feedback: ['数据录入反馈', '录入反馈', '数据反馈'],
 };

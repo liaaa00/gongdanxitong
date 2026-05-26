@@ -4,11 +4,12 @@ import { EntityManager, Repository } from 'typeorm';
 import {
   DispatchRule,
   DispatchStrategy,
-  User,
+  ModuleHandler,
   DispatchedOrder,
   DispatchedOrderStatus,
   OrderType,
   WorkOrder,
+  WorkOrderModuleConfig,
 } from 'src/entities';
 import { FieldPermissionService } from 'src/modules/field-permissions/field-permission.service';
 import { AstEvaluator } from './ast-evaluator';
@@ -25,6 +26,10 @@ export class DispatchEngineService {
   constructor(
     @InjectRepository(DispatchRule)
     private readonly dispatchRuleRepository: Repository<DispatchRule>,
+    @InjectRepository(WorkOrderModuleConfig)
+    private readonly moduleConfigRepository: Repository<WorkOrderModuleConfig>,
+    @InjectRepository(ModuleHandler)
+    private readonly moduleHandlerRepository: Repository<ModuleHandler>,
     private readonly astEvaluator: AstEvaluator,
     private readonly handlerPicker: HandlerPickerService,
     private readonly fieldPermissionService: FieldPermissionService,
@@ -87,7 +92,7 @@ export class DispatchEngineService {
     for (const [moduleCode, winner] of moduleWinner.entries()) {
       const rule = winner.rule;
 
-      const handlerId = await this.resolveRuleHandler(rule, moduleCode, manager);
+      const handlerId = await this.resolveModuleHandler(rule, moduleCode, manager);
       const visibleFields = await this.fieldPermissionService.getVisibleFieldsForScenario(
         `dispatched:${moduleCode}`,
       );
@@ -106,6 +111,8 @@ export class DispatchEngineService {
       await this.ensureOnboardingSplitChildren(workOrder, childrenToCreate, manager);
     }
 
+    await this.applyModuleConfig(childrenToCreate, manager);
+
     childrenToCreate.sort((left, right) => {
       const leftRule = rules.find((item) => item.id === left.ruleId);
       const rightRule = rules.find((item) => item.id === right.ruleId);
@@ -116,6 +123,31 @@ export class DispatchEngineService {
       hits,
       childrenToCreate,
     };
+  }
+
+  private async applyModuleConfig(childrenToCreate: ChildToCreate[], manager?: EntityManager): Promise<void> {
+    const moduleCodes = Array.from(new Set(childrenToCreate.map((child) => child.moduleCode).filter(Boolean)));
+    if (moduleCodes.length === 0) return;
+
+    const moduleConfigRepository = manager?.getRepository(WorkOrderModuleConfig) ?? this.moduleConfigRepository;
+    const configs = await moduleConfigRepository.find({ where: moduleCodes.map((moduleCode) => ({ moduleCode })) });
+    const configByModule = new Map(configs.map((config) => [config.moduleCode, config]));
+    const base = new Date();
+
+    for (const child of childrenToCreate) {
+      const config = configByModule.get(child.moduleCode);
+      const slaHours = config?.slaHours ?? null;
+      const reminderBeforeHours = config?.slaReminderBeforeHours ?? null;
+      child.slaHours = slaHours;
+      child.slaReminderBeforeHours = reminderBeforeHours;
+      child.handlerId = await this.resolveModuleTeamHandler(child.moduleCode, config?.dispatchStrategy ?? DispatchStrategy.TEAM_CLAIM, manager);
+      child.dispatchStrategy = config?.dispatchStrategy ?? DispatchStrategy.TEAM_CLAIM;
+      if (slaHours !== null && Number.isFinite(Number(slaHours)) && Number(slaHours) > 0) {
+        child.dueAt = new Date(base.getTime() + Number(slaHours) * 60 * 60 * 1000);
+      } else {
+        child.dueAt = null;
+      }
+    }
   }
 
   private ruleScopeMatches(rule: DispatchRule, workOrder: WorkOrder): boolean {
@@ -134,23 +166,19 @@ export class DispatchEngineService {
     return 1;
   }
 
-  private async resolveRuleHandler(rule: DispatchRule, moduleCode: string, manager?: EntityManager): Promise<string | null> {
-    const userRepository = manager?.getRepository(User);
-    if (rule.assigneeUserId && await this.isUserAvailable(rule.assigneeUserId, userRepository)) {
-      return rule.assigneeUserId;
-    }
-    if (rule.fallbackUserId && await this.isUserAvailable(rule.fallbackUserId, userRepository)) {
-      return rule.fallbackUserId;
-    }
-    return this.handlerPicker.pick(rule.dispatchStrategy, moduleCode, manager);
+  private async resolveModuleHandler(rule: DispatchRule, moduleCode: string, manager?: EntityManager): Promise<string | null> {
+    return this.resolveModuleTeamHandler(moduleCode, rule.dispatchStrategy, manager);
   }
 
-  private async isUserAvailable(userId: string, repository?: Repository<User>): Promise<boolean> {
-    if (!repository) {
-      return true;
-    }
-    const user = await repository.findOne({ where: { id: userId, isActive: true } });
-    return Boolean(user);
+  private async resolveModuleTeamHandler(moduleCode: string, strategy: DispatchStrategy, manager?: EntityManager): Promise<string | null> {
+    const repository = manager?.getRepository(ModuleHandler) ?? this.moduleHandlerRepository;
+    const activeHandlers = await repository.find({
+      where: { moduleCode, isActive: true, isBackup: false },
+      order: { weight: 'DESC', handlerId: 'ASC' },
+    });
+    if (activeHandlers.length === 0) return null;
+    if (activeHandlers.length === 1) return activeHandlers[0].handlerId;
+    return this.handlerPicker.pick(strategy, moduleCode, manager);
   }
 
   private normalizeOnboardingDispatchFlags(extraData: Record<string, unknown>): Record<string, unknown> {
@@ -247,6 +275,9 @@ export class DispatchEngineService {
     dispatchedOrder.visibleFields = child.visibleFields;
     dispatchedOrder.status = DispatchedOrderStatus.PENDING;
     dispatchedOrder.dispatchedAt = new Date();
+    dispatchedOrder.dueAt = child.dueAt ?? null;
+    dispatchedOrder.slaHours = child.slaHours ?? null;
+    dispatchedOrder.slaReminderBeforeHours = child.slaReminderBeforeHours ?? null;
     dispatchedOrder.acceptedAt = null;
     dispatchedOrder.completedAt = null;
     dispatchedOrder.returnReason = null;

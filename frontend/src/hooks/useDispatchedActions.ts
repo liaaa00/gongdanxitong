@@ -2,7 +2,9 @@ import { useState, useCallback } from 'react';
 import { App } from 'antd';
 import {
   acceptDispatchedOrder, completeDispatchedOrder, returnDispatchedOrder,
-  supplementField, exportDispatchedOrder, reassignDispatchedOrder, getDispatchedOrder,
+  supplementField, exportDispatchedOrder, downloadDispatchedExport, reassignDispatchedOrder, getDispatchedOrder,
+  creatorUpdateDispatchedOrderFields, urgeDispatchedOrder, withdrawDispatchedOrder, voidDispatchedOrder,
+  approveWithdrawDispatchedOrder, approveVoidDispatchedOrder,
 } from '@/services/dispatchedOrders';
 import type { DispatchedOrderItem } from '@/services/dispatchedOrders';
 
@@ -67,13 +69,8 @@ export function useDispatchedActions({ orderId, order, onOrderUpdated }: UseDisp
   const handleExport = useCallback(async (templateId?: string) => {
     setActionLoading(true);
     try {
-      const blob = await exportDispatchedOrder(orderId, templateId || undefined);
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `子工单_${order?.order_no || orderId}.xlsx`;
-      a.click();
-      window.URL.revokeObjectURL(url);
+      const result = await exportDispatchedOrder(orderId, templateId || undefined);
+      downloadDispatchedExport(result, `子工单_${order?.order_no || orderId}.xlsx`);
       message.success('导出成功');
     } catch { message.error('导出失败'); }
     finally { setActionLoading(false); }
@@ -91,6 +88,78 @@ export function useDispatchedActions({ orderId, order, onOrderUpdated }: UseDisp
     return null;
   }, [orderId, onOrderUpdated]);
 
+  const handleCreatorUpdate = useCallback(async (fields: Record<string, unknown>, reason?: string) => {
+    setActionLoading(true);
+    try {
+      const updated = await creatorUpdateDispatchedOrderFields(orderId, fields, reason);
+      onOrderUpdated(updated);
+      message.success('修改已保存，并已通知相关办理人');
+      return updated;
+    } catch { message.error('修改失败'); }
+    finally { setActionLoading(false); }
+    return null;
+  }, [orderId, onOrderUpdated]);
+
+  const handleUrge = useCallback(async (reason?: string) => {
+    setActionLoading(true);
+    try {
+      const updated = await urgeDispatchedOrder(orderId, reason);
+      onOrderUpdated(updated);
+      message.success('已发送催办');
+      return updated;
+    } catch { message.error('催办失败'); }
+    finally { setActionLoading(false); }
+    return null;
+  }, [orderId, onOrderUpdated]);
+
+  const handleWithdraw = useCallback(async (reason: string) => {
+    setActionLoading(true);
+    try {
+      const updated = await withdrawDispatchedOrder(orderId, reason, order?.module_code);
+      onOrderUpdated(updated);
+      message.success('已撤回该子工单');
+      return updated;
+    } catch { message.error('撤回失败'); }
+    finally { setActionLoading(false); }
+    return null;
+  }, [orderId, onOrderUpdated]);
+
+  const handleVoid = useCallback(async (reason: string) => {
+    setActionLoading(true);
+    try {
+      const updated = await voidDispatchedOrder(orderId, reason, order?.module_code);
+      onOrderUpdated(updated);
+      message.success('作废申请已提交，等待后道审批');
+      return updated;
+    } catch { message.error('作废失败'); }
+    finally { setActionLoading(false); }
+    return null;
+  }, [orderId, onOrderUpdated]);
+
+  const handleApproveWithdraw = useCallback(async (approved: boolean, comment?: string) => {
+    setActionLoading(true);
+    try {
+      const updated = await approveWithdrawDispatchedOrder(orderId, approved, comment);
+      onOrderUpdated(updated);
+      message.success(approved ? '已同意撤回申请' : '已拒绝撤回申请');
+      return updated;
+    } catch { message.error('撤回审批失败'); }
+    finally { setActionLoading(false); }
+    return null;
+  }, [orderId, onOrderUpdated]);
+
+  const handleApproveVoid = useCallback(async (approved: boolean, comment?: string) => {
+    setActionLoading(true);
+    try {
+      const updated = await approveVoidDispatchedOrder(orderId, approved, comment);
+      onOrderUpdated(updated);
+      message.success(approved ? '已同意作废申请' : '已拒绝作废申请');
+      return updated;
+    } catch { message.error('作废审批失败'); }
+    finally { setActionLoading(false); }
+    return null;
+  }, [orderId, onOrderUpdated]);
+
   return {
     actionLoading,
     handleAccept,
@@ -99,5 +168,11 @@ export function useDispatchedActions({ orderId, order, onOrderUpdated }: UseDisp
     handleSupplement,
     handleExport,
     handleReassign,
+    handleCreatorUpdate,
+    handleUrge,
+    handleWithdraw,
+    handleVoid,
+    handleApproveWithdraw,
+    handleApproveVoid,
   };
 }

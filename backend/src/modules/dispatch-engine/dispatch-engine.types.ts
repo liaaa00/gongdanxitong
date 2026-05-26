@@ -71,6 +71,9 @@ export interface ChildToCreate {
   ruleId: string;
   ruleName: string;
   dispatchStrategy: DispatchStrategy;
+  dueAt?: Date | null;
+  slaHours?: number | null;
+  slaReminderBeforeHours?: number | null;
 }
 
 export interface DispatchEvaluationResult {

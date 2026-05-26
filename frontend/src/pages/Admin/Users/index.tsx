@@ -264,8 +264,15 @@ const AdminUsers: React.FC = () => {
           <Form.Item name="position" label="岗位"><Input placeholder="如：业务主管、客服专员" /></Form.Item>
           <Form.Item name="email" label="邮箱"><Input type="email" /></Form.Item>
           <Form.Item name="phone" label="手机"><Input /></Form.Item>
-          <Form.Item name="role_ids" label="角色" rules={[{ required: true, message: '请选择至少一个角色' }]}>
-            <Select mode="multiple" placeholder="选择用户角色" options={roleOptions} optionFilterProp="label" />
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="权限怎么分配？"
+            description="给用户选择“业务员（组员）”或“业务组长”，该用户就可以新建工单、批量导入工单，并查看自己/本组工单；选择“业务负责人”则只看报表和列表，不允许新建或操作工单。"
+          />
+          <Form.Item name="role_ids" label="角色/岗位权限" rules={[{ required: true, message: '请选择至少一个角色' }]}>
+            <Select mode="multiple" placeholder="选择用户角色，例如：业务员（组员）" options={roleOptions} optionFilterProp="label" />
           </Form.Item>
           <Form.Item name="is_active" label="启用" valuePropName="checked"><Switch /></Form.Item>
         </Form>

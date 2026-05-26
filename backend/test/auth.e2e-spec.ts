@@ -19,8 +19,8 @@ type ApiEnvelope = {
   traceId?: unknown;
 };
 
-const DEFAULT_USERNAME = process.env.E2E_ADMIN_USERNAME ?? 'admin';
-const DEFAULT_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? 'admin123';
+const DEFAULT_USERNAME = process.env.E2E_ADMIN_USERNAME ?? 'lizhanbo';
+const DEFAULT_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? '123456';
 const TEMP_PASSWORD = process.env.E2E_TEMP_PASSWORD ?? 'Admin123456!';
 const EXTERNAL_BASE_URL = process.env.E2E_BASE_URL;
 

@@ -39,7 +39,7 @@ export class CustomersService {
     private readonly repository: Repository<Customer>,
   ) {}
 
-  async list(query: PaginationQueryDto & { isActive?: boolean; is_active?: boolean }) {
+  async list(query: PaginationQueryDto & { isActive?: boolean; is_active?: boolean; onlyUsedInOrders?: boolean }) {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
 
@@ -55,6 +55,17 @@ export class CustomersService {
     const isActive = query.isActive ?? query.is_active;
     if (typeof isActive === 'boolean') {
       qb.andWhere('customer.isActive = :isActive', { isActive });
+    }
+
+    if (query.onlyUsedInOrders === true) {
+      qb.andWhere(`
+        EXISTS (
+          SELECT 1
+          FROM work_orders wo
+          WHERE wo.customer_id = customer.id
+             OR wo.customer_code = customer.customer_code
+        )
+      `);
     }
 
     qb.orderBy('customer.createdAt', 'DESC');

@@ -46,3 +46,6 @@ Thumbs.db
 resolve-lnks.ps1
 read_excel.js
 配置防火墙.ps1
+
+# SpectrAI worktree isolation
+.spectrai-worktrees/

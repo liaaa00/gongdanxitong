@@ -18,6 +18,7 @@ const departmentSeeds: Array<{
   { code: 'SHARED_TEAM', name: '共享团队', sortOrder: 4, parentCode: null },
   { code: 'SHARED_CONTRACT', name: '合同签订组', sortOrder: 41, parentCode: 'SHARED_TEAM' },
   { code: 'SHARED_ONBOARDING_RESIGNATION', name: '入离职联系组', sortOrder: 42, parentCode: 'SHARED_TEAM' },
+  { code: 'WELFARE_SECURITY', name: '福利保障部', sortOrder: 5, parentCode: null },
 
   // Backward-compatible departments kept active for historical data and older API consumers.
   { code: 'BIZ', name: '业务团队（兼容）', sortOrder: 90, parentCode: 'BUSINESS' },

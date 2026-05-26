@@ -1,4 +1,4 @@
-import { IsDateString, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
+import { Allow, IsDateString, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class SupplementFieldDto {
   @IsOptional()
@@ -6,6 +6,7 @@ export class SupplementFieldDto {
   @MaxLength(128)
   fieldCode?: string;
 
+  @Allow()
   newValue?: unknown;
 
   @IsOptional()

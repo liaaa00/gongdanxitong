@@ -71,6 +71,7 @@ export const OPERATION_LOG_ACTION_SEMANTICS: Record<string, OperationLogActionSe
   'work_order.completed_modify': { label: '修改已完成工单', description: '修改已办结主工单内容', contextFields: ['changedFields'] },
   'work_order.submit': { label: '提交工单', description: '提交主工单并触发派发', contextFields: statusContextFields },
   'work_order.resubmit_after_return': { label: '退回后重提', description: '主工单被退回后重新提交', contextFields: statusContextFields },
+  'work_order.salesperson_modify_resubmit': { label: '业务员修改后重提', description: '业务员编辑办理中或退回工单后强制重新提交', contextFields: statusContextFields },
   'work_order.returned': { label: '工单被退回', description: '子工单退回导致主工单进入退回状态', contextFields: ['oldStatus', 'newStatus', 'reason', 'dispatchedOrderId', 'moduleCode'] },
   'work_order.close': { label: '关闭工单', description: '所有子工单完成后主工单关闭', contextFields: ['oldStatus', 'newStatus', 'completedAt'] },
   'work_order.closed': { label: '关闭工单', description: '所有子工单完成后主工单关闭', contextFields: ['oldStatus', 'newStatus', 'completedAt'] },

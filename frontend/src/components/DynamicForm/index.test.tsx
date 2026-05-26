@@ -60,4 +60,12 @@ describe('DynamicForm', () => {
       });
     }
   });
+
+  it('marks highlighted fields with stable focus anchor', async () => {
+    render(<DynamicForm fields={mockFields} highlightedFields={['name']} focusField="name" />);
+    await waitFor(() => expect(screen.getByText('姓名')).toBeInTheDocument());
+    const highlighted = document.getElementById('dynamic-field-name');
+    expect(highlighted).toBeTruthy();
+    expect(highlighted).toHaveStyle({ background: '#fffbe6' });
+  });
 });

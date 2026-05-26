@@ -4,6 +4,7 @@ import {
   DispatchedOrder,
   DispatchedOrderReturnRecord,
   FieldConfig,
+  ModuleField,
   ModuleHandler,
   ModuleSupervisor,
   Notification,
@@ -19,6 +20,7 @@ import { FieldSupplementModule } from 'src/modules/field-supplement/field-supple
 import { NotificationModule } from 'src/modules/notifications/notification.module';
 import { DispatchedOrderController, WorkOrderSubOrderController } from './dispatched-order.controller';
 import { DispatchedOrderService } from './dispatched-order.service';
+import { SlaNotificationService } from './sla-notification.service';
 
 @Module({
   imports: [
@@ -30,6 +32,7 @@ import { DispatchedOrderService } from './dispatched-order.service';
       ModuleSupervisor,
       UserRole,
       FieldConfig,
+      ModuleField,
       Notification,
       OperationLog,
       OrderStage,
@@ -41,7 +44,7 @@ import { DispatchedOrderService } from './dispatched-order.service';
     NotificationModule,
   ],
   controllers: [DispatchedOrderController, WorkOrderSubOrderController],
-  providers: [DispatchedOrderService],
-  exports: [DispatchedOrderService],
+  providers: [DispatchedOrderService, SlaNotificationService],
+  exports: [DispatchedOrderService, SlaNotificationService],
 })
 export class DispatchedOrderModule {}

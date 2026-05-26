@@ -41,6 +41,7 @@ const BACKEND_TO_CANONICAL: Record<string, CanonicalRole> = {
   business_owner: ROLE.BUSINESS_OWNER,
   business_group_leader: ROLE.BUSINESS_GROUP_LEADER,
   business_group_member: ROLE.BUSINESS_GROUP_MEMBER,
+  salesperson: ROLE.BUSINESS_GROUP_MEMBER,
   shared_team_owner: ROLE.SHARED_TEAM_OWNER,
   labor_contract_member: ROLE.LABOR_CONTRACT_MEMBER,
   onboarding_resignation_member: ROLE.ONBOARDING_RESIGNATION_MEMBER,

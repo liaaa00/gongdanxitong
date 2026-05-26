@@ -16,6 +16,10 @@ export interface WorkOrderListItem {
   status: WorkOrderStatus;
   customerId: string;
   customer_id?: string;
+  customerCode?: string | null;
+  customer_code?: string | null;
+  customerName?: string | null;
+  customer_name?: string | null;
   employeeName: string;
   employee_name?: string;
   employeeIdCard: string;
@@ -28,6 +32,10 @@ export interface WorkOrderListItem {
   created_at?: Date;
   updatedAt: Date;
   updated_at?: Date;
+  dispatchedOrders?: WorkOrderSubOrderItem[];
+  dispatched_orders?: WorkOrderSubOrderItem[];
+  subOrders?: WorkOrderSubOrderItem[];
+  sub_orders?: WorkOrderSubOrderItem[];
 }
 
 export interface WorkOrderSubOrderItem {

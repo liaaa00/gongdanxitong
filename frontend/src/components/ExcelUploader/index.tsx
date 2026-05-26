@@ -35,7 +35,7 @@ const { Dragger } = Upload;
 const { Text } = Typography;
 
 const DEPRECATED_FIELDS = new Set([
-  'social_location', 'start_month', 'social_base', 'fund_base', 'fund_ratio', 'social_urge',
+  'social_location', 'start_month', 'social_base', 'fund_base', 'fund_ratio',
 ]);
 
 function filterDeprecatedFields(codes: string[] | undefined): string[] {
@@ -440,6 +440,8 @@ function ExcelUploader({ onPreview, onConfirm, onPollJob, onDownloadErrorReport 
   const displayStatus = statusIsSuccess ? 'completed' : importResult?.status;
 
   const unmatchedHeaders = mappingResult ? (mappingResult.unmatchedHeaders || mappingResult.unmatched || []) : [];
+  const missingRequiredFields = filterDeprecatedFields(mappingResult?.missingRequired);
+  const requiresMappingReview = unmatchedHeaders.length > 0 || missingRequiredFields.length > 0;
   const modelUsed = mappingResult?.modelUsed;
   const isFallbackMapping = Boolean(modelUsed?.startsWith('fallback:'));
   const modelLabelMap: Record<string, string> = {
@@ -464,7 +466,7 @@ function ExcelUploader({ onPreview, onConfirm, onPollJob, onDownloadErrorReport 
         current={step}
         items={[
           { title: '上传文件', icon: <InboxOutlined /> },
-          { title: '智能字段映射', icon: <ThunderboltOutlined /> },
+          { title: '字段校验', icon: <ThunderboltOutlined /> },
           { title: '规则验证', icon: <CheckCircleOutlined /> },
           { title: '导入中', icon: <ReloadOutlined /> },
           { title: '结果', icon: <DownloadOutlined /> },
@@ -481,7 +483,7 @@ function ExcelUploader({ onPreview, onConfirm, onPollJob, onDownloadErrorReport 
         <Dragger accept=".xlsx,.xls" beforeUpload={handleUpload} showUploadList={false} disabled={loading}>
           <p className="ant-upload-drag-icon"><InboxOutlined /></p>
           <p className="ant-upload-text">点击或拖拽表格文件到此处上传</p>
-          <p className="ant-upload-hint">支持 .xlsx 和 .xls 格式，系统会自动识别字段映射</p>
+          <p className="ant-upload-hint">支持 .xlsx 和 .xls 格式；使用系统标准模板时无需人工映射，异常表头才需要确认</p>
         </Dragger>
       )}
 
@@ -489,7 +491,7 @@ function ExcelUploader({ onPreview, onConfirm, onPollJob, onDownloadErrorReport 
         <div style={{ textAlign: 'center', padding: 40 }}>
           <Progress type="circle" percent={99} status="active" />
           <p style={{ marginTop: 16 }}>
-            {loading ? '正在解析表头并匹配系统字段...' : '处理中...'}
+            {loading ? '正在校验标准模板表头并自动匹配系统字段...' : '处理中...'}
           </p>
         </div>
       )}
@@ -497,7 +499,7 @@ function ExcelUploader({ onPreview, onConfirm, onPollJob, onDownloadErrorReport 
       {step === 2 && mappingResult && (
         <>
           <Alert
-            message={isFallbackMapping ? '当前使用本地规则匹配，未使用外部智能服务' : '当前使用智能匹配'}
+            message={unmatchedHeaders.length === 0 ? '表头已按系统标准模板自动匹配，无需逐项人工映射' : (isFallbackMapping ? '当前使用本地规则匹配，未使用外部智能服务' : '当前使用智能匹配')}
             description={(
               <Space direction="vertical" size={4}>
                 <span>匹配来源：<Tag color={isFallbackMapping ? 'orange' : 'green'}>{getModelLabel(modelUsed)}</Tag></span>
@@ -505,7 +507,7 @@ function ExcelUploader({ onPreview, onConfirm, onPollJob, onDownloadErrorReport 
                   <span>原因：{fallbackReasonText[mappingResult.fallbackReason] || mappingResult.fallbackReason}</span>
                 )}
                 {isFallbackMapping && (
-                  <span>本地规则已支持常见业务别名，但复杂表头、多行表头或非标准叫法仍建议人工复核。</span>
+                  <span>系统优先按管理员发布的标准模板/本地规则自动匹配；只有复杂表头、多行表头或非标准叫法才需要人工复核。</span>
                 )}
               </Space>
             )}
@@ -531,27 +533,23 @@ function ExcelUploader({ onPreview, onConfirm, onPollJob, onDownloadErrorReport 
             />
           )}
 
-          {(() => {
-            const missing = filterDeprecatedFields(mappingResult.missingRequired);
-            if (missing.length === 0) return null;
-            return (
-              <Alert
-                message="缺少必填字段"
-                description={
-                  <span>
-                    表格中未找到以下必填字段的对应列：
-                    {missing.map((code) => {
-                      const name = mappingResult.availableFields.find((f) => f.field_code === code)?.field_name || code;
-                      return <Tag key={code} color="red" style={{ marginLeft: 4 }}>{name}</Tag>;
-                    })}
-                    ，请手动补充或确认。
-                  </span>
-                }
-                type="warning" showIcon icon={<WarningOutlined />}
-                style={{ marginBottom: 16 }}
-              />
-            );
-          })()}
+          {missingRequiredFields.length > 0 && (
+            <Alert
+              message="缺少必填字段"
+              description={
+                <span>
+                  表格中未找到以下必填字段的对应列：
+                  {missingRequiredFields.map((code) => {
+                    const name = mappingResult.availableFields.find((f) => f.field_code === code)?.field_name || code;
+                    return <Tag key={code} color="red" style={{ marginLeft: 4 }}>{name}</Tag>;
+                  })}
+                  ，请手动补充或确认。
+                </span>
+              }
+              type="warning" showIcon icon={<WarningOutlined />}
+              style={{ marginBottom: 16 }}
+            />
+          )}
 
           {validationWarnings.length > 0 && (
             <Alert
@@ -586,15 +584,17 @@ function ExcelUploader({ onPreview, onConfirm, onPollJob, onDownloadErrorReport 
             style={{ marginBottom: 16 }}
           />
 
-          <Table
-            columns={mappingColumns}
-            dataSource={mappingData}
-            pagination={false}
-            size="small"
-            bordered
-            style={{ marginBottom: 16 }}
-            scroll={{ y: 400 }}
-          />
+          {requiresMappingReview && (
+            <Table
+              columns={mappingColumns}
+              dataSource={mappingData}
+              pagination={false}
+              size="small"
+              bordered
+              style={{ marginBottom: 16 }}
+              scroll={{ y: 400 }}
+            />
+          )}
 
           <Space>
             <Button type="primary" onClick={handleValidatePrecheck}

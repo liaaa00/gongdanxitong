@@ -1,5 +1,5 @@
 import { DataSource } from 'typeorm';
-import { ModuleHandler, User } from 'src/entities';
+import { DispatchedOrder, ModuleHandler, User } from 'src/entities';
 
 const moduleHandlerSeeds: Array<{
   moduleCode: string;
@@ -21,9 +21,8 @@ const moduleHandlerSeeds: Array<{
   { moduleCode: 'resignation_cert', username: 'maoyani', weight: 10, isBackup: false },
   { moduleCode: 'resignation_cert', username: 'jianglu', weight: 1, isBackup: true },
 
-  // 社保公积金办理：使用配置账号/模块池，不假设“杨杰”账号存在；后续创建账号后可在后台替换配置。
-  { moduleCode: 'social_insurance', username: 'social01', weight: 10, isBackup: false },
-  { moduleCode: 'social_insurance', username: 'socialsup01', weight: 1, isBackup: true },
+  // 社保公积金办理：由福利保障部傅倩雯负责，不再归共享团队处理。
+  { moduleCode: 'social_insurance', username: 'fuqianwen', weight: 10, isBackup: false },
 
   // 福利/社保模块统一使用 benefit_apply，不再使用 social_security。
   { moduleCode: 'benefit_apply', username: 'yangchun', weight: 10, isBackup: false },
@@ -82,4 +81,15 @@ export async function seedModuleHandlers(dataSource: DataSource): Promise<void> 
     .set({ isActive: false })
     .where('module_code IN (:...moduleCodes)', { moduleCodes: deprecatedModules })
     .execute();
+
+  const welfareOwner = await userRepo.findOne({ where: { username: 'fuqianwen' } });
+  if (welfareOwner) {
+    await dataSource.getRepository(DispatchedOrder)
+      .createQueryBuilder()
+      .update(DispatchedOrder)
+      .set({ handlerId: welfareOwner.id })
+      .where('module_code = :moduleCode', { moduleCode: 'social_insurance' })
+      .andWhere('status IN (:...statuses)', { statuses: ['pending', 'processing', 'returned'] })
+      .execute();
+  }
 }

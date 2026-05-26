@@ -10,18 +10,21 @@ import {
   OperationLog,
   WorkOrder,
   WorkOrderStatus,
-  isDispatchModuleCode,
 } from 'src/entities';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
+import { DispatchEngineService } from 'src/modules/dispatch-engine/dispatch-engine.service';
 import { FieldPermissionService } from 'src/modules/field-permissions/field-permission.service';
 import { snapshotWorkOrder, toWorkOrderSubOrderItems } from './work-order.mapper';
 import { WorkOrderDetailItem, WorkOrderSubOrderItem } from './work-order.types';
 import { SubmitWorkOrderDto } from './dto/submit.dto';
 import { WorkOrderValidationService } from './work-order-validation.service';
-import {
-  DispatchChild,
-  buildWorkOrderDispatchChildren,
-} from './onboarding-dispatch.helper';
+import { buildOnboardingChildren } from './onboarding-dispatch.helper';
+
+type DispatchChildInput = {
+  moduleCode: string;
+  handlerId: string | null;
+  visibleFields: string[];
+};
 
 @Injectable()
 export class WorkOrderResubmitService {
@@ -36,6 +39,7 @@ export class WorkOrderResubmitService {
     private readonly operationLogRepository: Repository<OperationLog>,
     private readonly validationService: WorkOrderValidationService,
     private readonly fieldPermissionService: FieldPermissionService,
+    private readonly dispatchEngineService?: DispatchEngineService,
   ) {}
 
   async resubmit(
@@ -60,19 +64,51 @@ export class WorkOrderResubmitService {
           throw businessException(5000, HttpStatus.FORBIDDEN, '无权限访问该资源');
         }
       }
-      if (workOrder.status !== WorkOrderStatus.RETURNED) {
-        throw businessException(4114, HttpStatus.CONFLICT, '主工单非 returned 态，不能重新提交');
+      if (workOrder.status === WorkOrderStatus.PENDING) {
+        const latestModifyResubmit = await operationLogRepo.findOne({
+          where: {
+            entityType: 'work_order',
+            entityId: workOrder.id,
+            actionType: 'salesperson_modify_resubmit',
+            userId: user.sub,
+          },
+          order: { createdAt: 'DESC' },
+        });
+        if (latestModifyResubmit) {
+          this.mergeExtraData(workOrder, payload.extraData);
+          await this.validationService.validateWorkOrder(workOrder);
+          const childrenToCreate = this.dispatchEngineService
+            ? (await this.dispatchEngineService.evaluateDetailed(workOrder, manager)).childrenToCreate
+            : await buildOnboardingChildren(workOrder, manager, this.fieldPermissionService);
+          if (childrenToCreate.length === 0) {
+            throw businessException(4202, HttpStatus.BAD_REQUEST, '无可派发规则命中');
+          }
+          const existing = await dispatchedRepo.find({ where: { parentOrderId: workOrder.id } });
+          const touched = await this.applyChildren(dispatchedRepo, existing, childrenToCreate, workOrder.id);
+          await workOrderRepo.save(workOrder);
+          await this.notifyHandlers(notificationRepo, touched, workOrder);
+          const rows = await dispatchedRepo.find({ where: { parentOrderId: workOrder.id }, relations: { handler: true } });
+          return {
+            workOrderId: workOrder.id,
+            dispatchedOrders: toWorkOrderSubOrderItems(rows),
+          };
+        }
+      }
+      if (![WorkOrderStatus.PROCESSING, WorkOrderStatus.RETURNED].includes(workOrder.status)) {
+        throw businessException(4114, HttpStatus.CONFLICT, 'Only processing or returned work orders can be resubmitted');
       }
       const before = snapshotWorkOrder(workOrder);
       this.mergeExtraData(workOrder, payload.extraData);
       await this.validationService.validateWorkOrder(workOrder);
-      const childrenToCreate = await buildWorkOrderDispatchChildren(workOrder, manager, this.fieldPermissionService);
+      const childrenToCreate = this.dispatchEngineService
+        ? (await this.dispatchEngineService.evaluateDetailed(workOrder, manager)).childrenToCreate
+        : await buildOnboardingChildren(workOrder, manager, this.fieldPermissionService);
       if (childrenToCreate.length === 0) {
-        throw businessException(4202, HttpStatus.BAD_REQUEST, '无可派发办理模块');
+        throw businessException(4202, HttpStatus.BAD_REQUEST, '无可派发规则命中');
       }
       const existing = await dispatchedRepo.find({ where: { parentOrderId: workOrder.id } });
       const touched = await this.applyChildren(dispatchedRepo, existing, childrenToCreate, workOrder.id);
-      workOrder.status = WorkOrderStatus.PROCESSING;
+      workOrder.status = WorkOrderStatus.PENDING;
       workOrder.submittedAt = workOrder.submittedAt ?? new Date();
       await workOrderRepo.save(workOrder);
       for (const child of touched) {
@@ -103,8 +139,16 @@ export class WorkOrderResubmitService {
       await this.notifyHandlers(notificationRepo, touched, workOrder);
       await operationLogRepo.save(operationLogRepo.create({
         entityType: 'work_order', entityId: workOrder.id, userId: user.sub,
-        actionType: 'resubmit_after_return', beforeData: before,
-        afterData: snapshotWorkOrder(workOrder), ipAddress: null,
+        actionType: 'salesperson_modify_resubmit', beforeData: before,
+        afterData: {
+          ...snapshotWorkOrder(workOrder),
+          auditTitle: '业务员修改后重提',
+          contextFields: {
+            oldStatus: before.status,
+            newStatus: workOrder.status,
+            auditTitle: '业务员修改后重提',
+          },
+        }, ipAddress: null,
       }));
       const rows = await dispatchedRepo.find({ where: { parentOrderId: workOrder.id }, relations: { handler: true } });
       return {
@@ -125,15 +169,12 @@ export class WorkOrderResubmitService {
   private async applyChildren(
     repository: Repository<DispatchedOrder>,
     existingChildren: DispatchedOrder[],
-    nextChildren: DispatchChild[],
+    nextChildren: DispatchChildInput[],
     parentOrderId: string,
   ): Promise<DispatchedOrder[]> {
     const byModule = new Map(existingChildren.map((child) => [child.moduleCode, child]));
     const touched: DispatchedOrder[] = [];
     for (const next of nextChildren) {
-      if (!isDispatchModuleCode(next.moduleCode)) {
-        throw businessException(4203, HttpStatus.INTERNAL_SERVER_ERROR, `非法 module_code: ${next.moduleCode}`);
-      }
       const current = byModule.get(next.moduleCode);
       if (current) {
         if (current.status !== DispatchedOrderStatus.COMPLETED) {

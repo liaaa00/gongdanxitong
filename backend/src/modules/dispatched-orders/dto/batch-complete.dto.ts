@@ -1,8 +1,9 @@
-import { ArrayNotEmpty, IsArray, IsObject, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
+import { ArrayMaxSize, ArrayNotEmpty, IsArray, IsObject, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
 
 export class BatchCompleteDispatchedOrderDto {
   @IsArray()
   @ArrayNotEmpty()
+  @ArrayMaxSize(50)
   @IsUUID('4', { each: true })
   ids!: string[];
 

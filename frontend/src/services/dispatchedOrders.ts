@@ -22,14 +22,21 @@ export interface DispatchedOrderItem {
   status: string;
   handler_id: string | null;
   handler_name: string | null;
+  configured_handler_names?: string[];
+  configuredHandlerNames?: string[];
   employee_name: string;
+  employee_id_card?: string;
   customer_name: string;
+  customer_code?: string;
+  order_type?: string;
   visible_fields: string[];
   return_reason: string | null;
   returned_fields?: string[];
   dispatched_at: string | null;
   accepted_at: string | null;
   completed_at: string | null;
+  void_at?: string | null;
+  voidAt?: string | null;
   extra_data?: Record<string, unknown>;
   supplementable_fields?: string[];
   dirty_fields?: DirtyFieldMark[];
@@ -41,6 +48,10 @@ export interface DispatchedOrderItem {
   team_name?: string | null;
   node_type?: string | null;
   due_at?: string | null;
+  sla_hours?: number | null;
+  slaHours?: number | null;
+  sla_reminder_before_hours?: number | null;
+  slaReminderBeforeHours?: number | null;
   created_at: string;
 }
 
@@ -55,7 +66,7 @@ const MODULE_META: Record<string, { name: string; visible_fields: string[]; supp
       'social_location', 'start_month', 'social_base', 'fund_base', 'fund_ratio',
       'bank_name', 'bank_account', 'remark',
       'business_mode', 'need_company_payroll', 'pay_location',
-      'social_urge', 'special_remark', 'data_entry_feedback',
+      'special_remark', 'data_entry_feedback',
     ],
     supplementable_fields: ['bank_name', 'bank_account', 'pay_location'],
   },
@@ -82,17 +93,18 @@ const MODULE_META: Record<string, { name: string; visible_fields: string[]; supp
       'customer_name', 'customer_code',
       'employee_name', 'id_card_no',
       'mobile', 'email',
+      'bank_name', 'bank_account',
       'need_onboarding_contact', 'onboarding_feedback',
-      'social_urge', 'special_remark',
+      'special_remark',
     ],
-    supplementable_fields: ['mobile', 'email'],
+    supplementable_fields: ['mobile', 'email', 'bank_name', 'bank_account'],
   },
   social_insurance: {
     name: '社保公积金办理',
     visible_fields: [
       'customer_name', 'customer_code', 'employee_name', 'id_card_no', 'mobile',
       'social_location', 'start_month', 'social_base', 'fund_base', 'fund_ratio',
-      'business_mode', 'employee_type', 'social_urge', 'special_remark', 'social_insurance_feedback',
+      'business_mode', 'employee_type', 'special_remark', 'social_insurance_feedback',
     ],
     supplementable_fields: ['social_location', 'start_month', 'social_base', 'fund_base'],
   },
@@ -116,6 +128,7 @@ interface ParentChild {
   dispatched_at: string | null;
   accepted_at: string | null;
   completed_at: string | null;
+  void_at?: string | null;
   dirty_fields?: DirtyFieldMark[];
   dirty_count?: number;
   has_unread_dirty?: boolean;
@@ -127,7 +140,9 @@ interface ParentOrderShape {
   id: string;
   order_no: string;
   employee_name: string;
+  employee_id_card?: string;
   customer_name: string;
+  customer_code?: string;
   status?: string;
   extra_data?: Record<string, unknown>;
   dispatched_orders?: ParentChild[];
@@ -146,6 +161,12 @@ function normalizeDispatchedOrderItem(raw: unknown): DispatchedOrderItem {
   const extraData = (row.extra_data ?? row.extraData ?? row.parent_extra_data ?? row.parentExtraData ?? parent.extra_data ?? parent.extraData) as Record<string, unknown> | undefined;
   const visibleFields = normalizeStringArray(row.visible_fields ?? row.visibleFields);
   const supplementableFields = normalizeStringArray(row.supplementable_fields ?? row.supplementableFields);
+  const mergedVisibleFields = moduleCode === 'onboarding_contact'
+    ? Array.from(new Set([...visibleFields, 'bank_name', 'bank_account']))
+    : visibleFields;
+  const mergedSupplementableFields = moduleCode === 'onboarding_contact'
+    ? Array.from(new Set([...supplementableFields, 'bank_name', 'bank_account']))
+    : supplementableFields;
   return {
     ...(row as Partial<DispatchedOrderItem>),
     id: String(row.id ?? ''),
@@ -156,16 +177,23 @@ function normalizeDispatchedOrderItem(raw: unknown): DispatchedOrderItem {
     status: String(row.status ?? ''),
     handler_id: (row.handler_id ?? row.handlerId ?? null) as string | null,
     handler_name: (row.handler_name ?? row.handlerName ?? (row.handler as Record<string, unknown> | undefined)?.realName ?? null) as string | null,
+    configured_handler_names: Array.isArray(row.configured_handler_names) ? row.configured_handler_names as string[] : (Array.isArray(row.configuredHandlerNames) ? row.configuredHandlerNames as string[] : []),
+    configuredHandlerNames: Array.isArray(row.configuredHandlerNames) ? row.configuredHandlerNames as string[] : (Array.isArray(row.configured_handler_names) ? row.configured_handler_names as string[] : []),
     employee_name: String(row.employee_name ?? row.employeeName ?? parent.employee_name ?? parent.employeeName ?? extraData?.employee_name ?? ''),
+    employee_id_card: String(row.employee_id_card ?? row.employeeIdCard ?? parent.employee_id_card ?? parent.employeeIdCard ?? extraData?.id_card_no ?? extraData?.employee_id_card ?? ''),
     customer_name: String(row.customer_name ?? row.customerName ?? parent.customer_name ?? parent.customerName ?? extraData?.customer_name ?? ''),
-    visible_fields: visibleFields.length > 0 ? visibleFields : meta.visible_fields,
+    customer_code: String(row.customer_code ?? row.customerCode ?? parent.customer_code ?? parent.customerCode ?? extraData?.customer_code ?? ''),
+    order_type: String(row.order_type ?? row.orderType ?? parent.order_type ?? parent.orderType ?? ''),
+    visible_fields: mergedVisibleFields.length > 0 ? mergedVisibleFields : meta.visible_fields,
     return_reason: (row.return_reason ?? row.returnReason ?? null) as string | null,
     returned_fields: normalizeStringArray(row.returned_fields ?? row.returnedFields),
     dispatched_at: (row.dispatched_at ?? row.dispatchedAt ?? null) as string | null,
     accepted_at: (row.accepted_at ?? row.acceptedAt ?? null) as string | null,
     completed_at: (row.completed_at ?? row.completedAt ?? null) as string | null,
+    void_at: (row.void_at ?? row.voidAt ?? null) as string | null,
+    voidAt: (row.voidAt ?? row.void_at ?? null) as string | null,
     extra_data: extraData,
-    supplementable_fields: supplementableFields.length > 0 ? supplementableFields : meta.supplementable_fields,
+    supplementable_fields: mergedSupplementableFields.length > 0 ? mergedSupplementableFields : meta.supplementable_fields,
     dirty_fields: (row.dirty_fields ?? row.dirtyFields ?? []) as DirtyFieldMark[],
     dirty_count: (row.dirty_count ?? row.dirtyCount) as number | undefined,
     has_unread_dirty: (row.has_unread_dirty ?? row.hasUnreadDirty) as boolean | undefined,
@@ -175,6 +203,10 @@ function normalizeDispatchedOrderItem(raw: unknown): DispatchedOrderItem {
     team_name: (row.team_name ?? row.teamName ?? row.department_name ?? row.departmentName ?? null) as string | null,
     node_type: (row.node_type ?? row.nodeType ?? moduleCode ?? null) as string | null,
     due_at: (row.due_at ?? row.dueAt ?? null) as string | null,
+    sla_hours: (row.sla_hours ?? row.slaHours ?? null) as number | null,
+    slaHours: (row.slaHours ?? row.sla_hours ?? null) as number | null,
+    sla_reminder_before_hours: (row.sla_reminder_before_hours ?? row.slaReminderBeforeHours ?? null) as number | null,
+    slaReminderBeforeHours: (row.slaReminderBeforeHours ?? row.sla_reminder_before_hours ?? null) as number | null,
     created_at: String(row.created_at ?? row.createdAt ?? row.dispatched_at ?? row.dispatchedAt ?? new Date().toISOString()),
   } as DispatchedOrderItem;
 }
@@ -218,6 +250,11 @@ function writeParentOrders(list: ParentOrderShape[]) {
   catch { /* ignore */ }
 }
 
+function dayInMonth(value: string | null | undefined, month: string): boolean {
+  if (!value || !month) return false;
+  return String(value).slice(0, 7) === month;
+}
+
 function flattenDispatched(): DispatchedOrderItem[] {
   const parents = readParentOrders();
   const out: DispatchedOrderItem[] = [];
@@ -233,14 +270,18 @@ function flattenDispatched(): DispatchedOrderItem[] {
         status: d.status,
         handler_id: d.handler_id ?? null,
         handler_name: d.handler_name ?? null,
-        employee_name: p.employee_name,
-        customer_name: p.customer_name,
+        employee_name: String(p.extra_data?.employee_name ?? p.employee_name ?? ''),
+        employee_id_card: String(p.extra_data?.id_card_no ?? p.extra_data?.employee_id_card ?? p.employee_id_card ?? ''),
+        customer_name: String(p.extra_data?.customer_name ?? p.customer_name ?? ''),
+        customer_code: String(p.extra_data?.customer_code ?? p.customer_code ?? ''),
+        order_type: String((p as unknown as Record<string, unknown>).order_type ?? (p as unknown as Record<string, unknown>).orderType ?? 'onboarding'),
         visible_fields: meta.visible_fields,
         return_reason: d.return_reason ?? null,
         returned_fields: d.returned_fields,
         dispatched_at: d.dispatched_at,
         accepted_at: d.accepted_at,
         completed_at: d.completed_at,
+        void_at: d.void_at ?? null,
         supplementable_fields: meta.supplementable_fields,
         dirty_fields: d.dirty_fields || [],
         dirty_count: d.dirty_count ?? d.dirty_fields?.length ?? 0,
@@ -284,11 +325,64 @@ function deleteChildInParent(childId: string): boolean {
   return false;
 }
 
-export async function getDispatchedOrders(params: PageParams & { module_code?: string; moduleCode?: string; handlerId?: string; handler_id?: string; onlyPool?: boolean; onlyUnclaimed?: boolean }): Promise<PageResult<DispatchedOrderItem>> {
+export async function getDispatchedOrders(params: PageParams & {
+  module_code?: string;
+  moduleCode?: string;
+  orderType?: string;
+  order_type?: string;
+  handlerId?: string;
+  handler_id?: string;
+  status?: string;
+  statuses?: string;
+  statusIn?: string;
+  orderNo?: string;
+  order_no?: string;
+  customerCode?: string;
+  customer_code?: string;
+  customerName?: string;
+  customer_name?: string;
+  employeeName?: string;
+  employee_name?: string;
+  idCardNo?: string;
+  employeeIdCard?: string;
+  orderMonth?: string;
+  order_month?: string;
+  dispatchedFrom?: string;
+  dispatchedTo?: string;
+  completedFrom?: string;
+  completedTo?: string;
+  includeReturned?: boolean;
+}): Promise<PageResult<DispatchedOrderItem>> {
   if (isMockMode) {
     let list = flattenDispatched();
     if (params.status) list = list.filter((d) => d.status === params.status);
-    if (params.module_code) list = list.filter((d) => d.module_code === params.module_code);
+    else {
+      const statuses = String(params.statuses ?? params.statusIn ?? '')
+        .split(',')
+        .map((status) => status.trim())
+        .filter(Boolean);
+      if (statuses.length > 0) list = list.filter((d) => statuses.includes(d.status));
+    }
+    const moduleCode = String(params.moduleCode ?? params.module_code ?? '');
+    if (moduleCode) list = list.filter((d) => d.module_code === moduleCode);
+    const orderType = String(params.orderType ?? params.order_type ?? '');
+    if (orderType) list = list.filter((d) => d.order_type === orderType || d.module_code === orderType);
+    const orderNo = String(params.orderNo ?? params.order_no ?? '').toLowerCase();
+    if (orderNo) list = list.filter((d) => String(d.order_no || '').toLowerCase().includes(orderNo));
+    const customerCode = String(params.customerCode ?? params.customer_code ?? '').toLowerCase();
+    if (customerCode) list = list.filter((d) => String(d.customer_code || '').toLowerCase().includes(customerCode));
+    const customerName = String(params.customerName ?? params.customer_name ?? '').toLowerCase();
+    if (customerName) list = list.filter((d) => String(d.customer_name || '').toLowerCase().includes(customerName));
+    const employeeName = String(params.employeeName ?? params.employee_name ?? '').toLowerCase();
+    if (employeeName) list = list.filter((d) => String(d.employee_name || '').toLowerCase().includes(employeeName));
+    const idCardNo = String(params.idCardNo ?? params.employeeIdCard ?? '').toLowerCase();
+    if (idCardNo) list = list.filter((d) => String(d.employee_id_card || '').toLowerCase().includes(idCardNo));
+    const orderMonth = String(params.orderMonth ?? params.order_month ?? '');
+    if (orderMonth) list = list.filter((d) => dayInMonth(d.dispatched_at || d.created_at || d.completed_at, orderMonth));
+    if (params.dispatchedFrom) list = list.filter((d) => d.dispatched_at && new Date(d.dispatched_at).getTime() >= new Date(String(params.dispatchedFrom)).getTime());
+    if (params.dispatchedTo) list = list.filter((d) => d.dispatched_at && new Date(d.dispatched_at).getTime() <= new Date(String(params.dispatchedTo)).getTime());
+    if (params.completedFrom) list = list.filter((d) => d.completed_at && new Date(d.completed_at).getTime() >= new Date(String(params.completedFrom)).getTime());
+    if (params.completedTo) list = list.filter((d) => d.completed_at && new Date(d.completed_at).getTime() <= new Date(String(params.completedTo)).getTime());
     const handler = String(params.handlerId ?? params.handler_id ?? '');
     if (handler && handler !== 'current') list = list.filter((d) => d.handler_id === handler);
     if (params.keyword) {
@@ -414,6 +508,110 @@ export async function supplementField(id: string, fields: Record<string, string>
   return request.post(`/dispatched-orders/${id}/supplement`, { fields }) as Promise<void>;
 }
 
+export async function creatorUpdateDispatchedOrderFields(id: string, fields: Record<string, unknown>, reason?: string): Promise<DispatchedOrderItem> {
+  if (isMockMode) {
+    const parents = readParentOrders();
+    let updated: DispatchedOrderItem | null = null;
+    for (const parent of parents) {
+      const child = (parent.dispatched_orders || []).find((item) => item.id === id);
+      if (!child) continue;
+      parent.extra_data = { ...(parent.extra_data || {}), ...fields };
+      if (fields.customer_name !== undefined) parent.customer_name = String(fields.customer_name || '');
+      if (fields.customer_code !== undefined) parent.customer_code = String(fields.customer_code || '');
+      if (fields.employee_name !== undefined) parent.employee_name = String(fields.employee_name || '');
+      if (fields.id_card_no !== undefined || fields.employee_id_card !== undefined) {
+        parent.employee_id_card = String(fields.id_card_no ?? fields.employee_id_card ?? '');
+      }
+      if (child.status === 'returned') child.status = 'processing';
+      break;
+    }
+    writeParentOrders(parents);
+    updated = flattenDispatched().find((item) => item.id === id) || null;
+    reloadMockWorkOrders();
+    return mockDelay(updated || ({} as DispatchedOrderItem));
+  }
+  const raw = await request.post(`/dispatched-orders/${id}/creator-update`, { fields, reason });
+  return normalizeDispatchedOrderItem(raw);
+}
+
+export async function urgeDispatchedOrder(id: string, reason?: string): Promise<DispatchedOrderItem> {
+  if (isMockMode) {
+    const updated = flattenDispatched().find((item) => item.id === id) || null;
+    if (updated) {
+      addMockNotification({
+        id: 'n-urge-' + Date.now(),
+        type: '催办',
+        biz_type: 'creator_urge',
+        priority: 'normal',
+        title: '业务员催办子工单',
+        content: reason || `请尽快处理工单 ${updated.order_no}`,
+        entity_type: 'dispatched_order',
+        entity_id: id,
+        link: `/my-dispatched/${id}`,
+        is_read: false,
+        created_at: new Date().toISOString(),
+      });
+    }
+    return mockDelay(updated || ({} as DispatchedOrderItem));
+  }
+  const raw = await request.post(`/dispatched-orders/${id}/urge`, { reason });
+  return normalizeDispatchedOrderItem(raw);
+}
+
+export async function withdrawDispatchedOrder(id: string, reason: string, moduleCode?: string | null): Promise<DispatchedOrderItem> {
+  if (isMockMode) {
+    const updated = updateChildInParent(id, (c) => {
+      c.status = 'withdraw_pending';
+      c.return_reason = `业务员撤回申请：${reason}`;
+      c.completed_at = null;
+    });
+    return mockDelay(updated || ({} as DispatchedOrderItem));
+  }
+  const raw = await request.post(`/dispatched-orders/${id}/withdraw`, { reason, moduleCode, module_code: moduleCode });
+  return normalizeDispatchedOrderItem(raw);
+}
+
+export async function approveWithdrawDispatchedOrder(id: string, approved: boolean, comment?: string): Promise<DispatchedOrderItem> {
+  if (isMockMode) {
+    const updated = updateChildInParent(id, (c) => {
+      c.status = approved ? 'withdrawn' : 'processing';
+      c.return_reason = approved ? c.return_reason : (comment ? `撤回已拒绝：${comment}` : null);
+      c.completed_at = approved ? new Date().toISOString() : null;
+    });
+    return mockDelay(updated || ({} as DispatchedOrderItem));
+  }
+  const raw = await request.post(`/dispatched-orders/${id}/withdraw/approve`, { approved, comment });
+  return normalizeDispatchedOrderItem(raw);
+}
+
+export async function voidDispatchedOrder(id: string, reason: string, moduleCode?: string | null): Promise<DispatchedOrderItem> {
+  if (isMockMode) {
+    const updated = updateChildInParent(id, (c) => {
+      c.status = 'void_pending';
+      c.return_reason = `业务员作废申请：${reason}`;
+      c.completed_at = null;
+    });
+    return mockDelay(updated || ({} as DispatchedOrderItem));
+  }
+  const raw = await request.post(`/dispatched-orders/${id}/void`, { reason, moduleCode, module_code: moduleCode });
+  return normalizeDispatchedOrderItem(raw);
+}
+
+export async function approveVoidDispatchedOrder(id: string, approved: boolean, comment?: string): Promise<DispatchedOrderItem> {
+  if (isMockMode) {
+    const now = new Date().toISOString();
+    const updated = updateChildInParent(id, (c) => {
+      c.status = approved ? 'void' : 'processing';
+      c.void_at = approved ? now : null;
+      c.return_reason = approved ? c.return_reason : (comment ? `作废已拒绝：${comment}` : null);
+      c.completed_at = approved ? now : null;
+    });
+    return mockDelay(updated ? { ...updated, void_at: approved ? now : null, voidAt: approved ? now : null } : ({} as DispatchedOrderItem));
+  }
+  const raw = await request.post(`/dispatched-orders/${id}/void/approve`, { approved, comment });
+  return normalizeDispatchedOrderItem(raw);
+}
+
 export async function reassignDispatchedOrder(id: string, handlerId: string, reason?: string): Promise<DispatchedOrderItem> {
   if (isMockMode) {
     const updated = updateChildInParent(id, (c) => {
@@ -432,17 +630,51 @@ export async function reassignDispatchedOrder(id: string, handlerId: string, rea
   }
 }
 
-export async function exportDispatchedOrder(id: string, templateId?: string): Promise<Blob> {
-  if (isMockMode) return mockDelay(new Blob(['mock export data'], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
-  // 后端 ExportDispatchedOrderDto 要求 templateId (camelCase, UUID)
-  const body: Record<string, unknown> = {};
-  if (templateId) body.templateId = templateId;
-  return request.post(`/dispatched-orders/${id}/export`, body, { responseType: 'blob' }) as Promise<Blob>;
+export interface DispatchedOrderExportResult {
+  templateId?: string | null;
+  templateName?: string;
+  moduleCode?: string;
+  rowCount?: number;
+  fileId?: string;
+  fileName?: string;
+  downloadUrl?: string;
 }
 
-export async function batchExportDispatchedOrders(ids: string[], templateId?: string): Promise<Blob> {
-  if (isMockMode) return mockDelay(new Blob(['mock batch export'], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
-  return request.post('/dispatched-orders/batch-export', { ids, template_id: templateId }, { responseType: 'blob' }) as Promise<Blob>;
+export function resolveExportDownloadUrl(result: DispatchedOrderExportResult): string {
+  const url = result.downloadUrl || (result.fileId ? `/api/files/${result.fileId}` : '');
+  if (!url) return '';
+  if (/^https?:\/\//i.test(url)) return url;
+  const base = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || '';
+  return `${base}${url.startsWith('/api') ? url : `/api${url.startsWith('/') ? url : `/${url}`}`}`;
+}
+
+export function downloadDispatchedExport(result: DispatchedOrderExportResult, fallbackName: string): void {
+  const url = resolveExportDownloadUrl(result);
+  if (!url) {
+    const blobUrl = window.URL.createObjectURL(new Blob(['mock export data'], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = fallbackName;
+    a.click();
+    window.URL.revokeObjectURL(blobUrl);
+    return;
+  }
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = result.fileName || fallbackName;
+  a.click();
+}
+
+export async function exportDispatchedOrder(id: string, templateId?: string): Promise<DispatchedOrderExportResult> {
+  if (isMockMode) return mockDelay({ templateId: templateId || null, templateName: 'mock', moduleCode: 'mock', rowCount: 1, fileName: 'mock.xlsx' });
+  const body: Record<string, unknown> = {};
+  if (templateId) body.templateId = templateId;
+  return request.post(`/dispatched-orders/${id}/export`, body) as Promise<DispatchedOrderExportResult>;
+}
+
+export async function batchExportDispatchedOrders(ids: string[], templateId?: string): Promise<DispatchedOrderExportResult> {
+  if (isMockMode) return mockDelay({ templateId: templateId || null, templateName: 'mock batch', moduleCode: 'mixed', rowCount: ids.length, fileName: 'mock-batch.xlsx' });
+  return request.post('/dispatched-orders/batch-export', { ids, templateId }) as Promise<DispatchedOrderExportResult>;
 }
 
 export async function deleteDispatchedOrder(id: string): Promise<void> {
@@ -519,6 +751,85 @@ export interface BatchCompleteResult {
   success: boolean;
   completed: number;
   skipped?: Array<{ id: string; reason: string }>;
+}
+
+export interface BatchReturnResult {
+  success: boolean;
+  returned: number;
+  skipped?: Array<{ id: string; reason: string }>;
+}
+
+export interface DispatchedBatchImportRow {
+  orderNo?: string;
+  employeeIdCard?: string;
+  idCardNo?: string;
+  result?: string;
+  status?: string;
+  returnReason?: string;
+  remark?: string;
+  fields?: Record<string, unknown>;
+  raw?: Record<string, unknown>;
+}
+
+export interface DispatchedBatchImportResult {
+  success: boolean;
+  totalRows: number;
+  successRows: number;
+  failRows: number;
+  rows: Array<{ rowNumber: number; success: boolean; id?: string; orderNo?: string; employeeIdCard?: string; action?: string; message: string }>;
+}
+
+export async function batchImportDispatchedOrders(payload: {
+  moduleCode: string;
+  mode: 'status' | 'fields';
+  rows: DispatchedBatchImportRow[];
+  defaultRemark?: string;
+  defaultReturnReason?: string;
+}): Promise<DispatchedBatchImportResult> {
+  if (isMockMode) {
+    return mockDelay({
+      success: true,
+      totalRows: payload.rows.length,
+      successRows: payload.rows.length,
+      failRows: 0,
+      rows: payload.rows.map((row, index) => ({ rowNumber: index + 2, success: true, orderNo: row.orderNo, employeeIdCard: row.employeeIdCard || row.idCardNo, action: payload.mode, message: 'mock success' })),
+    });
+  }
+  return request.post('/dispatched-orders/batch-import', payload) as Promise<DispatchedBatchImportResult>;
+}
+
+export interface BatchUrgeResult {
+  success: boolean;
+  urged: number;
+  skipped: Array<{ id: string; reason: string }>;
+}
+
+export async function batchUrgeDispatchedOrders(ids: string[], reason?: string): Promise<BatchUrgeResult> {
+  if (isMockMode) {
+    return mockDelay({ success: true, urged: ids.length, skipped: [] });
+  }
+  return request.post('/dispatched-orders/batch-urge', { ids, reason }) as Promise<BatchUrgeResult>;
+}
+
+export async function batchReturnDispatchedOrders(ids: string[], returnReason: string, returnedFields?: string[]): Promise<BatchReturnResult> {
+  if (isMockMode) {
+    let returned = 0;
+    ids.forEach((id) => {
+      const updated = updateChildInParent(id, (c) => {
+        c.status = 'returned';
+        c.return_reason = returnReason;
+        c.returned_fields = returnedFields || [];
+        c.completed_at = null;
+      });
+      if (updated) returned += 1;
+    });
+    return mockDelay({ success: true, returned, skipped: [] });
+  }
+  return request.post('/dispatched-orders/batch-return', {
+    ids,
+    returnReason,
+    returnedFields: returnedFields || [],
+  }) as Promise<BatchReturnResult>;
 }
 
 export async function batchCompleteDispatchedOrders(

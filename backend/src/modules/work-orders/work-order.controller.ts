@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put, Query, UseInterceptors } from '@nestjs/common';
-import { WORK_ORDER_CREATOR_ROLES } from 'src/common/auth/role-permissions';
 import { ApiResponse } from 'src/common/decorators/api-response.decorator';
+import { BusinessPermission } from 'src/common/decorators/business-permission.decorator';
 import { Audit } from 'src/common/decorators/audit.decorator';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { Roles } from 'src/common/decorators/roles.decorator';
@@ -14,6 +14,7 @@ import { CreateWorkOrderDto } from './dto/create.dto';
 import { ListWorkOrderQueryDto } from './dto/list-query.dto';
 import { SubmitWorkOrderDto } from './dto/submit.dto';
 import { UpdateWorkOrderDto } from './dto/update.dto';
+import { UrgeWorkOrderDto } from './dto/urge.dto';
 import { VoidApproveWorkOrderDto } from './dto/void-approve.dto';
 import { VoidWorkOrderDto } from './dto/void.dto';
 import { WithdrawApproveWorkOrderDto } from './dto/withdraw-approve.dto';
@@ -32,7 +33,7 @@ export class WorkOrderController {
   }
 
   @Post()
-  @Roles(...WORK_ORDER_CREATOR_ROLES)
+  @BusinessPermission('work_order.create')
   @FieldPermissionScenario('main')
   create(@Body() payload: CreateWorkOrderDto, @CurrentUser() user: JwtUserPayload) {
     return this.workOrderService.createDraft(payload, user);
@@ -117,6 +118,16 @@ export class WorkOrderController {
     @CurrentUser() user: JwtUserPayload,
   ) {
     return this.workOrderService.approveWithdraw(assertUuidParam(id, '工单不存在'), payload, user);
+  }
+
+  @Post(':id/urge')
+  @FieldPermissionScenario('main')
+  urge(
+    @Param('id') id: string,
+    @Body() payload: UrgeWorkOrderDto,
+    @CurrentUser() user: JwtUserPayload,
+  ) {
+    return this.workOrderService.urge(assertUuidParam(id, '工单不存在'), payload, user);
   }
 
   @Post(':id/void')

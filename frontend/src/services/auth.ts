@@ -5,7 +5,7 @@ import { validateUserCredentials, changeUserPassword } from './users';
 import { loadList } from './_mockStore';
 import type { RoleItem } from './roles';
 
-const ROLES_KEY = 'mock_admin_roles_v2'; // ★ v2: 统一使用 8 核心角色（与 roles.ts 一致），业务组通过 group_name 区分
+const ROLES_KEY = 'mock_admin_roles_v3'; // ★ v3: 新增福保负责人角色（与 roles.ts 一致）
 const ROLES_SEED: RoleItem[] = [
   // ★ 8 个核心角色 — 不区分具体业务组编号；业务组归属通过 department/group_name 动态表达
   { id: '1', code: 'admin', name: '系统管理员', level: '全局', description: '全部工单和系统配置', is_active: true },

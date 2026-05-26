@@ -14,11 +14,8 @@ function invalidUuidQueryError(): QueryFailedError {
 function makeWorkOrderService(findOne: jest.Mock, resolveUserDepartmentIds = jest.fn(async () => [])) {
   return new WorkOrderService(
     { findOne } as unknown as Repository<WorkOrder>,
-    { createQueryBuilder: jest.fn() } as never,
-    null as never,
-    null as never,
-    null as never,
-    null as never,
+    { createQueryBuilder: jest.fn(), find: jest.fn(async () => []) } as never,
+    { find: jest.fn(async () => []) } as never,
     null as never,
     null as never,
     null as never,

@@ -10,6 +10,7 @@ import {
   removeRefreshToken,
   clearAll,
 } from '@/utils/storage';
+import { canonicalRoleCode } from '@/constants/roles';
 
 interface UserState {
   user: UserInfo | null;
@@ -70,13 +71,15 @@ export const useUserStore = create<UserState>((set, get) => ({
   hasRole: (roleCode: string) => {
     const { user } = get();
     if (!user || !user.roles) return false;
-    return user.roles.some((r: RoleInfo) => r.code === roleCode);
+    const required = canonicalRoleCode(roleCode);
+    return user.roles.some((r: RoleInfo) => canonicalRoleCode(r.code) === required);
   },
 
   hasAnyRole: (roleCodes: string[]) => {
     const { user } = get();
     if (!user || !user.roles) return false;
-    return user.roles.some((r: RoleInfo) => roleCodes.includes(r.code));
+    const required = new Set(roleCodes.map((code) => canonicalRoleCode(code)));
+    return user.roles.some((r: RoleInfo) => required.has(canonicalRoleCode(r.code)));
   },
 
   setMustChangePassword: (v: boolean) => set({ mustChangePassword: v }),

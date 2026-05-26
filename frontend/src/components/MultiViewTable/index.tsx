@@ -33,13 +33,30 @@ function getInitialViewMode(viewId: string): ViewMode {
   return saved?.viewMode || 'table';
 }
 
+export function mergeTableFiltersIntoParams(
+  params: Record<string, unknown>,
+  tableFilters: Record<string, unknown[] | null | undefined> = {},
+): Record<string, unknown> {
+  const merged = { ...params };
+  Object.entries(tableFilters).forEach(([key, value]) => {
+    if (!Array.isArray(value)) return;
+    const normalized = value
+      .map((item) => String(item ?? '').trim())
+      .filter(Boolean);
+    if (normalized.length === 0) return;
+    merged[key] = normalized.length === 1 ? normalized[0] : normalized;
+  });
+  return merged;
+}
+
 function MultiViewTable<T extends Record<string, unknown>>(props: MultiViewTableProps<T>) {
   const {
     columns, request, rowKey = 'id', viewId,
     kanbanColumnKey, kanbanAllowedValues, onKanbanDragEnd,
     groupByOptions, editableKeys = [], onInlineEdit,
     toolBarRender, headerTitle, batchActions,
-    proTableOptions, proTableToolBarRender,
+    search = false, proTableOptions, proTableToolBarRender,
+    showViewSwitcher = false, showFilterViews = false, showColumnsConfig = false,
   } = props;
 
   const { message } = App.useApp();
@@ -55,7 +72,7 @@ function MultiViewTable<T extends Record<string, unknown>>(props: MultiViewTable
     [columns],
   );
 
-  const [viewMode, setViewMode] = useState<ViewMode>(() => getInitialViewMode(viewId));
+  const [viewMode, setViewMode] = useState<ViewMode>(() => (showViewSwitcher ? getInitialViewMode(viewId) : 'table'));
   const [hiddenKeys, setHiddenKeys] = useState<string[]>(() => savedConfig?.columnsHidden || []);
   const [colOrder, setColOrder] = useState<string[]>(() => savedConfig?.columnsOrder || allColKeys);
   const [columnsDrawerOpen, setColumnsDrawerOpen] = useState(false);
@@ -100,8 +117,12 @@ function MultiViewTable<T extends Record<string, unknown>>(props: MultiViewTable
     return sorted as ProColumns<T>[];
   }, [columns, hiddenKeys, colOrder]);
 
-  const wrappedRequest = useCallback(async (params: Record<string, unknown>) => {
-    const merged = { ...params };
+  const wrappedRequest = useCallback(async (
+    params: Record<string, unknown>,
+    _sort: Record<string, unknown>,
+    tableFilters: Record<string, unknown[] | null> = {},
+  ) => {
+    const merged = mergeTableFiltersIntoParams(params, tableFilters);
     if (filterConditions.length > 0) {
       merged._filters = JSON.stringify(filterConditions);
     }
@@ -127,19 +148,23 @@ function MultiViewTable<T extends Record<string, unknown>>(props: MultiViewTable
   return (
     <div>
       <Space style={{ marginBottom: 12, flexWrap: 'wrap' }}>
-        <ViewSwitcher value={viewMode} onChange={handleViewChange} />
-        <FilterViews
-          viewId={viewId}
-          columns={columns as ProColumns<Record<string, unknown>>[]}
-          activeFilterId={activeFilterId}
-          onFilterSelect={handleFilterSelect}
-          currentConditions={filterConditions}
-          onConditionsChange={setFilterConditions}
-        />
-        <Button size="small" icon={<SettingOutlined />}
-          onClick={() => setColumnsDrawerOpen(true)}>
-          列配置
-        </Button>
+        {showViewSwitcher && <ViewSwitcher value={viewMode} onChange={handleViewChange} />}
+        {showFilterViews && (
+          <FilterViews
+            viewId={viewId}
+            columns={columns as ProColumns<Record<string, unknown>>[]}
+            activeFilterId={activeFilterId}
+            onFilterSelect={handleFilterSelect}
+            currentConditions={filterConditions}
+            onConditionsChange={setFilterConditions}
+          />
+        )}
+        {showColumnsConfig && (
+          <Button size="small" icon={<SettingOutlined />}
+            onClick={() => setColumnsDrawerOpen(true)}>
+            列配置
+          </Button>
+        )}
         {toolBarRender && (
           <Space size={8}>
             {toolBarRender()}
@@ -153,9 +178,10 @@ function MultiViewTable<T extends Record<string, unknown>>(props: MultiViewTable
           columns={resolvedColumns}
           request={wrappedRequest}
           rowKey={rowKey}
-          search={{ labelWidth: 'auto' }}
+          search={search}
           headerTitle={headerTitle}
           pagination={{ defaultPageSize: 20, showSizeChanger: true }}
+          scroll={{ x: 1280 }}
           dateFormatter="string"
           options={proTableOptions === false ? false : { reload: () => actionRef.current?.reload() }}
           toolBarRender={proTableToolBarRender === false ? false : undefined}
@@ -202,19 +228,21 @@ function MultiViewTable<T extends Record<string, unknown>>(props: MultiViewTable
         />
       )}
 
-      <ColumnsConfigDrawer
-        open={columnsDrawerOpen}
-        onClose={() => {
-          setColumnsDrawerOpen(false);
-          message.info('列配置已更新');
-        }}
-        viewId={viewId}
-        columns={columns as ProColumns<Record<string, unknown>>[]}
-        hiddenKeys={hiddenKeys}
-        onHiddenKeysChange={setHiddenKeys}
-        order={colOrder}
-        onOrderChange={setColOrder}
-      />
+      {showColumnsConfig && (
+        <ColumnsConfigDrawer
+          open={columnsDrawerOpen}
+          onClose={() => {
+            setColumnsDrawerOpen(false);
+            message.info('列配置已更新');
+          }}
+          viewId={viewId}
+          columns={columns as ProColumns<Record<string, unknown>>[]}
+          hiddenKeys={hiddenKeys}
+          onHiddenKeysChange={setHiddenKeys}
+          order={colOrder}
+          onOrderChange={setColOrder}
+        />
+      )}
     </div>
   );
 }

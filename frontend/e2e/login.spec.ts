@@ -9,18 +9,22 @@ test.describe('Login Flow', () => {
 
   test('login with admin credentials succeeds', async ({ page }) => {
     await page.goto('/login');
-    await page.fill('input[id="username"]', 'admin');
-    await page.fill('input[id="password"]', 'admin123');
-    await page.getByRole('button', { name: /登\s*录/ }).click();
+    await page.fill('input[id="username"]', 'lizhanbo');
+    await page.fill('input[id="password"]', '123456');
+    await page.keyboard.press('Enter');
     await page.waitForURL('**/dashboard', { timeout: 10000 });
     await expect(page.locator('.ant-pro-page-container')).toBeVisible();
   });
 
-  test('login with wrong password shows error', async ({ page }) => {
+  test('login with wrong password stays on login page', async ({ page }) => {
     await page.goto('/login');
-    await page.fill('input[id="username"]', 'admin');
-    await page.fill('input[id="password"]', 'wrong');
-    await page.getByRole('button', { name: /登\s*录/ }).click();
-    await expect(page.locator('.ant-message-error')).toBeVisible({ timeout: 5000 });
+    await page.fill('input[id="username"]', 'lizhanbo');
+    await page.fill('input[id="password"]', 'wrong123456');
+    const loginFailed = page.waitForResponse((response) =>
+      response.url().includes('/api/auth/login') && response.status() === 401,
+    );
+    await page.keyboard.press('Enter');
+    await loginFailed;
+    await expect(page).toHaveURL(/\/login/);
   });
 });

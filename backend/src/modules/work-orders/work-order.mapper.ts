@@ -19,15 +19,16 @@ export function snapshotWorkOrder(workOrder: WorkOrder): Record<string, unknown>
   };
 }
 
-export function calculateSubOrderDueAt(startAt: Date | null): Date | null {
-  if (!startAt) return null;
-  const dueAt = new Date(startAt);
-  dueAt.setDate(dueAt.getDate() + 3);
-  return dueAt;
+export function calculateSubOrderDueAt(child: DispatchedOrder): Date | null {
+  if (child.dueAt) return child.dueAt;
+  if (child.dispatchedAt && child.slaHours && child.slaHours > 0) {
+    return new Date(child.dispatchedAt.getTime() + child.slaHours * 60 * 60 * 1000);
+  }
+  return null;
 }
 
 export function toWorkOrderSubOrderItem(child: DispatchedOrder): WorkOrderSubOrderItem {
-  const dueAt = calculateSubOrderDueAt(child.dispatchedAt ?? child.createdAt);
+  const dueAt = calculateSubOrderDueAt(child);
   const isOverdue = child.status !== DispatchedOrderStatus.COMPLETED && dueAt !== null && dueAt.getTime() < Date.now();
   return {
     id: child.id,
@@ -65,7 +66,18 @@ export function toWorkOrderSubOrderItems(children: DispatchedOrder[]): WorkOrder
   return children.map((child) => toWorkOrderSubOrderItem(child));
 }
 
-export function toWorkOrderListItem(workOrder: WorkOrder): WorkOrderListItem {
+function readText(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  const text = String(value).trim();
+  return text.length > 0 ? text : null;
+}
+
+export function toWorkOrderListItem(workOrder: WorkOrder, subOrders: WorkOrderSubOrderItem[] = []): WorkOrderListItem {
+  const extraData = workOrder.extraData ?? {};
+  const customerCode = readText(extraData.customer_code) ?? workOrder.customerCode;
+  const customerName = readText(extraData.customer_name) ?? workOrder.customerName;
+  const employeeName = readText(extraData.employee_name) ?? workOrder.employeeName;
+  const employeeIdCard = readText(extraData.id_card_no ?? extraData.employee_id_card) ?? workOrder.employeeIdCard;
   return {
     id: workOrder.id,
     orderNo: workOrder.orderNo,
@@ -75,10 +87,14 @@ export function toWorkOrderListItem(workOrder: WorkOrder): WorkOrderListItem {
     status: workOrder.status,
     customerId: workOrder.customerId,
     customer_id: workOrder.customerId,
-    employeeName: workOrder.employeeName,
-    employee_name: workOrder.employeeName,
-    employeeIdCard: workOrder.employeeIdCard,
-    employee_id_card: workOrder.employeeIdCard,
+    customerCode,
+    customer_code: customerCode,
+    customerName,
+    customer_name: customerName,
+    employeeName,
+    employee_name: employeeName,
+    employeeIdCard,
+    employee_id_card: employeeIdCard,
     submittedAt: workOrder.submittedAt,
     submitted_at: workOrder.submittedAt,
     completedAt: workOrder.completedAt,
@@ -87,5 +103,9 @@ export function toWorkOrderListItem(workOrder: WorkOrder): WorkOrderListItem {
     created_at: workOrder.createdAt,
     updatedAt: workOrder.updatedAt,
     updated_at: workOrder.updatedAt,
+    dispatchedOrders: subOrders,
+    dispatched_orders: subOrders,
+    subOrders,
+    sub_orders: subOrders,
   };
 }

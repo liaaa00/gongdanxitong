@@ -30,17 +30,17 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<RequestWithTraceId & Request>();
 
-    const typeOrmStatus = this.getTypeOrmStatus(exception);
+    const typeOrmError = this.getTypeOrmError(exception);
     const status =
       exception instanceof HttpException
         ? exception.getStatus()
-        : typeOrmStatus ?? HttpStatus.INTERNAL_SERVER_ERROR;
+        : typeOrmError?.status ?? HttpStatus.INTERNAL_SERVER_ERROR;
 
     const normalized =
       exception instanceof HttpException
         ? this.normalizeResponse(exception.getResponse())
-        : typeOrmStatus
-          ? { message: typeOrmStatus === HttpStatus.NOT_FOUND ? '资源不存在' : '请求参数错误' }
+        : typeOrmError
+          ? { message: typeOrmError.message }
           : { code: 1000, message: 'Internal server error' };
 
     const body: ErrorResponseBody = {
@@ -57,16 +57,21 @@ export class HttpExceptionFilter implements ExceptionFilter {
     response.status(status).json(body);
   }
 
-  private getTypeOrmStatus(exception: unknown): HttpStatus | undefined {
+  private getTypeOrmError(exception: unknown): { status: HttpStatus; message: string } | undefined {
     if (!(exception instanceof QueryFailedError)) {
       return undefined;
     }
-    const code = (exception.driverError as { code?: string } | undefined)?.code;
+    const driverError = exception.driverError as { code?: string; message?: string } | undefined;
+    const code = driverError?.code;
+    const message = driverError?.message ?? '';
     if (code === '22P02') {
-      return HttpStatus.NOT_FOUND;
+      if (message.includes('invalid input value for enum')) {
+        return { status: HttpStatus.BAD_REQUEST, message: '数据库状态枚举缺失或状态值不合法，请先执行数据库迁移/初始化脚本' };
+      }
+      return { status: HttpStatus.NOT_FOUND, message: '资源不存在' };
     }
     if (code?.startsWith('23')) {
-      return HttpStatus.BAD_REQUEST;
+      return { status: HttpStatus.BAD_REQUEST, message: '请求参数错误' };
     }
     return undefined;
   }

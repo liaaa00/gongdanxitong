@@ -1,6 +1,18 @@
+export const WORK_ORDER_STATUS_CODES = [
+  'processing',
+  'completed',
+  'returned',
+  'withdrawn',
+  'void',
+  'withdraw_pending',
+  'void_pending',
+] as const;
+
+export type WorkOrderStatusCode = (typeof WORK_ORDER_STATUS_CODES)[number];
+
 export const STATUS_MAP: Record<string, { label: string; color: string }> = {
-  draft: { label: '草稿', color: 'default' },
-  pending: { label: '待派发', color: 'processing' },
+  draft: { label: '处理中', color: 'default' },
+  pending: { label: '处理中', color: 'processing' },
   processing: { label: '处理中', color: 'blue' },
   completed: { label: '已完成', color: 'success' },
   returned: { label: '已退回', color: 'warning' },
@@ -57,7 +69,7 @@ export const ACTION_TEXT: Record<string, string> = {
 
 export const STRATEGY_TEXT: Record<string, string> = {
   fixed: '固定负责人',
-  pool: '池竞争',
+  pool: '固定负责人 + AB角',
   round_robin: '轮询分派',
   module_handler: '按模块负责人',
 };

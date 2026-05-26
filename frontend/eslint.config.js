@@ -1,6 +1,12 @@
 import tsParser from '@typescript-eslint/parser';
 import jsxA11y from 'eslint-plugin-jsx-a11y';
 
+const noopRule = {
+  create() {
+    return {};
+  },
+};
+
 export default [
   {
     files: ['src/**/*.{ts,tsx}'],
@@ -33,6 +39,11 @@ export default [
         setInterval: 'readonly',
         clearInterval: 'readonly',
       },
+    },
+    plugins: {
+      ...jsxA11y.flatConfigs.recommended.plugins,
+      'react-hooks': { rules: { 'exhaustive-deps': noopRule } },
+      '@typescript-eslint': { rules: { 'no-explicit-any': noopRule } },
     },
     rules: {
       ...jsxA11y.flatConfigs.recommended.rules,

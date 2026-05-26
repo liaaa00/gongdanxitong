@@ -1,184 +1,501 @@
-import { useState, useEffect } from 'react';
-import { PageContainer } from '@ant-design/pro-components';
-import {
-  Card, Row, Col, Statistic, Table, Tag, Progress, Space, Select, Empty,
-  Segmented,
-} from 'antd';
-import {
-  FileTextOutlined, CheckCircleOutlined, SyncOutlined, ClockCircleOutlined,
-  ExclamationCircleOutlined, WarningOutlined, TeamOutlined, UserOutlined,
-} from '@ant-design/icons';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { PageContainer, ProTable } from '@ant-design/pro-components';
+import type { ProColumns } from '@ant-design/pro-components';
+import { BellOutlined, CheckCircleOutlined, FileTextOutlined, RiseOutlined, SyncOutlined } from '@ant-design/icons';
+import { Card, Col, Empty, Progress, Row, Select, Space, Spin, Statistic, Tag, Tooltip, Typography } from 'antd';
+import { canonicalRoleCodes, ROLE } from '@/constants/roles';
 import { useUserStore } from '@/stores/userStore';
-import { getSalespersonDashboard, getTeamDashboard, getManagerDashboard } from '@/services/dashboard';
-import type { DashboardSalesperson, DashboardTeam, DashboardManager } from '@/services/dashboard';
+import {
+  getDashboardCards,
+  getLeaderTrend,
+  getOrderTypeMatrix,
+  type DashboardAudience,
+  type DashboardCards,
+  type DashboardOrderType,
+  type LeaderTrendBucket,
+  type OrderTypeMatrixRow,
+} from '@/services/dashboard';
+import { getModuleConfigs } from '@/services/moduleConfigs';
+import type { ModuleConfigItem } from '@/services/moduleConfigs';
 
-const PERIOD_OPTIONS = [
-  { label: '今天', value: 'today' },
-  { label: '本周', value: 'week' },
-  { label: '本月', value: 'month' },
+const { Text } = Typography;
+
+const EMPTY_CARDS: DashboardCards = {
+  totalThisMonth: 0,
+  processing: 0,
+  completed: 0,
+  myMessages: 0,
+};
+
+const TREND_ORDER_TYPES: Array<{ label: string; value: DashboardOrderType; color: string }> = [
+  { label: '入职', value: 'onboarding', color: '#1677ff' },
+  { label: '在职', value: 'renewal', color: '#722ed1' },
+  { label: '离职', value: 'resignation', color: '#fa8c16' },
 ];
 
-const Dashboard: React.FC = () => {
-  const { user } = useUserStore();
-  const [period, setPeriod] = useState('month');
-  const [loading, setLoading] = useState(true);
-  const [salesData, setSalesData] = useState<DashboardSalesperson | null>(null);
-  const [teamData, setTeamData] = useState<DashboardTeam | null>(null);
-  const [mgrData, setMgrData] = useState<DashboardManager | null>(null);
+const BACKEND_ROLES = [
+  ROLE.DATA_ENTRY_LEADER,
+  ROLE.SHARED_TEAM_OWNER,
+  ROLE.LABOR_CONTRACT_MEMBER,
+  ROLE.ONBOARDING_RESIGNATION_MEMBER,
+  ROLE.SOCIAL_INSURANCE_SPECIALIST,
+];
 
-  const roles = user?.roles?.map((r) => r.code) || [];
-  const isAdmin = roles.includes('admin');
-  const isSales = roles.includes('salesperson');
-  const isManager = roles.includes('manager');
-  const supervisorRole = roles.find((r) => r.endsWith('_supervisor'));
+const BUSINESS_ROLES = [
+  ROLE.ADMIN,
+  ROLE.BUSINESS_OWNER,
+  ROLE.BUSINESS_GROUP_LEADER,
+  ROLE.BUSINESS_GROUP_MEMBER,
+];
 
-  useEffect(() => {
-    setLoading(true);
-    const promises: Promise<unknown>[] = [];
+const CARD_BODY_STYLE: React.CSSProperties = { minHeight: 112 };
 
-    if (isSales || roles.length === 0) {
-      promises.push(getSalespersonDashboard({ period }).then(setSalesData));
-    }
-    if (supervisorRole) {
-      const moduleCode = supervisorRole.replace('_supervisor', '');
-      promises.push(getTeamDashboard(moduleCode).then(setTeamData));
-    } else if (isManager) {
-      promises.push(getManagerDashboard().then(setMgrData));
-    } else if (isAdmin) {
-      promises.push(getManagerDashboard().then(setMgrData));
-    }
+type DashboardMatrixTreeRow = OrderTypeMatrixRow & {
+  rowKey: string;
+  routePath: string;
+  isGroup?: boolean;
+  children?: DashboardMatrixTreeRow[];
+};
 
-    Promise.all(promises).finally(() => setLoading(false));
-  }, [period, user]);
+const DASHBOARD_MATRIX_GROUPS: Array<{
+  key: string;
+  label: string;
+  orderType: DashboardOrderType;
+  routePath: string;
+  modules: Array<{ moduleCode: string; label: string; routePath: string }>;
+}> = [
+  {
+    key: 'onboarding',
+    label: '入职管理',
+    orderType: 'onboarding',
+    routePath: '/work-orders?orderType=onboarding',
+    modules: [
+      { moduleCode: 'data_entry', label: '数据录入', routePath: '/onboarding/data_entry' },
+      { moduleCode: 'social_insurance', label: '社保公积金办理', routePath: '/onboarding/social_insurance' },
+      { moduleCode: 'onboarding_contact', label: '入职联系', routePath: '/onboarding/onboarding_contact' },
+      { moduleCode: 'contract', label: '劳动合同签订', routePath: '/onboarding/contract' },
+    ],
+  },
+  {
+    key: 'in_service',
+    label: '在职管理',
+    orderType: 'renewal',
+    routePath: '/renewal',
+    modules: [
+      { moduleCode: 'renewal_contract', label: '续签合同', routePath: '/onboarding/renewal_contract' },
+      { moduleCode: 'benefit_apply', label: '待遇申报', routePath: '/onboarding/benefit_apply' },
+    ],
+  },
+  {
+    key: 'resignation',
+    label: '离职管理',
+    orderType: 'resignation',
+    routePath: '/resignation',
+    modules: [
+      { moduleCode: 'resignation_contact', label: '离职联系', routePath: '/onboarding/resignation_contact' },
+      { moduleCode: 'resignation_cert', label: '离职证明', routePath: '/onboarding/resignation_cert' },
+      { moduleCode: 'data_entry_resign', label: '社保停保', routePath: '/onboarding/data_entry_resign' },
+    ],
+  },
+];
 
-  const renderSalespersonDash = () => (
-    <>
-      <Row gutter={[16, 16]}>
-        <Col xs={12} sm={6}><Card><Statistic title="本月工单" value={salesData?.total_orders || 0} prefix={<FileTextOutlined />} />{salesData && <div style={{ fontSize: 12, color: '#999', marginTop: 4 }}>上月: {salesData.last_month_total}</div>}</Card></Col>
-        <Col xs={12} sm={6}><Card><Statistic title="处理中" value={salesData?.processing_orders || 0} prefix={<SyncOutlined spin />} valueStyle={{ color: '#1677ff' }} /></Card></Col>
-        <Col xs={12} sm={6}><Card><Statistic title="已完成" value={salesData?.completed_orders || 0} prefix={<CheckCircleOutlined />} valueStyle={{ color: '#52c41a' }} />{salesData && <div style={{ fontSize: 12, color: '#999', marginTop: 4 }}>上月完成: {salesData.last_month_completed}</div>}</Card></Col>
-        <Col xs={12} sm={6}><Card><Statistic title="待处理" value={salesData?.pending_orders || 0} prefix={<ClockCircleOutlined />} valueStyle={{ color: '#faad14' }} /></Card></Col>
-      </Row>
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-        <Col xs={24} md={14}>
-          <Card title="本月趋势" size="small">
-            <div style={{ display: 'flex', alignItems: 'flex-end', height: 120, gap: 8 }}>
-              {(salesData?.monthly_trend || []).map((m) => (
-                <div key={m.month} style={{ flex: 1, textAlign: 'center' }}>
-                  <div style={{ background: '#1677ff', height: (m.completed / 30) * 100, borderRadius: '4px 4px 0 0', minHeight: 4 }} />
-                  <div style={{ background: '#e6f4ff', height: ((m.total - m.completed) / 30) * 100, borderRadius: '0 0 4px 4px', minHeight: 2 }} />
-                  <div style={{ fontSize: 10, marginTop: 4 }}>{m.month}</div>
-                  <div style={{ fontSize: 10, color: '#52c41a' }}>{m.completed}</div>
-                </div>
-              ))}
-            </div>
-            <div style={{ fontSize: 11, color: '#999', marginTop: 4 }}>
-              <Tag color="#1677ff">■ 已完成</Tag><Tag color="#e6f4ff">■ 进行中</Tag>
-            </div>
-          </Card>
-        </Col>
-        <Col xs={24} md={10}>
-          <Card title="客户排行前三" size="small">
-            <Table dataSource={salesData?.top_customers || []} rowKey="customer_name"
-              pagination={false} size="small"
-              columns={[
-                { title: '客户', dataIndex: 'customer_name', key: 'name' },
-                { title: '工单数', dataIndex: 'count', key: 'count', render: (v: number) => <Tag color="blue">{v}</Tag> },
-              ]} />
-          </Card>
-        </Col>
-      </Row>
-    </>
-  );
+function clampRate(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, Math.round(value * 10) / 10));
+}
 
-  const renderTeamDash = () => (
-    <>
-      <Row gutter={[16, 16]}>
-        <Col xs={12} sm={6}><Card><Statistic title="待处理" value={teamData?.total_pending || 0} prefix={<ClockCircleOutlined />} valueStyle={{ color: '#faad14' }} /></Card></Col>
-        <Col xs={12} sm={6}><Card><Statistic title="处理中" value={teamData?.total_processing || 0} prefix={<SyncOutlined spin />} valueStyle={{ color: '#1677ff' }} /></Card></Col>
-        <Col xs={12} sm={6}><Card><Statistic title="今日完成" value={teamData?.completed_today || 0} prefix={<CheckCircleOutlined />} valueStyle={{ color: '#52c41a' }} /></Card></Col>
-        <Col xs={12} sm={6}><Card><Statistic title="本月完成" value={teamData?.completed_this_month || 0} prefix={<TeamOutlined />} valueStyle={{ color: '#722ed1' }} /></Card></Col>
-      </Row>
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-        <Col xs={24} md={14}>
-          <Card title="本周趋势" size="small">
-            <div style={{ display: 'flex', alignItems: 'flex-end', height: 100, gap: 4 }}>
-              {(teamData?.trend || []).map((t) => (
-                <div key={t.date} style={{ flex: 1, textAlign: 'center' }}>
-                  <div style={{ background: '#1677ff', height: (t.completed / 10) * 80, borderRadius: 4, minHeight: 4, margin: '0 auto', width: 24 }} />
-                  <div style={{ fontSize: 9, marginTop: 2 }}>{t.date}</div>
-                  <div style={{ fontSize: 9, color: '#52c41a' }}>{t.completed}</div>
-                </div>
-              ))}
-            </div>
-          </Card>
-        </Col>
-        <Col xs={24} md={10}>
-          <Card title="成员负载" size="small">
-            <Table dataSource={teamData?.members || []} rowKey="user_id" pagination={false} size="small"
-              columns={[
-                { title: '成员', dataIndex: 'user_name', key: 'name', width: 70 },
-                { title: '待办', dataIndex: 'pending_count', key: 'p', width: 50, render: (v: number) => <Tag color="orange">{v}</Tag> },
-                { title: '处理中', dataIndex: 'processing_count', key: 'pr', width: 60, render: (v: number) => <Tag color="blue">{v}</Tag> },
-                { title: '今日完成', dataIndex: 'completed_today', key: 'c', width: 70, render: (v: number) => <Tag color="green">{v}</Tag> },
-              ]} />
-          </Card>
-        </Col>
-      </Row>
-    </>
-  );
-
-  const renderManagerDash = () => (
-    <>
-      <Row gutter={[16, 16]}>
-        <Col xs={12} sm={4}><Card><Statistic title="总工单" value={mgrData?.total_onboarding || 0} prefix={<FileTextOutlined />} /></Card></Col>
-        <Col xs={12} sm={4}><Card><Statistic title="已完成" value={mgrData?.completed_onboarding || 0} prefix={<CheckCircleOutlined />} valueStyle={{ color: '#52c41a' }} /></Card></Col>
-        <Col xs={12} sm={4}><Card><Statistic title="完成率" value={mgrData?.completion_rate || 0} suffix="%" precision={1} valueStyle={{ color: '#1677ff' }} /></Card></Col>
-        <Col xs={12} sm={4}><Card><Statistic title="本月新增" value={mgrData?.total_this_month || 0} prefix={<FileTextOutlined />} /></Card></Col>
-        <Col xs={12} sm={4}><Card><Statistic title="本月完成" value={mgrData?.completed_this_month || 0} prefix={<CheckCircleOutlined />} valueStyle={{ color: '#52c41a' }} /></Card></Col>
-        <Col xs={12} sm={4}><Card><Statistic title="服务时限超期" value={mgrData?.sla_breach_count || 0} prefix={<ExclamationCircleOutlined />} valueStyle={{ color: '#ff4d4f' }} /></Card></Col>
-      </Row>
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-        <Col xs={24} md={12}>
-          <Card title="按模块分布" size="small">
-            <Table dataSource={mgrData?.by_module || []} rowKey="module_code" pagination={false} size="small"
-              columns={[
-                { title: '模块', dataIndex: 'module_name', key: 'name' },
-                { title: '待处理', dataIndex: 'pending', key: 'p', render: (v: number) => <Tag color="orange">{v}</Tag> },
-                { title: '处理中', dataIndex: 'processing', key: 'pr', render: (v: number) => <Tag color="blue">{v}</Tag> },
-                { title: '已完成', dataIndex: 'completed', key: 'c', render: (v: number) => <Tag color="green">{v}</Tag> },
-              ]} />
-          </Card>
-        </Col>
-        <Col xs={24} md={12}>
-          <Card title="按业务员排行" size="small">
-            <Table dataSource={mgrData?.by_salesperson || []} rowKey="user_id" pagination={false} size="small"
-              columns={[
-                { title: '业务员', dataIndex: 'user_name', key: 'name' },
-                { title: '总工单', dataIndex: 'total', key: 't' },
-                { title: '已完成', dataIndex: 'completed', key: 'c', render: (v: number) => <Tag color="green">{v}</Tag> },
-                { title: '处理中', dataIndex: 'processing', key: 'p', render: (v: number) => <Tag color="blue">{v}</Tag> },
-              ]} />
-          </Card>
-        </Col>
-      </Row>
-    </>
-  );
-
-  const renderContent = () => {
-    if (isAdmin) return renderManagerDash();
-    if (isManager || supervisorRole) return teamData ? renderTeamDash() : renderManagerDash();
-    return renderSalespersonDash();
+function summarizeMatrixRows(rows: Array<Pick<OrderTypeMatrixRow, 'total' | 'processing' | 'completed'>>): Pick<OrderTypeMatrixRow, 'total' | 'processing' | 'completed' | 'completionRate'> {
+  const total = rows.reduce((sum, row) => sum + (row.total || 0), 0);
+  const processing = rows.reduce((sum, row) => sum + (row.processing || 0), 0);
+  const completed = rows.reduce((sum, row) => sum + (row.completed || 0), 0);
+  return {
+    total,
+    processing,
+    completed,
+    completionRate: total > 0 ? clampRate((completed / total) * 100) : 0,
   };
+}
+
+function flattenMatrixRows(rows: DashboardMatrixTreeRow[]): DashboardMatrixTreeRow[] {
+  return rows.flatMap((row) => [row, ...(row.children ? flattenMatrixRows(row.children) : [])]);
+}
+
+function buildMatrixTreeRows(rows: OrderTypeMatrixRow[]): DashboardMatrixTreeRow[] {
+  const rowsByModule = new Map<string, OrderTypeMatrixRow>();
+  rows.forEach((row) => {
+    if (row.moduleCode) rowsByModule.set(row.moduleCode, row);
+  });
+
+  return DASHBOARD_MATRIX_GROUPS.map((group) => {
+    const children = group.modules.map<DashboardMatrixTreeRow>((module) => {
+      const matched = rowsByModule.get(module.moduleCode);
+      return {
+        rowKey: `${group.key}:${module.moduleCode}`,
+        orderType: group.orderType,
+        moduleCode: module.moduleCode,
+        dimension: 'node',
+        label: module.label,
+        routePath: module.routePath,
+        total: matched?.total || 0,
+        processing: matched?.processing || 0,
+        completed: matched?.completed || 0,
+        completionRate: clampRate(matched?.completionRate || 0),
+      };
+    });
+    const summary = summarizeMatrixRows(children);
+    return {
+      rowKey: group.key,
+      orderType: group.orderType,
+      dimension: 'orderType',
+      label: group.label,
+      routePath: group.routePath,
+      isGroup: true,
+      ...summary,
+      children,
+    };
+  });
+}
+
+
+function buildTrendPolyline(buckets: LeaderTrendBucket[], width: number, height: number): string {
+  if (!buckets.length) return '';
+  const maxRate = Math.max(100, ...buckets.map((item) => clampRate(item.rate)));
+  const left = 16;
+  const right = width - 16;
+  const top = 12;
+  const bottom = height - 22;
+  const span = Math.max(buckets.length - 1, 1);
+
+  return buckets.map((item, index) => {
+    const x = left + ((right - left) * index) / span;
+    const y = bottom - ((bottom - top) * clampRate(item.rate)) / maxRate;
+    return `${x},${y}`;
+  }).join(' ');
+}
+
+interface MiniTrendLineProps {
+  title: string;
+  color: string;
+  buckets: LeaderTrendBucket[];
+}
+
+const MiniTrendLine: React.FC<MiniTrendLineProps> = ({ title, color, buckets }) => {
+  const width = 320;
+  const height = 128;
+  const points = buildTrendPolyline(buckets, width, height);
+  const latest = buckets[buckets.length - 1];
 
   return (
-    <PageContainer header={{
-      title: '仪表盘',
-      extra: [
-        <Segmented key="period" options={PERIOD_OPTIONS} value={period} onChange={(v) => setPeriod(v as string)} />,
-      ],
-    }}>
-      {loading ? <Card loading /> : renderContent()}
+    <Card size="small" title={title} extra={<Tag color={color}>{clampRate(latest?.rate || 0)}%</Tag>}>
+      {buckets.length === 0 ? (
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无趋势数据" />
+      ) : (
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <svg viewBox={`0 0 ${width} ${height}`} style={{ width: '100%', height }} role="img" aria-label={`${title}月办结完成率趋势`}>
+            <line x1="16" y1="106" x2="304" y2="106" stroke="#f0f0f0" />
+            <line x1="16" y1="59" x2="304" y2="59" stroke="#f0f0f0" strokeDasharray="4 4" />
+            <line x1="16" y1="12" x2="304" y2="12" stroke="#f0f0f0" strokeDasharray="4 4" />
+            {points && <polyline points={points} fill="none" stroke={color} strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />}
+            {buckets.map((item, index) => {
+              const x = 16 + ((width - 32) * index) / Math.max(buckets.length - 1, 1);
+              const y = 106 - ((106 - 12) * clampRate(item.rate)) / 100;
+              const showLabel = index === 0 || index === buckets.length - 1 || index % 3 === 0;
+              return (
+                <g key={`${item.month}-${index}`}>
+                  <circle cx={x} cy={y} r="3.5" fill={color} />
+                  {showLabel && <text x={x} y="124" fill="#8c8c8c" fontSize="10" textAnchor="middle">{item.month}</text>}
+                </g>
+              );
+            })}
+          </svg>
+          <Row gutter={12}>
+            <Col span={8}><Statistic title="最近总量" value={latest?.total || 0} /></Col>
+            <Col span={8}><Statistic title="已办结" value={latest?.completed || 0} valueStyle={{ color: '#52c41a' }} /></Col>
+            <Col span={8}><Statistic title="完成率" value={clampRate(latest?.rate || 0)} suffix="%" precision={1} /></Col>
+          </Row>
+        </Space>
+      )}
+    </Card>
+  );
+};
+
+interface LeaderTrendChartProps {
+  visible: boolean;
+  moduleOptions: ModuleConfigItem[];
+}
+
+const LeaderTrendChart: React.FC<LeaderTrendChartProps> = ({ visible, moduleOptions }) => {
+  const [moduleCode, setModuleCode] = useState<string>();
+  const [loading, setLoading] = useState(false);
+  const [trendMap, setTrendMap] = useState<Record<DashboardOrderType, LeaderTrendBucket[]>>({
+    onboarding: [], renewal: [], resignation: [], benefit: [],
+  });
+
+  useEffect(() => {
+    if (!visible) return;
+    let mounted = true;
+    setLoading(true);
+    Promise.all(TREND_ORDER_TYPES.map((item) => getLeaderTrend(item.value, moduleCode)))
+      .then((results) => {
+        if (!mounted) return;
+        setTrendMap((prev) => ({
+          ...prev,
+          ...Object.fromEntries(results.map((result) => [result.orderType, result.buckets || []])),
+        }));
+      })
+      .catch(() => {
+        if (mounted) setTrendMap({ onboarding: [], renewal: [], resignation: [], benefit: [] });
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+    return () => { mounted = false; };
+  }, [moduleCode, visible]);
+
+  if (!visible) return null;
+
+  return (
+    <Card
+      title={<Space><RiseOutlined />负责人月办结完成率趋势</Space>}
+      extra={(
+        <Select
+          size="small"
+          allowClear
+          placeholder="全部节点"
+          style={{ width: 180 }}
+          value={moduleCode}
+          onChange={setModuleCode}
+          options={moduleOptions.map((item) => ({
+            value: item.module_code,
+            label: item.module_name,
+            title: `${item.module_name}（${item.module_code}）`,
+          }))}
+        />
+      )}
+    >
+      <Spin spinning={loading}>
+        <Row gutter={[16, 16]}>
+          {TREND_ORDER_TYPES.map((item) => (
+            <Col key={item.value} xs={24} lg={8}>
+              <MiniTrendLine title={item.label} color={item.color} buckets={trendMap[item.value] || []} />
+            </Col>
+          ))}
+        </Row>
+      </Spin>
+    </Card>
+  );
+};
+
+const Dashboard: React.FC = () => {
+  const navigate = useNavigate();
+  const { user } = useUserStore();
+  const [cards, setCards] = useState<DashboardCards>(EMPTY_CARDS);
+  const [matrixRows, setMatrixRows] = useState<DashboardMatrixTreeRow[]>([]);
+  const [selectedMatrixRow, setSelectedMatrixRow] = useState<DashboardMatrixTreeRow | null>(null);
+  const [moduleOptions, setModuleOptions] = useState<ModuleConfigItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const roles = useMemo(() => canonicalRoleCodes(user?.roles), [user?.roles]);
+  const canViewLeaderTrend = roles.includes(ROLE.ADMIN) || roles.includes(ROLE.BUSINESS_OWNER);
+  const dashboardAudience = useMemo<DashboardAudience>(() => {
+    const hasBackendRole = roles.some((role) => BACKEND_ROLES.includes(role as typeof BACKEND_ROLES[number]));
+    const hasBusinessRole = roles.some((role) => BUSINESS_ROLES.includes(role as typeof BUSINESS_ROLES[number]));
+    return hasBackendRole && !hasBusinessRole ? 'backend' : 'business';
+  }, [roles]);
+
+
+  // 仪表盘总表按实际子工单模块展示：入职主工单提交后会拆成数据录入、社保公积金、入职联系、劳动合同签订等子工单。
+  const matrixDimension = 'node';
+  const matrixTitle = dashboardAudience === 'backend' ? '本月办理节点总表' : '本月工单总表';
+
+  const handleMatrixRowClick = (record: DashboardMatrixTreeRow) => {
+    setSelectedMatrixRow(record);
+  };
+
+  const columns = useMemo<ProColumns<DashboardMatrixTreeRow>[]>(() => [
+    {
+      title: '模块',
+      dataIndex: 'label',
+      key: 'label',
+      render: (_, record) => (
+        <Tooltip title={record.moduleCode ? `${record.label}（${record.moduleCode}）` : `${record.label}整体汇总`}>
+          <Text strong={record.isGroup} style={{ color: record.isGroup ? '#1677ff' : undefined }}>
+            {record.label}
+          </Text>
+        </Tooltip>
+      ),
+    },
+    {
+      title: '本月工单总数',
+      dataIndex: 'total',
+      key: 'total',
+      align: 'right',
+      sorter: (a, b) => a.total - b.total,
+    },
+    {
+      title: '处理中',
+      dataIndex: 'processing',
+      key: 'processing',
+      align: 'right',
+      render: (_, record) => <Text type="secondary">{record.processing}</Text>,
+      sorter: (a, b) => a.processing - b.processing,
+    },
+    {
+      title: '已完成',
+      dataIndex: 'completed',
+      key: 'completed',
+      align: 'right',
+      render: (_, record) => <Text type="success">{record.completed}</Text>,
+      sorter: (a, b) => a.completed - b.completed,
+    },
+    {
+      title: '完成率',
+      dataIndex: 'completionRate',
+      key: 'completionRate',
+      width: 220,
+      render: (_, record) => (
+        <Progress
+          percent={clampRate(record.completionRate)}
+          size="small"
+          status={record.completionRate >= 100 ? 'success' : 'active'}
+        />
+      ),
+      sorter: (a, b) => a.completionRate - b.completionRate,
+    },
+  ], []);
+
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    Promise.allSettled([
+      getDashboardCards(dashboardAudience),
+      getOrderTypeMatrix({ dimension: matrixDimension }),
+      canViewLeaderTrend ? getModuleConfigs({ isActive: true }) : Promise.resolve([]),
+    ])
+      .then(([cardResult, matrixResult, moduleResult]) => {
+        if (!mounted) return;
+        setCards(cardResult.status === 'fulfilled' ? cardResult.value : EMPTY_CARDS);
+        const nextMatrixRows = matrixResult.status === 'fulfilled' ? buildMatrixTreeRows(matrixResult.value.rows || []) : buildMatrixTreeRows([]);
+        setMatrixRows(nextMatrixRows);
+        setSelectedMatrixRow((prev) => {
+          const flatRows = flattenMatrixRows(nextMatrixRows);
+          return flatRows.find((row) => row.rowKey === prev?.rowKey) || flatRows[0] || null;
+        });
+        if (moduleResult.status === 'fulfilled') {
+          setModuleOptions(moduleResult.value.filter((item) => item.module_type === 'sub' || item.moduleType === 'sub'));
+        }
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+    return () => { mounted = false; };
+  }, [dashboardAudience, matrixDimension, canViewLeaderTrend]);
+
+  return (
+    <PageContainer header={{ title: '仪表盘' }}>
+      <Space direction="vertical" size="large" style={{ width: '100%' }}>
+
+        <Row gutter={[16, 16]}>
+          <Col xs={24} sm={12} xl={6}>
+            <Card loading={loading} bodyStyle={CARD_BODY_STYLE}>
+              <Statistic title="本月工单总数" value={cards.totalThisMonth} prefix={<FileTextOutlined />} />
+            </Card>
+          </Col>
+          <Col xs={24} sm={12} xl={6}>
+            <Card loading={loading} bodyStyle={CARD_BODY_STYLE}>
+              <Statistic title="处理中" value={cards.processing} prefix={<SyncOutlined spin />} valueStyle={{ color: '#1677ff' }} />
+            </Card>
+          </Col>
+          <Col xs={24} sm={12} xl={6}>
+            <Card loading={loading} bodyStyle={CARD_BODY_STYLE}>
+              <Statistic title="已完成" value={cards.completed} prefix={<CheckCircleOutlined />} valueStyle={{ color: '#52c41a' }} />
+            </Card>
+          </Col>
+          <Col xs={24} sm={12} xl={6}>
+            <Card
+              hoverable
+              loading={loading}
+              bodyStyle={CARD_BODY_STYLE}
+              onClick={() => navigate('/notifications')}
+            >
+              <Statistic title="我的消息" value={cards.myMessages} prefix={<BellOutlined />} valueStyle={{ color: '#faad14' }} />
+            </Card>
+          </Col>
+        </Row>
+
+        <ProTable<DashboardMatrixTreeRow>
+          rowKey="rowKey"
+          headerTitle={matrixTitle}
+          columns={columns}
+          dataSource={matrixRows}
+          loading={loading}
+          search={false}
+          pagination={false}
+          options={false}
+          toolBarRender={false}
+          dateFormatter="string"
+          locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无本月工单统计" /> }}
+          onRow={(record) => ({
+            onClick: () => handleMatrixRowClick(record),
+            style: {
+              cursor: 'pointer',
+              background: selectedMatrixRow?.rowKey === record.rowKey ? '#f0f7ff' : undefined,
+            },
+          })}
+        />
+
+        {selectedMatrixRow && (
+          <Card
+            title={(
+              <Space>
+                <span>统计明细</span>
+                <Tag color={selectedMatrixRow.isGroup ? 'blue' : 'purple'}>{selectedMatrixRow.isGroup ? '整体分类' : '明细节点'}</Tag>
+              </Space>
+            )}
+            extra={<Text type="secondary">点击上方大类或子类可在本页切换查看</Text>}
+          >
+            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+              <Row gutter={[16, 16]}>
+                <Col xs={24} md={6}>
+                  <Statistic title="当前查看" value={selectedMatrixRow.label} />
+                </Col>
+                <Col xs={8} md={4}>
+                  <Statistic title="总数" value={selectedMatrixRow.total} />
+                </Col>
+                <Col xs={8} md={4}>
+                  <Statistic title="处理中" value={selectedMatrixRow.processing} valueStyle={{ color: '#1677ff' }} />
+                </Col>
+                <Col xs={8} md={4}>
+                  <Statistic title="已完成" value={selectedMatrixRow.completed} valueStyle={{ color: '#52c41a' }} />
+                </Col>
+                <Col xs={24} md={6}>
+                  <Text type="secondary">完成率</Text>
+                  <Progress percent={clampRate(selectedMatrixRow.completionRate)} size="small" />
+                </Col>
+              </Row>
+
+              {selectedMatrixRow.children && selectedMatrixRow.children.length > 0 && (
+                <Row gutter={[12, 12]}>
+                  {selectedMatrixRow.children.map((child) => (
+                    <Col key={child.rowKey} xs={24} sm={12} lg={6}>
+                      <Card size="small" hoverable onClick={() => setSelectedMatrixRow(child)}>
+                        <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                          <Text strong>{child.label}</Text>
+                          <Text type="secondary">总数 {child.total} ｜ 处理中 {child.processing} ｜ 已完成 {child.completed}</Text>
+                          <Progress percent={clampRate(child.completionRate)} size="small" />
+                        </Space>
+                      </Card>
+                    </Col>
+                  ))}
+                </Row>
+              )}
+            </Space>
+          </Card>
+        )}
+
+        <LeaderTrendChart visible={canViewLeaderTrend} moduleOptions={moduleOptions} />
+      </Space>
     </PageContainer>
   );
 };

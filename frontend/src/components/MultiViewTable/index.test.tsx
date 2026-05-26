@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import MultiViewTable from './index';
+import MultiViewTable, { mergeTableFiltersIntoParams } from './index';
 
 const mockColumns = [
   { title: 'Name', dataIndex: 'name', key: 'name' },
@@ -19,6 +19,20 @@ const mockRequest = vi.fn().mockResolvedValue({
 });
 
 describe('MultiViewTable', () => {
+  it('keeps all table filter values when merging request params', () => {
+    expect(mergeTableFiltersIntoParams(
+      { page: 1 },
+      { status: ['pending', 'processing'], type: ['onboarding'] },
+    )).toEqual({ page: 1, status: ['pending', 'processing'], type: 'onboarding' });
+  });
+
+  it('drops cleared table filters and keeps single-value compatibility', () => {
+    expect(mergeTableFiltersIntoParams(
+      { page: 1, keyword: 'alice' },
+      { status: [], owner: null, priority: [' urgent '] },
+    )).toEqual({ page: 1, keyword: 'alice', priority: 'urgent' });
+  });
+
   it('renders table view by default', async () => {
     render(
       <MemoryRouter>
@@ -36,7 +50,7 @@ describe('MultiViewTable', () => {
     }, { timeout: 5000 });
   });
 
-  it('renders view switcher with three options', async () => {
+  it('renders view switcher with three options when enabled', async () => {
     render(
       <MemoryRouter>
         <MultiViewTable
@@ -44,6 +58,7 @@ describe('MultiViewTable', () => {
           request={mockRequest}
           rowKey="id"
           viewId="test-view-switcher"
+          showViewSwitcher
         />
       </MemoryRouter>,
     );
@@ -54,7 +69,7 @@ describe('MultiViewTable', () => {
     }, { timeout: 5000 });
   });
 
-  it('renders column config button', async () => {
+  it('renders column config button when enabled', async () => {
     render(
       <MemoryRouter>
         <MultiViewTable
@@ -62,6 +77,7 @@ describe('MultiViewTable', () => {
           request={mockRequest}
           rowKey="id"
           viewId="test-col-config"
+          showColumnsConfig
         />
       </MemoryRouter>,
     );
@@ -88,7 +104,7 @@ describe('MultiViewTable', () => {
     }, { timeout: 5000 });
   });
 
-  it('hanldes kanban view props', async () => {
+  it('handles kanban view props', async () => {
     const { container } = render(
       <MemoryRouter initialEntries={['/?view=kanban']}>
         <MultiViewTable
@@ -101,6 +117,7 @@ describe('MultiViewTable', () => {
             { value: 'active', label: 'Active', color: 'green' },
             { value: 'inactive', label: 'Inactive', color: 'red' },
           ]}
+          showViewSwitcher
         />
       </MemoryRouter>,
     );

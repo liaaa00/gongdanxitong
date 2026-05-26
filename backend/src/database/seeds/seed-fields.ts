@@ -32,19 +32,25 @@ const onboardingCollectionGroups: Record<string, string> = Object.fromEntries([
   ...[
     'customer_name', 'customer_code', 'outsource_type', 'position', 'employee_name', 'id_card_no',
     'gender', 'birth_date', 'age', 'household_type', 'ethnicity', 'mobile', 'email', 'current_address',
-    'household_address', 'postal_code', 'contract_term_type', 'contract_term', 'contract_start_date',
-    'contract_end_date', 'probation_start_date', 'probation_months', 'probation_end_date', 'work_city',
-    'work_hour_system', 'work_cycle', 'salary_form', 'base_salary', 'other_salary', 'probation_salary',
-    'payroll_cycle', 'payroll_date', 'social_location', 'start_month', 'social_base', 'fund_base',
-    'fund_ratio', 'bank_name', 'bank_account', 'remark',
+    'household_address', 'postal_code',
   ].map((code) => [code, '基本信息']),
   ...[
+    'contract_term_type', 'contract_term', 'contract_start_date', 'contract_end_date',
+    'probation_start_date', 'probation_months', 'probation_end_date', 'work_city',
+    'work_hour_system', 'work_cycle',
+  ].map((code) => [code, '合同与用工信息']),
+  ...[
+    'salary_form', 'base_salary', 'other_salary', 'probation_salary', 'payroll_cycle', 'payroll_date',
+    'need_company_payroll', 'payroll_location', 'bank_name', 'bank_account',
+  ].map((code) => [code, '薪资与发薪信息']),
+  ...[
+    'social_location', 'start_month', 'social_base', 'fund_base', 'fund_ratio', 'social_urge',
+  ].map((code) => [code, '社保公积金信息']),
+  ...[
     'business_mode', 'employee_type', 'need_company_contract', 'contract_subject', 'contract_template',
-    'need_contract_urge', 'contract_feedback',
-  ].map((code) => [code, '劳动合同签订']),
-  ...['need_onboarding_contact', 'onboarding_feedback'].map((code) => [code, '入职联系']),
-  ...['need_company_payroll', 'payroll_location'].map((code) => [code, '发薪信息']),
-  ...['social_urge', 'special_remark', 'data_entry_feedback'].map((code) => [code, '社保公积金类']),
+    'need_contract_urge', 'need_onboarding_contact',
+  ].map((code) => [code, '业务判断项']),
+  ...['remark', 'special_remark', 'contract_feedback', 'onboarding_feedback', 'data_entry_feedback'].map((code) => [code, '备注与反馈']),
 ]);
 
 /* =========================================================================
@@ -104,7 +110,7 @@ const onboardingFields: FieldSeed[] = [
   { code: 'onboarding_feedback',    name: '入职联系反馈', type: FieldType.DROPDOWN, required: false, defaultRequired: false, options: ['未办', '办理中', '已办结'], orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'need_company_payroll',   name: '是否企服发薪', type: FieldType.DROPDOWN, required: true,  defaultRequired: true,  options: ['是', '否'], orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'payroll_location',       name: '发薪地',       type: FieldType.TEXT,     required: false, defaultRequired: false, conditionalRequired: { op: 'EQ', field: 'need_company_payroll', value: '是' }, orderType: ONBOARDING, businessContext: [ONBOARDING] },
-  { code: 'social_urge',            name: '社保公积金未办是否需要催办', type: FieldType.DROPDOWN, required: true,  defaultRequired: true,  options: ['是', '否'], orderType: ONBOARDING, businessContext: [ONBOARDING] },
+  { code: 'social_urge',            name: '社保公积金未办是否需要催办', type: FieldType.DROPDOWN, required: true,  defaultRequired: true,  options: ['是', '否'], helpText: '导入表中必须维护“是/否”；未维护或填写异常时该行导入失败。', orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'special_remark',         name: '特殊备注',     type: FieldType.TEXT,     required: false, defaultRequired: false, orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'data_entry_feedback',    name: '数据录入反馈', type: FieldType.DROPDOWN, required: false, defaultRequired: false, options: ['未办', '办理中', '已办结'], orderType: ONBOARDING, businessContext: [ONBOARDING] },
 ].map((field) => ({

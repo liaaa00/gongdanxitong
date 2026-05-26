@@ -1,3 +1,5 @@
+import { canonicalRoleCode } from '@/constants/roles';
+
 export type PermissionCode = string;
 
 export function hasPermission(
@@ -17,5 +19,6 @@ export function hasRole(
   if (!requiredRoles || requiredRoles.length === 0) {
     return true;
   }
-  return requiredRoles.some((r) => userRoles.includes(r));
+  const userRoleSet = new Set(userRoles.map((r) => canonicalRoleCode(r)));
+  return requiredRoles.some((r) => userRoleSet.has(canonicalRoleCode(r)));
 }

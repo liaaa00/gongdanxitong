@@ -17,13 +17,14 @@ function makeHttpContext(handler: (...args: never[]) => unknown, roles: string[]
 
 describe('delete endpoint admin guards', () => {
   const reflector = new Reflector();
-  const guard = new RolesGuard(reflector);
+  const roleActionPermissionService = { hasAnyRoleAction: jest.fn(async () => false) };
+  const guard = new RolesGuard(reflector, roleActionPermissionService as never);
 
-  it('marks dispatched order DELETE as admin only and rejects non-admin users', () => {
+  it('marks dispatched order DELETE as admin only and rejects non-admin users', async () => {
     const roles = reflector.get<string[]>(ROLES_KEY, DispatchedOrderController.prototype.remove);
     expect(roles).toEqual(['admin']);
 
-    expect(() => guard.canActivate(makeHttpContext(DispatchedOrderController.prototype.remove, ['social_insurance_team']))).toThrow(ForbiddenException);
+    await expect(guard.canActivate(makeHttpContext(DispatchedOrderController.prototype.remove, ['social_insurance_team']))).rejects.toThrow(ForbiddenException);
   });
 
   it('marks work order DELETE as admin only', () => {

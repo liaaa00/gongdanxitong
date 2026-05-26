@@ -23,8 +23,16 @@ export interface DispatchedOrderListItem {
   handler_name?: string | null;
   employeeName: string;
   employee_name?: string;
+  employeeIdCard?: string;
+  employee_id_card?: string;
   customerId: string;
   customer_id?: string;
+  customerCode?: string | null;
+  customer_code?: string | null;
+  customerName?: string | null;
+  customer_name?: string | null;
+  orderType?: string;
+  order_type?: string;
   returnReason: string | null;
   return_reason?: string | null;
   flowRound?: number;
@@ -33,6 +41,12 @@ export interface DispatchedOrderListItem {
   completion_remark?: string | null;
   dispatchedAt: Date | null;
   dispatched_at?: Date | null;
+  dueAt?: Date | null;
+  due_at?: Date | null;
+  slaHours?: number | null;
+  sla_hours?: number | null;
+  slaReminderBeforeHours?: number | null;
+  sla_reminder_before_hours?: number | null;
   acceptedAt: Date | null;
   accepted_at?: Date | null;
   completedAt: Date | null;
@@ -45,6 +59,8 @@ export interface DispatchedOrderListItem {
   updated_at?: Date;
   dirtyCount?: number;
   dirty_count?: number;
+  configuredHandlerNames?: string[];
+  configured_handler_names?: string[];
 }
 
 export interface DispatchedOrderDetailItem extends DispatchedOrderListItem {

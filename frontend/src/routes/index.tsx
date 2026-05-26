@@ -20,6 +20,7 @@ const OnboardingModule = lazy(() => import('@/pages/OnboardingModule'));
 const MyDispatched = lazy(() => import('@/pages/MyDispatched'));
 const MyDispatchedDetail = lazy(() => import('@/pages/MyDispatched/Detail'));
 const TeamDispatched = lazy(() => import('@/pages/TeamDispatched'));
+const HistoryWorkOrders = lazy(() => import('@/pages/HistoryWorkOrders'));
 const ExportTemplates = lazy(() => import('@/pages/ExportTemplates'));
 const NotificationsPage = lazy(() => import('@/pages/Notifications'));
 
@@ -42,6 +43,8 @@ const AdminModuleConfig = lazy(() => import('@/pages/Admin/ModuleConfig'));
 const AdminFields = lazy(() => import('@/pages/Admin/Fields'));
 const AdminFieldPermissions = lazy(() => import('@/pages/Admin/FieldPermissions'));
 const AdminDispatchConfig = lazy(() => import('@/pages/Admin/DispatchConfig'));
+const AdminWorkflows = lazy(() => import('@/pages/Admin/Workflows'));
+const AdminWorkflowEditor = lazy(() => import('@/pages/Admin/Workflows/Editor'));
 const AdminExportTemplates = lazy(() => import('@/pages/Admin/ExportTemplates'));
 const AdminLogs = lazy(() => import('@/pages/Admin/Logs'));
 const AdminAISettings = lazy(() => import('@/pages/Admin/AISettings'));
@@ -121,9 +124,10 @@ const AppRoutes: React.FC = () => (
         <Route path="onboarding/:moduleCode" element={<RoleRoute><RouteGuard moduleName="入职模块"><OnboardingModule /></RouteGuard></RoleRoute>} />
 
         <Route path="my-work/initiated" element={<RoleRoute><RouteGuard moduleName="我发起的"><WorkOrders /></RouteGuard></RoleRoute>} />
-        <Route path="my-work/pending" element={<RoleRoute><RouteGuard moduleName="我的待办"><MyDispatched /></RouteGuard></RoleRoute>} />
-        <Route path="my-work/done" element={<RoleRoute><RouteGuard moduleName="我的已办"><MyDispatched /></RouteGuard></RoleRoute>} />
+        <Route path="my-work/pending" element={<RoleRoute><RouteGuard moduleName="我的待办"><MyDispatched mode="pending" /></RouteGuard></RoleRoute>} />
+        <Route path="my-work/done" element={<RoleRoute><RouteGuard moduleName="我的已办"><MyDispatched mode="done" /></RouteGuard></RoleRoute>} />
         <Route path="my-work/team" element={<RoleRoute><RouteGuard moduleName="团队工单"><TeamDispatched /></RouteGuard></RoleRoute>} />
+        <Route path="my-work/history" element={<RoleRoute><RouteGuard moduleName="历史工单"><HistoryWorkOrders /></RouteGuard></RoleRoute>} />
 
         <Route path="my-dispatched" element={<RoleRoute><RouteGuard moduleName="我的子工单"><MyDispatched /></RouteGuard></RoleRoute>} />
         <Route path="my-dispatched/:id" element={<RoleRoute><RouteGuard moduleName="子工单详情"><MyDispatchedDetail /></RouteGuard></RoleRoute>} />
@@ -133,8 +137,8 @@ const AppRoutes: React.FC = () => (
         <Route path="export-templates" element={<RoleRoute><RouteGuard moduleName="导出模板"><ExportTemplates /></RouteGuard></RoleRoute>} />
         <Route path="notifications" element={<RoleRoute><RouteGuard moduleName="消息通知"><NotificationsPage /></RouteGuard></RoleRoute>} />
 
-        {/* 非 admin 只读访问字段权限矩阵（admin 仍走 /admin/field-permissions 可编辑）*/}
-        <Route path="my-field-permissions" element={<RoleRoute><RouteGuard moduleName="我的字段权限"><AdminFieldPermissions /></RouteGuard></RoleRoute>} />
+        {/* 字段权限入口仅管理员可访问；保留旧路径并由 RoleRoute 按 ADMIN 权限拦截。*/}
+        <Route path="my-field-permissions" element={<RoleRoute><RouteGuard moduleName="字段权限"><AdminFieldPermissions /></RouteGuard></RoleRoute>} />
 
         <Route path="renewal" element={<RoleRoute><RouteGuard moduleName="续签列表"><RenewalList /></RouteGuard></RoleRoute>} />
         <Route path="renewal/new" element={<RoleRoute><RouteGuard moduleName="新建续签"><RenewalNew /></RouteGuard></RoleRoute>} />
@@ -168,6 +172,9 @@ const AppRoutes: React.FC = () => (
           <Route path="fields" element={<RouteGuard moduleName="字段配置"><AdminFields /></RouteGuard>} />
           <Route path="field-permissions" element={<RouteGuard moduleName="字段权限"><AdminFieldPermissions /></RouteGuard>} />
           <Route path="dispatch-config" element={<RouteGuard moduleName="派发配置"><AdminDispatchConfig /></RouteGuard>} />
+          <Route path="workflows" element={<RouteGuard moduleName="工单流程配置"><AdminWorkflows /></RouteGuard>} />
+          <Route path="workflow-config" element={<RouteGuard moduleName="工单流程配置"><AdminWorkflows /></RouteGuard>} />
+          <Route path="workflows/:id" element={<RouteGuard moduleName="工单流程编辑"><AdminWorkflowEditor /></RouteGuard>} />
           <Route path="export-templates" element={<RouteGuard moduleName="导出模板配置"><AdminExportTemplates /></RouteGuard>} />
           <Route path="logs" element={<RouteGuard moduleName="操作日志"><AdminLogs /></RouteGuard>} />
           <Route path="ai-settings" element={<RouteGuard moduleName="智能设置"><AdminAISettings /></RouteGuard>} />
@@ -176,7 +183,7 @@ const AppRoutes: React.FC = () => (
           <Route path="customer-assignees" element={<RouteGuard moduleName="业务员客户绑定"><AdminCustomerAssignees /></RouteGuard>} />
         </Route>
 
-        <Route path="work-order-pool" element={<RoleRoute><RouteGuard moduleName="工单池"><WorkOrderPool /></RouteGuard></RoleRoute>} />
+        <Route path="work-order-pool" element={<RoleRoute><RouteGuard moduleName="待认领工单"><WorkOrderPool /></RouteGuard></RoleRoute>} />
         <Route path="*" element={<RouteGuard moduleName="404"><NotFound /></RouteGuard>} />
       </Route>
     </Routes>

@@ -8,7 +8,6 @@ export interface DispatchConfigPerson {
   userId?: string;
   name?: string;
   displayName?: string | null;
-  display_name?: string | null;
   real_name?: string;
   realName?: string;
   username?: string;
@@ -60,10 +59,10 @@ export interface DispatchConfigItem {
   allow_manual_override?: boolean;
   allowManualOverride?: boolean;
   priority?: number;
-  sla_hours?: number;
-  slaHours?: number;
-  parent_module_code?: string | null;
-  parentModuleCode?: string | null;
+  sla_hours?: number | null;
+  slaHours?: number | null;
+  sla_reminder_before_hours?: number | null;
+  slaReminderBeforeHours?: number | null;
 }
 
 function normalizeDispatchConfigItem(item: any): DispatchConfigItem {
@@ -75,8 +74,6 @@ function normalizeDispatchConfigItem(item: any): DispatchConfigItem {
   const triggerConditions = item.trigger_conditions ?? item.triggerConditions ?? advanced.triggerConditions ?? advanced.trigger_conditions;
   const allowManualOverride = item.allow_manual_override ?? item.allowManualOverride ?? advanced.allowManualOverride ?? advanced.allow_manual_override;
   const isActive = item.is_active ?? item.isActive ?? advanced.isActive ?? advanced.is_active;
-  const handlerIds = item.handler_ids ?? item.handlerIds ?? [];
-  const slaHours = item.sla_hours ?? item.slaHours;
 
   return {
     ...item,
@@ -95,8 +92,8 @@ function normalizeDispatchConfigItem(item: any): DispatchConfigItem {
     backup1: item.backup1 ?? null,
     backup2: item.backup2 ?? null,
     handlers: Array.isArray(item.handlers) ? item.handlers : [],
-    handlerIds,
-    handler_ids: handlerIds,
+    handlerIds: Array.isArray(item.handlerIds) ? item.handlerIds : item.handler_ids,
+    handler_ids: Array.isArray(item.handler_ids) ? item.handler_ids : item.handlerIds,
     rule_name: item.rule_name ?? item.ruleName ?? advanced.ruleName ?? advanced.rule_name,
     ruleName: item.ruleName ?? item.rule_name ?? advanced.ruleName ?? advanced.rule_name,
     order_type: orderType,
@@ -116,10 +113,10 @@ function normalizeDispatchConfigItem(item: any): DispatchConfigItem {
     allow_manual_override: allowManualOverride,
     allowManualOverride,
     priority: item.priority ?? advanced.priority,
-    sla_hours: slaHours,
-    slaHours,
-    parent_module_code: item.parent_module_code ?? item.parentModuleCode,
-    parentModuleCode: item.parentModuleCode ?? item.parent_module_code,
+    sla_hours: item.sla_hours ?? item.slaHours ?? null,
+    slaHours: item.slaHours ?? item.sla_hours ?? null,
+    sla_reminder_before_hours: item.sla_reminder_before_hours ?? item.slaReminderBeforeHours ?? null,
+    slaReminderBeforeHours: item.slaReminderBeforeHours ?? item.sla_reminder_before_hours ?? null,
     is_active: isActive,
     isActive,
   } as DispatchConfigItem;

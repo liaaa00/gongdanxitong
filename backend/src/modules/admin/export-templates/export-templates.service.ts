@@ -60,7 +60,7 @@ export class ExportTemplatesService {
 
   private async loadTemplate(id: string): Promise<ExportTemplate> {
     const row = await this.repository.findOne({ where: { id } });
-    if (!row) throw new NotFoundException('export template not found');
+    if (!row) throw new NotFoundException('导出模板未找到');
     return row;
   }
 
@@ -112,12 +112,59 @@ export class ExportTemplatesService {
       where: { id: dispatchedOrderId },
       relations: { parentOrder: true, handler: true },
     });
-    if (!order) throw new NotFoundException('dispatched order not found');
+    if (!order) throw new NotFoundException('子工单未找到');
     const template = templateId
       ? await this.loadTemplate(templateId)
       : await this.resolveDefaultTemplate(order.moduleCode, order.visibleFields ?? []);
-    if (template.moduleCode !== order.moduleCode) throw new NotFoundException('export template not found for module');
+    if (template.moduleCode !== order.moduleCode) throw new NotFoundException('该模块下未找到导出模板');
     return this.applyTemplateToOrders(template, [order], [dispatchedOrderId], user, 'dispatched_order');
+  }
+
+  async exportDispatchedOrdersAuto(dispatchedOrderIds: string[], templateId: string | undefined, user: JwtUserPayload): Promise<DispatchedOrderExportResult> {
+    const ids = Array.from(new Set(dispatchedOrderIds));
+    if (ids.length === 0) throw new NotFoundException('未选择子工单');
+    if (templateId) return this.apply(templateId, ids, user);
+
+    const orders = await this.loadOrdersByIds(ids);
+    const fieldNameMap = await this.loadFieldNameMap();
+    const workbook = new Workbook();
+    const usedSheetNames = new Set<string>();
+    let rowCount = 0;
+    const grouped = new Map<string, DispatchedOrder[]>();
+    for (const order of orders) {
+      const list = grouped.get(order.moduleCode) ?? [];
+      list.push(order);
+      grouped.set(order.moduleCode, list);
+    }
+
+    for (const [moduleCode, moduleOrders] of grouped.entries()) {
+      const visibleFields = Array.from(new Set(moduleOrders.flatMap((order) => order.visibleFields ?? [])));
+      const template = await this.resolveDefaultTemplate(moduleCode, visibleFields);
+      const result = this.buildResult(template, moduleOrders, fieldNameMap);
+      rowCount += result.rowCount ?? result.rows.length;
+      const worksheet = workbook.addWorksheet(this.uniqueSheetName(template.templateName || moduleCode, usedSheetNames));
+      worksheet.columns = result.columns.map((column) => ({ header: column.title, key: column.title, width: Math.min(Math.max(column.title.length + 6, 12), 32) }));
+      worksheet.getRow(1).font = { bold: true };
+      result.rows.forEach((row) => worksheet.addRow(row));
+    }
+
+    const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+    const meta = await this.uploadService.saveBuffer({
+      kind: 'excel',
+      buffer,
+      originalName: `子工单批量导出-${Date.now()}.xlsx`,
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    await this.operationLogRepository.save(this.operationLogRepository.create({
+      entityType: 'dispatched_order',
+      entityId: ids[0],
+      userId: user.sub,
+      actionType: 'batch_export_auto_template',
+      beforeData: null,
+      afterData: { dispatchedOrderIds: ids, fileId: meta.fileId, rowCount, moduleCodes: Array.from(grouped.keys()) },
+      ipAddress: null,
+    }));
+    return { templateId: null, templateName: '子工单批量导出', moduleCode: grouped.size === 1 ? Array.from(grouped.keys())[0] : 'mixed', columns: [], rows: [], rowCount, fileId: meta.fileId, fileName: meta.originalName, downloadUrl: `/api/files/${meta.fileId}` };
   }
 
   private async applyTemplateToOrders(
@@ -140,18 +187,42 @@ export class ExportTemplatesService {
       originalName: `${template.templateName}-${Date.now()}.xlsx`,
       mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });
-    if (entityType !== 'export_template') {
-      await this.operationLogRepository.save(this.operationLogRepository.create({
-        entityType,
-        entityId: template.id || dispatchedOrderIds[0],
-        userId: user.sub,
-        actionType: 'apply_export_template',
-        beforeData: null,
-        afterData: { templateId: template.id || null, dispatchedOrderIds, fileId: meta.fileId, rowCount: result.rowCount },
-        ipAddress: null,
-      }));
-    }
+    await this.operationLogRepository.save(this.operationLogRepository.create({
+      entityType,
+      entityId: template.id || dispatchedOrderIds[0],
+      userId: user.sub,
+      actionType: 'apply_export_template',
+      beforeData: null,
+      afterData: { templateId: template.id || null, dispatchedOrderIds, fileId: meta.fileId, rowCount: result.rowCount },
+      ipAddress: null,
+    }));
     return { ...result, fileId: meta.fileId, fileName: meta.originalName, downloadUrl: `/api/files/${meta.fileId}` };
+  }
+
+  private async loadOrdersByIds(ids: string[]): Promise<DispatchedOrder[]> {
+    if (ids.length === 0) return [];
+    const orders = await this.dispatchedOrderRepository
+      .createQueryBuilder('d')
+      .leftJoinAndSelect('d.parentOrder', 'w')
+      .leftJoinAndSelect('d.handler', 'h')
+      .where('d.id IN (:...ids)', { ids })
+      .orderBy('d.createdAt', 'ASC')
+      .getMany();
+    if (orders.length === 0) throw new NotFoundException('未匹配到子工单');
+    return orders;
+  }
+
+  private uniqueSheetName(name: string, used: Set<string>): string {
+    const normalized = name.replace(/[\\/*?:\[\]]/g, '').trim() || 'Sheet';
+    const base = normalized.slice(0, 28);
+    let candidate = base;
+    let index = 1;
+    while (used.has(candidate)) {
+      candidate = `${base.slice(0, 25)}-${index}`;
+      index += 1;
+    }
+    used.add(candidate);
+    return candidate;
   }
 
   private async loadOrders(ids: string[], moduleCode: string): Promise<DispatchedOrder[]> {
@@ -164,7 +235,7 @@ export class ExportTemplatesService {
       .andWhere('d.moduleCode = :moduleCode', { moduleCode })
       .orderBy('d.createdAt', 'ASC')
       .getMany();
-    if (orders.length === 0) throw new NotFoundException('no dispatched orders matched template module');
+    if (orders.length === 0) throw new NotFoundException('该模板模块下未匹配到子工单');
     return orders;
   }
 

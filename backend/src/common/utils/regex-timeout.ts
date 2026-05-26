@@ -23,11 +23,23 @@ const workerScript = `
   });
 `;
 
+function hasPotentialCatastrophicBacktracking(pattern: string): boolean {
+  return /\([^)]*[+*][^)]*\)[+*?{]/.test(pattern) || /\([^)]*\|[^)]*\)[+*?{]/.test(pattern);
+}
+
 export function safeRegexTest(
   input: string,
   pattern: string,
   timeoutMs = 100,
 ): Promise<boolean> {
+  if (!hasPotentialCatastrophicBacktracking(pattern)) {
+    try {
+      return Promise.resolve(new RegExp(pattern).test(input));
+    } catch {
+      return Promise.resolve(false);
+    }
+  }
+
   return new Promise((resolve) => {
     const worker = new Worker(workerScript, { eval: true });
     let settled = false;

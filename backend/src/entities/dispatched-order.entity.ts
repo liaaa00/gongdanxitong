@@ -62,6 +62,15 @@ export class DispatchedOrder {
   @Column({ name: 'dispatched_at', type: 'timestamptz', nullable: true })
   dispatchedAt!: Date | null;
 
+  @Column({ name: 'due_at', type: 'timestamptz', nullable: true })
+  dueAt!: Date | null;
+
+  @Column({ name: 'sla_hours', type: 'int', nullable: true })
+  slaHours!: number | null;
+
+  @Column({ name: 'sla_reminder_before_hours', type: 'int', nullable: true })
+  slaReminderBeforeHours!: number | null;
+
   @Column({ name: 'accepted_at', type: 'timestamptz', nullable: true })
   acceptedAt!: Date | null;
 

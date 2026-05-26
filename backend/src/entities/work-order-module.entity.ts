@@ -43,19 +43,22 @@ export class WorkOrderModuleConfig {
   @Column({ name: 'display_order', type: 'int', default: 0 })
   displayOrder!: number;
 
+  @Column({ name: 'is_active', type: 'boolean', default: true })
+  isActive!: boolean;
+
   @Column({
     name: 'dispatch_strategy',
     type: 'enum',
     enum: DispatchStrategy,
-    default: DispatchStrategy.POOL,
+    default: DispatchStrategy.TEAM_CLAIM,
   })
   dispatchStrategy!: DispatchStrategy;
 
-  @Column({ name: 'sla_hours', type: 'int', default: 72 })
-  slaHours!: number;
+  @Column({ name: 'sla_hours', type: 'int', nullable: true })
+  slaHours!: number | null;
 
-  @Column({ name: 'is_active', type: 'boolean', default: true })
-  isActive!: boolean;
+  @Column({ name: 'sla_reminder_before_hours', type: 'int', nullable: true })
+  slaReminderBeforeHours!: number | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;

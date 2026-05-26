@@ -32,12 +32,7 @@ interface SaveDispatchRuleInput {
 
 export interface DispatchConfigPerson {
   userId: string | null;
-  user_id: string | null;
   displayName: string | null;
-  display_name: string | null;
-  realName?: string | null;
-  real_name?: string | null;
-  username?: string | null;
 }
 
 export interface DispatchConfigResponse {
@@ -52,7 +47,7 @@ export class DispatchRulesService {
     @InjectRepository(ModuleHandler)
     private readonly moduleHandlerRepository: Repository<ModuleHandler>,
     @InjectRepository(WorkOrderModuleConfig)
-    private readonly moduleRepository: Repository<WorkOrderModuleConfig>,
+    private readonly moduleConfigRepository: Repository<WorkOrderModuleConfig>,
     private readonly astValidator: AstValidator,
     private readonly dispatchEngine: DispatchEngineService,
   ) {}
@@ -86,15 +81,13 @@ export class DispatchRulesService {
   }
 
   async getDispatchConfig(): Promise<DispatchConfigResponse> {
-    const [modules, handlers] = await Promise.all([
-      this.moduleRepository.find({
-        order: { displayOrder: 'ASC', moduleCode: 'ASC' },
-      }),
+    const [handlers, moduleConfigs] = await Promise.all([
       this.moduleHandlerRepository.find({
-        where: { isActive: true },
+        where: { isActive: true, isBackup: false },
         relations: { handler: true },
-        order: { moduleCode: 'ASC', isBackup: 'ASC', weight: 'DESC', id: 'ASC' },
+        order: { moduleCode: 'ASC', weight: 'DESC', id: 'ASC' },
       }),
+      this.moduleConfigRepository.find({ order: { displayOrder: 'ASC', moduleCode: 'ASC' } }),
     ]);
 
     const handlersByModule = new Map<string, ModuleHandler[]>();
@@ -104,45 +97,49 @@ export class DispatchRulesService {
       handlersByModule.set(handler.moduleCode, group);
     }
 
-    const rows = modules
-      .filter((module) => !['business_module', 'main'].includes(module.moduleType))
-      .map((module) => {
-        const moduleHandlers = [...(handlersByModule.get(module.moduleCode) ?? [])].sort((left, right) => {
-          if (left.isBackup !== right.isBackup) return Number(left.isBackup) - Number(right.isBackup);
-          return right.weight - left.weight || left.id.localeCompare(right.id);
-        });
-        const handlerPeople = moduleHandlers.map((handler) => this.toDispatchConfigPerson(handler));
+    const moduleCodes = Array.from(new Set([
+      ...moduleConfigs.map((item) => item.moduleCode),
+      ...handlersByModule.keys(),
+    ])).filter(Boolean);
 
-        return {
-          id: module.id,
-          source: 'handlers' as const,
-          module: module.moduleName,
-          moduleName: module.moduleName,
-          module_name: module.moduleName,
-          moduleCode: module.moduleCode,
-          module_code: module.moduleCode,
-          subModule: module.moduleCode,
-          sub_module: module.moduleCode,
-          parentModuleCode: module.parentModuleCode,
-          parent_module_code: module.parentModuleCode,
-          customerName: '全部客户',
-          customer_name: '全部客户',
-          customerId: null,
-          customer_id: null,
-          primary: handlerPeople[0] ?? null,
-          backup1: handlerPeople[1] ?? null,
-          backup2: handlerPeople[2] ?? null,
-          handlers: handlerPeople,
-          handlerIds: moduleHandlers.map((handler) => handler.handlerId),
-          handler_ids: moduleHandlers.map((handler) => handler.handlerId),
-          dispatchStrategy: module.dispatchStrategy ?? DispatchStrategy.POOL,
-          dispatch_strategy: module.dispatchStrategy ?? DispatchStrategy.POOL,
-          slaHours: module.slaHours ?? 72,
-          sla_hours: module.slaHours ?? 72,
-          isActive: module.isActive,
-          is_active: module.isActive,
-        };
-      });
+    const configByModule = new Map(moduleConfigs.map((item) => [item.moduleCode, item]));
+    const rows = moduleCodes.map((moduleCode) => {
+      const moduleConfig = configByModule.get(moduleCode);
+      const orderedHandlers = [...(handlersByModule.get(moduleCode) ?? [])]
+        .sort((left, right) => right.weight - left.weight || left.id.localeCompare(right.id));
+      const people = orderedHandlers
+        .map((handler) => this.toDispatchConfigPerson(handler))
+        .filter((person): person is DispatchConfigPerson => Boolean(person));
+      const handlerIds = orderedHandlers.map((handler) => handler.handlerId);
+
+      return {
+        id: moduleConfig?.id ?? orderedHandlers[0]?.id ?? moduleCode,
+        source: 'handlers' as const,
+        module: moduleCode,
+        moduleCode,
+        module_code: moduleCode,
+        subModule: moduleCode,
+        sub_module: moduleCode,
+        moduleName: moduleConfig?.moduleName ?? moduleCode,
+        module_name: moduleConfig?.moduleName ?? moduleCode,
+        customerName: '全部客户',
+        customerId: null,
+        handlers: people,
+        handlerIds,
+        handler_ids: handlerIds,
+        primary: people[0] ?? null,
+        backup1: null,
+        backup2: null,
+        dispatchStrategy: moduleConfig?.dispatchStrategy ?? DispatchStrategy.TEAM_CLAIM,
+        dispatch_strategy: moduleConfig?.dispatchStrategy ?? DispatchStrategy.TEAM_CLAIM,
+        slaHours: moduleConfig?.slaHours ?? null,
+        sla_hours: moduleConfig?.slaHours ?? null,
+        slaReminderBeforeHours: moduleConfig?.slaReminderBeforeHours ?? null,
+        sla_reminder_before_hours: moduleConfig?.slaReminderBeforeHours ?? null,
+        isActive: moduleConfig?.isActive ?? true,
+        is_active: moduleConfig?.isActive ?? true,
+      };
+    });
 
     return { rows };
   }
@@ -150,7 +147,7 @@ export class DispatchRulesService {
   async getById(id: string): Promise<DispatchRule> {
     const row = await this.repository.findOne({ where: { id } });
     if (!row) {
-      throw new NotFoundException('dispatch rule not found');
+      throw new NotFoundException('派发规则未找到');
     }
 
     return row;
@@ -227,15 +224,9 @@ export class DispatchRulesService {
     user?: { realName?: string | null; username?: string | null } | null,
   ): DispatchConfigPerson | null {
     if (!userId) return null;
-    const displayName = user?.realName ?? user?.username ?? userId;
     return {
       userId,
-      user_id: userId,
-      displayName,
-      display_name: displayName,
-      realName: user?.realName ?? null,
-      real_name: user?.realName ?? null,
-      username: user?.username ?? null,
+      displayName: user?.realName ?? user?.username ?? userId,
     };
   }
 }

@@ -1,15 +1,24 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, In, Repository } from 'typeorm';
+import { EntityManager, FindOptionsWhere, In, Not, Repository } from 'typeorm';
 import { businessException } from 'src/common/exceptions/business-exception';
 import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
-import { toPageResult } from 'src/common/types/pagination.types';
-import { Notification } from 'src/entities';
-import { NotificationEventBus, NotificationStreamPayload } from './notification-event-bus';
+
+import { Notification, User } from 'src/entities';
+import { NotificationEventBus } from './notification-event-bus';
 import { MockEmailChannel } from './channels/mock-email.channel';
 import { MockSmsChannel } from './channels/mock-sms.channel';
 import { InAppNotificationChannel } from './channels/in-app.channel';
 import { NotificationChannelType } from './channels/channel-dispatcher.interface';
+import {
+  buildDiffSummary,
+  buildReadableFieldChangeContent,
+  extractInternalKeysFromPayload,
+  extractInternalKeysFromText,
+  localizeInternalKeysInText,
+  normalizeReadableDiffFields,
+  ReadableDiffField,
+} from './notification-display.util';
 
 interface NotificationTemplateDefinition {
   title: string;
@@ -36,19 +45,7 @@ export interface QueryNotificationsDto extends PaginationQueryDto {
   priority?: string;
   groupBy?: string;
   group_by?: string;
-  /** 按 bucket 分类过滤（与 countUnreadByBucket 口径一致）。 */
   bucket?: string;
-}
-
-type SalespersonNotificationBucket = 'field_changed' | 'returned' | 'urge_feedback' | 'withdraw_void_result' | 'system';
-type BackendNotificationBucket = 'todo' | 'urge' | 'sla_warning' | 'sla_breached' | 'creator_modified' | 'withdraw_void_request' | 'system';
-type NotificationBucket = SalespersonNotificationBucket | BackendNotificationBucket;
-
-export interface UnreadCountByBucketResult {
-  total: number;
-  salesperson: Record<Exclude<SalespersonNotificationBucket, 'system'>, number>;
-  backend: Record<Exclude<BackendNotificationBucket, 'system'>, number>;
-  system: number;
 }
 
 export interface NotificationListItem {
@@ -66,13 +63,27 @@ export interface NotificationListItem {
   created_at?: Date;
   readAt: Date | null;
   priority?: string;
+  notificationBucket?: NotificationBucket;
+  notification_bucket?: NotificationBucket;
+  salespersonCategory?: SalespersonNotificationBucket | null;
+  salesperson_category?: SalespersonNotificationBucket | null;
+  backendCategory?: BackendNotificationBucket | null;
+  backend_category?: BackendNotificationBucket | null;
   entity_type?: string | null;
   entity_id?: string | null;
   ref_order_id?: string;
   ref_order_no?: string;
   order_no?: string;
   diff_summary?: string;
-  diff_fields?: Array<{ field_code: string; field_name?: string; old_value?: unknown; new_value?: unknown }>;
+  diffSummary?: string;
+  diff_fields?: ReadableDiffField[];
+  diffFields?: ReadableDiffField[];
+  actorUserId?: string;
+  actor_user_id?: string;
+  actorName?: string;
+  actor_name?: string;
+  operatorName?: string;
+  operator_name?: string;
 }
 
 export interface NotificationListResult {
@@ -108,6 +119,39 @@ export interface SendNotificationInput {
   channels?: NotificationChannelType[];
   manager?: EntityManager;
 }
+
+type BooleanLike = boolean | string | undefined;
+
+type SalespersonNotificationBucket = 'field_changed' | 'returned' | 'urge_feedback' | 'withdraw_void_result' | 'system';
+type SalespersonUnreadBucket = Exclude<SalespersonNotificationBucket, 'urge_feedback'>;
+type BackendNotificationBucket = 'todo' | 'urge' | 'sla_warning' | 'sla_breached' | 'creator_modified' | 'withdraw_void_request' | 'system';
+type BackendUnreadBucket = BackendNotificationBucket;
+type NotificationBucket = SalespersonNotificationBucket | BackendNotificationBucket;
+
+interface NotificationWhereOptions {
+  isRead?: boolean;
+  unread?: boolean;
+  bizType?: string;
+  biz_type?: string;
+  includeDispatch?: BooleanLike;
+  /** 按 bucket 过滤（与 toNotificationBucket 口径一致），优先级高于 bizType。 */
+  bucket?: string;
+}
+
+export interface UnreadCountByBucketResult {
+  total: number;
+  salesperson: Record<SalespersonUnreadBucket, number>;
+  backend: Record<BackendUnreadBucket, number>;
+  system: number;
+}
+
+const DISPATCH_BIZ_TYPES = [
+  'dispatch',
+  'dispatch_created',
+  'dispatched_new',
+  'dispatched_accepted',
+  'dispatched_completed',
+] as const;
 
 @Injectable()
 export class NotificationService {
@@ -209,7 +253,7 @@ export class NotificationService {
       defaultChannels: ['in_app'],
     },
     pool_new: {
-      title: '【新公共池任务】{{moduleName}}',
+      title: '【新待认领任务】{{moduleName}}',
       content: '工单 {{orderNo}} 待认领。',
       defaultLink: '/my-dispatched?onlyPool=true',
       defaultChannels: ['in_app'],
@@ -225,6 +269,8 @@ export class NotificationService {
   constructor(
     @InjectRepository(Notification)
     private readonly notificationRepository: Repository<Notification>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
     private readonly eventBus: NotificationEventBus,
     private readonly inAppChannel: InAppNotificationChannel,
     private readonly emailChannel: MockEmailChannel,
@@ -238,16 +284,21 @@ export class NotificationService {
       if (!input.userId) continue;
       unique.set(`${input.userId}:${input.bizType}:${input.title}:${input.link ?? ''}`, input);
     }
-    const rows = Array.from(unique.values()).map((input) => repository.create({
-      userId: input.userId,
-      bizType: input.bizType,
-      title: input.title,
-      content: input.content,
-      link: input.link ?? null,
-      payload: { ...(input.payload ?? {}), channels: (input.payload?.channels as unknown[]) ?? ['in_app'] },
-      isRead: false,
-      readAt: null,
-    }));
+    const uniqueInputs = Array.from(unique.values());
+    const fieldLabels = await this.resolveFieldLabelsFromInputs(uniqueInputs.map((input) => ({ content: input.content, payload: input.payload ?? null })));
+    const rows = uniqueInputs.map((input) => {
+      const normalized = this.normalizeNotificationDisplay(input.content, input.payload ?? null, new Map(), fieldLabels);
+      return repository.create({
+        userId: input.userId,
+        bizType: input.bizType,
+        title: input.title,
+        content: normalized.content,
+        link: input.link ?? null,
+        payload: { ...(normalized.payload ?? {}), channels: (normalized.payload?.channels as unknown[]) ?? ['in_app'] },
+        isRead: false,
+        readAt: null,
+      });
+    });
     if (rows.length === 0) return [];
     const saved = await repository.save(rows);
     for (const item of saved) {
@@ -279,14 +330,16 @@ export class NotificationService {
     const content = this.render(template.content, params);
     const link = input.link ?? this.render(template.defaultLink ?? '', params) ?? null;
     const channels = this.resolveChannels(input.channels, template.defaultChannels);
+    const fieldLabels = await this.resolveFieldLabelsFromInputs([{ content, payload: params }]);
+    const normalized = this.normalizeNotificationDisplay(content, params, new Map(), fieldLabels);
     const context = {
       templateCode: input.templateCode,
       bizType: input.bizType ?? input.templateCode,
       recipients,
       title,
-      content,
+      content: normalized.content,
       link,
-      payload: params,
+      payload: normalized.payload,
       channels,
       manager: input.manager,
     };
@@ -309,25 +362,20 @@ export class NotificationService {
   ): Promise<NotificationListResult> {
     const page = query.current ?? query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
-    const bizType = query.bizType ?? query.biz_type;
-    const isRead = typeof query.unread === 'boolean'
-      ? !query.unread
-      : query.isRead;
     const rows = await this.notificationRepository.find({
-      where: {
-        userId,
-        ...(typeof isRead === 'boolean' ? { isRead } : {}),
-      },
+      where: this.buildWhere(userId, query),
       order: { createdAt: 'DESC' },
     });
 
-    const filteredRows = query.bucket
-      ? rows.filter((row) => this.toNotificationBucket(row.bizType) === query.bucket)
-      : bizType
-        ? rows.filter((row) => this.matchesBizTypeFilter(row.bizType, bizType))
-        : rows;
+    // 按 bucket 过滤（与 countUnreadByBucket 口径一致）
+    const bucket = query.bucket;
+    const filteredRows = bucket
+      ? rows.filter((row) => this.toNotificationBucket(row.bizType) === bucket)
+      : rows;
 
-    const items = filteredRows.map((row) => this.toListItem(row));
+    const actorNames = await this.resolveActorDisplayNames(filteredRows);
+    const fieldLabels = await this.resolveFieldLabels(filteredRows);
+    const items = filteredRows.map((row) => this.toListItem(row, actorNames, fieldLabels));
     const groups = query.groupBy === 'biz_type' || query.group_by === 'biz_type'
       ? this.groupByBizType(items)
       : undefined;
@@ -345,7 +393,9 @@ export class NotificationService {
 
   async get(id: string, userId: string): Promise<NotificationListItem> {
     const row = await this.loadOwnedNotification(id, userId);
-    return this.toListItem(row);
+    const actorNames = await this.resolveActorDisplayNames([row]);
+    const fieldLabels = await this.resolveFieldLabels([row]);
+    return this.toListItem(row, actorNames, fieldLabels);
   }
 
   async markRead(id: string, userId: string): Promise<{ success: boolean; unread_count: number }> {
@@ -369,20 +419,20 @@ export class NotificationService {
   }
 
   async markReadByQuery(userId: string, query: QueryNotificationsDto): Promise<{ success: boolean; affected: number; unread_count: number }> {
-    const rows = await this.notificationRepository.find({ where: { userId, isRead: false } });
-    const bizType = query.bizType ?? query.biz_type;
-    const filteredRows = query.bucket
-      ? rows.filter((row) => this.toNotificationBucket(row.bizType) === query.bucket)
-      : bizType
-        ? rows.filter((row) => this.matchesBizTypeFilter(row.bizType, bizType))
-        : rows;
-
+    const rows = await this.notificationRepository.find({
+      where: this.buildWhere(userId, { ...query, isRead: false }),
+    });
+    // 按 bucket 过滤（与 list / countUnreadByBucket 口径一致）
+    const bucket = query.bucket;
+    const filteredRows = bucket
+      ? rows.filter((row) => this.toNotificationBucket(row.bizType) === bucket)
+      : rows;
     for (const row of filteredRows) {
       row.isRead = true;
       row.readAt = new Date();
       await this.notificationRepository.save(row);
     }
-    return { success: true, affected: filteredRows.length, unread_count: await this.countUnread(userId) };
+    return { success: true, affected: filteredRows.length, unread_count: await this.countUnread(userId, { includeDispatch: true }) };
   }
 
   async remove(id: string, userId: string): Promise<{ success: boolean }> {
@@ -391,24 +441,21 @@ export class NotificationService {
     return { success: true };
   }
 
-  async countUnread(userId: string, query: Partial<QueryNotificationsDto> = {}): Promise<number> {
-    const rows = await this.notificationRepository.find({
-      where: { userId, isRead: false },
-      select: { bizType: true },
+  async countUnread(userId: string, options: NotificationWhereOptions = {}): Promise<number> {
+    const filters: NotificationWhereOptions = {
+      bizType: options.bizType,
+      biz_type: options.biz_type,
+      includeDispatch: options.includeDispatch,
+      isRead: false,
+    };
+    return this.notificationRepository.count({
+      where: this.buildWhere(userId, filters),
     });
-    const bizType = query.bizType ?? query.biz_type;
-    if (query.bucket) {
-      return rows.filter((row) => this.toNotificationBucket(row.bizType) === query.bucket).length;
-    }
-    if (bizType) {
-      return rows.filter((row) => this.matchesBizTypeFilter(row.bizType, bizType)).length;
-    }
-    return rows.length;
   }
 
   async countUnreadByBucket(userId: string): Promise<UnreadCountByBucketResult> {
     const rows = await this.notificationRepository.find({
-      where: { userId, isRead: false },
+      where: this.buildWhere(userId, { isRead: false }),
       select: { bizType: true },
     });
 
@@ -421,7 +468,7 @@ export class NotificationService {
 
   async countUnreadByType(userId: string): Promise<Record<string, number>> {
     const rows = await this.notificationRepository.find({
-      where: { userId, isRead: false },
+      where: this.buildWhere(userId, { isRead: false }),
       select: { bizType: true },
     });
 
@@ -431,6 +478,138 @@ export class NotificationService {
       counts[key] = (counts[key] ?? 0) + 1;
     }
     return counts;
+  }
+
+  private buildWhere(userId: string, options: NotificationWhereOptions = {}): FindOptionsWhere<Notification> {
+    const bizType = options.bizType ?? options.biz_type;
+    const isRead = typeof options.unread === 'boolean'
+      ? !options.unread
+      : options.isRead;
+    const includeDispatch = this.toBoolean(options.includeDispatch);
+    const where: FindOptionsWhere<Notification> = { userId };
+
+    if (typeof isRead === 'boolean') {
+      where.isRead = isRead;
+    }
+
+    // 当传入 bucket 时，不按 bizType 精确过滤，改为取全部后在 JS 中用 toNotificationBucket 过滤
+    if (options.bucket) {
+      // 不做 bizType 过滤，只做 isRead + includeDispatch
+      if (!includeDispatch) {
+        where.bizType = Not(In([...DISPATCH_BIZ_TYPES]));
+      }
+      return where;
+    }
+
+    if (bizType) {
+      const bizTypes = bizType.split(',').map((item) => item.trim()).filter(Boolean);
+      const allowedBizTypes = !includeDispatch
+        ? bizTypes.filter((item) => !this.isDispatchBizType(item))
+        : bizTypes;
+      where.bizType = allowedBizTypes.length === 0
+        ? In([])
+        : allowedBizTypes.length === 1
+          ? allowedBizTypes[0]
+          : In(allowedBizTypes);
+      return where;
+    }
+
+    if (!includeDispatch) {
+      where.bizType = Not(In([...DISPATCH_BIZ_TYPES]));
+    }
+
+    return where;
+  }
+
+  private toBoolean(value: BooleanLike): boolean {
+    return value === true || value === 'true';
+  }
+
+  private isDispatchBizType(bizType: string): boolean {
+    return (DISPATCH_BIZ_TYPES as readonly string[]).includes(bizType);
+  }
+
+  private emptyUnreadCountByBucket(): UnreadCountByBucketResult {
+    return {
+      total: 0,
+      salesperson: { field_changed: 0, returned: 0, withdraw_void_result: 0, system: 0 },
+      backend: { todo: 0, urge: 0, sla_warning: 0, sla_breached: 0, creator_modified: 0, withdraw_void_request: 0, system: 0 },
+      system: 0,
+    };
+  }
+
+  private incrementUnreadBucket(counts: UnreadCountByBucketResult, bucket: NotificationBucket): void {
+    counts.total += 1;
+
+    if (bucket === 'system') {
+      counts.salesperson.system += 1;
+      counts.backend.system += 1;
+      counts.system += 1;
+      return;
+    }
+
+    if (bucket === 'field_changed') {
+      counts.salesperson.field_changed += 1;
+      return;
+    }
+
+    if (bucket === 'returned' || bucket === 'withdraw_void_result') {
+      counts.salesperson[bucket] += 1;
+      return;
+    }
+
+    if (bucket === 'urge_feedback') {
+      counts.salesperson.system += 1;
+      return;
+    }
+
+    if (bucket === 'todo' || bucket === 'creator_modified' || bucket === 'withdraw_void_request') {
+      counts.backend[bucket] += 1;
+      return;
+    }
+
+    counts.backend[bucket] += 1;
+  }
+
+  private toNotificationBucket(bizType: string): NotificationBucket {
+    const normalized = bizType.toLowerCase().replace(/[.:]/g, '_');
+    if (normalized.includes('system')) {
+      return 'system';
+    }
+    if (normalized.includes('dispatched_returned') || normalized.includes('returned') || normalized.includes('return')) {
+      return 'returned';
+    }
+    if (normalized.includes('dispatched_accepted') || normalized.includes('dispatched_completed')) {
+      return 'field_changed';
+    }
+    if (normalized.includes('sla_breached') || normalized.includes('sla_breach') || normalized.includes('breached') || normalized.includes('breach')) {
+      return 'sla_breached';
+    }
+    if (normalized.includes('sla_warning') || normalized.includes('sla_warn') || normalized.includes('warning') || normalized.includes('timeout')) {
+      return 'sla_warning';
+    }
+    if (normalized.includes('urge_feedback')) {
+      return 'urge_feedback';
+    }
+    if (normalized.includes('urge')) {
+      return 'urge';
+    }
+    if (normalized.includes('withdraw_request') || normalized.includes('void_request')) {
+      return 'withdraw_void_request';
+    }
+    if (normalized.includes('withdraw_void_result') || normalized.includes('withdraw_approved') || normalized.includes('withdraw_rejected') || normalized.includes('void_approved') || normalized.includes('void_rejected')) {
+      return 'withdraw_void_result';
+    }
+    if (normalized.includes('order_field_changed') || normalized.includes('creator_modified') || normalized.includes('completed_modified') || normalized.includes('modified_by_creator')) {
+      return 'creator_modified';
+    }
+    if (normalized.includes('order_supplement_filled') || normalized.includes('field_supplement') || normalized.includes('field_changed') || normalized.includes('field_change') || normalized.includes('supplement')) {
+      return 'field_changed';
+    }
+    if (this.isDispatchBizType(bizType) || normalized.includes('todo') || normalized.includes('task') || normalized.includes('claim')) {
+      return 'todo';
+    }
+    return 'system';
   }
 
   private async resolveTemplate(templateCode: string): Promise<NotificationTemplateDefinition> {
@@ -499,75 +678,168 @@ export class NotificationService {
     return ['in_app'];
   }
 
-  private toListItem(notification: Notification): NotificationListItem {
+  private async resolveFieldLabels(notifications: Notification[]): Promise<Map<string, string>> {
+    return this.resolveFieldLabelsFromInputs(notifications.map((notification) => ({
+      content: notification.content,
+      payload: notification.payload as Record<string, unknown> | null,
+    })));
+  }
+
+  private async resolveFieldLabelsFromInputs(inputs: Array<{ content: string; payload: Record<string, unknown> | null }>): Promise<Map<string, string>> {
+    const codes = new Set<string>();
+    for (const input of inputs) {
+      for (const code of extractInternalKeysFromText(input.content)) codes.add(code);
+      for (const code of extractInternalKeysFromPayload(input.payload)) codes.add(code);
+    }
+    if (codes.size === 0) return new Map();
+    try {
+      const rows = await this.notificationRepository.manager.query(
+        `SELECT field_code, field_name FROM field_configs WHERE field_code = ANY($1)`,
+        [Array.from(codes)],
+      ) as Array<{ field_code: string; field_name: string }>;
+      return new Map(rows
+        .filter((row) => row.field_code && row.field_name)
+        .map((row) => [row.field_code, row.field_name]));
+    } catch {
+      return new Map();
+    }
+  }
+
+  private normalizeNotificationDisplay(
+    content: string,
+    payload: Record<string, unknown> | null,
+    actorNames = new Map<string, string>(),
+    fieldLabels = new Map<string, string>(),
+  ): { content: string; payload: Record<string, unknown> | null } {
+    const basePayload = payload ? { ...payload } : null;
+    const diffFields = normalizeReadableDiffFields(basePayload, fieldLabels);
+    const diffSummary = buildDiffSummary(diffFields);
+    const { actorName: resolvedActorName } = this.resolveActorName(basePayload, actorNames);
+    const actorName = resolvedActorName ?? this.readActorNameFromPayload(basePayload);
+    const normalizedPayload = basePayload
+      ? {
+        ...basePayload,
+        ...(diffFields.length > 0 ? { diffFields, diff_fields: diffFields } : {}),
+        ...(diffSummary ? { diffSummary, diff_summary: diffSummary } : {}),
+      }
+      : null;
+
+    const localizedContent = localizeInternalKeysInText(content, fieldLabels);
+    const legacyActorContent = this.normalizeLegacyActorContent(localizedContent, actorName);
+    const readableContent = diffFields.length > 0
+      ? buildReadableFieldChangeContent({
+        actorName,
+        objectName: '工单字段',
+        diffFields,
+      })
+      : null;
+
+    return {
+      content: readableContent ?? legacyActorContent,
+      payload: normalizedPayload,
+    };
+  }
+
+  private async resolveActorDisplayNames(notifications: Notification[]): Promise<Map<string, string>> {
+    const actorIds = Array.from(new Set(notifications
+      .map((notification) => (notification.payload as Record<string, unknown> | null)?.actorUserId)
+      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)));
+    if (actorIds.length === 0) return new Map();
+    try {
+      const users = await this.userRepository.find({ where: { id: In(actorIds) } });
+      return new Map(actorIds.map((id) => {
+        const user = users.find((item) => item.id === id);
+        return [id, user?.realName || user?.username || id];
+      }));
+    } catch {
+      return new Map(actorIds.map((id) => [id, id]));
+    }
+  }
+
+  private resolveActorName(payload: Record<string, unknown> | null, actorNames: Map<string, string>): { actorUserId?: string; actorName?: string } {
+    const actorUserId = payload?.actorUserId;
+    if (typeof actorUserId !== 'string' || actorUserId.trim().length === 0) return {};
+    return { actorUserId, actorName: actorNames.get(actorUserId) ?? actorUserId };
+  }
+
+  private normalizeLegacyActorContent(content: string, actorName?: string): string {
+    if (!actorName) return content;
+
+    const markerPattern = /^(办理人|操作人|鍔炵悊浜\??|鎿嶄綔浜\??)(\s*(?:修改了|修改|淇敼浜\?|淇敼)?)/;
+    if (!markerPattern.test(content)) return content;
+    return content.replace(markerPattern, `${actorName}$2`);
+  }
+
+  private readActorNameFromPayload(payload: Record<string, unknown> | null): string | undefined {
+    const value = payload?.actorName ?? payload?.actor_name ?? payload?.operatorName ?? payload?.operator_name;
+    return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+  }
+
+  private toListItem(notification: Notification, actorNames = new Map<string, string>(), fieldLabels = new Map<string, string>()): NotificationListItem {
+    const normalizedDisplay = this.normalizeNotificationDisplay(notification.content, notification.payload as Record<string, unknown> | null, actorNames, fieldLabels);
+    const payload = normalizedDisplay.payload;
+    const dispatchedOrderId = payload?.dispatchedOrderId as string | undefined;
+    const payloadEntityType = payload?.entityType as string | null | undefined;
+    const payloadEntityId = payload?.entityId as string | null | undefined;
+    const bucket = this.toNotificationBucket(notification.bizType);
+    const salespersonCategory = this.toSalespersonCategory(bucket);
+    const backendCategory = this.toBackendCategory(bucket);
+    const actor = this.resolveActorName(payload, actorNames);
+    const content = normalizedDisplay.content;
+    const diffFields = normalizeReadableDiffFields(payload, fieldLabels);
+    const diffSummary = readPayloadString(payload, 'diffSummary') ?? readPayloadString(payload, 'diff_summary') ?? buildDiffSummary(diffFields);
     return {
       id: notification.id,
       bizType: notification.bizType,
       biz_type: notification.bizType,
       title: notification.title,
-      content: notification.content,
+      content,
       link: notification.link,
-      payload: notification.payload ?? null,
+      payload,
       isRead: notification.isRead,
       is_read: notification.isRead,
       createdAt: notification.createdAt,
       created_at: notification.createdAt,
       readAt: notification.readAt,
       // map payload fields for frontend compatibility
-      ref_order_id: (notification.payload as Record<string, unknown> | null)?.workOrderId as string | undefined,
-      ref_order_no: (notification.payload as Record<string, unknown> | null)?.orderNo as string | undefined,
-      order_no: (notification.payload as Record<string, unknown> | null)?.orderNo as string | undefined,
-      diff_summary: (notification.payload as Record<string, unknown> | null)?.diffSummary as string | undefined,
-      diff_fields: (notification.payload as Record<string, unknown> | null)?.diffFields as NotificationListItem['diff_fields'],
-      priority: ((notification.payload as Record<string, unknown> | null)?.priority as string | undefined) ?? 'normal',
+      ref_order_id: payload?.workOrderId as string | undefined,
+      ref_order_no: payload?.orderNo as string | undefined,
+      order_no: payload?.orderNo as string | undefined,
+      diff_summary: diffSummary,
+      diffSummary,
+      diff_fields: diffFields,
+      diffFields,
+      actorUserId: actor.actorUserId,
+      actor_user_id: actor.actorUserId,
+      actorName: actor.actorName,
+      actor_name: actor.actorName,
+      operatorName: actor.actorName,
+      operator_name: actor.actorName,
+      priority: (payload?.priority as string | undefined) ?? 'normal',
+      notificationBucket: bucket,
+      notification_bucket: bucket,
+      salespersonCategory,
+      salesperson_category: salespersonCategory,
+      backendCategory,
+      backend_category: backendCategory,
       type: notification.bizType,
-      entity_type: (notification.payload as Record<string, unknown> | null)?.entityType as string | null ?? null,
-      entity_id: (notification.payload as Record<string, unknown> | null)?.entityId as string | null ?? null,
+      entity_type: payloadEntityType ?? (dispatchedOrderId ? 'dispatched_order' : null),
+      entity_id: payloadEntityId ?? dispatchedOrderId ?? null,
     };
   }
 
-  private matchesBizTypeFilter(rowBizType: string, filter: string): boolean {
-    const allowed = filter.split(',').map((item) => item.trim()).filter(Boolean);
-    return allowed.length === 0 || allowed.includes(rowBizType) || allowed.includes(rowBizType.toLowerCase().replace(/[.:]/g, '_'));
-  }
-
-  private emptyUnreadCountByBucket(): UnreadCountByBucketResult {
-    return {
-      total: 0,
-      salesperson: { field_changed: 0, returned: 0, urge_feedback: 0, withdraw_void_result: 0 },
-      backend: { todo: 0, urge: 0, sla_warning: 0, sla_breached: 0, creator_modified: 0, withdraw_void_request: 0 },
-      system: 0,
-    };
-  }
-
-  private incrementUnreadBucket(counts: UnreadCountByBucketResult, bucket: NotificationBucket): void {
-    counts.total += 1;
-    if (bucket === 'system') {
-      counts.system += 1;
-      return;
+  private toSalespersonCategory(bucket: NotificationBucket): SalespersonNotificationBucket | null {
+    if (bucket === 'field_changed' || bucket === 'returned' || bucket === 'urge_feedback' || bucket === 'withdraw_void_result' || bucket === 'system') {
+      return bucket;
     }
-    if (bucket === 'field_changed' || bucket === 'returned' || bucket === 'urge_feedback' || bucket === 'withdraw_void_result') {
-      counts.salesperson[bucket] += 1;
-      return;
-    }
-    counts.backend[bucket] += 1;
+    return null;
   }
 
-  private toNotificationBucket(bizType: string): NotificationBucket {
-    const normalized = bizType.toLowerCase().replace(/[.:]/g, '_');
-    if (normalized.includes('system')) return 'system';
-    if (normalized.includes('sla_breached') || normalized.includes('sla_breach') || normalized.includes('breached') || normalized.includes('breach')) return 'sla_breached';
-    if (normalized.includes('sla_warning') || normalized.includes('sla_warn') || normalized.includes('warning') || normalized.includes('timeout')) return 'sla_warning';
-    if (normalized.includes('urge_feedback') || normalized.includes('urge_replied') || normalized.includes('urge_result')) return 'urge_feedback';
-    if (normalized.includes('urge')) return 'urge';
-    if (normalized.includes('withdraw_request') || normalized.includes('void_request')) return 'withdraw_void_request';
-    if (normalized.includes('withdraw_void_result') || normalized.includes('withdraw_approved') || normalized.includes('withdraw_rejected') || normalized.includes('void_approved') || normalized.includes('void_rejected')) return 'withdraw_void_result';
-    if (normalized.includes('dispatched_returned') || normalized.includes('returned') || normalized.includes('return')) return 'returned';
-    if (normalized.includes('dispatched_accepted') || normalized.includes('dispatched_completed') || normalized.includes('field_supplement') || normalized.includes('field_supplemented') || normalized.includes('backend_supplemented') || normalized.includes('supplement')) return 'field_changed';
-    if (normalized.includes('order_field_changed') || normalized.includes('creator_modified') || normalized.includes('completed_modified') || normalized.includes('modified_by_creator') || normalized.includes('field_changed_by_creator') || normalized.includes('initiator_modified')) return 'creator_modified';
-    if (normalized.includes('dispatch') || normalized.includes('dispatched') || normalized.includes('claim') || normalized.includes('todo') || normalized.includes('task')) return 'todo';
-    if (normalized.includes('field_changed') || normalized.includes('field_change')) return 'field_changed';
-    return 'system';
+  private toBackendCategory(bucket: NotificationBucket): BackendNotificationBucket | null {
+    if (bucket === 'todo' || bucket === 'urge' || bucket === 'sla_warning' || bucket === 'sla_breached' || bucket === 'creator_modified' || bucket === 'withdraw_void_request' || bucket === 'system') {
+      return bucket;
+    }
+    return null;
   }
 
   private toUnreadBucket(bizType: string): string {
@@ -628,4 +900,9 @@ export class NotificationService {
     }
     return Boolean(value);
   }
+}
+
+function readPayloadString(payload: Record<string, unknown> | null, key: string): string | undefined {
+  const value = payload?.[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
 }

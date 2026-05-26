@@ -76,7 +76,7 @@ export function normalizeUserItem(raw: any): UserItem {
   };
 }
 
-const KEY = 'mock_admin_users_v2'; // ★ v2: 8 core role mapping, old cache auto-invalidated
+const KEY = 'mock_admin_users_v3'; // ★ v3: 新增福利保障部/福保负责人傅倩雯
 const PASSWORDS_KEY = 'mock_admin_passwords_v1';
 
 interface PasswordEntry {
@@ -137,6 +137,7 @@ const DEFAULT_SEED_PASSWORDS: Record<string, string> = {
   jianglu: '123456',
   yangchun: '123456',
   maoyani: '123456',
+  fuqianwen: '123456',
 };
 
 function ensureSeedPasswords() {
@@ -168,7 +169,7 @@ function setUserPassword(username: string, password: string) {
 }
 
 const SEED: UserItem[] = [
-  // ★ 24 人，role_id 全部映射到 8 个核心角色 code，group_name 区分组别
+  // ★ 25 人，role_id 全部映射到核心角色 code，group_name 区分组别
   { id: '1', username: 'lizhanbo', real_name: '李占博', email: 'lizhanbo@example.com', phone: '13800001001', is_active: true, roles: [{ role_id: '1', role_name: '系统管理员' }], group_name: '系统管理', created_at: new Date().toISOString() },
   { id: '2', username: 'wangzixi', real_name: '王梓曦', email: 'wangzixi@example.com', phone: '13800001002', is_active: true, roles: [{ role_id: '1', role_name: '系统管理员' }], group_name: '系统管理', created_at: new Date().toISOString() },
   // 业务负责人（3人）
@@ -201,6 +202,7 @@ const SEED: UserItem[] = [
   { id: '22', username: 'jianglu', real_name: '江璐', email: 'jianglu@example.com', phone: '13800001022', is_active: true, roles: [{ role_id: '6', role_name: '共享团队负责人' }], group_name: '共享团队', created_at: new Date().toISOString() },
   { id: '23', username: 'yangchun', real_name: '杨纯', email: 'yangchun@example.com', phone: '13800001023', is_active: true, roles: [{ role_id: '7', role_name: '合同专员' }], group_name: '共享团队', created_at: new Date().toISOString() },
   { id: '24', username: 'maoyani', real_name: '毛雅妮', email: 'maoyani@example.com', phone: '13800001024', is_active: true, roles: [{ role_id: '8', role_name: '入离职联系专员' }], group_name: '共享团队', created_at: new Date().toISOString() },
+  { id: '25', username: 'fuqianwen', real_name: '傅倩雯', email: 'fuqianwen@example.com', phone: '13800001025', is_active: true, roles: [{ role_id: '9', role_name: '福保负责人' }], group_name: '福利保障部', created_at: new Date().toISOString() },
 ];
 
 const store = () => {
@@ -251,11 +253,11 @@ export async function getUsers(params: PageParams): Promise<PageResult<UserItem>
 export async function getUsersByTeam(teamCode: string): Promise<UserItem[]> {
   if (isMockMode) {
     const list = store().filter((u) => u.is_active);
-    const sharedTeam = ['contract', 'contract_signing', 'onboarding_contact', 'social_insurance', 'shared_team'];
+    const sharedTeam = ['contract', 'contract_signing', 'onboarding_contact', 'shared_team'];
     if (teamCode === 'data_entry') return mockDelay(list.filter((u) => u.username === 'annazhen'));
     if (teamCode === 'contract' || teamCode === 'contract_signing') return mockDelay(list.filter((u) => ['yangchun', 'jianglu'].includes(u.username)));
     if (teamCode === 'onboarding_contact') return mockDelay(list.filter((u) => ['maoyani', 'jianglu'].includes(u.username)));
-    if (teamCode === 'social_insurance') return mockDelay(list.filter((u) => ['jianglu', 'maoyani', 'yangchun'].includes(u.username)));
+    if (teamCode === 'social_insurance') return mockDelay(list.filter((u) => u.username === 'fuqianwen'));
     if (sharedTeam.includes(teamCode)) return mockDelay(list.filter((u) => u.group_name.includes('共享')));
     return mockDelay(list.filter((u) => u.group_name === teamCode || u.department_id === teamCode));
   }

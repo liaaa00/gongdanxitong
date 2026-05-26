@@ -27,6 +27,7 @@ import {
   WorkOrder,
   WorkOrderFieldDirtyMark,
   WorkOrderModuleConfig,
+  WorkflowDefinition,
 } from 'src/entities';
 
 const isTsRuntime = __filename.endsWith('.ts');
@@ -68,6 +69,7 @@ const AppDataSource = new DataSource({
     WorkOrder,
     WorkOrderFieldDirtyMark,
     WorkOrderModuleConfig,
+    WorkflowDefinition,
   ],
   migrations: [isTsRuntime ? 'src/database/migrations/*.ts' : 'dist/database/migrations/*.js'],
 });

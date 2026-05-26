@@ -33,7 +33,7 @@ const fields = [
   field({ fieldCode: 'contract_template', fieldName: '劳动合同模板（标准模板/特殊模板）', conditionalRequired: { field: 'need_company_contract', op: 'EQ', value: '是' } }),
   field({ fieldCode: 'household_address', fieldName: '户籍地址', isRequired: true, defaultRequired: true }),
   field({ fieldCode: 'household_type', fieldName: '户籍性质', fieldType: FieldType.DROPDOWN, dropdownOptions: ['农业', '非农业'] }),
-  field({ fieldCode: 'social_urge', fieldName: '社保公积金未办是否需要催办', fieldType: FieldType.DROPDOWN, isRequired: true, defaultRequired: true, dropdownOptions: ['是', '否'] }),
+  field({ fieldCode: 'special_remark', fieldName: '特殊备注', fieldType: FieldType.TEXT, isRequired: false, defaultRequired: false }),
 ];
 
 const mapping: MappingItemInput[] = [
@@ -42,43 +42,57 @@ const mapping: MappingItemInput[] = [
   { header: '性别', fieldCode: 'gender' },
   { header: '是否签合同', fieldCode: 'need_company_contract' },
   { header: '合同主体', fieldCode: 'contract_subject' },
+  { header: '户籍地址', fieldCode: 'household_address' },
+  { header: '特殊备注', fieldCode: 'special_remark' },
 ];
+
+function validRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    姓名: '张三',
+    身份证号: '330102199001010011',
+    性别: '男',
+    是否签合同: '否',
+    户籍地址: '浙江杭州',
+    特殊备注: '无',
+    ...overrides,
+  };
+}
 
 describe('ImportFieldValidationService scenarios', () => {
   const service = new ImportFieldValidationService({} as never, new AstEvaluator());
 
-  it('accepts a standard row', async () => {
-    const result = await service.validateRow({ rowNo: 1, raw: { 姓名: '张三', 身份证号: '330102199001010011', 性别: '男', 是否签合同: '否' }, mapping, fields });
+  it('accepts a standard row when current required fields are mapped and present', async () => {
+    const result = await service.validateRow({ rowNo: 1, raw: validRow(), mapping, fields });
     expect(result.ok).toBe(true);
   });
 
   it('keeps employee_name missing as a strict required error', async () => {
-    const result = await service.validateRow({ rowNo: 2, raw: { 身份证号: '330102199001010011', 是否签合同: '否' }, mapping, fields });
+    const result = await service.validateRow({ rowNo: 2, raw: validRow({ 姓名: '' }), mapping, fields });
     expect(result.ok).toBe(false);
     expect(result.errors).toContainEqual(expect.objectContaining({ fieldCode: 'employee_name', reason: 'required' }));
   });
 
   it('keeps id_card_no missing as a strict required error', async () => {
-    const result = await service.validateRow({ rowNo: 2, raw: { 姓名: '张三', 是否签合同: '否' }, mapping, fields });
+    const result = await service.validateRow({ rowNo: 2, raw: validRow({ 身份证号: '' }), mapping, fields });
     expect(result.ok).toBe(false);
     expect(result.errors).toContainEqual(expect.objectContaining({ fieldCode: 'id_card_no', reason: 'required' }));
   });
 
   it('ignores extra columns without failing', async () => {
-    const result = await service.validateRow({ rowNo: 3, raw: { 姓名: '李四', 身份证号: '330102199001010011', 是否签合同: '否', 多余列: 'x' }, mapping, fields });
+    const result = await service.validateRow({ rowNo: 3, raw: validRow({ 多余列: 'x' }), mapping, fields });
     expect(result.ok).toBe(true);
   });
 
   it('reports format errors', async () => {
-    const result = await service.validateRow({ rowNo: 4, raw: { 姓名: '王五', 身份证号: 'bad', 是否签合同: '否' }, mapping, fields });
+    const result = await service.validateRow({ rowNo: 4, raw: validRow({ 身份证号: 'bad' }), mapping, fields });
     expect(result.ok).toBe(false);
     expect(result.errors.some((item) => item.reason === 'regex')).toBe(true);
   });
 
   it('supports partial success counting across rows', async () => {
     const rows = [
-      { 姓名: '赵六', 身份证号: '330102199001010011', 是否签合同: '否' },
-      { 姓名: '', 身份证号: 'bad', 是否签合同: '是' },
+      validRow({ 姓名: '赵六' }),
+      validRow({ 姓名: '', 身份证号: 'bad', 是否签合同: '是' }),
     ];
     const results = await Promise.all(rows.map((raw, index) => service.validateRow({ rowNo: index + 1, raw, mapping, fields })));
     expect(results.filter((item) => item.ok)).toHaveLength(1);
@@ -89,10 +103,8 @@ describe('ImportFieldValidationService scenarios', () => {
     const result = await service.validateRow({
       rowNo: 5,
       raw: {
-        姓名: '钱七',
-        身份证号: '330102199001010011',
-        是否签合同: '否',
-        '劳动合同模板（标准模板 / 特殊模板）': '标准模板',
+        ...validRow({ 姓名: '钱七' }),
+        '劳动合同模板（标准模板/ 特殊模板）': '标准模板',
       },
       mapping: [...mapping, { header: '劳动合同模板', fieldCode: 'contract_template' }],
       fields,
@@ -106,7 +118,7 @@ describe('ImportFieldValidationService scenarios', () => {
   it('keeps common enum alias text for household type instead of normalizing it', async () => {
     const result = await service.validateRow({
       rowNo: 6,
-      raw: { 姓名: '孙八', 身份证号: '330102199001010011', 是否签合同: '否', 户籍性质: '城镇户口' },
+      raw: validRow({ 姓名: '孙八', 户籍性质: '城镇户口' }),
       mapping: [...mapping, { header: '户籍性质', fieldCode: 'household_type' }],
       fields,
     });
@@ -116,57 +128,39 @@ describe('ImportFieldValidationService scenarios', () => {
     expect(result.warnings.some((item) => item.code === 'enum_alias' && item.fieldCode === 'household_type')).toBe(false);
   });
 
-  it('leaves missing social_urge blank with a warning without failing the row', async () => {
+  it('does not require the removed social insurance urge field', async () => {
     const result = await service.validateRow({
       rowNo: 7,
-      raw: { 姓名: '周九', 身份证号: '330102199001010011', 是否签合同: '否' },
+      raw: validRow({ 姓名: '周九' }),
       mapping,
       fields,
     });
 
     expect(result.ok).toBe(true);
-    expect(result.normalized.social_urge).toBeUndefined();
-    expect(result.warnings).toContainEqual(expect.objectContaining({
-      fieldCode: 'social_urge',
-      code: 'left_blank',
-      normalizedValue: null,
-    }));
-    expect(result.warnings.some((item) => item.code === 'safe_default' && item.fieldCode === 'social_urge')).toBe(false);
+    expect(result.errors).toHaveLength(0);
   });
 
-  it('leaves missing contract_template blank when company contract is required', async () => {
+  it('keeps missing contract_template as a conditional required error when company contract is required', async () => {
     const result = await service.validateRow({
       rowNo: 8,
-      raw: { 姓名: '吴十', 身份证号: '330102199001010011', 是否签合同: '是', 合同主体: '北仑' },
+      raw: validRow({ 姓名: '吴十', 是否签合同: '是', 合同主体: '北仑' }),
       mapping: [...mapping, { header: '劳动合同模板', fieldCode: 'contract_template' }],
       fields,
     });
 
-    expect(result.ok).toBe(true);
-    expect(result.errors).toHaveLength(0);
-    expect(result.normalized.contract_template).toBeNull();
-    expect(result.warnings).toContainEqual(expect.objectContaining({
-      fieldCode: 'contract_template',
-      code: 'left_blank',
-      normalizedValue: null,
-    }));
-    expect(result.warnings.some((item) => item.code === 'safe_default' && item.fieldCode === 'contract_template')).toBe(false);
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContainEqual(expect.objectContaining({ fieldCode: 'contract_template', reason: 'required' }));
   });
 
-  it('downgrades other missing required fields to left_blank warnings', async () => {
+  it('keeps other missing required fields as required errors', async () => {
     const result = await service.validateRow({
       rowNo: 9,
-      raw: { 姓名: '郑十一', 身份证号: '330102199001010011', 是否签合同: '否' },
+      raw: validRow({ 姓名: '郑十一', 户籍地址: '' }),
       mapping,
       fields,
     });
 
-    expect(result.ok).toBe(true);
-    expect(result.errors).toHaveLength(0);
-    expect(result.warnings).toContainEqual(expect.objectContaining({
-      fieldCode: 'household_address',
-      code: 'left_blank',
-      normalizedValue: null,
-    }));
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContainEqual(expect.objectContaining({ fieldCode: 'household_address', reason: 'required' }));
   });
 });

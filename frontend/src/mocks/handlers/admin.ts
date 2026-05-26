@@ -30,6 +30,7 @@ const USERS = [
   { id: 'u-22', username: 'jianglu', real_name: '江璐', email: 'jianglu@example.com', phone: '13800001022', is_active: true, created_at: now, group_name: '共享团队', roles: [{ role_id: 'role-contract', role_name: '合同专员' }, { role_id: 'role-hr-contact', role_name: '入离职联系专员' }] },
   { id: 'u-23', username: 'yangchun', real_name: '杨纯', email: 'yangchun@example.com', phone: '13800001023', is_active: true, created_at: now, group_name: '共享团队', roles: [{ role_id: 'role-contract', role_name: '合同专员' }] },
   { id: 'u-24', username: 'maoyani', real_name: '毛雅妮', email: 'maoyani@example.com', phone: '13800001024', is_active: true, created_at: now, group_name: '共享团队', roles: [{ role_id: 'role-hr-contact', role_name: '入离职联系专员' }] },
+  { id: 'u-25', username: 'fuqianwen', real_name: '傅倩雯', email: 'fuqianwen@example.com', phone: '13800001025', is_active: true, created_at: now, group_name: '福利保障部', roles: [{ role_id: 'role-social-insurance', role_name: '福保负责人' }] },
 ];
 
 const ROLES = [
@@ -42,6 +43,7 @@ const ROLES = [
   { id: 'role-shared-owner', code: 'shared_team_owner', name: '共享团队负责人', level: '主管层', description: '劳动合同+入离职联系模块全量', is_active: true },
   { id: 'role-contract', code: 'labor_contract_member', name: '合同专员', level: '执行层', description: '合同新签/续签/待遇申报', is_active: true },
   { id: 'role-hr-contact', code: 'onboarding_resignation_member', name: '入离职联系专员', level: '执行层', description: '入职联系/离职联系/离职证明', is_active: true },
+  { id: 'role-social-insurance', code: 'social_insurance_specialist', name: '福保负责人', level: '主管层', description: '福利保障部社保公积金办理负责人', is_active: true },
 ];
 
 const DEPTS = [
@@ -53,6 +55,7 @@ const DEPTS = [
   { id: 'dept-6', code: 'biz_group3', name: '业务3组', parent_id: 'dept-2', sort_order: 3, is_active: true, created_at: now },
   { id: 'dept-7', code: 'biz_group4', name: '业务4组', parent_id: 'dept-2', sort_order: 4, is_active: true, created_at: now },
   { id: 'dept-8', code: 'biz_group5', name: '业务5组', parent_id: 'dept-2', sort_order: 5, is_active: true, created_at: now },
+  { id: 'dept-9', code: 'welfare_security', name: '福利保障部', parent_id: null, sort_order: 9, is_active: true, created_at: now },
 ];
 
 const CUSTOMERS = [
@@ -106,6 +109,7 @@ const MODULE_HANDLERS_MSW = [
   { id: 'mh-8', module_code: 'resignation_contact', handler_id: 'u-24', handler_name: '毛雅妮', weight: 1, is_backup: false, is_active: true },
   { id: 'mh-9', module_code: 'resignation_cert', handler_id: 'u-24', handler_name: '毛雅妮', weight: 1, is_backup: false, is_active: true },
   { id: 'mh-10', module_code: 'data_entry', handler_id: 'u-21', handler_name: '安娜祯', weight: 1, is_backup: false, is_active: true },
+  { id: 'mh-11', module_code: 'social_insurance', handler_id: 'u-25', handler_name: '傅倩雯', weight: 10, is_backup: false, is_active: true },
 ];
 
 const EXPORT_TEMPLATES = [

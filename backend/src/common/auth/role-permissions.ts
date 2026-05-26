@@ -23,6 +23,7 @@ export const MODULE_SUPERVISOR_ROLES = [
   'onboarding_supervisor',
   'data_entry_supervisor',
   'social_insurance_supervisor',
+  'social_insurance_specialist',
   'social_security_supervisor',
 ] as const;
 

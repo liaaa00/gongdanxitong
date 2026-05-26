@@ -1,28 +1,17 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { PageContainer } from '@ant-design/pro-components';
 import {
-  Card, Tag, Space, Button, Descriptions, App, Popconfirm, Alert,
-  Row, Col, Empty,
+  Card, Tag, Space, Button, Descriptions, App, Alert,
+  Empty,
 } from 'antd';
-import {
-  CheckCircleOutlined, EditOutlined, EyeOutlined,
-} from '@ant-design/icons';
 import DynamicForm from '@/components/DynamicForm';
 import type { FieldConfig } from '@/components/DynamicForm';
 import { useFieldPermissions } from '@/hooks/useFieldPermissions';
-import { getWorkOrder, resubmitWorkOrder, updateWorkOrder } from '@/services/workOrders';
+import { getWorkOrder } from '@/services/workOrders';
 import type { WorkOrderItem } from '@/services/workOrders';
 import { getFields } from '@/services/fields';
-
-const STATUS_TEXT_MAP: Record<string, string> = {
-  draft: '草稿',
-  pending: '待派发',
-  processing: '处理中',
-  completed: '已完成',
-  returned: '已退回',
-  withdrawn: '已撤回',
-};
+import { getStatusColor, getStatusText } from '@/constants/dictionaries';
 
 const FLOW_LABELS: Record<string, string> = {
   data_entry: '数据录入',
@@ -50,7 +39,7 @@ const FIELD_GROUPS: Array<{ title: string; codes: string[] }> = [
   },
   {
     title: '社保公积金（参考）',
-    codes: ['social_location', 'start_month', 'social_base', 'fund_base', 'fund_ratio', 'social_urge'],
+    codes: ['social_location', 'start_month', 'social_base', 'fund_base', 'fund_ratio'],
   },
   {
     title: '银行与备注',
@@ -62,16 +51,17 @@ const FIELD_GROUPS: Array<{ title: string; codes: string[] }> = [
   },
 ];
 
+// 主工单详情仅展示数据和子工单进度；修改、撤回、作废、催办统一在子工单页面处理。
+
 const WorkOrdersDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { message } = App.useApp();
   const { permissions } = useFieldPermissions('main');
   const [order, setOrder] = useState<WorkOrderItem | null>(null);
   const [fields, setFields] = useState<FieldConfig[]>([]);
   const [loading, setLoading] = useState(true);
-  const [editMode, setEditMode] = useState(false);
-  const [savingEdit, setSavingEdit] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -90,6 +80,9 @@ const WorkOrdersDetail: React.FC = () => {
         if (cancelled) return;
         setOrder(orderData);
         setFields(fieldList);
+        if (searchParams.get('edit') === '1') {
+          message.info('主工单仅支持查看，请到对应子工单中进行修改、撤回、作废或催办。');
+        }
       } catch (err) {
         console.error('[工单详情] 主详情加载失败：', err);
         if (!cancelled) {
@@ -103,37 +96,10 @@ const WorkOrdersDetail: React.FC = () => {
 
     loadDetail();
     return () => { cancelled = true; };
-  }, [id, message]);
+  }, [id, message, searchParams]);
 
-  const handleResubmit = async () => {
-    if (!id || !order) return;
-    try {
-      const updated = await resubmitWorkOrder(id, order.extra_data);
-      setOrder(updated);
-      setEditMode(false);
-      message.success('已重新提交');
-    } catch {
-      message.error('重新提交失败');
-    }
-  };
+  // 旧的主工单编辑、撤回、作废、催办和审批入口已按会议要求移至子工单。
 
-  const handleSaveEdit = async (values: Record<string, unknown>) => {
-    if (!id) return;
-    setSavingEdit(true);
-    try {
-      const updated = await updateWorkOrder(id, { extra_data: { ...(order?.extra_data || {}), ...values } });
-      setOrder(updated);
-      setEditMode(false);
-      message.success('已保存');
-    } catch {
-      message.error('保存失败');
-    } finally {
-      setSavingEdit(false);
-    }
-  };
-
-  const isTerminal = order?.status === 'completed' || order?.status === 'withdrawn';
-  const isCompleted = order?.status === 'completed';
   const isReturned = order?.status === 'returned';
 
   const completionHintFields = useMemo(() => {
@@ -153,6 +119,13 @@ const WorkOrdersDetail: React.FC = () => {
     return missing;
   }, [fields, order?.extra_data]);
   const missingFieldSet = useMemo(() => new Set(completionHintFields), [completionHintFields]);
+  const highlightedFields = useMemo(() => {
+    const fromList = (searchParams.get('highlightFields') || '').split(',').map((item) => item.trim()).filter(Boolean);
+    const focus = searchParams.get('focus');
+    return Array.from(new Set([...(focus ? [focus] : []), ...fromList]));
+  }, [searchParams]);
+  const highlightedFieldSet = useMemo(() => new Set(highlightedFields), [highlightedFields]);
+  const focusField = searchParams.get('focus') || highlightedFields[0] || null;
 
   const getSubOrderReturnReason = (subOrder: unknown): string | null => {
     const row = subOrder as { return_reason?: unknown; returnReason?: unknown };
@@ -171,8 +144,8 @@ const WorkOrdersDetail: React.FC = () => {
             <Descriptions.Item label="工单编号"><Tag color="blue">{order.order_no}</Tag></Descriptions.Item>
             <Descriptions.Item label="订单类型"><Tag>{order.order_type === 'onboarding' ? '入职' : order.order_type}</Tag></Descriptions.Item>
             <Descriptions.Item label="状态">
-              <Tag color={order.status === 'completed' ? 'success' : order.status === 'returned' ? 'warning' : order.status === 'withdrawn' ? 'default' : order.status === 'processing' ? 'processing' : 'blue'}>
-                {STATUS_TEXT_MAP[order.status] || order.status}
+              <Tag color={getStatusColor(order.status)}>
+                {getStatusText(order.status)}
               </Tag>
             </Descriptions.Item>
             <Descriptions.Item label="员工">{order.employee_name}</Descriptions.Item>
@@ -183,38 +156,23 @@ const WorkOrdersDetail: React.FC = () => {
             <Descriptions.Item label="更新时间">{order.updated_at}</Descriptions.Item>
           </Descriptions>
 
-          {!isTerminal && (
-            <Space style={{ marginTop: 16 }} wrap>
-              {!editMode && (
-                <Button type="primary" icon={<EditOutlined />} onClick={() => setEditMode(true)}>
-                  编辑工单
-                </Button>
-              )}
-              {editMode && (
-                <Button onClick={() => setEditMode(false)}>取消编辑</Button>
-              )}
-              {isReturned && (
-                <Popconfirm title="确定重新提交？退回的子工单将重置并重新派发。" onConfirm={handleResubmit}>
-                  <Button type="primary" icon={<CheckCircleOutlined />}>重新提交</Button>
-                </Popconfirm>
-              )}
-            </Space>
-          )}
+          <Alert
+            style={{ marginTop: 16 }}
+            type="info"
+            showIcon
+            message="主工单仅用于查看汇总信息"
+            description="修改、撤回、作废、催办等操作请进入下方对应子工单处理，避免影响其他正常子工单。"
+          />
           {completionHintFields.length > 0 && (
             <Alert
               style={{ marginTop: 12 }}
               type="warning"
               showIcon
-              message={`本工单有 ${completionHintFields.length} 个字段未补全，请点击"修改工单"补充`}
+              message={`本工单有 ${completionHintFields.length} 个字段未补全，请到对应子工单补充或修改`}
             />
           )}
-          {isCompleted && (
-            <Alert style={{ marginTop: 12 }} type="info" showIcon
-              message="已办结工单修改说明"
-              description="修改后将自动同步到子工单并通知下游办理人。可修改业务员填写的基础字段（姓名、证件号、联系方式等），其他字段为只读。" />
-          )}
-          {isReturned && (
-            <Alert style={{ marginTop: 12 }} message="工单已被退回，请修改后重新提交"
+                    {isReturned && (
+            <Alert style={{ marginTop: 12 }} message="工单存在被退回的子工单，请到对应子工单处理"
               description={
                 <Space direction="vertical" size={2}>
                   <span>被退回的子工单：</span>
@@ -225,31 +183,6 @@ const WorkOrdersDetail: React.FC = () => {
                 </Space>
               } type="warning" showIcon />
           )}
-        </Card>
-
-        {/* 子工单状态 */}
-        <Card title="子工单状态">
-          {order.dispatched_orders && order.dispatched_orders.length > 0 ? (
-            <Row gutter={[16, 16]}>
-              {order.dispatched_orders.map((d) => (
-                <Col xs={24} sm={12} lg={8} xl={6} key={d.id}>
-                  <Card size="small" title={FLOW_LABELS[d.module_code] || '未知子工单'}
-                    extra={<Button type="link" size="small" icon={<EyeOutlined />} onClick={() => navigate('/my-dispatched/' + d.id)}>查看</Button>}
-                    style={{ borderLeft: '3px solid ' + (d.status === 'completed' ? '#52c41a' : d.status === 'returned' ? '#faad14' : d.status === 'processing' ? '#1677ff' : '#d9d9d9') }}>
-                    <Descriptions column={1} size="small" colon={false}>
-                      <Descriptions.Item label="状态">
-                        <Tag color={d.status === 'completed' ? 'success' : d.status === 'returned' ? 'warning' : d.status === 'processing' ? 'processing' : 'default'}>
-                          {d.status === 'pending' ? '待处理' : d.status === 'processing' ? '处理中' : d.status === 'completed' ? '已完成' : '已退回'}
-                        </Tag>
-                      </Descriptions.Item>
-                      <Descriptions.Item label="处理人">{d.handler_name || <Tag>公共池</Tag>}</Descriptions.Item>
-                      {getSubOrderReturnReason(d) && <Descriptions.Item label="原因"><span style={{ color: '#faad14' }}>{getSubOrderReturnReason(d)}</span></Descriptions.Item>}
-                    </Descriptions>
-                  </Card>
-                </Col>
-              ))}
-            </Row>
-          ) : <Empty description="暂无子工单" />}
         </Card>
 
         {/* 工单字段信息 */}
@@ -263,13 +196,15 @@ const WorkOrdersDetail: React.FC = () => {
                   {groupFields.map((f) => {
                     const raw = (order.extra_data as Record<string, unknown> | undefined)?.[f.field_code];
                     const value = raw === null || raw === undefined || raw === '' ? '-' : String(raw);
+                    const highlighted = highlightedFieldSet.has(f.field_code);
                     return (
                       <Descriptions.Item
                         key={f.field_code}
                         label={f.field_name}
-                        labelStyle={missingFieldSet.has(f.field_code) ? { color: '#d48806', fontWeight: 600 } : undefined}
+                        labelStyle={missingFieldSet.has(f.field_code) || highlighted ? { color: highlighted ? '#d46b08' : '#d48806', fontWeight: 600 } : undefined}
+                        contentStyle={highlighted ? { background: '#fffbe6' } : undefined}
                       >
-                        {missingFieldSet.has(f.field_code) ? <Tag color="warning">{value}</Tag> : value}
+                        {highlighted ? <Tag color="gold">{value}</Tag> : missingFieldSet.has(f.field_code) ? <Tag color="warning">{value}</Tag> : value}
                       </Descriptions.Item>
                     );
                   })}
@@ -277,29 +212,15 @@ const WorkOrdersDetail: React.FC = () => {
               </Card>
             );
           })}
-          <Card title={editMode ? (isCompleted ? '修改工单（仅可修改业务员填写字段）' : '编辑工单信息') : '工单数据'} size="small">
+          <Card title="工单数据（只读）" size="small">
             <DynamicForm
               fields={fields}
-              fieldPermissions={editMode && isCompleted
-                ? Object.fromEntries(fields.map((f) => {
-                    const businessFields = [
-                      'customer_name', 'customer_code', 'branch_code',
-                      'employee_name', 'id_card_no', 'gender', 'birth_date', 'age',
-                      'household_type', 'ethnicity', 'mobile', 'email',
-                      'current_address', 'household_address', 'postal_code',
-                      'business_mode', 'employee_type', 'position', 'outsource_type',
-                      'bank_name', 'bank_account', 'remark', 'contract_template',
-                    ];
-                    return [f.field_code, businessFields.includes(f.field_code) ? 'visible' as const : 'readonly' as const];
-                  }))
-                : permissions
-              }
+              fieldPermissions={permissions}
               orderType="onboarding"
               initialValues={order.extra_data}
-              readOnly={!editMode && !isReturned}
-              onFinish={editMode ? handleSaveEdit : undefined}
-              submitText={editMode ? (isCompleted ? '保存修改（将通知下游）' : '保存修改') : undefined}
-              loading={savingEdit}
+              readOnly
+              highlightedFields={highlightedFields}
+              focusField={focusField}
             />
           </Card>
         </Space>

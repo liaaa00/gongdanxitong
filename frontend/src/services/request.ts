@@ -3,8 +3,43 @@ import type { ApiResponse } from './types';
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '');
 
+export const DEFAULT_PAGE_SIZE = 20;
+export const MAX_PAGE_SIZE = 100;
+
 // 超时上限 30 秒
 const TIMEOUT_MS = 30_000;
+
+function clampPageSizeValue(value: unknown): number {
+  const n = Number(value ?? DEFAULT_PAGE_SIZE);
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_PAGE_SIZE;
+  return Math.min(Math.floor(n), MAX_PAGE_SIZE);
+}
+
+function sanitizePaginationParams(params: unknown): unknown {
+  if (!params) return params;
+  const keys = ['pageSize', 'page_size', 'limit', 'perPage'];
+  if (params instanceof URLSearchParams) {
+    keys.forEach((key) => {
+      if (params.has(key)) params.set(key, String(clampPageSizeValue(params.get(key))));
+    });
+    if (params.has('current') && !params.has('page')) {
+      params.set('page', String(params.get('current')));
+    }
+    return params;
+  }
+  if (typeof params === 'object') {
+    const next = { ...(params as Record<string, unknown>) };
+    keys.forEach((key) => {
+      if (key in next) next[key] = clampPageSizeValue(next[key]);
+    });
+    // ProTable sends `current`; backend reads `page`. Map current → page when page is missing.
+    if (next.current !== undefined && (next.page === undefined || next.page === null || next.page === '')) {
+      next.page = next.current;
+    }
+    return next;
+  }
+  return params;
+}
 
 const request = axios.create({
   baseURL: apiBaseUrl ? `${apiBaseUrl}/api` : '/api',
@@ -17,6 +52,7 @@ request.interceptors.request.use(
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    config.params = sanitizePaginationParams(config.params);
     return config;
   },
   (error: AxiosError) => {
@@ -66,7 +102,11 @@ function showErrorToast(msg: string) {
   }
 }
 
-const onResponseFulfilled = (response: { data: ApiResponse }) => {
+function isSilentError(config?: unknown): boolean {
+  return Boolean((config as { silentError?: boolean } | undefined)?.silentError);
+}
+
+const onResponseFulfilled = (response: { data: ApiResponse; config?: unknown }) => {
   const res = response.data;
   if (res.code !== 0) {
     if (res.code === 401) {
@@ -81,7 +121,7 @@ const onResponseFulfilled = (response: { data: ApiResponse }) => {
       }
     }
     const errMsg = res.message || '请求失败';
-    showErrorToast(errMsg);
+    if (!isSilentError(response.config)) showErrorToast(errMsg);
     return Promise.reject(new Error(errMsg));
   }
   return res.data;
@@ -100,8 +140,8 @@ const onResponseRejected = (error: AxiosError) => {
     return Promise.reject(error);
   }
 
-  // 统一 Toast 提示，防止页面调用方忘记 catch 导致白屏
-  showErrorToast(friendlyMsg);
+  // 统一 Toast 提示，防止页面调用方忘记 catch 导致白屏；可选接口允许调用方静默降级。
+  if (!isSilentError(error.config)) showErrorToast(friendlyMsg);
 
   // 将友好消息附加到 error 上，供调用方选择性使用
   (error as AxiosError & { _friendlyMsg: string })._friendlyMsg = friendlyMsg;

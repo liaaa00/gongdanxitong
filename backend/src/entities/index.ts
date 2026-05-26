@@ -27,4 +27,5 @@ export * from './user-role.entity';
 export * from './user.entity';
 export * from './work-order-field-dirty-mark.entity';
 export * from './work-order-module.entity';
+export * from '../modules/workflows/workflow.entity';
 export * from './work-order.entity';

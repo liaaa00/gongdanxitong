@@ -31,7 +31,7 @@ async function main() {
 
   // 1. Login
   console.log('1️⃣ Login');
-  const r1 = await req('/auth/login', { method: 'POST', body: JSON.stringify({ username: 'admin', password: 'admin123' }) });
+  const r1 = await req('/auth/login', { method: 'POST', body: JSON.stringify({ username: process.env.QA_ADMIN_USER || 'lizhanbo', password: process.env.QA_ADMIN_PASSWORD || '123456' }) });
   if (!log('POST /auth/login', r1)) return;
   token = r1.body?.data?.accessToken || r1.body?.data?.token || r1.body?.token || r1.body?.accessToken || '';
 
@@ -45,40 +45,28 @@ async function main() {
   const firstDO = pickList(rDO.body)[0];
   const dispatchedOrderId = firstDO?.id;
 
-  // 2. Create withdraw request
-  console.log('\n2️⃣ Create withdraw request');
-  let withdrawId;
+  // 2. Current work-order detail endpoint (legacy /withdraw-requests has been retired)
+  console.log('\n2️⃣ Work order detail');
   if (workOrderId) {
-    const r2 = await req('/withdraw-requests', {
-      method: 'POST',
-      body: JSON.stringify({
-        workOrderId,
-        requestType: 'withdraw',
-        reason: '自检脚本生成的撤回测试，满足最少长度要求，至少十几个字以上。',
-      }),
-    });
-    log('POST /withdraw-requests', r2, { expectedCodes: [4302] });
-    withdrawId = r2.body?.data?.requestId || r2.body?.data?.id || r2.body?.id;
+    const r2 = await req('/work-orders/' + workOrderId);
+    log('GET /work-orders/:id', r2);
   } else {
     console.log('⏭️  skipped');
   }
 
-  // 3. List my withdraws
-  console.log('\n3️⃣ List my withdraws');
-  const r3 = await req('/withdraw-requests/my');
-  log('GET /withdraw-requests/my', r3);
-
-  // 4. Approve withdraw
-  if (withdrawId) {
-    console.log('\n4️⃣ Approve withdraw');
-    const r4 = await req('/withdraw-requests/' + withdrawId + '/approve', {
-      method: 'POST',
-      body: JSON.stringify({ approvalStatus: 'agree' }),
-    });
-    log('POST /withdraw-requests/:id/approve', r4);
+  // 3. Current dispatched-order detail endpoint
+  console.log('\n3️⃣ Dispatched order detail');
+  if (dispatchedOrderId) {
+    const r3 = await req('/dispatched-orders/' + dispatchedOrderId);
+    log('GET /dispatched-orders/:id', r3);
   } else {
-    console.log('\n4️⃣ skipped (no withdrawId)');
+    console.log('⏭️  skipped');
   }
+
+  // 4. Current notifications unread-count endpoint
+  console.log('\n4️⃣ Notifications unread count');
+  const r4 = await req('/notifications/unread-count');
+  log('GET /notifications/unread-count', r4);
 
   // 5. Get export templates
   console.log('\n5️⃣ Get export templates');

@@ -35,6 +35,7 @@ class ApplyExportTemplateDto {
   dispatchedOrderIds!: string[];
 }
 
+@Roles('admin')
 @Controller(['admin/export-templates', 'export-templates'])
 @UseInterceptors(AuditInterceptor)
 export class ExportTemplatesController {
@@ -53,11 +54,13 @@ export class ExportTemplatesController {
   }
 
   @Post(':id/apply-preview')
+  @Roles('admin')
   applyPreview(@Param('id') id: string, @Body() payload: ApplyExportTemplateDto) {
     return this.service.previewApply(id, payload.dispatchedOrderIds);
   }
 
   @Post(':id/apply')
+  @Roles('admin')
   @Audit('export_templates', 'apply')
   apply(
     @Param('id') id: string,

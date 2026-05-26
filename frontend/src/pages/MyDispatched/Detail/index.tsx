@@ -1,14 +1,14 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { PageContainer } from '@ant-design/pro-components';
 import {
   Card, Descriptions, Tag, Button, Space, App, Modal, Input, Select,
-  Empty, Alert, Form, Checkbox, Timeline, Badge, List, Tooltip,
+  Empty, Alert, Form, Checkbox, Timeline, Badge, Tooltip,
 } from 'antd';
 import {
   CheckCircleOutlined, RollbackOutlined, PlusCircleOutlined,
-  ExportOutlined, UserSwitchOutlined, HistoryOutlined,
-  WarningOutlined, EyeOutlined,
+  HistoryOutlined,
+  WarningOutlined, EyeOutlined, EditOutlined, BellOutlined, StopOutlined,
 } from '@ant-design/icons';
 import DynamicForm from '@/components/DynamicForm';
 import type { FieldConfig } from '@/components/DynamicForm';
@@ -20,10 +20,8 @@ import {
   returnCompletedDispatchedOrder,
 } from '@/services/dispatchedOrders';
 import type { DirtyFieldMark, DispatchedOrderItem } from '@/services/dispatchedOrders';
-import { getFields } from '@/services/fields';
-import { getExportTemplates } from '@/services/exportTemplates';
-import type { ExportTemplateItem } from '@/services/exportTemplates';
-import { getSupplementLogs } from '@/services/supplementLogs';
+import { getFallbackFields, getFields } from '@/services/fields';
+ import { getSupplementLogs } from '@/services/supplementLogs';
 import type { SupplementLogItem } from '@/services/supplementLogs';
 import { getModuleColor, getModuleLabel } from '@/constants/modules';
 import { getStatusColor, getStatusText } from '@/constants/dictionaries';
@@ -46,7 +44,7 @@ const FIELD_GROUPS: Array<{ title: string; codes: string[] }> = [
   },
   {
     title: '社保公积金',
-    codes: ['social_location', 'start_month', 'social_base', 'fund_base', 'fund_ratio', 'social_urge', 'social_insurance_feedback'],
+    codes: ['social_location', 'start_month', 'social_base', 'fund_base', 'fund_ratio', 'social_insurance_feedback'],
   },
   {
     title: '银行与备注',
@@ -69,6 +67,17 @@ const hasText = (value: unknown) => String(value || '').trim().length > 0;
 
 const getTeamCode = (order?: DispatchedOrderItem | null) => order?.team_code || order?.module_code || 'shared_team';
 
+function getDispatchedListPath(order?: DispatchedOrderItem | null) {
+  return order?.module_code ? `/onboarding/${order.module_code}` : '/my-dispatched';
+}
+
+function getOperatorDisplay(order: DispatchedOrderItem) {
+  if (order.status === 'completed') return order.handler_name || '实际操作人未记录';
+  const configured = order.configured_handler_names || order.configuredHandlerNames || [];
+  if (configured.length > 0) return configured.join('、');
+  return order.handler_name || '负责人未配置';
+}
+
 const withRequiredLabel = (field: FieldConfig): FieldConfig => ({
   ...field,
   field_name: `${field.field_name}（${field.is_required ? '必填' : '选填'}）`,
@@ -83,8 +92,10 @@ const filterByVisibleFields = (allFields: FieldConfig[], visibleFields?: string[
 const MyDispatchedDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { message } = App.useApp();
-  const { hasRole } = useAuth();
+  const location = useLocation();
+  const autoActionHandledRef = useRef<string>('');
+  const { message, modal } = App.useApp();
+  const { hasRole, user } = useAuth();
   const scenario = 'dispatched:' + (id || '');
   const { permissions } = useFieldPermissions(scenario);
 
@@ -108,24 +119,37 @@ const MyDispatchedDetail: React.FC = () => {
   const [supplementModalOpen, setSupplementModalOpen] = useState(false);
   const [supplementForm] = Form.useForm();
 
-  const [exportModalOpen, setExportModalOpen] = useState(false);
-  const [templates, setTemplates] = useState<ExportTemplateItem[]>([]);
-  const [selectedTemplate, setSelectedTemplate] = useState<string>('');
 
   const [reassignModalOpen, setReassignModalOpen] = useState(false);
   const [reassignForm] = Form.useForm<{ handlerId: string; reason: string }>();
   const [teamUsers, setTeamUsers] = useState<UserItem[]>([]);
   const [teamUsersLoading, setTeamUsersLoading] = useState(false);
 
+  const [creatorEditOpen, setCreatorEditOpen] = useState(false);
+  const [creatorEditForm] = Form.useForm<Record<string, unknown>>();
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [withdrawForm] = Form.useForm<{ reason: string }>();
+  const [voidOpen, setVoidOpen] = useState(false);
+  const [voidForm] = Form.useForm<{ reason: string }>();
+  const [approvalOpen, setApprovalOpen] = useState(false);
+  const [approvalType, setApprovalType] = useState<'withdraw' | 'void'>('withdraw');
+  const [approvalApproved, setApprovalApproved] = useState(true);
+  const [approvalForm] = Form.useForm<{ comment: string }>();
+
+  const effectiveOrderId = order?.id || id || '';
+
   const { actionLoading, handleAccept, handleComplete, handleReturn,
-    handleSupplement, handleExport, handleReassign }
-    = useDispatchedActions({ orderId: id || '', order, onOrderUpdated: setOrder });
+    handleSupplement, handleReassign,
+    handleCreatorUpdate, handleUrge, handleWithdraw, handleVoid,
+    handleApproveWithdraw, handleApproveVoid }
+    = useDispatchedActions({ orderId: effectiveOrderId, order, onOrderUpdated: setOrder });
 
   const loadDetail = useCallback(async () => {
     if (!id) return;
     setLoading(true);
     try {
-      const [orderData, fieldList, logs] = await Promise.all([getDispatchedOrder(id), getFields('onboarding'), getSupplementLogs(id)]);
+      const fieldLoader = hasRole('admin') ? getFields('onboarding') : Promise.resolve(getFallbackFields('onboarding'));
+      const [orderData, fieldList, logs] = await Promise.all([getDispatchedOrder(id), fieldLoader, getSupplementLogs(id)]);
       setOrder(orderData);
       setFields(fieldList);
       setSupplementLogs(logs);
@@ -135,7 +159,7 @@ const MyDispatchedDetail: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [id, message]);
+  }, [hasRole, id, message]);
 
   useEffect(() => { loadDetail(); }, [loadDetail]);
 
@@ -191,6 +215,51 @@ const MyDispatchedDetail: React.FC = () => {
     [supplementableFields, order],
   );
 
+  const orderWithParent = (order || {}) as unknown as { parentOrder?: { createdBy?: string }; parent_order?: { created_by?: string } };
+  const parentCreatedBy = String(orderWithParent.parentOrder?.createdBy ?? orderWithParent.parent_order?.created_by ?? '');
+  const isAdminUser = hasRole('admin');
+  const canBackendOperate = isAdminUser || hasRole('data_entry_leader') || hasRole('shared_team_owner')
+    || hasRole('labor_contract_member') || hasRole('onboarding_resignation_member') || hasRole('social_insurance_specialist');
+  const isOrderCreator = Boolean(user?.id && parentCreatedBy === user.id);
+  const isCreator = isAdminUser || isOrderCreator;
+  const isVoided = Boolean(order?.void_at || order?.voidAt);
+  const canAccept = canBackendOperate && !isVoided && order?.status === 'pending';
+  const canComplete = canBackendOperate && !isVoided && order?.status === 'processing';
+  const canReturn = canBackendOperate && !isVoided && (order?.status === 'processing' || order?.status === 'pending');
+  const canSupplement = canBackendOperate && !isVoided && order?.status === 'processing' && supplementableFields.length > 0;
+  const isTerminalStatus = Boolean(order && ['completed', 'withdraw_pending', 'withdrawn', 'void_pending', 'void'].includes(order.status));
+  const isTerminal = isVoided || isTerminalStatus;
+  const canCreatorOperate = Boolean(order && isCreator && !isVoided && !isTerminalStatus);
+  const canCreatorUpdate = canCreatorOperate;
+  const canCreatorUrge = canCreatorOperate && order?.status !== 'returned';
+  const canCreatorWithdraw = canCreatorOperate && order?.status !== 'returned';
+  const canCreatorVoid = canCreatorOperate;
+  const canApproveWithdraw = canBackendOperate && order?.status === 'withdraw_pending' && (isAdminUser || !isOrderCreator);
+  const canApproveVoid = canBackendOperate && order?.status === 'void_pending' && (isAdminUser || !isOrderCreator);
+  const canReturnCompleted = canBackendOperate && !isVoided && order?.status === 'completed' && (
+    order?.action_permissions?.return_completed === true ||
+    order?.is_module_supervisor === true ||
+    hasRole('admin')
+  );
+
+  const fillCreatorEditForm = () => {
+    if (!order) return;
+    creatorEditForm.setFieldsValue(Object.fromEntries(visibleDetailFields.map((field) => [
+      field.field_code,
+      String((order.extra_data as Record<string, unknown> | undefined)?.[field.field_code] ?? ''),
+    ])));
+  };
+
+  useEffect(() => {
+    const action = new URLSearchParams(location.search).get('action');
+    const actionKey = `${order?.id || ''}:${location.search}`;
+    if (action !== 'edit' || !order || loading || autoActionHandledRef.current === actionKey) return;
+    if (!canCreatorUpdate || visibleDetailFields.length === 0) return;
+    autoActionHandledRef.current = actionKey;
+    fillCreatorEditForm();
+    setCreatorEditOpen(true);
+  }, [canCreatorUpdate, location.search, order, loading, visibleDetailFields]);
+
   const refreshLogs = () => {
     if (id) getSupplementLogs(id).then(setSupplementLogs);
   };
@@ -198,16 +267,73 @@ const MyDispatchedDetail: React.FC = () => {
   if (loading) return <PageContainer loading />;
   if (!order) return <PageContainer header={{ title: '子工单详情' }}><Empty description="子工单不存在" /></PageContainer>;
 
-  const canAccept = order.status === 'pending';
-  const canComplete = order.status === 'processing';
-  const canReturn = order.status === 'processing' || order.status === 'pending';
-  const canSupplement = order.status === 'processing' && supplementableFields.length > 0;
-  const isTerminal = order.status === 'completed' || order.status === 'returned';
-  const canReturnCompleted = order.status === 'completed' && (
-    order.action_permissions?.return_completed === true ||
-    order.is_module_supervisor === true ||
-    hasRole('admin')
-  );
+  const openCreatorEdit = () => {
+    fillCreatorEditForm();
+    setCreatorEditOpen(true);
+  };
+
+  const handleCreatorEditOk = async () => {
+    const values = await creatorEditForm.validateFields();
+    const original = (order.extra_data || {}) as Record<string, unknown>;
+    const changed = Object.fromEntries(
+      visibleDetailFields
+        .map((field) => [field.field_code, values[field.field_code]] as const)
+        .filter(([fieldCode, value]) => String(original[fieldCode] ?? '') !== String(value ?? '')),
+    );
+    if (Object.keys(changed).length === 0) {
+      message.info('没有检测到字段变化');
+      setCreatorEditOpen(false);
+      return;
+    }
+    const updated = await handleCreatorUpdate(changed, '业务员在子工单详情修改字段');
+    if (updated) setCreatorEditOpen(false);
+  };
+
+  const handleCreatorUrgeClick = () => {
+    modal.confirm({
+      title: '确认催办该子工单？',
+      content: '系统会向当前办理人或该模块负责人发送催办通知。',
+      okText: '确认催办',
+      cancelText: '取消',
+      onOk: () => handleUrge('业务员催办：请尽快处理该子工单'),
+    });
+  };
+
+  const handleCreatorWithdrawOk = async () => {
+    const values = await withdrawForm.validateFields();
+    const reason = String(values.reason || '').trim();
+    const updated = await handleWithdraw(reason);
+    if (updated) {
+      setWithdrawOpen(false);
+      withdrawForm.resetFields();
+    }
+  };
+
+  const handleCreatorVoidOk = async () => {
+    const values = await voidForm.validateFields();
+    const reason = String(values.reason || '').trim();
+    const updated = await handleVoid(reason);
+    if (updated) {
+      setVoidOpen(false);
+      voidForm.resetFields();
+    }
+  };
+
+  const openApproval = (type: 'withdraw' | 'void', approved: boolean) => {
+    setApprovalType(type);
+    setApprovalApproved(approved);
+    approvalForm.resetFields();
+    setApprovalOpen(true);
+  };
+
+  const handleApprovalOk = async () => {
+    const values = await approvalForm.validateFields();
+    const comment = String(values.comment || '').trim();
+    const updated = approvalType === 'withdraw'
+      ? await handleApproveWithdraw(approvalApproved, comment)
+      : await handleApproveVoid(approvalApproved, comment);
+    if (updated) setApprovalOpen(false);
+  };
 
   const handleReturnOk = async () => {
     const values = await returnForm.validateFields();
@@ -259,10 +385,6 @@ const MyDispatchedDetail: React.FC = () => {
     refreshLogs();
   };
 
-  const handleExportOk = async () => {
-    await handleExport(selectedTemplate || undefined);
-    setExportModalOpen(false);
-  };
 
   const openReassignModal = async () => {
     if (!order) return;
@@ -294,7 +416,7 @@ const MyDispatchedDetail: React.FC = () => {
   return (
     <PageContainer header={{
       title: '子工单详情',
-      extra: [<Button key="back" onClick={() => navigate('/my-dispatched')}>返回列表</Button>],
+      extra: [<Button key="back" onClick={() => navigate(getDispatchedListPath(order))}>返回列表</Button>],
       ghost: false,
     }}>
       <Space direction="vertical" size="large" style={{ width: '100%' }}>
@@ -326,12 +448,14 @@ const MyDispatchedDetail: React.FC = () => {
               <Tag color={getModuleColor(order.module_code)}>{getModuleLabel(order.module_code)}</Tag>
             </Descriptions.Item>
             <Descriptions.Item label="状态">
-              <Tag color={getStatusColor(order.status)}>{getStatusText(order.status)}</Tag>
+              <Tag color={getStatusColor(isVoided ? 'void' : order.status)}>{getStatusText(isVoided ? 'void' : order.status)}</Tag>
             </Descriptions.Item>
             <Descriptions.Item label="员工">{order.employee_name || '-'}</Descriptions.Item>
             <Descriptions.Item label="客户">{order.customer_name || '-'}</Descriptions.Item>
-            <Descriptions.Item label="处理人">
-              {order.handler_name || <Tag color="orange">公共池</Tag>}
+            <Descriptions.Item label="实际操作人/配置负责人">
+              {order.status === 'completed'
+                ? getOperatorDisplay(order)
+                : <Tag color={getOperatorDisplay(order) === '负责人未配置' ? 'orange' : 'blue'}>{getOperatorDisplay(order)}</Tag>}
             </Descriptions.Item>
             <Descriptions.Item label="派发时间">{order.dispatched_at || '-'}</Descriptions.Item>
             <Descriptions.Item label="接单时间">{order.accepted_at || '-'}</Descriptions.Item>
@@ -353,6 +477,30 @@ const MyDispatchedDetail: React.FC = () => {
           </Descriptions>
 
           <Space style={{ marginTop: 16 }} wrap>
+            {canCreatorUpdate && (
+              <Button icon={<EditOutlined />} onClick={openCreatorEdit}>修改</Button>
+            )}
+            {canCreatorWithdraw && (
+              <Button icon={<RollbackOutlined />} onClick={() => { withdrawForm.resetFields(); setWithdrawOpen(true); }}>撤回</Button>
+            )}
+            {canCreatorVoid && (
+              <Button danger icon={<StopOutlined />} onClick={() => { voidForm.resetFields(); setVoidOpen(true); }}>作废</Button>
+            )}
+            {canCreatorUrge && (
+              <Button icon={<BellOutlined />} onClick={handleCreatorUrgeClick}>催办</Button>
+            )}
+            {canApproveWithdraw && (
+              <>
+                <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => openApproval('withdraw', true)}>同意撤回</Button>
+                <Button danger icon={<RollbackOutlined />} onClick={() => openApproval('withdraw', false)}>拒绝撤回</Button>
+              </>
+            )}
+            {canApproveVoid && (
+              <>
+                <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => openApproval('void', true)}>同意作废</Button>
+                <Button danger icon={<RollbackOutlined />} onClick={() => openApproval('void', false)}>拒绝作废</Button>
+              </>
+            )}
             {!isTerminal && canAccept && (
               <Button type="primary" icon={<CheckCircleOutlined />}
                 loading={actionLoading} onClick={handleAccept}>接单</Button>
@@ -371,17 +519,12 @@ const MyDispatchedDetail: React.FC = () => {
             )}
             {!isTerminal && canSupplement && (
               <Button icon={<PlusCircleOutlined />}
-                onClick={() => { supplementForm.resetFields(); setSupplementModalOpen(true); }}>补充字段</Button>
+                onClick={() => {
+                  supplementForm.setFieldsValue(order.extra_data || {});
+                  setSupplementModalOpen(true);
+                }}>补充/修改暂存字段</Button>
             )}
-            <Button icon={<ExportOutlined />} onClick={async () => {
-              const tpls = await getExportTemplates(order.module_code);
-              setTemplates(tpls);
-              setSelectedTemplate(tpls[0]?.id || '');
-              setExportModalOpen(true);
-            }}>按模板导出</Button>
-            {!isTerminal && (
-              <Button icon={<UserSwitchOutlined />} onClick={openReassignModal}>转交</Button>
-            )}
+             {/* 转交功能按 P2 要求暂时隐藏，相关代码保留以便后续恢复。 */}
           </Space>
         </Card>
 
@@ -487,6 +630,82 @@ const MyDispatchedDetail: React.FC = () => {
           </Card>
         )}
 
+        <Modal title="修改子工单字段" open={creatorEditOpen} onOk={handleCreatorEditOk}
+          onCancel={() => setCreatorEditOpen(false)} confirmLoading={actionLoading}
+          width={760} destroyOnHidden>
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="修改会同步到主工单，并通知包含相关字段的办理人员。"
+            description="请只修改当前子工单确需调整的字段；单个子工单作废/撤回请使用对应按钮。"
+          />
+          <Form form={creatorEditForm} layout="vertical">
+            {visibleDetailFields.map((field) => (
+              <Form.Item
+                key={field.field_code}
+                name={field.field_code}
+                label={field.field_name}
+                rules={field.is_required ? [{ required: true, message: `请填写${field.field_name}` }] : undefined}
+              >
+                <Input placeholder={`请输入${field.field_name}`} />
+              </Form.Item>
+            ))}
+          </Form>
+        </Modal>
+
+        <Modal title="撤回子工单" open={withdrawOpen} onOk={handleCreatorWithdrawOk}
+          onCancel={() => setWithdrawOpen(false)} confirmLoading={actionLoading}
+          okButtonProps={{ danger: true }} destroyOnHidden>
+          <Alert style={{ marginBottom: 12 }} type="warning" showIcon
+            message="撤回只影响当前子工单，不会影响同一人员的其他子工单。" />
+          <Form form={withdrawForm} layout="vertical">
+            <Form.Item name="reason" label="撤回原因"
+              rules={[
+                { required: true, message: '请填写撤回原因' },
+                { validator: (_, value) => hasText(value) ? Promise.resolve() : Promise.reject(new Error('撤回原因不能只填空格')) },
+              ]}>
+              <Input.TextArea rows={3} maxLength={500} showCount placeholder="请说明为什么撤回该子工单" />
+            </Form.Item>
+          </Form>
+        </Modal>
+
+        <Modal title="作废子工单" open={voidOpen} onOk={handleCreatorVoidOk}
+          onCancel={() => setVoidOpen(false)} confirmLoading={actionLoading}
+          okButtonProps={{ danger: true }} destroyOnHidden>
+          <Alert style={{ marginBottom: 12 }} type="error" showIcon
+            message="作废只影响当前子工单，作废后该子工单不可继续办理。" />
+          <Form form={voidForm} layout="vertical">
+            <Form.Item name="reason" label="作废原因"
+              rules={[
+                { required: true, message: '请填写作废原因' },
+                { validator: (_, value) => hasText(value) ? Promise.resolve() : Promise.reject(new Error('作废原因不能只填空格')) },
+              ]}>
+              <Input.TextArea rows={3} maxLength={500} showCount placeholder="请说明为什么作废该子工单" />
+            </Form.Item>
+          </Form>
+        </Modal>
+
+        <Modal title={`${approvalApproved ? '同意' : '拒绝'}${approvalType === 'withdraw' ? '撤回' : '作废'}申请`} open={approvalOpen} onOk={handleApprovalOk}
+          onCancel={() => setApprovalOpen(false)} confirmLoading={actionLoading}
+          okButtonProps={{ danger: !approvalApproved }} destroyOnHidden>
+          <Alert
+            type={approvalApproved ? 'info' : 'warning'}
+            showIcon
+            style={{ marginBottom: 12 }}
+            message={approvalApproved ? '确认后该子工单会进入终态。' : '拒绝后该子工单会恢复到申请前状态。'}
+          />
+          <Form form={approvalForm} layout="vertical">
+            <Form.Item name="comment" label="审批意见"
+              rules={!approvalApproved ? [
+                { required: true, message: '拒绝时请填写审批意见' },
+                { validator: (_, value) => hasText(value) ? Promise.resolve() : Promise.reject(new Error('审批意见不能只填空格')) },
+              ] : undefined}>
+              <Input.TextArea rows={3} maxLength={300} showCount placeholder="可填写审批意见" />
+            </Form.Item>
+          </Form>
+        </Modal>
+
         <Modal title="退回工单" open={returnModalOpen} onOk={handleReturnOk}
           onCancel={() => setReturnModalOpen(false)} confirmLoading={actionLoading}
           okButtonProps={{ danger: true }} destroyOnHidden>
@@ -566,8 +785,15 @@ const MyDispatchedDetail: React.FC = () => {
           </Form>
         </Modal>
 
-        <Modal title="补充字段" open={supplementModalOpen} onOk={handleSupplementOk}
+        <Modal title="补充/修改暂存字段" open={supplementModalOpen} onOk={handleSupplementOk}
           onCancel={() => setSupplementModalOpen(false)} confirmLoading={actionLoading} destroyOnHidden>
+          <Alert
+            style={{ marginBottom: 12 }}
+            type="info"
+            showIcon
+            message="可查看并再次修改暂存字段"
+            description="批量导入银行卡字段后会暂存在这里；后道人员可再次修正，保存后不会自动变更工单状态。"
+          />
           <Form form={supplementForm} layout="vertical">
             {supplementableFields.map((field) => {
               const isEmpty = !order?.extra_data?.[field.field_code] ||
@@ -585,40 +811,6 @@ const MyDispatchedDetail: React.FC = () => {
           </Form>
         </Modal>
 
-        <Modal title="按模板导出" open={exportModalOpen} onOk={handleExportOk}
-          onCancel={() => setExportModalOpen(false)} confirmLoading={actionLoading}
-          width={600} destroyOnHidden>
-          <Space direction="vertical" style={{ width: '100%' }}>
-            <span>选择导出模板：</span>
-            <Select style={{ width: '100%' }} value={selectedTemplate}
-              onChange={setSelectedTemplate}
-              getPopupContainer={(triggerNode) => triggerNode.parentElement || document.body}
-              options={templates.map((t) => ({
-                label: t.template_name + '（' + (t.field_list?.length || 0) + ' 个字段）',
-                value: t.id,
-              }))} />
-            {templates.length === 0 && <Empty description="该模块暂无导出模板" />}
-            {selectedTemplate && (() => {
-              const tpl = templates.find((t) => t.id === selectedTemplate);
-              if (!tpl?.field_list) return null;
-              return (
-                <Card title="模板字段预览" size="small" style={{ marginTop: 12 }}>
-                  <List size="small" bordered
-                    dataSource={tpl.field_list.slice(0, 5)}
-                    renderItem={(item, idx) => (
-                      <List.Item>{idx + 1}. {item.alias || item.field_code}</List.Item>
-                    )}
-                  />
-                  {tpl.field_list.length > 5 && (
-                    <div style={{ color: '#999', fontSize: 12, marginTop: 4 }}>
-                      ...共 {tpl.field_list.length} 个字段
-                    </div>
-                  )}
-                </Card>
-              );
-            })()}
-          </Space>
-        </Modal>
 
         <Modal title="转交待办" open={reassignModalOpen} onOk={handleReassignOk}
           onCancel={() => { setReassignModalOpen(false); reassignForm.resetFields(); }}
@@ -628,7 +820,7 @@ const MyDispatchedDetail: React.FC = () => {
               <Space wrap>
                 <Tag>{order.order_no}</Tag>
                 <Tag color={getModuleColor(order.module_code)}>{getModuleLabel(order.module_code)}</Tag>
-                <span>{order.handler_name || '公共池'}</span>
+                <span>{order.handler_name || '待认领'}</span>
               </Space>
             </Form.Item>
             <Form.Item name="handlerId" label="转交给" rules={[{ required: true, message: '请选择同组成员' }]}>

@@ -3,9 +3,8 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { Response } from 'express';
 import { randomBytes } from 'crypto';
+import { BusinessPermission } from 'src/common/decorators/business-permission.decorator';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
-import { WORK_ORDER_CREATOR_ROLES } from 'src/common/auth/role-permissions';
-import { Roles } from 'src/common/decorators/roles.decorator';
 import { businessException } from 'src/common/exceptions/business-exception';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { UploadsService } from 'src/modules/uploads/uploads.service';
@@ -28,7 +27,7 @@ export class ImportsController {
   ) {}
 
   @Post('import/preview')
-  @Roles(...WORK_ORDER_CREATOR_ROLES)
+  @BusinessPermission('work_order.import')
   @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 }, fileFilter: excelFilter }))
   async preview(
     @Body() payload: PreviewImportDto,
@@ -58,7 +57,7 @@ export class ImportsController {
   }
 
   @Post('import/confirm')
-  @Roles(...WORK_ORDER_CREATOR_ROLES)
+  @BusinessPermission('work_order.import')
   async confirm(@Body() payload: ConfirmImportDto, @CurrentUser() user: JwtUserPayload) {
     if (payload.newFields && payload.newFields.length > 0) {
       const headerToFieldCode = await this.materializeNewFields(payload.newFields, payload.orderType);

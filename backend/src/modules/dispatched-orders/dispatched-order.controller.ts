@@ -11,6 +11,9 @@ import { DispatchedOrderService } from './dispatched-order.service';
 import { AcceptDispatchedOrderDto } from './dto/accept.dto';
 import { BatchCompleteDispatchedOrderDto } from './dto/batch-complete.dto';
 import { BatchDeleteDispatchedOrderDto } from './dto/batch-delete.dto';
+import { BatchExportDispatchedOrderDto } from './dto/batch-export.dto';
+import { BatchImportDispatchedOrdersDto } from './dto/batch-import.dto';
+import { BatchReturnDispatchedOrderDto } from './dto/batch-return.dto';
 import { BenefitTransitionDto } from './dto/benefit-transition.dto';
 import { CompleteDispatchedOrderDto } from './dto/complete.dto';
 import { ExportDispatchedOrderDto } from './dto/export.dto';
@@ -86,6 +89,42 @@ export class DispatchedOrderController {
     return this.dispatchedOrderService.batchComplete(payload, user);
   }
 
+  @Post('batch-return')
+  @FieldPermissionScenario('dispatched:auto')
+  batchReturn(
+    @Body() payload: BatchReturnDispatchedOrderDto,
+    @CurrentUser() user: JwtUserPayload,
+  ) {
+    return this.dispatchedOrderService.batchReturn(payload, user);
+  }
+
+  @Post('batch-urge')
+  @FieldPermissionScenario('dispatched:auto')
+  batchUrge(
+    @Body() payload: { ids?: string[]; reason?: string },
+    @CurrentUser() user: JwtUserPayload,
+  ) {
+    return this.dispatchedOrderService.batchUrge(payload, user);
+  }
+
+  @Post('batch-import')
+  @FieldPermissionScenario('dispatched:auto')
+  batchImport(
+    @Body() payload: BatchImportDispatchedOrdersDto,
+    @CurrentUser() user: JwtUserPayload,
+  ) {
+    return this.dispatchedOrderService.batchImport(payload, user);
+  }
+
+  @Post('batch-export')
+  @FieldPermissionScenario('dispatched:auto')
+  batchExport(
+    @Body() payload: BatchExportDispatchedOrderDto,
+    @CurrentUser() user: JwtUserPayload,
+  ) {
+    return this.dispatchedOrderService.batchExport(payload, user);
+  }
+
   @Post('social-insurance/batch-complete')
   @FieldPermissionScenario('dispatched:social_insurance')
   batchCompleteSocialInsurance(
@@ -135,6 +174,66 @@ export class DispatchedOrderController {
     @CurrentUser() user: JwtUserPayload,
   ) {
     return this.dispatchedOrderService.returnOrder(assertUuidParam(id, '子工单不存在'), payload, user);
+  }
+
+  @Post(':id/creator-update')
+  @FieldPermissionScenario('dispatched:auto')
+  creatorUpdateFields(
+    @Param('id') id: string,
+    @Body() payload: { fields?: Record<string, unknown>; reason?: string; workOrderUpdatedAt?: string },
+    @CurrentUser() user: JwtUserPayload,
+  ) {
+    return this.dispatchedOrderService.creatorUpdateFields(assertUuidParam(id, '子工单不存在'), payload, user);
+  }
+
+  @Post(':id/urge')
+  @FieldPermissionScenario('dispatched:auto')
+  urge(
+    @Param('id') id: string,
+    @Body() payload: { reason?: string },
+    @CurrentUser() user: JwtUserPayload,
+  ) {
+    return this.dispatchedOrderService.urge(assertUuidParam(id, '子工单不存在'), payload, user);
+  }
+
+  @Post(':id/withdraw')
+  @FieldPermissionScenario('dispatched:auto')
+  withdraw(
+    @Param('id') id: string,
+    @Body() payload: { reason?: string },
+    @CurrentUser() user: JwtUserPayload,
+  ) {
+    return this.dispatchedOrderService.withdraw(id, payload, user);
+  }
+
+  @Post(':id/withdraw/approve')
+  @FieldPermissionScenario('dispatched:auto')
+  approveWithdraw(
+    @Param('id') id: string,
+    @Body() payload: { approved?: boolean; comment?: string },
+    @CurrentUser() user: JwtUserPayload,
+  ) {
+    return this.dispatchedOrderService.approveWithdraw(assertUuidParam(id, '子工单不存在'), payload, user);
+  }
+
+  @Post(':id/void')
+  @FieldPermissionScenario('dispatched:auto')
+  voidByCreator(
+    @Param('id') id: string,
+    @Body() payload: { reason?: string },
+    @CurrentUser() user: JwtUserPayload,
+  ) {
+    return this.dispatchedOrderService.voidByCreator(id, payload, user);
+  }
+
+  @Post(':id/void/approve')
+  @FieldPermissionScenario('dispatched:auto')
+  approveVoid(
+    @Param('id') id: string,
+    @Body() payload: { approved?: boolean; comment?: string },
+    @CurrentUser() user: JwtUserPayload,
+  ) {
+    return this.dispatchedOrderService.approveVoid(assertUuidParam(id, '子工单不存在'), payload, user);
   }
 
   @Post(':id/supplement')

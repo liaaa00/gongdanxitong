@@ -7,6 +7,7 @@ import {
   Post,
   Put,
   Query,
+  UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { Type } from 'class-transformer';
@@ -24,6 +25,7 @@ import {
 import { Audit } from 'src/common/decorators/audit.decorator';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
+import { AdminOnlyGuard } from 'src/common/guards/admin-only.guard';
 import { AuditInterceptor } from 'src/common/interceptors/audit.interceptor';
 import { FieldType, OrderType } from 'src/entities';
 import { FieldsService } from './fields.service';
@@ -163,7 +165,9 @@ class ReorderFieldsDto {
   items!: ReorderItemDto[];
 }
 
-@Controller(['admin/fields', 'field-configs'])
+@Roles('admin')
+@UseGuards(AdminOnlyGuard)
+@Controller(['admin/fields', 'field-configs', 'work-order-fields'])
 @UseInterceptors(AuditInterceptor)
 export class FieldsController {
   constructor(private readonly service: FieldsService) {}

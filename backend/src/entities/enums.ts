@@ -32,6 +32,7 @@ export enum DispatchStrategy {
   FIXED = 'fixed',
   ROUND_ROBIN = 'round_robin',
   LOAD_BALANCE = 'load_balance',
+  TEAM_CLAIM = 'team_claim',
   POOL = 'pool',
 }
 
@@ -58,6 +59,10 @@ export enum DispatchedOrderStatus {
   PROCESSING = 'processing',
   COMPLETED = 'completed',
   RETURNED = 'returned',
+  WITHDRAW_PENDING = 'withdraw_pending',
+  WITHDRAWN = 'withdrawn',
+  VOID_PENDING = 'void_pending',
+  VOID = 'void',
 }
 
 export enum DispatchModuleCode {

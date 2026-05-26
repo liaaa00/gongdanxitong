@@ -2,14 +2,14 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageContainer } from '@ant-design/pro-components';
 import type { ProFormInstance } from '@ant-design/pro-components';
-import { Card, Button, Space, App, Divider, Result, Alert, Tag, Collapse, Steps, Descriptions, Select, Form } from 'antd';
-import { SaveOutlined, SendOutlined, InfoCircleOutlined, CheckCircleOutlined, SplitCellsOutlined } from '@ant-design/icons';
+import { Card, Button, Space, App, Divider, Result, Alert, Tag, Collapse, Steps, Descriptions } from 'antd';
+import { SendOutlined, InfoCircleOutlined, CheckCircleOutlined, SplitCellsOutlined } from '@ant-design/icons';
 import DynamicForm from '@/components/DynamicForm';
 import type { FieldConfig, ConditionalRequired } from '@/components/DynamicForm';
 import { useFieldPermissions } from '@/hooks/useFieldPermissions';
-import { getFields } from '@/services/fields';
+import { getFallbackFields, getFields } from '@/services/fields';
 import { createWorkOrder } from '@/services/workOrders';
-import { getCustomers, type CustomerItem } from '@/services/customers';
+import { getCustomers, getFallbackCustomers, type CustomerItem } from '@/services/customers';
 import { useAuth } from '@/hooks/useAuth';
 import { ONBOARDING_SPLIT_MODULES, getModuleColor, getModuleLabel } from '@/constants/modules';
 
@@ -34,12 +34,10 @@ const WorkOrdersNew: React.FC = () => {
   const formRef = useRef<ProFormInstance>();
   const { permissions } = useFieldPermissions('main');
   const [allFields, setAllFields] = useState<FieldConfig[]>([]);
-  const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formValues, setFormValues] = useState<Record<string, unknown>>({});
   const [splitPreview, setSplitPreview] = useState<string[]>(['data_entry', 'social_insurance']);
   const [customers, setCustomers] = useState<CustomerItem[]>([]);
-  const [customerId, setCustomerId] = useState<string | undefined>(undefined);
 
   const isReadonlyViewer = hasRole('business_owner') && !hasRole('admin');
 
@@ -63,74 +61,68 @@ const WorkOrdersNew: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    if (!hasRole('admin')) {
+      setAllFields(getFallbackFields('onboarding'));
+      computeSplit({});
+      return;
+    }
     getFields('onboarding')
       .then((list) => {
         setAllFields(list);
         computeSplit({});
       })
       .catch(() => message.error('加载字段配置失败'));
-  }, [computeSplit, message]);
+  }, [computeSplit, hasRole, message]);
 
-  // ★ 加载客户列表用于客户选择控件（P0-A：后端创建工单要求 UUID customerId）
+  // ★ 加载客户列表用于根据客户名称/代码自动匹配后端所需 UUID customerId
   useEffect(() => {
+    if (!hasRole('admin')) {
+      setCustomers(getFallbackCustomers({ page: 1, pageSize: 100 }).list);
+      return;
+    }
     getCustomers({ page: 1, pageSize: 100 })
       .then((res) => {
         if (res.success) setCustomers(res.list);
       })
       .catch(() => message.error('加载客户列表失败'));
-  }, [message]);
+  }, [hasRole, message]);
 
-  const selectedCustomer = customers.find((item) => item.id === customerId);
-
-  const handleCustomerChange = (value?: string) => {
-    setCustomerId(value);
-    formRef.current?.setFieldsValue({ customerId: value, customer_id: value });
-    const customer = customers.find((item) => item.id === value);
-    if (customer) {
-      formRef.current?.setFieldsValue({
-        customerId: value,
-        customer_id: value,
-        customer_name: customer.customer_name,
-        customer_code: customer.customer_code,
-      });
-    }
+  const resolveCustomerIdFromValues = (values: Record<string, unknown>) => {
+    const code = String(values.customer_code || '').trim();
+    const name = String(values.customer_name || '').trim();
+    const matched = customers.find((item) =>
+      (code && item.customer_code === code) ||
+      (name && item.customer_name === name),
+    );
+    return matched?.id;
   };
 
-  const buildPayload = (values: Record<string, unknown>, action: 'draft' | 'submit') => ({
-    ...values,
-    customerId,
-    customer_name: selectedCustomer?.customer_name || values.customer_name,
-    customer_code: selectedCustomer?.customer_code || values.customer_code,
-    orderType: 'onboarding',
-    _action: action,
-  });
+  const buildPayload = (values: Record<string, unknown>) => {
+    const resolvedCustomerId = resolveCustomerIdFromValues(values);
+    const resolvedCustomer = customers.find((item) => item.id === resolvedCustomerId);
+    return {
+      ...values,
+      ...(resolvedCustomerId ? { customerId: resolvedCustomerId } : {}),
+      customer_name: resolvedCustomer?.customer_name || values.customer_name,
+      customer_code: resolvedCustomer?.customer_code || values.customer_code,
+      orderType: 'onboarding',
+      _action: 'submit',
+    };
+  };
 
   const handleValuesChange = (_changed: Record<string, unknown>, allValues: Record<string, unknown>) => {
     setFormValues(allValues);
     computeSplit(allValues);
   };
 
-  const handleSaveDraft = async () => {
-    if (!customerId) {
-      message.warning('请先选择客户');
-      return;
-    }
-    const values = formRef.current?.getFieldsValue() || {};
-    setLoading(true);
-    try {
-      const result = await createWorkOrder(buildPayload(values, 'draft'));
-      message.success('草稿已保存');
-      navigate(`/work-orders/${result.id}`);
-    } catch {
-      message.error('保存失败');
-    } finally { setLoading(false); }
-  };
 
   const showSplitResult = (result: any) => {
-    modal.info({
+    modal.confirm({
       title: <span>🎉 工单提交成功</span>,
       icon: <CheckCircleOutlined style={{ color: '#52c41a' }} />,
       width: 560,
+      closable: true,
+      maskClosable: true,
       content: (
         <div style={{ lineHeight: 2 }}>
           <p>工单 <strong>{result.order_no}</strong> 已提交，系统已自动拆分为以下 {splitPreview.length} 个子工单：</p>
@@ -146,23 +138,21 @@ const WorkOrdersNew: React.FC = () => {
             })}
           </Descriptions>
           <Alert style={{ marginTop: 12 }} type="info" showIcon
-            message="子工单状态可在「我的工单」→「子工单进度」中跟踪查看" />
+            message="后续办理情况可在「我的工单」中查看，也可以先关闭窗口继续操作。" />
         </div>
       ),
       okText: '查看工单详情',
+      cancelText: '关闭',
       onOk: () => navigate(`/work-orders/${result.id}`),
+      onCancel: () => navigate('/work-orders'),
     });
   };
 
   const handleSubmit = async (values: Record<string, unknown>) => {
     console.log('[新建入职工单] onFinish 触发，提交值：', values);
-    if (!customerId) {
-      message.warning('请先选择客户');
-      return;
-    }
     setSubmitting(true);
     try {
-      const result = await createWorkOrder(buildPayload(values, 'submit'));
+      const result = await createWorkOrder(buildPayload(values));
       showSplitResult(result);
     } catch (err) {
       console.error('[新建入职工单] 提交失败：', err);
@@ -195,7 +185,7 @@ const WorkOrdersNew: React.FC = () => {
   const needContact = String(formValues.need_onboarding_contact ?? '否') === '是';
 
   // 构建分组标签信息
-  const groupOrder = ['基本信息', '劳动合同签订', '入职联系', '发薪信息', '社保公积金类'];
+  const groupOrder = ['基本信息', '合同与用工信息', '薪资与发薪信息', '社保公积金信息', '业务判断项', '备注与反馈'];
 
   return (
     <PageContainer header={{
@@ -212,7 +202,7 @@ const WorkOrdersNew: React.FC = () => {
               items={[
                 { title: '填写入职信息采集表', description: '客户填报与业务员补充的字段均已按采集分组整理，按序填写即可' },
                 { title: '选择流程判断项', description: '"是否需要入职联系" → 是 → 拆分入职联系子工单；"是否企服发起劳动合同" → 是 → 拆分合同签订子工单' },
-                { title: '提交工单', description: '数据录入、社保公积金办理始终生成；入职联系和劳动合同签订按原条件生成。提交后可追踪各子工单进度。' },
+                { title: '提交工单', description: '数据录入、社保公积金办理始终生成；入职联系和劳动合同签订按原条件生成。提交后由对应人员在我的待办中处理。' },
               ]}
             />
           ),
@@ -267,27 +257,7 @@ const WorkOrdersNew: React.FC = () => {
           </Space>
         </div>
 
-        {/* 客户选择 */}
-        <Form layout="inline" style={{ marginBottom: 16 }}>
-          <Form.Item label="客户" required tooltip="选择本工单所属客户单位（系统会按内部客户标识创建工单）">
-            <Select
-              showSearch
-              allowClear
-              placeholder="请选择客户单位"
-              style={{ width: 360 }}
-              value={customerId}
-              onChange={handleCustomerChange}
-              optionFilterProp="label"
-              getPopupContainer={(triggerNode) => triggerNode.parentElement || document.body}
-              options={customers.map((c) => ({
-                value: c.id,
-                label: `${c.customer_code || ''} - ${c.customer_name}`,
-              }))}
-            />
-          </Form.Item>
-        </Form>
-
-        {/* 统一动态表单（单个 ProForm 实例） */}
+        {/* 统一动态表单（单个 ProForm 实例）：客户信息直接在表单字段内填写/展示，不再额外显示独立“客户”选择框 */}
         <DynamicForm
           fields={allFields}
           fieldPermissions={permissions}
@@ -322,7 +292,6 @@ const WorkOrdersNew: React.FC = () => {
 
         <Divider />
         <Space>
-          <Button icon={<SaveOutlined />} onClick={handleSaveDraft} loading={loading}>保存草稿</Button>
           <Button type="primary" icon={<SendOutlined />} onClick={handleSubmitClick} loading={submitting}>提交并拆分工单</Button>
           <Button onClick={() => navigate('/work-orders')}>返回列表</Button>
         </Space>

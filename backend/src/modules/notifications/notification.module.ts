@@ -1,6 +1,6 @@
 ﻿import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { DispatchedOrder, Notification, WorkOrder } from 'src/entities';
+import { DispatchedOrder, Notification, User, WorkOrder } from 'src/entities';
 import { InAppNotificationChannel } from './channels/in-app.channel';
 import { MockEmailChannel } from './channels/mock-email.channel';
 import { MockSmsChannel } from './channels/mock-sms.channel';
@@ -11,7 +11,7 @@ import { NotificationStreamController } from './notification-stream.controller';
 import { NotificationService } from './notification.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Notification, WorkOrder, DispatchedOrder])],
+  imports: [TypeOrmModule.forFeature([Notification, WorkOrder, DispatchedOrder, User])],
   controllers: [NotificationController, NotificationStreamController],
   providers: [
     FieldChangeHook,

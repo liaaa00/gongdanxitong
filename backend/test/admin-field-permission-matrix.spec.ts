@@ -1,12 +1,23 @@
 import * as request from 'supertest';
 import { Test } from '@nestjs/testing';
-import { INestApplication } from '@nestjs/common';
+import { CanActivate, ExecutionContext, INestApplication } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { FieldPermissionController } from 'src/modules/admin/field-permissions/field-permission.controller';
 import {
   FIELD_PERMISSION_MATRIX_SCENARIOS,
   FieldPermissionService,
 } from 'src/modules/admin/field-permissions/field-permission.service';
+
+class AdminUserGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    context.switchToHttp().getRequest().user = {
+      sub: 'admin-1',
+      username: 'admin',
+      roles: ['admin'],
+    };
+    return true;
+  }
+}
 
 describe('Admin field permission matrix', () => {
   let app: INestApplication;
@@ -38,6 +49,7 @@ describe('Admin field permission matrix', () => {
     }).compile();
 
     app = moduleRef.createNestApplication();
+    app.useGlobalGuards(new AdminUserGuard());
     await app.init();
 
     const response = await request(app.getHttpServer())

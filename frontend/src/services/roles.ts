@@ -13,7 +13,7 @@ export interface RoleItem {
   children?: RoleItem[];
 }
 
-const KEY = 'mock_admin_roles_v2'; // ★ v2: 8 个核心角色 code 重写，旧缓存自动失效
+const KEY = 'mock_admin_roles_v3'; // ★ v3: 新增福保负责人角色
 const SEED: RoleItem[] = [
   // ★ 8 个核心角色 — code 与 CORE_ROLES 集合精确匹配
   { id: '1', code: 'admin', name: '系统管理员', level: '全局', description: '李占博、王梓曦 — 全部工单和系统配置', is_active: true, parent_role_id: null },
@@ -24,6 +24,7 @@ const SEED: RoleItem[] = [
   { id: '6', code: 'shared_team_owner', name: '共享团队负责人', level: '主管层', description: '江璐 — 劳动合同+入离职联系模块全量，可接单/完成/退回/补充/改派', is_active: true, parent_role_id: '2' },
   { id: '7', code: 'labor_contract_member', name: '合同专员', level: '执行层', description: '杨纯 — 合同新签/续签/待遇申报，合同全生命周期', is_active: true, parent_role_id: '2' },
   { id: '8', code: 'onboarding_resignation_member', name: '入离职联系专员', level: '执行层', description: '毛雅妮 — 入职联系/离职联系/离职证明', is_active: true, parent_role_id: '2' },
+  { id: '9', code: 'social_insurance_specialist', name: '福保负责人', level: '主管层', description: '傅倩雯 — 福利保障部，负责社保公积金办理子工单', is_active: true, parent_role_id: '2' },
 ];
 
 const store = () => loadList<RoleItem>(KEY, SEED);

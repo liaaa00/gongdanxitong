@@ -13,12 +13,49 @@ export interface NotificationItem {
   link: string | null;
   is_read: boolean;
   created_at: string;
-  // ★ FE-A5: diff 摘要与关联跳转
   diff_summary?: string;
-  diff_fields?: Array<{ field_code: string; field_name?: string; old_value?: unknown; new_value?: unknown }>;
+  diffSummary?: string;
+  diff_fields?: Array<{ field_code?: string; fieldCode?: string; field_name?: string; fieldName?: string; old_value?: unknown; new_value?: unknown }>;
+  diffFields?: Array<Record<string, unknown>>;
+  diff?: Record<string, unknown> | Array<Record<string, unknown>>;
+  field?: string;
+  field_code?: string;
+  fieldCode?: string;
+  fieldName?: string;
+  field_name?: string;
+  entity?: string;
+  entityName?: string;
+  entity_name?: string;
+  action?: string;
+  oldValue?: unknown;
+  old_value?: unknown;
+  newValue?: unknown;
+  new_value?: unknown;
+  changes?: Array<Record<string, unknown>>;
+  payload?: Record<string, unknown>;
   ref_order_id?: string;
   ref_order_no?: string;
   order_no?: string;
+  actorName?: string;
+  actor_name?: string;
+  operatorName?: string;
+  operator_name?: string;
+  userName?: string;
+  user_name?: string;
+  realName?: string;
+  real_name?: string;
+  handlerName?: string;
+  handler_name?: string;
+  creatorName?: string;
+  creator_name?: string;
+  actor?: { realName?: string; real_name?: string; name?: string; userName?: string; user_name?: string } | string | null;
+  operator?: { realName?: string; real_name?: string; name?: string; userName?: string; user_name?: string } | string | null;
+  user?: { realName?: string; real_name?: string; name?: string; userName?: string; user_name?: string } | string | null;
+  metadata?: Record<string, unknown>;
+  extra?: Record<string, unknown>;
+  context?: Record<string, unknown>;
+  context_fields?: Record<string, unknown>;
+  contextFields?: Record<string, unknown>;
 }
 
 export type SalespersonNotificationBucket = 'field_changed' | 'returned' | 'urge_feedback' | 'withdraw_void_result';
@@ -32,11 +69,18 @@ export interface UnreadCountByBucket {
   system: number;
 }
 
+const EMPTY_BUCKET_COUNTS: UnreadCountByBucket = {
+  total: 0,
+  salesperson: { field_changed: 0, returned: 0, urge_feedback: 0, withdraw_void_result: 0 },
+  backend: { todo: 0, urge: 0, sla_warning: 0, sla_breached: 0, creator_modified: 0, withdraw_void_request: 0 },
+  system: 0,
+};
+
 function createEmptyBucketCounts(): UnreadCountByBucket {
   return {
     total: 0,
-    salesperson: { field_changed: 0, returned: 0, urge_feedback: 0, withdraw_void_result: 0 },
-    backend: { todo: 0, urge: 0, sla_warning: 0, sla_breached: 0, creator_modified: 0, withdraw_void_request: 0 },
+    salesperson: { ...EMPTY_BUCKET_COUNTS.salesperson },
+    backend: { ...EMPTY_BUCKET_COUNTS.backend },
     system: 0,
   };
 }
@@ -71,6 +115,7 @@ function buildUnreadCountByBucket(list: NotificationItem[]): UnreadCountByBucket
     if (bucket === 'system') counts.system += 1;
     else if (bucket in counts.salesperson) counts.salesperson[bucket as SalespersonNotificationBucket] += 1;
     else if (bucket in counts.backend) counts.backend[bucket as BackendNotificationBucket] += 1;
+    else counts.system += 1;
   }
   return counts;
 }
@@ -106,40 +151,37 @@ function normalizeUnreadCountByBucket(raw: unknown): UnreadCountByBucket {
 
 const mockNotifications: NotificationItem[] = [
   {
-    id: 'n1', type: 'info', biz_type: 'task', priority: 'normal',
-    title: '工单 WO-2025-0001 已派发', content: '浙江企服的入职工单已自动派发至数据录入模块',
-    entity_type: 'work_order', entity_id: '1', link: '/work-orders/1',
+    id: 'n1', type: 'info', biz_type: 'order.field_changed', priority: 'normal',
+    title: '业务员修改了工单数据', content: '业务员修改了客户名称，请后道人员查看确认。',
+    entity_type: 'dispatched_order', entity_id: '1', link: '/my-dispatched/1',
     is_read: false, created_at: new Date(Date.now() - 3600000).toISOString(),
-    ref_order_id: '1', ref_order_no: 'WO-2025-0001',
+    ref_order_id: '1', ref_order_no: 'WO-2026-0001',
   },
   {
-    id: 'n2', type: 'warning', biz_type: 'sla', priority: 'urgent',
-    title: 'SLA 即将超时', content: '杭州科技入职工单数据录入环节已 18h 未处理，距 SLA 截止仅 6 小时',
-    entity_type: 'work_order', entity_id: '2', link: '/work-orders/2',
+    id: 'n2', type: 'warning', biz_type: 'sla_warning', priority: 'urgent',
+    title: 'SLA 即将超时', content: '数据录入子工单即将超时，请尽快处理。',
+    entity_type: 'dispatched_order', entity_id: '2', link: '/my-dispatched/2',
     is_read: false, created_at: new Date(Date.now() - 7200000).toISOString(),
-    ref_order_id: '2', ref_order_no: 'WO-2025-0002',
+    ref_order_id: '2', ref_order_no: 'WO-2026-0002',
   },
   {
-    id: 'n3', type: 'info', biz_type: 'field_change', priority: 'normal',
-    title: '工单 WO-2025-0003 已办结后被修改', content: '发起人修改了业务员字段：手机 → 13900001111',
+    id: 'n3', type: 'info', biz_type: 'field_supplemented', priority: 'normal',
+    title: '后道补充了字段', content: '后道补充了银行卡信息，请业务员查看。',
     entity_type: 'work_order', entity_id: '3', link: '/work-orders/3',
     is_read: false, created_at: new Date(Date.now() - 86400000).toISOString(),
-    diff_summary: 'mobile: 13800000000 → 13900001111\ncustomer_name: 宁波商贸\n修改原因: 业务员更新联系方式',
-    diff_fields: [
-      { field_code: 'mobile', field_name: '手机', old_value: '13800000000', new_value: '13900001111' },
-      { field_code: 'customer_name', field_name: '客户', old_value: '宁波商贸（旧）', new_value: '宁波商贸' },
-    ],
-    ref_order_id: '3', ref_order_no: 'WO-2025-0003',
+    diff_summary: '银行卡号：空 → 6222000000000000000',
+    diff_fields: [{ field_code: 'bank_account', field_name: '银行卡号', old_value: '', new_value: '6222000000000000000' }],
+    ref_order_id: '3', ref_order_no: 'WO-2026-0003',
   },
   {
-    id: 'n4', type: 'info', biz_type: 'claim', priority: 'normal',
-    title: '江璐认领了子工单', content: '数据录入子工单 WO-2025-0004-S1 已被江璐认领',
-    entity_type: 'dispatched_order', entity_id: 'd1', link: '/dispatched/d1',
+    id: 'n4', type: 'info', biz_type: 'dispatched_returned_to_salesperson', priority: 'normal',
+    title: '子工单已退回', content: '入职联系子工单已退回，请修改后重新提交。',
+    entity_type: 'dispatched_order', entity_id: '4', link: '/my-dispatched/4?action=edit',
     is_read: true, created_at: new Date(Date.now() - 172800000).toISOString(),
-    ref_order_id: '4', ref_order_no: 'WO-2025-0004',
+    ref_order_id: '4', ref_order_no: 'WO-2026-0004',
   },
   {
-    id: 'n5', type: 'info', biz_type: 'system', priority: 'low',
+    id: 'n5', type: 'info', biz_type: 'system_announcement', priority: 'low',
     title: '系统维护通知', content: '系统计划于 5 月 20 日凌晨 2:00-4:00 进行例行维护',
     entity_type: null, entity_id: null, link: null,
     is_read: true, created_at: new Date(Date.now() - 259200000).toISOString(),
@@ -232,9 +274,9 @@ export async function getUnreadCountByType(): Promise<{ sla: number; task: numbe
   if (isMockMode) {
     const unread = mockNotifications.filter((n) => !n.is_read);
     return mockDelay({
-      sla: unread.filter((n) => getNotificationBucket(n) === 'sla_warning' || getNotificationBucket(n) === 'sla_breached').length,
-      task: unread.filter((n) => getNotificationBucket(n) === 'todo').length,
-      system: unread.filter((n) => getNotificationBucket(n) === 'system').length,
+      sla: unread.filter((n) => n.biz_type === 'sla' || n.biz_type === 'sla_warning' || n.biz_type === 'sla_breach' || n.biz_type === 'sla_breached').length,
+      task: unread.filter((n) => n.biz_type === 'task').length,
+      system: unread.filter((n) => n.biz_type === 'system' || n.biz_type === 'system_announcement').length,
     });
   }
   return request.get('/notifications/unread-by-type') as Promise<{ sla: number; task: number; system: number }>;

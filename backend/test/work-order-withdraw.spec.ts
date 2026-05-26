@@ -23,6 +23,7 @@ interface HarnessOptions {
   workOrder: WorkOrder;
   children?: DispatchedOrder[];
   withdrawLog?: OperationLog | null;
+  urgeLog?: OperationLog | null;
 }
 
 interface Harness {
@@ -125,7 +126,10 @@ function createHarness(options: HarnessOptions): Harness {
 
   (workOrderRepo.findOne as jest.Mock).mockResolvedValue(options.workOrder);
   (dispatchedRepo.find as jest.Mock).mockResolvedValue(options.children ?? []);
-  (operationLogRepo.findOne as jest.Mock).mockResolvedValue(options.withdrawLog ?? null);
+  (operationLogRepo.findOne as jest.Mock).mockImplementation(async ({ where }: { where?: { actionType?: string } } = {}) => {
+    if (where?.actionType === 'urge') return options.urgeLog ?? null;
+    return options.withdrawLog ?? null;
+  });
 
   const repositories = new Map<unknown, unknown>([
     [WorkOrder, workOrderRepo],
@@ -263,6 +267,50 @@ describe('WorkOrderService withdraw flow', () => {
       userId: 'owner-1',
       bizType: 'withdraw_approved',
     }));
+  });
+});
+
+describe('WorkOrderService urge flow', () => {
+  it('notifies target module handlers, writes urge log, and does not change work order status', async () => {
+    const workOrder = makeWorkOrder(WorkOrderStatus.PROCESSING);
+    const { service, notificationRepo, operationLogRepo } = createHarness({
+      workOrder,
+      children: [
+        makeChild({ id: 'do-1', moduleCode: 'contract', handlerId: 'handler-1', status: DispatchedOrderStatus.PROCESSING }),
+        makeChild({ id: 'do-2', moduleCode: 'data_entry', handlerId: 'handler-2', status: DispatchedOrderStatus.PENDING }),
+        makeChild({ id: 'do-3', moduleCode: 'contract', handlerId: 'handler-3', status: DispatchedOrderStatus.COMPLETED }),
+      ],
+    });
+
+    const result = await service.urge('wo-1', { moduleCode: 'contract' }, owner);
+
+    expect(result.ok).toBe(true);
+    expect(result.notifiedHandlers).toBe(1);
+    expect(workOrder.status).toBe(WorkOrderStatus.PROCESSING);
+    expect(notificationRepo.save).toHaveBeenCalledWith(expect.objectContaining({ userId: 'handler-1', bizType: 'urge_received' }));
+    expect(notificationRepo.save).not.toHaveBeenCalledWith(expect.objectContaining({ userId: 'handler-2', bizType: 'urge_received' }));
+    expect(operationLogRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+      actionType: 'urge',
+      afterData: expect.objectContaining({ moduleCode: 'contract', moduleKey: 'contract', notifiedHandlers: 1 }),
+    }));
+  });
+
+  it('throttles the same work order and module within 30 minutes', async () => {
+    const workOrder = makeWorkOrder(WorkOrderStatus.PROCESSING);
+    const urgeLog = { afterData: { moduleKey: 'contract' }, createdAt: new Date() } as unknown as OperationLog;
+    const { service } = createHarness({
+      workOrder,
+      urgeLog,
+      children: [makeChild({ moduleCode: 'contract', handlerId: 'handler-1', status: DispatchedOrderStatus.PROCESSING })],
+    });
+
+    await expect(service.urge('wo-1', { moduleCode: 'contract' }, owner)).rejects.toMatchObject({ status: HttpStatus.TOO_MANY_REQUESTS });
+  });
+
+  it('rejects urge from non-owner and non-admin users', async () => {
+    const { service } = createHarness({ workOrder: makeWorkOrder(WorkOrderStatus.PROCESSING) });
+
+    await expect(service.urge('wo-1', {}, other)).rejects.toBeInstanceOf(ForbiddenException);
   });
 });
 

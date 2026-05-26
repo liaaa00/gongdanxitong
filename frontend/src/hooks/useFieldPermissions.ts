@@ -21,7 +21,19 @@ export function useFieldPermissions(scenario: string) {
       return;
     }
 
-    const roleIds = user.roles?.map((r) => r.id) || [];
+    const rawRoles = user.roles || [];
+    const roleIds = rawRoles
+      .map((role) => String(role.id || ''))
+      .filter((id, index): id is string => {
+        const code = String(rawRoles[index]?.code || '');
+        return Boolean(id) && id !== code;
+      });
+    if (roleIds.length === 0) {
+      // 当前登录态有时只携带角色 code（如 biz_member）而不是可查询的角色 id。
+      // 此时不要请求仅管理员可用的字段权限配置接口，DynamicForm 默认按 visible 渲染。
+      setPermissions({});
+      return;
+    }
     const cacheKey = `${roleIds.join(',')}::${scenario}`;
 
     if (cacheMap.has(cacheKey)) {

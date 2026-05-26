@@ -3,6 +3,81 @@ import { DashboardService } from 'src/modules/dashboard/dashboard.service';
 describe('DashboardService', () => {
   const validationStub = { resolveUserDepartmentIds: jest.fn(async () => ['dept-1']) } as never;
 
+  it('returns dashboard cards for admin with global work order scope', async () => {
+    const dataSource = { query: jest.fn()
+      .mockResolvedValueOnce([{ count: 8 }])
+      .mockResolvedValueOnce([{ totalThisMonth: 45, processing: 12, completed: 30 }]) };
+    const service = new DashboardService(dataSource as never, validationStub);
+
+    const result = await service.getDashboardCards({ sub: 'admin-1', roles: ['admin'] } as never);
+
+    expect(result).toEqual({ totalThisMonth: 45, processing: 12, completed: 30, myMessages: 8, scope: 'global' });
+    expect(dataSource.query).toHaveBeenNthCalledWith(1, expect.stringContaining('notifications'), ['admin-1']);
+    expect(dataSource.query).toHaveBeenNthCalledWith(2, expect.stringContaining('FROM work_orders'), [null, null, []]);
+    expect(dataSource.query.mock.calls[1][0]).toContain("status::text NOT IN ('completed','withdrawn','void','draft')");
+  });
+
+  it('returns dashboard cards for salesperson with owner work order scope', async () => {
+    const dataSource = { query: jest.fn()
+      .mockResolvedValueOnce([{ count: '2' }])
+      .mockResolvedValueOnce([{ totalThisMonth: '5', processing: '3', completed: '1' }]) };
+    const service = new DashboardService(dataSource as never, validationStub);
+
+    const result = await service.getDashboardCards({ sub: 'sales-1', roles: ['salesperson'] } as never);
+
+    expect(result).toEqual({ totalThisMonth: 5, processing: 3, completed: 1, myMessages: 2, scope: 'mine' });
+    expect(dataSource.query).toHaveBeenNthCalledWith(2, expect.stringContaining('wo.created_by = $2::uuid'), ['owner', 'sales-1', []]);
+  });
+
+  it('returns dashboard cards for business leader with department scope', async () => {
+    const dataSource = { query: jest.fn()
+      .mockResolvedValueOnce([{ count: 1 }])
+      .mockResolvedValueOnce([{ totalThisMonth: 9, processing: 4, completed: 5 }]) };
+    const resolve = jest.fn(async () => ['dept-a', 'dept-b']);
+    const service = new DashboardService(dataSource as never, { resolveUserDepartmentIds: resolve } as never);
+
+    const result = await service.getDashboardCards({ sub: 'leader-1', roles: ['biz_leader'] } as never);
+
+    expect(resolve).toHaveBeenCalledWith('leader-1');
+    expect(result).toEqual({ totalThisMonth: 9, processing: 4, completed: 5, myMessages: 1, scope: 'team' });
+    expect(dataSource.query).toHaveBeenNthCalledWith(2, expect.stringContaining('wo.department_id = ANY($3::uuid[])'), ['department', null, ['dept-a', 'dept-b']]);
+  });
+
+  it('returns dashboard cards for business manager with global work order scope', async () => {
+    const dataSource = { query: jest.fn()
+      .mockResolvedValueOnce([{ count: 3 }])
+      .mockResolvedValueOnce([{ totalThisMonth: 30, processing: 8, completed: 20 }]) };
+    const service = new DashboardService(dataSource as never, validationStub);
+
+    const result = await service.getDashboardCards({ sub: 'manager-1', roles: ['business_owner'] } as never);
+
+    expect(result).toEqual({ totalThisMonth: 30, processing: 8, completed: 20, myMessages: 3, scope: 'global' });
+    expect(dataSource.query).toHaveBeenNthCalledWith(2, expect.stringContaining('FROM work_orders'), [null, null, []]);
+  });
+
+  it('returns dashboard cards for backend handler with dispatched order scope', async () => {
+    const dataSource = { query: jest.fn()
+      .mockResolvedValueOnce([{ count: 4 }])
+      .mockResolvedValueOnce([{ totalThisMonth: 7, processing: 2, completed: 5 }]) };
+    const service = new DashboardService(dataSource as never, validationStub);
+
+    const result = await service.getDashboardCards({ sub: 'handler-1', roles: ['contract_specialist'] } as never);
+
+    expect(result).toEqual({ totalThisMonth: 7, processing: 2, completed: 5, myMessages: 4, scope: 'backend_module' });
+    expect(dataSource.query).toHaveBeenNthCalledWith(2, expect.stringContaining('FROM dispatched_orders'), ['handler-1']);
+    expect(dataSource.query.mock.calls[1][0]).toContain("status::text NOT IN ('completed','withdrawn','void','draft')");
+  });
+
+  it('returns empty dashboard cards when business leader has no departments', async () => {
+    const dataSource = { query: jest.fn().mockResolvedValueOnce([{ count: 6 }]) };
+    const resolve = jest.fn(async () => []);
+    const service = new DashboardService(dataSource as never, { resolveUserDepartmentIds: resolve } as never);
+
+    await expect(service.getDashboardCards({ sub: 'leader-2', roles: ['business_group_leader'] } as never))
+      .resolves.toEqual({ totalThisMonth: 0, processing: 0, completed: 0, myMessages: 6, scope: 'team' });
+    expect(dataSource.query).toHaveBeenCalledTimes(1);
+  });
+
   it('returns salesperson payload from SQL baseline', async () => {
     const dataSource = { query: jest.fn(async () => [{ payload: { current: { submitted: 3 }, trend: [] } }]) };
     const service = new DashboardService(dataSource as never, validationStub);
@@ -62,5 +137,25 @@ describe('DashboardService', () => {
       service.getManagerMetrics({ sub: 'member-1', roles: ['salesperson'] } as never),
     ).rejects.toThrow();
     expect(dataSource.query).not.toHaveBeenCalled();
+  });
+
+  it('returns order matrix by dispatched node when dimension is node', async () => {
+    const dataSource = { query: jest.fn(async () => [{ moduleCode: 'onboarding_contact', total: 2, processing: 1, completed: 1, completionRate: '50.0' }]) };
+    const service = new DashboardService(dataSource as never, validationStub);
+
+    const result = await service.getOrderTypeMatrix({ sub: 'admin-1', roles: ['admin'] } as never, 'node');
+
+    expect(dataSource.query).toHaveBeenCalledWith(expect.stringContaining('FROM dispatched_orders d'), [false, [], null]);
+    expect(result).toEqual({ rows: [expect.objectContaining({ moduleCode: 'onboarding_contact', label: '入职联系' })] });
+  });
+
+  it('filters leader trend by moduleCode or Chinese module name', async () => {
+    const dataSource = { query: jest.fn(async () => [{ month: '2026-05', total: 1, completed: 0, rate: 0 }]) };
+    const service = new DashboardService(dataSource as never, validationStub);
+
+    const result = await service.getLeaderTrend('onboarding', { sub: 'admin-1', roles: ['admin'] } as never, '入职联系');
+
+    expect(dataSource.query).toHaveBeenCalledWith(expect.stringContaining('d.module_code = $5::text'), ['onboarding', false, [], null, 'onboarding_contact']);
+    expect(result).toEqual({ orderType: 'onboarding', moduleCode: 'onboarding_contact', buckets: [{ month: '2026-05', total: 1, completed: 0, rate: 0 }] });
   });
 });

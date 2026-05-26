@@ -74,11 +74,11 @@ const HEADER_ALIASES: Record<string, string[]> = {
   contract_subject: ['劳动合同主体', '合同主体', '签约主体'],
   contract_template: ['劳动合同模板', '合同模板', '合同版本', '标准模板', '特殊模板'],
   need_contract_urge: ['劳动合同签署是否需要催办员工', '合同签署是否需要催办', '是否需要催签合同', '是否催办合同', '是否需催办劳动合同签署', '是否需要催办劳动合同签署', '劳动合同催办', '劳动合同签署催办'],
+  social_urge: ['社保公积金未办是否需要催办', '社保公积金未办是否需要催办员工', '社保公积金是否需要催办', '社保公积金催办', '社保公积金未办催办', '社保公积金办理是否催办', '社保催办', '公积金催办'],
   contract_feedback: ['劳动合同签订反馈', '合同签订反馈', '合同反馈'],
   need_onboarding_contact: ['入职材料是否需要集约收集', '是否需要入职联系', '是否收集入职材料', '是否需要收集入职材料', '是否集约收集', '入职材料收集'],
   onboarding_feedback: ['入职联系反馈', '联系反馈', '入职材料反馈'],
   need_company_payroll: ['是否企服发薪', '是否公司发薪', '是否代发薪', '是否发薪'],
-  social_urge: ['社保公积金未办是否需要催办', '社保公积金是否催办', '社保是否催办', '公积金是否催办'],
   special_remark: ['特殊备注', '特别备注', '特殊说明'],
   data_entry_feedback: ['数据录入反馈', '录入反馈', '数据反馈'],
 };
@@ -146,6 +146,17 @@ export class ImportFieldValidationService {
       }
       if (!this.hasValue(value)) {
         continue;
+      }
+      if (field.fieldType === FieldType.DROPDOWN && Array.isArray(field.dropdownOptions) && field.dropdownOptions.length > 0) {
+        const options = field.dropdownOptions.map(String);
+        if (!options.includes(String(value)) && !(field.fieldCode === 'household_type' && this.isKnownHouseholdTypeAlias(value))) {
+          errors.push({
+            fieldCode: field.fieldCode,
+            reason: 'enum',
+            message: `${field.fieldName}取值不正确，请填写：${options.join('、')}`,
+          });
+          continue;
+        }
       }
       if (field.validationRegex) {
         const regex = new RegExp(field.validationRegex);
@@ -224,7 +235,11 @@ export class ImportFieldValidationService {
   }
 
   private normalizeFieldValue(value: unknown, field: FieldConfig): ValueNormalizeResult {
-    return { value: this.normalizeValue(value, field.fieldType) };
+    const normalized = this.normalizeValue(value, field.fieldType);
+    if (field.fieldType === FieldType.DROPDOWN && Array.isArray(field.dropdownOptions) && field.dropdownOptions.length > 0) {
+      return { value: this.normalizeEnumAlias(field, normalized, field.dropdownOptions.map(String)) };
+    }
+    return { value: normalized };
   }
 
   private normalizeEnumAlias(field: FieldConfig, value: unknown, options: string[]): unknown {
@@ -243,24 +258,41 @@ export class ImportFieldValidationService {
     }
 
     if (field.fieldCode === 'household_type') {
-      if (['城镇户口', '城镇', '城市户口', '居民户口', '非农户口', '非农业户口', '非农', '非农业'].map((item) => this.normalizeEnumText(item)).includes(normalized)) {
-        return options.includes('非农业') ? '非农业' : value;
-      }
-      if (['农村户口', '农村', '农业户口', '农户', '农业'].map((item) => this.normalizeEnumText(item)).includes(normalized)) {
-        return options.includes('农业') ? '农业' : value;
-      }
+      return value;
     }
 
     if (options.includes('是') && options.includes('否')) {
-      if (['是', 'yes', 'y', 'true', '1', '需要', '需', '要', '办理', '已办', '催办', '需要催办'].map((item) => this.normalizeEnumText(item)).includes(normalized)) {
+      if (['是', 'yes', 'y', 'true', '1', '需要', '需', '要'].map((item) => this.normalizeEnumText(item)).includes(normalized)) {
         return '是';
       }
-      if (['否', 'no', 'n', 'false', '0', '不需要', '无需', '不用', '未办', '不用催办', '不催办', '无'].map((item) => this.normalizeEnumText(item)).includes(normalized)) {
+      if (['否', 'no', 'n', 'false', '0', '不需要', '无需', '不用', '无'].map((item) => this.normalizeEnumText(item)).includes(normalized)) {
         return '否';
       }
     }
 
     return value;
+  }
+
+  private isKnownHouseholdTypeAlias(value: unknown): boolean {
+    if (typeof value !== 'string') {
+      return false;
+    }
+    const normalized = this.normalizeEnumText(value);
+    return [
+      '城镇户口',
+      '城镇',
+      '城市户口',
+      '居民户口',
+      '非农户口',
+      '非农业户口',
+      '非农',
+      '非农业',
+      '农村户口',
+      '农村',
+      '农业户口',
+      '农户',
+      '农业',
+    ].map((item) => this.normalizeEnumText(item)).includes(normalized);
   }
 
   private applySafeDefaults(_result: Record<string, unknown>, _fields: FieldConfig[], _warnings: RowValidationWarning[]): void {

@@ -29,11 +29,14 @@ export interface DispatchedOrderSummary {
   module_code: string;
   module_name: string;
   status: string;
+  handler_id?: string | null;
   handler_name: string | null;
   return_reason?: string | null;
   dispatched_at?: string | null;
   accepted_at?: string | null;
   completed_at?: string | null;
+  void_at?: string | null;
+  voidAt?: string | null;
   created_at?: string | null;
   due_at?: string | null;
   node_type?: string | null;
@@ -396,7 +399,6 @@ const mockExtraData: Record<string, unknown> = {
   onboarding_feedback: '',
   need_company_payroll: '是',
   payroll_location: '杭州',
-  social_urge: '否',
   special_remark: '',
   data_entry_feedback: '',
 };
@@ -412,7 +414,7 @@ const mockInitialWorkOrders: WorkOrderItem[] = [
     created_at: '2026-05-08T09:30:00Z', updated_at: '2026-05-08T10:00:00Z',
     dispatched_orders: [
       { id: 'd1', module_code: 'data_entry', module_name: '数据录入', status: 'pending', handler_name: null, dispatched_at: '2026-05-08T10:00:01Z', accepted_at: null, completed_at: null },
-      { id: 'd2', module_code: 'social_insurance', module_name: '社保公积金办理', status: 'pending', handler_name: null, dispatched_at: '2026-05-08T10:00:01Z', accepted_at: null, completed_at: null },
+      { id: 'd2', module_code: 'social_insurance', module_name: '社保公积金办理', status: 'pending', handler_name: '傅倩雯', dispatched_at: '2026-05-08T10:00:01Z', accepted_at: null, completed_at: null },
       { id: 'd3', module_code: 'contract', module_name: '劳动合同签订', status: 'processing', handler_name: '合同专员A', dispatched_at: '2026-05-08T10:00:01Z', accepted_at: '2026-05-08T11:00:00Z', completed_at: null },
       { id: 'd4', module_code: 'onboarding_contact', module_name: '入职联系', status: 'pending', handler_name: null, dispatched_at: '2026-05-08T10:00:01Z', accepted_at: null, completed_at: null },
     ],
@@ -434,7 +436,7 @@ const mockInitialWorkOrders: WorkOrderItem[] = [
     created_at: '2026-05-07T10:00:00Z', updated_at: '2026-05-08T09:00:00Z',
     dispatched_orders: [
       { id: 'd7', module_code: 'data_entry', module_name: '数据录入', status: 'processing', handler_name: '录入员B', dispatched_at: '2026-05-07T11:00:01Z', accepted_at: '2026-05-07T12:00:00Z', completed_at: null },
-      { id: 'd8', module_code: 'social_insurance', module_name: '社保公积金办理', status: 'pending', handler_name: null, dispatched_at: '2026-05-07T11:00:01Z', accepted_at: null, completed_at: null },
+      { id: 'd8', module_code: 'social_insurance', module_name: '社保公积金办理', status: 'pending', handler_name: '傅倩雯', dispatched_at: '2026-05-07T11:00:01Z', accepted_at: null, completed_at: null },
       { id: 'd9', module_code: 'contract', module_name: '劳动合同签订', status: 'returned', handler_name: '合同专员B', return_reason: '合同开始日期与入职日期不符，请核实', dispatched_at: '2026-05-07T11:00:01Z', accepted_at: '2026-05-07T12:00:00Z', completed_at: null },
     ],
   },
@@ -519,7 +521,6 @@ const AVAILABLE_FIELDS_MOCK = [
   { field_code: 'onboarding_feedback', field_name: '入职联系反馈' },
   { field_code: 'need_company_payroll', field_name: '是否企服发薪', is_required: true },
   { field_code: 'pay_location', field_name: '发薪地' },
-  { field_code: 'social_urge', field_name: '社保公积金未办是否需要催办', is_required: true },
   { field_code: 'special_remark', field_name: '特殊备注' },
   { field_code: 'data_entry_feedback', field_name: '数据录入反馈' },
 ];
@@ -575,23 +576,39 @@ function normalizePageResult<T>(raw: unknown, normalizeItem?: (item: unknown) =>
 
 export async function getWorkOrders(params: PageParams): Promise<PageResult<WorkOrderItem>> {
   if (isMockMode) {
-    let list = [...mockWorkOrders];
-    if (params.status) list = list.filter((w) => w.status === params.status);
-    if (params.order_type) list = list.filter((w) => w.order_type === params.order_type);
-    if (params.keyword) {
-      const kw = String(params.keyword).toLowerCase();
+    let list = mockWorkOrders.map((item) => normalizeWorkOrderResponse(item));
+    const query = params as PageParams & Record<string, unknown>;
+    if (query.status) list = list.filter((w) => w.status === query.status);
+    const orderType = String(query.orderType ?? query.order_type ?? '');
+    if (orderType) list = list.filter((w) => w.order_type === orderType);
+    const customerCode = String(query.customerCode ?? query.customer_code ?? '').toLowerCase();
+    if (customerCode) list = list.filter((w) => String(w.customer_code || '').toLowerCase().includes(customerCode));
+    const customerName = String(query.customerName ?? query.customer_name ?? '').toLowerCase();
+    if (customerName) list = list.filter((w) => String(w.customer_name || '').toLowerCase().includes(customerName));
+    const employeeName = String(query.employeeName ?? query.employee_name ?? '').toLowerCase();
+    if (employeeName) list = list.filter((w) => String(w.employee_name || '').toLowerCase().includes(employeeName));
+    const idCardNo = String(query.idCardNo ?? query.id_card_no ?? query.employeeIdCard ?? '').toLowerCase();
+    if (idCardNo) list = list.filter((w) => String(w.employee_id_card || '').toLowerCase().includes(idCardNo));
+    if (query.keyword) {
+      const kw = String(query.keyword).toLowerCase();
       list = list.filter((w) => w.order_no.toLowerCase().includes(kw) || w.employee_name.toLowerCase().includes(kw) || (w.employee_id_card && w.employee_id_card.includes(kw)));
     }
-    return mockDelay({ list, page: Number(params.page) || 1, pageSize: Number(params.pageSize) || 20, total: list.length, totalPages: 1, success: true });
+    return mockDelay({ list, page: Number(query.page) || 1, pageSize: Number(query.pageSize) || 20, total: list.length, totalPages: 1, success: true });
   }
-  const raw = await request.get('/work-orders', { params });
+  const { order_type, ...restParams } = params as PageParams & Record<string, unknown>;
+  const requestParams = {
+    ...restParams,
+    orderType: (restParams.orderType ?? order_type) as unknown,
+  };
+  if (!requestParams.orderType) delete requestParams.orderType;
+  const raw = await request.get('/work-orders', { params: requestParams });
   return normalizePageResult<WorkOrderItem>(raw, normalizeWorkOrderResponse);
 }
 
 export async function getWorkOrder(id: string): Promise<WorkOrderItem> {
   if (isMockMode) {
     const found = mockWorkOrders.find((w) => w.id === id) || mockWorkOrders[0];
-    return mockDelay(found);
+    return mockDelay(normalizeWorkOrderResponse(found));
   }
   return request.get(`/work-orders/${id}`) as Promise<WorkOrderItem>;
 }
@@ -746,11 +763,14 @@ function normalizeDispatchedOrders(list: unknown): DispatchedOrderSummary[] {
       module_code: String(row.module_code ?? row.moduleCode ?? ''),
       module_name: String(row.module_name ?? row.moduleName ?? row.module_code ?? row.moduleCode ?? ''),
       status: String(row.status ?? ''),
+      handler_id: (row.handler_id ?? row.handlerId ?? null) as string | null,
       handler_name: (row.handler_name ?? row.handlerName ?? null) as string | null,
       return_reason: (row.return_reason ?? row.returnReason ?? null) as string | null,
       dispatched_at: (row.dispatched_at ?? row.dispatchedAt ?? null) as string | null,
       accepted_at: (row.accepted_at ?? row.acceptedAt ?? null) as string | null,
       completed_at: (row.completed_at ?? row.completedAt ?? null) as string | null,
+      void_at: (row.void_at ?? row.voidAt ?? null) as string | null,
+      voidAt: (row.voidAt ?? row.void_at ?? null) as string | null,
       created_at: (row.created_at ?? row.createdAt ?? null) as string | null,
       due_at: (row.due_at ?? row.dueAt ?? null) as string | null,
       node_type: (row.node_type ?? row.nodeType ?? null) as string | null,
@@ -770,9 +790,9 @@ function normalizeWorkOrderResponse(raw: unknown): WorkOrderItem {
     order_no: String(source.order_no ?? source.orderNo ?? ''),
     order_type: String(source.order_type ?? source.orderType ?? ''),
     status: String(source.status ?? ''),
-    customer_name: String(source.customer_name ?? source.customerName ?? (source.customer as any)?.customerName ?? extra.customer_name ?? ''),
-    employee_name: String(source.employee_name ?? source.employeeName ?? extra.employee_name ?? ''),
-    employee_id_card: String(source.employee_id_card ?? source.employeeIdCard ?? extra.id_card_no ?? ''),
+    customer_name: String(extra.customer_name ?? source.customer_name ?? source.customerName ?? (source.customer as any)?.customerName ?? ''),
+    employee_name: String(extra.employee_name ?? source.employee_name ?? source.employeeName ?? ''),
+    employee_id_card: String(extra.id_card_no ?? extra.employee_id_card ?? source.employee_id_card ?? source.employeeIdCard ?? ''),
     created_by: String(source.created_by ?? (source.createdBy as any)?.realName ?? source.createdBy ?? ''),
     department_id: String(source.department_id ?? source.departmentId ?? (source.department as any)?.id ?? ''),
     extra_data: extra,
@@ -884,7 +904,7 @@ export async function createWorkOrder(data: Record<string, unknown>): Promise<Wo
       ] : [
         // onboarding 默认：数据录入、社保公积金办理固定生成；合同/入职联系按原条件生成
         { id: `d-n1`, module_code: 'data_entry', module_name: '数据录入', status: 'pending', handler_name: null, dispatched_at: new Date().toISOString(), accepted_at: null, completed_at: null },
-        { id: `d-n2`, module_code: 'social_insurance', module_name: '社保公积金办理', status: 'pending', handler_name: null, dispatched_at: new Date().toISOString(), accepted_at: null, completed_at: null },
+        { id: `d-n2`, module_code: 'social_insurance', module_name: '社保公积金办理', status: 'pending', handler_name: '傅倩雯', dispatched_at: new Date().toISOString(), accepted_at: null, completed_at: null },
         ...(mergedExtra.need_company_contract === '是' ? [{ id: `d-n3`, module_code: 'contract', module_name: '劳动合同签订', status: 'pending', handler_name: null, dispatched_at: new Date().toISOString(), accepted_at: null, completed_at: null }] : []),
         ...(mergedExtra.need_onboarding_contact === '是' ? [{ id: `d-n4`, module_code: 'onboarding_contact', module_name: '入职联系', status: 'pending', handler_name: null, dispatched_at: new Date().toISOString(), accepted_at: null, completed_at: null }] : []),
       ]) : [],
@@ -956,7 +976,7 @@ export async function submitWorkOrder(id: string): Promise<WorkOrderItem> {
       ...found, status: 'processing', submitted_at: now, updated_at: now,
       dispatched_orders: [
         { id: `d-s1-${id}`, module_code: 'data_entry', module_name: '数据录入', status: 'pending', handler_name: null, dispatched_at: now, accepted_at: null, completed_at: null },
-        { id: `d-s2-${id}`, module_code: 'social_insurance', module_name: '社保公积金办理', status: 'pending', handler_name: null, dispatched_at: now, accepted_at: null, completed_at: null },
+        { id: `d-s2-${id}`, module_code: 'social_insurance', module_name: '社保公积金办理', status: 'pending', handler_name: '傅倩雯', dispatched_at: now, accepted_at: null, completed_at: null },
         ...(needContract ? [{ id: `d-s3-${id}`, module_code: 'contract', module_name: '劳动合同签订', status: 'pending' as const, handler_name: null, dispatched_at: now, accepted_at: null, completed_at: null }] : []),
         ...(needContact ? [{ id: `d-s4-${id}`, module_code: 'onboarding_contact', module_name: '入职联系', status: 'pending' as const, handler_name: null, dispatched_at: now, accepted_at: null, completed_at: null }] : []),
       ],
@@ -1035,6 +1055,27 @@ export async function resubmitWorkOrder(id: string, data?: Record<string, unknow
     };
   }
   return request.post(`/work-orders/${id}/resubmit`, body) as Promise<WorkOrderItem>;
+}
+
+export async function withdrawWorkOrder(id: string, reason?: string): Promise<WorkOrderItem> {
+  const body = reason?.trim() ? { reason: reason.trim() } : {};
+  return request.post(`/work-orders/${id}/withdraw`, body) as Promise<WorkOrderItem>;
+}
+
+export async function voidWorkOrder(id: string, reason: string): Promise<WorkOrderItem> {
+  return request.post(`/work-orders/${id}/void`, { reason: reason.trim() }) as Promise<WorkOrderItem>;
+}
+
+export async function approveWithdrawWorkOrder(id: string, approved: boolean, comment?: string): Promise<WorkOrderItem> {
+  const body: Record<string, unknown> = { approved };
+  if (comment?.trim()) body.comment = comment.trim();
+  return request.post(`/work-orders/${id}/withdraw/approve`, body) as Promise<WorkOrderItem>;
+}
+
+export async function approveVoidWorkOrder(id: string, approved: boolean, comment?: string): Promise<WorkOrderItem> {
+  const body: Record<string, unknown> = { approved };
+  if (comment?.trim()) body.comment = comment.trim();
+  return request.post(`/work-orders/${id}/void/approve`, body) as Promise<WorkOrderItem>;
 }
 
 export async function deleteWorkOrder(id: string): Promise<void> {
@@ -1138,7 +1179,6 @@ const HEADER_SUGGESTIONS: Record<string, { code: string; name: string; confidenc
   '是否需要入职联系': { code: 'need_onboarding_contact', name: '入职材料是否需要集约收集', confidence: 0.85 },
   '入职联系反馈': { code: 'onboarding_feedback', name: '入职联系反馈', confidence: 0.95 },
   '是否企服发薪': { code: 'need_company_payroll', name: '是否企服发薪', confidence: 0.95 },
-  '社保公积金未办是否需要催办': { code: 'social_urge', name: '社保公积金未办是否需要催办', confidence: 0.95 },
   '特殊备注': { code: 'special_remark', name: '特殊备注', confidence: 0.9 },
   '数据录入反馈': { code: 'data_entry_feedback', name: '数据录入反馈', confidence: 0.95 },
 };
@@ -1377,7 +1417,7 @@ export async function getImportJob(jobId: string): Promise<ImportJob> {
           const needContact = String(r.need_onboarding_contact ?? '是') === '是';
           const dispatched = [
             { id: `${id}-d1`, module_code: 'data_entry', module_name: '数据录入', status: 'pending' as const, handler_name: null, dispatched_at: now, accepted_at: null, completed_at: null },
-            { id: `${id}-d2`, module_code: 'social_insurance', module_name: '社保公积金办理', status: 'pending' as const, handler_name: null, dispatched_at: now, accepted_at: null, completed_at: null },
+            { id: `${id}-d2`, module_code: 'social_insurance', module_name: '社保公积金办理', status: 'pending' as const, handler_name: '傅倩雯', dispatched_at: now, accepted_at: null, completed_at: null },
             ...(needContract ? [{ id: `${id}-d3`, module_code: 'contract', module_name: '劳动合同签订', status: 'pending' as const, handler_name: null, dispatched_at: now, accepted_at: null, completed_at: null }] : []),
             ...(needContact ? [{ id: `${id}-d4`, module_code: 'onboarding_contact', module_name: '入职联系', status: 'pending' as const, handler_name: null, dispatched_at: now, accepted_at: null, completed_at: null }] : []),
           ];

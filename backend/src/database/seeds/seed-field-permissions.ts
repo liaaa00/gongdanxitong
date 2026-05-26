@@ -35,6 +35,7 @@ const ACTIVE_ROLE_CODES = [
   'shared_team_owner',
   'labor_contract_member',
   'onboarding_resignation_member',
+  'social_insurance_specialist',
 ];
 
 // 兼容历史角色代码；seed 会为新旧角色都生成矩阵行。
@@ -79,9 +80,8 @@ const RESIGNATION_ROLE_CODES = [
   ...BUSINESS_MANAGER_ROLE_CODES,
 ];
 const SOCIAL_INSURANCE_ROLE_CODES = [
+  'social_insurance_specialist',
   'data_entry_leader',
-  'shared_team_owner',
-  'shared_leader',
   'admin',
   ...BUSINESS_MANAGER_ROLE_CODES,
 ];
@@ -99,10 +99,10 @@ const ONBOARDING_EDITABLE = new Set(['bank_name', 'bank_account', 'onboarding_fe
 const DATA_ENTRY_EDITABLE = new Set(['data_entry_feedback']);
 const SOCIAL_INSURANCE_VISIBLE = new Set([
   'customer_name','customer_code','employee_name','id_card_no',
-  'social_location','start_month','social_base','fund_base','fund_ratio','social_urge','special_remark',
+  'social_location','start_month','social_base','fund_base','fund_ratio','special_remark',
 ]);
 const SOCIAL_INSURANCE_EDITABLE = new Set([
-  'social_location','start_month','social_base','fund_base','fund_ratio','social_urge','special_remark',
+  'social_location','start_month','social_base','fund_base','fund_ratio','special_remark',
 ]);
 
 const RENEWAL_EDITABLE = new Set(['renewal_feedback', 'renewal_remark']);

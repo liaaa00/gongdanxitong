@@ -35,7 +35,7 @@ const FIELD_CODES = [
   'fund_ratio', 'bank_name', 'bank_account', 'remark', 'business_mode', 'employee_type',
   'need_company_contract', 'contract_subject', 'contract_template', 'need_contract_urge',
   'contract_feedback', 'need_onboarding_contact', 'onboarding_feedback', 'need_company_payroll',
-  'payroll_location', 'social_urge', 'special_remark', 'data_entry_feedback',
+  'payroll_location', 'special_remark', 'data_entry_feedback',
 ] as const;
 
 function buildComplete54FieldOrder() {
@@ -91,7 +91,6 @@ function buildComplete54FieldOrder() {
     onboarding_feedback: '',
     need_company_payroll: '是',
     payroll_location: '杭州',
-    social_urge: '否',
     special_remark: '要求生成数据录入、入职联系、劳动合同签订3个子工单',
     data_entry_feedback: '',
   } satisfies Record<(typeof FIELD_CODES)[number], unknown>;
@@ -111,9 +110,9 @@ describe('onboarding mock end-to-end workflow', () => {
     const fieldPermissions = await import('./fieldPermissions');
 
     const extraData = buildComplete54FieldOrder();
-    expect(Object.keys(extraData)).toHaveLength(54);
+    expect(Object.keys(extraData)).toHaveLength(FIELD_CODES.length);
     expect(FIELD_CODES.every((code) => Object.prototype.hasOwnProperty.call(extraData, code))).toBe(true);
-    record('S1', '业务员准备完整54字段入职测试数据', 'PASS', { fieldCount: Object.keys(extraData).length });
+    record('S1', '业务员准备完整入职测试数据', 'PASS', { fieldCount: Object.keys(extraData).length });
 
     const created = await workOrders.createWorkOrder({ ...extraData, order_type: 'onboarding', _action: 'submit' });
     expect(created.status).toBe('processing');

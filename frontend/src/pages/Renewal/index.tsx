@@ -43,7 +43,7 @@ const RenewalList: React.FC = () => {
         actionRef={actionRef}
         columns={columns}
         request={async (params: PageParams) => {
-          const result = await getWorkOrders({ ...params, order_type: 'renewal' });
+          const result = await getWorkOrders({ ...params, orderType: 'renewal' });
           return { data: result.list, success: true, total: result.total };
         }}
         rowKey="id"

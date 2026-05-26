@@ -18,14 +18,14 @@ describe('user-role assignment services', () => {
     vi.resetModules();
   });
 
-  it('given role seed data, when getRoles is called in mock mode, then it returns 15 unique roles matching real organization', async () => {
+  it('given role seed data, when getRoles is called in mock mode, then it returns 9 unique core roles matching real organization', async () => {
     const { getRoles } = await import('./roles');
 
     const roles = await getRoles();
     const uniqueRoles = new Map(roles.map((r) => [r.id, r]));
 
-    // ★ 8 核心角色体系：业务组通过 group_name 区分，不再按组编号独立成角色
-    expect(uniqueRoles.size).toBe(8);
+    // ★ 9 核心角色体系：业务组通过 group_name 区分，不再按组编号独立成角色
+    expect(uniqueRoles.size).toBe(9);
     expect([...uniqueRoles.values()].map((r) => r.name)).toEqual(expect.arrayContaining([
       '系统管理员',
       '业务负责人',
@@ -35,6 +35,7 @@ describe('user-role assignment services', () => {
       '共享团队负责人',
       '合同专员',
       '入离职联系专员',
+      '福保负责人',
     ]));
   });
 

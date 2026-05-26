@@ -4,12 +4,38 @@ import { MemoryRouter } from 'react-router-dom';
 import NotificationsPage from './index';
 import { getNotifications, markNotificationsReadByQuery } from '@/services/notifications';
 
+const { notification } = vi.hoisted(() => ({
+  notification: {
+    id: 'n-1',
+    type: 'field_changed',
+    biz_type: 'field_changed',
+    priority: 'normal' as const,
+    title: 'Test Notification',
+    content: '杨纯 修改了 contract_feedback',
+    diff_fields: [
+      { field_code: 'contract_feedback', old_value: '待确认', new_value: '已完成签订' },
+    ],
+    actorName: '杨纯',
+    entity_type: 'dispatched_order',
+    action: 'update',
+    entity_type: 'work_order',
+    entity_id: 'wo-1',
+    link: '/work-orders/wo-1',
+    is_read: false,
+    created_at: new Date().toISOString(),
+    ref_order_id: 'wo-1',
+    ref_order_no: 'WO-TEST-001',
+  },
+}));
+
 vi.mock('@/services/notifications', () => ({
   getNotifications: vi.fn().mockResolvedValue({
-    list: [
-      { id: 'n-1', type: 'info', biz_type: 'dispatched_completed', priority: 'normal', title: 'Test Notification', content: 'Test content', is_read: false, created_at: new Date().toISOString() },
-    ],
-    page: 1, pageSize: 20, total: 1, totalPages: 1, success: true,
+    list: [notification],
+    page: 1,
+    pageSize: 20,
+    total: 1,
+    totalPages: 1,
+    success: true,
   }),
   markNotificationRead: vi.fn().mockResolvedValue(undefined),
   markAllRead: vi.fn().mockResolvedValue(undefined),
@@ -21,7 +47,13 @@ vi.mock('@/services/notifications', () => ({
     backend: { todo: 0, urge: 0, sla_warning: 0, sla_breached: 0, creator_modified: 1, withdraw_void_request: 0 },
     system: 0,
   }),
-  getUnreadCountByType: vi.fn().mockResolvedValue({ sla: 0, task: 0, system: 0 }),
+}));
+
+vi.mock('@/hooks/useAuth', () => ({
+  useAuth: () => ({
+    hasRole: (role: string) => role === 'admin',
+    hasAnyRole: () => true,
+  }),
 }));
 
 describe('Notifications Page', () => {
@@ -72,7 +104,7 @@ describe('Notifications Page', () => {
   });
 
   it('shows notification list after loading', async () => {
-    render(
+    const { container } = render(
       <MemoryRouter>
         <NotificationsPage />
       </MemoryRouter>,
@@ -80,9 +112,15 @@ describe('Notifications Page', () => {
     await waitFor(() => {
       expect(screen.getByText('Test Notification')).toBeTruthy();
     }, { timeout: 5000 });
+    await waitFor(() => {
+      expect(container.textContent).toContain('劳动合同签订反馈');
+      expect(container.textContent).toContain('待确认');
+      expect(container.textContent).toContain('已完成签订');
+      expect(container.textContent).not.toContain('contract_feedback');
+    }, { timeout: 5000 });
   });
 
-  it('uses the field_changed bucket when opening the backend data modification tab', async () => {
+  it('uses field_changed bucket when opening the backend data modification tab', async () => {
     render(
       <MemoryRouter>
         <NotificationsPage />

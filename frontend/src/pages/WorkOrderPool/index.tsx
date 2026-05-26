@@ -28,7 +28,7 @@ const WorkOrderPool: React.FC = () => {
     try {
       const res = await getPoolItems({ module_code: moduleCode, pageSize: 100 });
       setData(Array.isArray(res?.list) ? res.list : []);
-    } catch { message.error('加载工单池失败'); }
+    } catch { message.error('加载待认领工单失败'); }
     finally { setLoading(false); }
   };
 
@@ -49,7 +49,7 @@ const WorkOrderPool: React.FC = () => {
   };
 
   return (
-    <PageContainer header={{ title: '工单池', subTitle: '待认领的子工单，按模块分类。点击认领后进入"我的子工单"。' }}>
+    <PageContainer header={{ title: '待认领工单', subTitle: '尚未指定具体办理人的子工单，按模块分类。点击认领后进入“我的待办”。' }}>
       <Tabs activeKey={activeTab} onChange={setActiveTab} items={TABS.map((t) => ({
         key: t.key,
         label: t.label,

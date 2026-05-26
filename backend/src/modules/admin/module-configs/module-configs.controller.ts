@@ -1,10 +1,10 @@
 import { Body, Controller, Get, Param, Post, Put, Query, UseInterceptors } from '@nestjs/common';
 import { Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsEnum, IsInt, IsOptional, IsString, IsUUID, Matches, Min, ValidateNested } from 'class-validator';
-import { DispatchStrategy } from 'src/entities';
+import { IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, Min, ValidateNested } from 'class-validator';
 import { Audit } from 'src/common/decorators/audit.decorator';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { AuditInterceptor } from 'src/common/interceptors/audit.interceptor';
+import { DispatchStrategy } from 'src/entities';
 import { ModuleConfigsService } from './module-configs.service';
 
 class SaveModuleDto {
@@ -34,14 +34,20 @@ class SaveModuleDto {
   displayOrder?: number;
 
   @IsOptional()
-  @IsEnum(DispatchStrategy)
+  @IsIn(['fixed', 'team_claim', 'round_robin', 'load_balance', 'pool'])
   dispatchStrategy?: DispatchStrategy;
 
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @Min(1)
-  slaHours?: number;
+  @Min(0)
+  slaHours?: number | null;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  slaReminderBeforeHours?: number | null;
 
   @IsOptional()
   @Type(() => Boolean)

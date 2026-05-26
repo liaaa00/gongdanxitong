@@ -8,15 +8,7 @@ import { EyeOutlined, PlusOutlined, ExportOutlined } from '@ant-design/icons';
 import { getWorkOrders } from '@/services/workOrders';
 import type { WorkOrderItem } from '@/services/workOrders';
 import type { PageParams } from '@/services/mock';
-
-const STATUS_MAP: Record<string, { color: string; label: string }> = {
-  draft: { color: 'default', label: '草稿' },
-  pending: { color: 'processing', label: '待派发' },
-  processing: { color: 'blue', label: '处理中' },
-  completed: { color: 'success', label: '已完成' },
-  returned: { color: 'warning', label: '已退回' },
-  withdrawn: { color: 'default', label: '已撤回' },
-};
+import { STATUS_MAP } from '@/constants/dictionaries';
 
 const ResignationList: React.FC = () => {
   const navigate = useNavigate();
@@ -53,7 +45,7 @@ const ResignationList: React.FC = () => {
         actionRef={actionRef}
         columns={columns}
         request={async (params: PageParams) => {
-          const result = await getWorkOrders({ ...params, order_type: 'resignation' });
+          const result = await getWorkOrders({ ...params, orderType: 'resignation' });
           return { data: result.list, success: true, total: result.total };
         }}
         rowKey="id"

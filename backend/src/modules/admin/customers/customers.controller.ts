@@ -27,6 +27,11 @@ class QueryCustomersDto extends PaginationQueryDto {
   @Type(() => Boolean)
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  onlyUsedInOrders?: boolean;
 }
 
 class SaveCustomerDto {

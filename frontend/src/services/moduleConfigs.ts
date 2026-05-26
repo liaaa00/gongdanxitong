@@ -11,7 +11,9 @@ export interface ModuleConfigItem {
   description?: string | null;
   display_order?: number;
   dispatch_strategy?: string;
-  sla_hours?: number;
+  dispatchStrategy?: string;
+  sla_hours?: number | null;
+  sla_reminder_before_hours?: number | null;
   is_active: boolean;
   created_at?: string;
   updated_at?: string;
@@ -20,14 +22,31 @@ export interface ModuleConfigItem {
   parentModuleCode?: string | null;
   moduleType?: string;
   displayOrder?: number;
-  dispatchStrategy?: string;
-  slaHours?: number;
+  slaHours?: number | null;
+  slaReminderBeforeHours?: number | null;
   isActive?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
 
+export interface ModuleFieldItem {
+  id?: string;
+  module_code: string;
+  field_code: string;
+  group_name?: string | null;
+  display_order?: number;
+  is_required_override?: boolean | null;
+  is_active?: boolean;
+  moduleCode?: string;
+  fieldCode?: string;
+  groupName?: string | null;
+  displayOrder?: number;
+  isRequiredOverride?: boolean | null;
+  isActive?: boolean;
+}
+
 const KEY = 'mock_admin_module_configs_v1';
+const MODULE_FIELD_KEY = 'mock_admin_module_fields_v1';
 const SEED: ModuleConfigItem[] = [
   { id: '1', module_code: 'onboarding', module_name: '入职管理', module_type: 'main', display_order: 10, is_active: true, created_at: new Date().toISOString() },
   { id: '2', module_code: 'data_entry', module_name: '数据录入', parent_module_code: 'onboarding', module_type: 'sub', display_order: 11, is_active: true, created_at: new Date().toISOString() },
@@ -53,8 +72,12 @@ function normalizeModuleConfig(raw: any): ModuleConfigItem {
     module_type: raw.module_type ?? raw.moduleType,
     description: raw.description ?? null,
     display_order: raw.display_order ?? raw.displayOrder ?? 0,
-    dispatch_strategy: raw.dispatch_strategy ?? raw.dispatchStrategy ?? 'pool',
-    sla_hours: raw.sla_hours ?? raw.slaHours ?? 72,
+    dispatch_strategy: raw.dispatch_strategy ?? raw.dispatchStrategy ?? 'team_claim',
+    dispatchStrategy: raw.dispatchStrategy ?? raw.dispatch_strategy ?? 'team_claim',
+    sla_hours: raw.sla_hours ?? raw.slaHours ?? null,
+    sla_reminder_before_hours: raw.sla_reminder_before_hours ?? raw.slaReminderBeforeHours ?? null,
+    slaHours: raw.slaHours ?? raw.sla_hours ?? null,
+    slaReminderBeforeHours: raw.slaReminderBeforeHours ?? raw.sla_reminder_before_hours ?? null,
     is_active: raw.is_active ?? raw.isActive ?? true,
     created_at: raw.created_at ?? raw.createdAt,
     updated_at: raw.updated_at ?? raw.updatedAt,
@@ -71,6 +94,7 @@ function packModuleConfig(data: Partial<ModuleConfigItem>): Record<string, unkno
   if (data.display_order !== undefined || data.displayOrder !== undefined) body.displayOrder = data.display_order ?? data.displayOrder;
   if (data.dispatch_strategy !== undefined || data.dispatchStrategy !== undefined) body.dispatchStrategy = data.dispatch_strategy ?? data.dispatchStrategy;
   if (data.sla_hours !== undefined || data.slaHours !== undefined) body.slaHours = data.sla_hours ?? data.slaHours;
+  if (data.sla_reminder_before_hours !== undefined || data.slaReminderBeforeHours !== undefined) body.slaReminderBeforeHours = data.sla_reminder_before_hours ?? data.slaReminderBeforeHours;
   if (data.is_active !== undefined || data.isActive !== undefined) body.isActive = data.is_active ?? data.isActive;
   return body;
 }
@@ -83,7 +107,7 @@ export async function getModuleConfigs(params?: { parentModuleCode?: string; isA
     return mockDelay(list);
   }
   try {
-    const result = await request.get('/admin/work-order-modules', { params }) as any;
+    const result = await request.get('/admin/work-order-modules', { params, silentError: true } as any) as any;
     const rawList = Array.isArray(result) ? result : (result?.list || result?.items || result?.data || []);
     return (Array.isArray(rawList) ? rawList : []).map(normalizeModuleConfig);
   } catch {
@@ -143,4 +167,52 @@ export async function deleteModuleConfig(id: string): Promise<void> {
     return mockDelay(undefined);
   }
   await request.delete(`/admin/work-order-modules/${id}`);
+}
+
+function normalizeModuleField(raw: any): ModuleFieldItem {
+  return {
+    id: raw.id ? String(raw.id) : undefined,
+    module_code: raw.module_code ?? raw.moduleCode ?? '',
+    field_code: raw.field_code ?? raw.fieldCode ?? '',
+    group_name: raw.group_name ?? raw.groupName ?? null,
+    display_order: raw.display_order ?? raw.displayOrder ?? 0,
+    is_required_override: raw.is_required_override ?? raw.isRequiredOverride ?? null,
+    is_active: raw.is_active ?? raw.isActive ?? true,
+  };
+}
+
+export async function getModuleFields(moduleCode: string): Promise<ModuleFieldItem[]> {
+  if (isMockMode) {
+    const list = loadList<ModuleFieldItem>(MODULE_FIELD_KEY, []);
+    return mockDelay(list.filter((item) => item.module_code === moduleCode && item.is_active !== false));
+  }
+  const result = await request.get(`/admin/modules/${moduleCode}/fields`) as any;
+  const rawList = Array.isArray(result) ? result : (result?.list || result?.items || result?.data || []);
+  return (Array.isArray(rawList) ? rawList : []).map(normalizeModuleField).filter((item) => item.is_active !== false);
+}
+
+export async function replaceModuleFields(moduleCode: string, fields: Array<Pick<ModuleFieldItem, 'field_code' | 'group_name' | 'display_order' | 'is_required_override' | 'is_active'>>): Promise<{ affected: number }> {
+  if (isMockMode) {
+    const list = loadList<ModuleFieldItem>(MODULE_FIELD_KEY, []).filter((item) => item.module_code !== moduleCode);
+    const next = fields.map((item, index) => ({
+      id: `${moduleCode}-${item.field_code}`,
+      module_code: moduleCode,
+      field_code: item.field_code,
+      group_name: item.group_name ?? null,
+      display_order: item.display_order ?? index + 1,
+      is_required_override: item.is_required_override ?? null,
+      is_active: item.is_active ?? true,
+    }));
+    saveList(MODULE_FIELD_KEY, [...list, ...next]);
+    return mockDelay({ affected: next.length });
+  }
+  return request.put(`/admin/modules/${moduleCode}/fields`, {
+    fields: fields.map((item, index) => ({
+      fieldCode: item.field_code,
+      groupName: item.group_name ?? null,
+      displayOrder: item.display_order ?? index + 1,
+      isRequiredOverride: item.is_required_override ?? null,
+      isActive: item.is_active ?? true,
+    })),
+  }) as Promise<{ affected: number }>;
 }

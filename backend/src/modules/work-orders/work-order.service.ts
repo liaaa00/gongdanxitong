@@ -1,6 +1,6 @@
 import { ForbiddenException, HttpStatus, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, QueryFailedError, Repository } from 'typeorm';
+import { In, MoreThan, QueryFailedError, Repository } from 'typeorm';
 import {
   BUSINESS_LEADER_ROLES,
   BUSINESS_MANAGER_ROLES,
@@ -14,25 +14,20 @@ import {
   DispatchedOrderStatus,
   FieldConfig,
   ImportJob,
-  ImportJobStatus,
   ModuleField,
   ModuleHandler,
   ModuleSupervisor,
   Notification,
   OperationLog,
-  OrderType,
   RoleLevel,
   UserRole,
   WorkOrder,
   WorkOrderFieldDirtyMark,
   WorkOrderStatus,
-  isDispatchModuleCode,
 } from 'src/entities';
-import {
-  buildWorkOrderDispatchChildren,
-  getModuleSortOrder,
-} from './onboarding-dispatch.helper';
+import { buildOnboardingChildren, getModuleSortOrder } from './onboarding-dispatch.helper';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
+import { DispatchEngineService } from 'src/modules/dispatch-engine/dispatch-engine.service';
 import { FieldPermissionService } from 'src/modules/field-permissions/field-permission.service';
 import { FieldChangeHook } from 'src/modules/notifications/field-change.hook';
 import {
@@ -42,11 +37,11 @@ import {
   humanizeEntityType,
   toOperationLogActionCode,
 } from 'src/modules/operation-logs/operation-log-semantics';
-import { ImportConfirmDto } from './dto/import-confirm.dto';
 import { ImportPreviewDto } from './dto/import-preview.dto';
 import { ListWorkOrderQueryDto } from './dto/list-query.dto';
 import { SubmitWorkOrderDto } from './dto/submit.dto';
 import { UpdateWorkOrderDto } from './dto/update.dto';
+import { UrgeWorkOrderDto } from './dto/urge.dto';
 import { VoidApproveWorkOrderDto } from './dto/void-approve.dto';
 import { VoidWorkOrderDto } from './dto/void.dto';
 import { WithdrawApproveWorkOrderDto } from './dto/withdraw-approve.dto';
@@ -103,6 +98,8 @@ export class WorkOrderService {
     @Optional()
     @InjectRepository(UserRole)
     private readonly userRoleRepository?: Repository<UserRole>,
+    @Optional()
+    private readonly dispatchEngineService?: DispatchEngineService,
   ) {}
 
   async createDraft(payload: CreateWorkOrderDto, user: JwtUserPayload): Promise<WorkOrderDetailItem> {
@@ -160,7 +157,9 @@ export class WorkOrderService {
     this.assertBusinessOwnerReadOnly(user);
     const workOrder = await this.loadWorkOrder(id);
     this.assertOwner(workOrder, user.sub);
-    if ([WorkOrderStatus.WITHDRAWN, WorkOrderStatus.VOID].includes(workOrder.status)) {
+    await this.assertMainOperationMovedToChildren(workOrder, user, '修改');
+    const editableStatuses = [WorkOrderStatus.DRAFT, WorkOrderStatus.PROCESSING, WorkOrderStatus.RETURNED];
+    if (!editableStatuses.includes(workOrder.status)) {
       throw businessException(4101, HttpStatus.CONFLICT, '工单状态不允许该操作');
     }
     if (workOrder.status === WorkOrderStatus.RETURNED && (payload.customerId || payload.departmentId)) {
@@ -176,6 +175,7 @@ export class WorkOrderService {
 
     const beforeExtraData = { ...workOrder.extraData };
     const before = snapshotWorkOrder(workOrder);
+    const shouldRequireResubmitAfterEdit = [WorkOrderStatus.PROCESSING, WorkOrderStatus.RETURNED].includes(workOrder.status);
     if (payload.customerId) {
       workOrder.customerId = payload.customerId;
     }
@@ -208,6 +208,10 @@ export class WorkOrderService {
 
     workOrder.lastModifiedAt = new Date();
     workOrder.lastModifiedBy = user.sub;
+    if (shouldRequireResubmitAfterEdit) {
+      workOrder.status = WorkOrderStatus.PENDING;
+      workOrder.completedAt = null;
+    }
     try {
       await this.workOrderRepository.save(workOrder);
     } catch (error) {
@@ -221,7 +225,19 @@ export class WorkOrderService {
       await this.createDirtyMarksForSalesUpdate(workOrder, beforeExtraData, workOrder.extraData, user.sub);
     }
     const after = snapshotWorkOrder(workOrder);
-    await this.writeOperationLog('work_order', workOrder.id, user.sub, workOrder.status === WorkOrderStatus.COMPLETED ? 'completed_modify' : 'update', before, after);
+    const actionType = shouldRequireResubmitAfterEdit ? 'salesperson_modify_resubmit' : 'update';
+    const auditAfter = shouldRequireResubmitAfterEdit
+      ? {
+          ...after,
+          auditTitle: '业务员修改后重提',
+          contextFields: {
+            oldStatus: before.status,
+            newStatus: workOrder.status,
+            auditTitle: '业务员修改后重提',
+          },
+        }
+      : after;
+    await this.writeOperationLog('work_order', workOrder.id, user.sub, workOrder.status === WorkOrderStatus.COMPLETED ? 'completed_modify' : actionType, before, auditAfter);
     if (this.fieldChangeHook) {
       await this.fieldChangeHook.onWorkOrderUpdated({
         orderId: workOrder.id,
@@ -230,6 +246,12 @@ export class WorkOrderService {
         bizType: workOrder.status === WorkOrderStatus.COMPLETED ? 'order.completed_modified' : 'order.field_changed',
       });
     }
+
+    if (shouldRequireResubmitAfterEdit && this.resubmitService) {
+      const resubmitted = await this.resubmitService.resubmit(workOrder.id, { extraData: workOrder.extraData }, user);
+      return resubmitted.workOrder;
+    }
+
     return this.loadDetail(workOrder.id);
   }
 
@@ -306,9 +328,11 @@ export class WorkOrderService {
         };
       }
 
-      const childrenToCreate = await buildWorkOrderDispatchChildren(workOrder, manager, this.fieldPermissionService);
+      const childrenToCreate = this.dispatchEngineService
+        ? (await this.dispatchEngineService.evaluateDetailed(workOrder, manager)).childrenToCreate
+        : await buildOnboardingChildren(workOrder, manager, this.fieldPermissionService);
       if (childrenToCreate.length === 0) {
-        throw businessException(4202, HttpStatus.BAD_REQUEST, '无可派发办理模块');
+        throw businessException(4202, HttpStatus.BAD_REQUEST, '无可派发规则命中');
       }
 
       workOrder.status = WorkOrderStatus.PENDING;
@@ -316,28 +340,25 @@ export class WorkOrderService {
       await workOrderRepo.save(workOrder);
 
       const savedChildren = await dispatchedRepo.save(
-        childrenToCreate.map((child) => {
-          if (!isDispatchModuleCode(child.moduleCode)) {
-            throw businessException(4203, HttpStatus.INTERNAL_SERVER_ERROR, `非法 module_code: ${child.moduleCode}`);
-          }
-          return dispatchedRepo.create({
-            parentOrderId: workOrder.id,
-            moduleCode: child.moduleCode,
-            status: DispatchedOrderStatus.PENDING,
-            handlerId: child.handlerId,
-            visibleFields: child.visibleFields,
-            returnReason: null,
-            dispatchedAt: new Date(),
-            acceptedAt: null,
-            completedAt: null,
-          });
-        }),
+        childrenToCreate.map((child) => dispatchedRepo.create({
+          parentOrderId: workOrder.id,
+          moduleCode: child.moduleCode,
+          status: DispatchedOrderStatus.PENDING,
+          handlerId: child.handlerId,
+          visibleFields: child.visibleFields,
+          returnReason: null,
+          dispatchedAt: new Date(),
+          dueAt: child.dueAt ?? null,
+          slaHours: child.slaHours ?? null,
+          slaReminderBeforeHours: child.slaReminderBeforeHours ?? null,
+          acceptedAt: null,
+          completedAt: null,
+        })),
       );
 
       workOrder.status = WorkOrderStatus.PROCESSING;
       await workOrderRepo.save(workOrder);
 
-      const dispatchStrategyByModule = new Map<string, string>(childrenToCreate.map((child) => [child.moduleCode, child.dispatchStrategy]));
       for (const child of savedChildren) {
         await operationLogRepo.save(operationLogRepo.create({
           entityType: 'dispatched_order',
@@ -351,7 +372,6 @@ export class WorkOrderService {
             moduleCode: child.moduleCode,
             handlerId: child.handlerId,
             toUserId: child.handlerId,
-            dispatchStrategy: dispatchStrategyByModule.get(child.moduleCode) ?? null,
             status: child.status,
             contextFields: {
               parentOrderId: workOrder.id,
@@ -359,7 +379,6 @@ export class WorkOrderService {
               moduleCode: child.moduleCode,
               handlerId: child.handlerId,
               toUserId: child.handlerId,
-              dispatchStrategy: dispatchStrategyByModule.get(child.moduleCode) ?? null,
             },
           },
           ipAddress: null,
@@ -413,6 +432,7 @@ export class WorkOrderService {
         throw businessException(4100, HttpStatus.NOT_FOUND, '工单不存在');
       }
       this.assertWithdrawRequester(workOrder, user);
+      await this.assertMainOperationMovedToChildren(workOrder, user, '撤回', dispatchedRepo);
       this.assertCanRequestWithdraw(workOrder.status);
 
       const previousStatus = workOrder.status;
@@ -547,6 +567,76 @@ export class WorkOrderService {
     });
   }
 
+  async urge(
+    id: string,
+    payload: UrgeWorkOrderDto,
+    user: JwtUserPayload,
+  ): Promise<{ ok: true; notifiedHandlers: number; lastUrgedAt: string }> {
+    const workOrder = await this.loadWorkOrder(id);
+    this.assertUrgeRequester(workOrder, user);
+    await this.assertMainOperationMovedToChildren(workOrder, user, '催办');
+    this.assertCanUrge(workOrder.status);
+
+    const moduleCode = payload.moduleCode ?? payload.module_code ?? null;
+    const children = await this.dispatchedOrderRepository.find({ where: { parentOrderId: workOrder.id } });
+    const targetChildren = children.filter((child) => {
+      if (child.status === DispatchedOrderStatus.COMPLETED || child.voidAt) return false;
+      if (moduleCode && child.moduleCode !== moduleCode) return false;
+      return Boolean(child.handlerId);
+    });
+    if (moduleCode && !children.some((child) => child.moduleCode === moduleCode)) {
+      throw businessException(4200, HttpStatus.NOT_FOUND, '目标模块子工单不存在');
+    }
+
+    const throttleKey = moduleCode ?? '__all__';
+    const threshold = new Date(Date.now() - 30 * 60 * 1000);
+    const lastUrgeLog = await this.operationLogRepository.findOne({
+      where: {
+        entityType: 'work_order',
+        entityId: workOrder.id,
+        actionType: 'urge',
+        createdAt: MoreThan(threshold),
+      },
+      order: { createdAt: 'DESC' },
+    });
+    if (lastUrgeLog && this.readUrgeModuleKey(lastUrgeLog) === throttleKey) {
+      throw businessException(4290, HttpStatus.TOO_MANY_REQUESTS, '距上次催办未到 30 分钟');
+    }
+
+    const now = new Date();
+    const recipientIds = Array.from(new Set(targetChildren
+      .map((child) => child.handlerId)
+      .filter((handlerId): handlerId is string => Boolean(handlerId))));
+    const modules = Array.from(new Set(targetChildren.map((child) => child.moduleCode)));
+    for (const handlerId of recipientIds) {
+      await this.notificationRepository.save(this.notificationRepository.create({
+        userId: handlerId,
+        bizType: 'urge_received',
+        title: '收到工单催办',
+        content: `工单 ${workOrder.orderNo} 收到业务员催办`,
+        link: `/work-orders/${workOrder.id}`,
+        payload: { workOrderId: workOrder.id, orderNo: workOrder.orderNo, moduleCode, modules, urgedBy: user.sub, lastUrgedAt: now.toISOString() },
+        isRead: false,
+        readAt: null,
+      }));
+    }
+
+    await this.writeOperationLog('work_order', workOrder.id, user.sub, 'urge', null, {
+      workOrderId: workOrder.id,
+      orderNo: workOrder.orderNo,
+      moduleCode,
+      module_code: moduleCode,
+      moduleKey: throttleKey,
+      modules,
+      notifiedHandlers: recipientIds.length,
+      notifiedHandlerIds: recipientIds,
+      lastUrgedAt: now.toISOString(),
+      payload: { moduleCode, moduleKey: throttleKey, lastUrgedAt: now.toISOString() },
+    });
+
+    return { ok: true, notifiedHandlers: recipientIds.length, lastUrgedAt: now.toISOString() };
+  }
+
   async void(
     id: string,
     payload: VoidWorkOrderDto,
@@ -564,6 +654,7 @@ export class WorkOrderService {
         throw businessException(4100, HttpStatus.NOT_FOUND, '工单不存在');
       }
       this.assertVoidRequester(workOrder, user);
+      await this.assertMainOperationMovedToChildren(workOrder, user, '作废', dispatchedRepo);
       this.assertCanRequestVoid(workOrder.status);
 
       const reason = payload.reason?.trim();
@@ -731,8 +822,9 @@ export class WorkOrderService {
       }
     }
 
-    if (query.orderType) {
-      qb.andWhere('w.order_type = :orderType', { orderType: query.orderType });
+    const orderType = query.orderType ?? query.order_type;
+    if (orderType) {
+      qb.andWhere('w.order_type = :orderType', { orderType });
     }
     if (query.status) {
       qb.andWhere('w.status = :status', { status: query.status });
@@ -752,10 +844,16 @@ export class WorkOrderService {
       });
     }
     if (query.customerCode) {
-      qb.andWhere('w.customer_code = :customerCode', { customerCode: query.customerCode });
+      qb.andWhere("(w.customer_code ILIKE :customerCode OR w.extra_data->>'customer_code' ILIKE :customerCode)", { customerCode: `%${query.customerCode}%` });
     }
     if (query.customerName) {
-      qb.andWhere('w.customer_name ILIKE :customerName', { customerName: `%${query.customerName}%` });
+      qb.andWhere("(w.customer_name ILIKE :customerName OR w.extra_data->>'customer_name' ILIKE :customerName)", { customerName: `%${query.customerName}%` });
+    }
+    if (query.employeeName) {
+      qb.andWhere("(w.employee_name ILIKE :employeeName OR w.extra_data->>'employee_name' ILIKE :employeeName)", { employeeName: `%${query.employeeName}%` });
+    }
+    if (query.idCardNo) {
+      qb.andWhere("(w.employee_id_card ILIKE :idCardNo OR w.extra_data->>'id_card_no' ILIKE :idCardNo OR w.extra_data->>'employee_id_card' ILIKE :idCardNo)", { idCardNo: `%${query.idCardNo}%` });
     }
     if (query.createdByName) {
       qb.leftJoin('w.creator', 'u').andWhere('u.real_name ILIKE :createdByName', {
@@ -765,7 +863,29 @@ export class WorkOrderService {
 
     const total = await qb.getCount();
     const rows = await qb.orderBy('w.created_at', 'DESC').skip((page - 1) * pageSize).take(pageSize).getMany();
-    return { items: rows.map((row) => toWorkOrderListItem(row)), total, page, pageSize };
+    const childrenByParentId = new Map<string, DispatchedOrder[]>();
+
+    if (rows.length > 0) {
+      const children = await this.dispatchedOrderRepository.find({
+        where: { parentOrderId: In(rows.map((row) => row.id)) },
+        relations: { handler: true },
+      });
+
+      for (const child of children) {
+        const bucket = childrenByParentId.get(child.parentOrderId) ?? [];
+        bucket.push(child);
+        childrenByParentId.set(child.parentOrderId, bucket);
+      }
+    }
+
+    const items = rows.map((row) => {
+      const subOrders = toWorkOrderSubOrderItems(
+        (childrenByParentId.get(row.id) ?? []).sort((a, b) => getModuleSortOrder(a.moduleCode) - getModuleSortOrder(b.moduleCode)),
+      );
+      return toWorkOrderListItem(row, subOrders);
+    });
+
+    return { items, total, page, pageSize };
   }
 
   async findOne(id: string, user: JwtUserPayload): Promise<WorkOrderDetailItem> {
@@ -817,9 +937,10 @@ export class WorkOrderService {
     return this.resubmitService.resubmit(id, payload, user);
   }
 
-  async remove(id: string, _user: JwtUserPayload): Promise<{ success: boolean; id: string }> {
-    await this.loadWorkOrder(id);
+  async remove(id: string, user: JwtUserPayload): Promise<{ success: boolean; id: string }> {
+    const workOrder = await this.loadWorkOrder(id);
     await this.workOrderRepository.delete(id);
+    await this.writeOperationLog('work_order', id, user.sub, 'delete', snapshotWorkOrder(workOrder), { id, deleted: true });
     return { success: true, id };
   }
 
@@ -890,21 +1011,6 @@ export class WorkOrderService {
     }
 
     return { headers: payload.headers, suggestion, confidence, unmatched };
-  }
-
-  async confirmImport(payload: ImportConfirmDto, user: JwtUserPayload): Promise<ImportJob> {
-    const totalRows = payload.rawRows?.length ?? 0;
-    return this.importJobRepository.save(this.importJobRepository.create({
-      userId: user.sub,
-      filePath: payload.filePath,
-      totalRows,
-      successRows: 0,
-      failRows: 0,
-      fieldMapping: payload.fieldMapping,
-      status: ImportJobStatus.COMPLETED,
-      errorReportUrl: null,
-      completedAt: new Date(),
-    }));
   }
 
   async getImportJob(jobId: string, user: JwtUserPayload): Promise<ImportJob> {
@@ -1232,8 +1338,23 @@ export class WorkOrderService {
       child.status = DispatchedOrderStatus.PENDING;
       child.returnReason = null;
       child.dispatchedAt = new Date();
+      child.dueAt = child.slaHours && child.slaHours > 0
+        ? new Date(child.dispatchedAt.getTime() + child.slaHours * 60 * 60 * 1000)
+        : null;
       await repository.save(child);
     }
+  }
+
+  private async assertMainOperationMovedToChildren(
+    workOrder: WorkOrder,
+    user: JwtUserPayload,
+    actionLabel: string,
+    repository: Repository<DispatchedOrder> = this.dispatchedOrderRepository,
+  ): Promise<void> {
+    if (isAdminRole(user.roles)) return;
+    const childCount = await repository.count({ where: { parentOrderId: workOrder.id } });
+    if (childCount === 0) return;
+    throw businessException(4130, HttpStatus.CONFLICT, `该主工单已拆分为子工单，请到对应子工单中${actionLabel}，避免影响其他正常子工单`);
   }
 
   private assertWithdrawRequester(workOrder: WorkOrder, user: JwtUserPayload): void {
@@ -1241,6 +1362,19 @@ export class WorkOrderService {
       return;
     }
     throw new ForbiddenException('无权发起撤回');
+  }
+
+  private assertUrgeRequester(workOrder: WorkOrder, user: JwtUserPayload): void {
+    if (isAdminRole(user.roles) || workOrder.createdBy === user.sub) {
+      return;
+    }
+    throw new ForbiddenException('无权催办该工单');
+  }
+
+  private assertCanUrge(status: WorkOrderStatus): void {
+    if ([WorkOrderStatus.VOID, WorkOrderStatus.VOID_PENDING, WorkOrderStatus.WITHDRAW_PENDING, WorkOrderStatus.WITHDRAWN, WorkOrderStatus.COMPLETED].includes(status)) {
+      throw businessException(4126, HttpStatus.CONFLICT, '当前工单状态不可催办');
+    }
   }
 
   private assertCanRequestWithdraw(status: WorkOrderStatus): void {
@@ -1397,6 +1531,15 @@ export class WorkOrderService {
     return afterData.previous_status ?? afterData.previousStatus ?? contextFields.previous_status ?? contextFields.previousStatus;
   }
 
+  private readUrgeModuleKey(log: OperationLog): string {
+    const afterData = this.readRecord(log.afterData) ?? {};
+    const payload = this.readRecord(afterData.payload) ?? {};
+    const moduleKey = afterData.moduleKey ?? payload.moduleKey;
+    if (typeof moduleKey === 'string' && moduleKey.length > 0) return moduleKey;
+    const moduleCode = afterData.moduleCode ?? afterData.module_code ?? payload.moduleCode;
+    return typeof moduleCode === 'string' && moduleCode.length > 0 ? moduleCode : '__all__';
+  }
+
   private isRollbackWorkOrderStatus(value: unknown): value is WorkOrderStatus {
     return value === WorkOrderStatus.PENDING || value === WorkOrderStatus.PROCESSING || value === WorkOrderStatus.RETURNED;
   }
@@ -1428,6 +1571,15 @@ export class WorkOrderService {
       if (departmentIds.includes(workOrder.departmentId)) {
         return;
       }
+    }
+
+    // 检查是否为子工单办理人
+    const children = await this.dispatchedOrderRepository.find({
+      where: { parentOrderId: workOrder.id },
+      select: { handlerId: true },
+    });
+    if (children.some((child) => child.handlerId === user.sub)) {
+      return;
     }
 
     throw new ForbiddenException('无权访问该资源');

@@ -32,7 +32,7 @@ describe('P7 DispatchEngine business routing', () => {
     } as unknown as Repository<DispatchRule>;
     const picker = { pick: jest.fn(async (_strategy: DispatchStrategy, moduleCode: string) => `handler-${moduleCode}`) } as unknown as HandlerPickerService;
     const permissions = { getVisibleFieldsForScenario: jest.fn(async (scenario: string) => [scenario]) } as unknown as FieldPermissionService;
-    const service = new DispatchEngineService(repo, new AstEvaluator(), picker, permissions);
+    const service = new DispatchEngineService(repo, { find: jest.fn(async () => []) } as never, new AstEvaluator(), picker, permissions);
     return { service, repo, picker, permissions };
   }
 

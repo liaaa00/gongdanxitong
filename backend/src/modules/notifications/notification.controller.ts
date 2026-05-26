@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
+import { Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { NotificationService } from './notification.service';

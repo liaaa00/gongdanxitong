@@ -1,6 +1,5 @@
 import { Body, Controller, Post } from '@nestjs/common';
-import { WORK_ORDER_CREATOR_ROLES } from 'src/common/auth/role-permissions';
-import { Roles } from 'src/common/decorators/roles.decorator';
+import { BusinessPermission } from 'src/common/decorators/business-permission.decorator';
 import { FieldMappingDto } from './dto/field-mapping.dto';
 import { AiMappingService } from './ai-mapping.service';
 import { ImportFieldValidationService } from 'src/modules/imports/field-validation.service';
@@ -13,7 +12,7 @@ export class AiController {
   ) {}
 
   @Post('field-mapping')
-  @Roles(...WORK_ORDER_CREATOR_ROLES)
+  @BusinessPermission('work_order.import')
   async fieldMapping(@Body() payload: FieldMappingDto) {
     const candidateFields = await this.importFieldValidationService.buildCandidateFields(payload.orderType);
     const suggestion = await this.aiMappingService.suggest(payload.orderType, payload.headers, candidateFields);

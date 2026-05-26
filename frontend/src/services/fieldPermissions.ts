@@ -28,7 +28,7 @@ const FIELD_NAMES: Record<string, string> = {
   contract_urge: '劳动合同签署是否需要催办员工', contract_feedback: '劳动合同签订反馈',
   need_onboarding_contact: '入职材料是否需要集约收集', onboarding_feedback: '入职联系反馈',
   need_company_payroll: '是否企服发薪', pay_location: '发薪地',
-  social_urge: '社保公积金未办是否需要催办', special_remark: '特殊备注', data_entry_feedback: '数据录入反馈',
+  special_remark: '特殊备注', data_entry_feedback: '数据录入反馈',
 };
 
 const ROLE_NAMES: Record<string, string> = {
@@ -37,6 +37,7 @@ const ROLE_NAMES: Record<string, string> = {
   '3': '业务组长',   '4': '业务员',
   '5': '数据录入组长', '6': '共享团队负责人',
   '7': '合同专员',   '8': '入离职联系专员',
+  '9': '福保负责人',
 };
 
 const SENSITIVE_FIELDS = ['id_card_no', 'bank_account', 'base_salary', 'other_salary', 'probation_salary'];
@@ -168,7 +169,7 @@ function buildMockPermissions(): FieldPermissionItem[] {
   ));
 
   const contactVisible = [...BASIC_FIELDS, ...BANK_FIELDS, ...ADDRESS_FIELDS,
-    'need_onboarding_contact', 'onboarding_feedback', 'social_urge', 'special_remark',
+    'need_onboarding_contact', 'onboarding_feedback', 'special_remark',
     'mobile', 'email', 'id_card_no', 'remark'];
   result.push(...buildDispatchPerms(
     'onboarding_contact', ['15'],
@@ -217,7 +218,11 @@ export async function getFieldPermissions(params?: { role_id?: string; scenario?
     if (params?.scenario) filtered = filtered.filter((p) => p.scenario === params.scenario);
     return mockDelay(filtered);
   }
-  return request.get('/admin/field-permissions', { params }) as Promise<FieldPermissionItem[]>;
+  try {
+    return await request.get('/admin/field-permissions', { params, silentError: true } as any) as FieldPermissionItem[];
+  } catch {
+    return [];
+  }
 }
 
 export async function batchUpdatePermissions(data: FieldPermissionItem[]): Promise<void> {

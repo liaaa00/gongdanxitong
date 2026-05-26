@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import {
   ProForm,
   ProFormText,
@@ -8,7 +8,7 @@ import {
   ProFormTextArea,
 } from '@ant-design/pro-components';
 import type { ProFormInstance } from '@ant-design/pro-components';
-import { App } from 'antd';
+import { App, Card, Col, Row } from 'antd';
 import type { Dayjs } from 'dayjs';
 
 export interface FieldConfig {
@@ -54,6 +54,8 @@ interface DynamicFormProps {
   submitText?: string;
   hideSubmit?: boolean;
   loading?: boolean;
+  highlightedFields?: string[];
+  focusField?: string | null;
 }
 
 function getPermission(
@@ -65,7 +67,20 @@ function getPermission(
   return fieldPermissions?.[fieldCode] ?? 'visible';
 }
 
-const ONBOARDING_VISIBLE_GROUPS = ['基本信息', '劳动合同签订', '入职联系', '发薪信息', '社保公积金类'];
+const ONBOARDING_VISIBLE_GROUPS = [
+  '基本信息',
+  '合同与用工信息',
+  '薪资与发薪信息',
+  '社保公积金信息',
+  '业务判断项',
+  '备注与反馈',
+  // 兼容历史分组名，避免旧数据迁移前字段被隐藏
+  '劳动合同签订',
+  '入职联系',
+  '发薪信息',
+  '社保公积金类',
+];
+const DEFAULT_COLLECTION_GROUP = '其他信息';
 
 function DynamicForm({
   fields,
@@ -80,6 +95,8 @@ function DynamicForm({
   submitText,
   hideSubmit,
   loading,
+  highlightedFields,
+  focusField,
 }: DynamicFormProps) {
   const { message } = App.useApp();
 
@@ -118,6 +135,32 @@ function DynamicForm({
 
     return filtered.sort((a, b) => a.display_order - b.display_order);
   }, [fields, orderType]);
+
+  const groupedFields = useMemo(() => {
+    const groups = new Map<string, FieldConfig[]>();
+    sortedFields.forEach((field) => {
+      const groupName = field.collection_group?.trim() || DEFAULT_COLLECTION_GROUP;
+      const current = groups.get(groupName) || [];
+      current.push(field);
+      groups.set(groupName, current);
+    });
+    const entries = Array.from(groups.entries());
+    return [
+      ...entries.filter(([groupName]) => groupName !== DEFAULT_COLLECTION_GROUP),
+      ...entries.filter(([groupName]) => groupName === DEFAULT_COLLECTION_GROUP),
+    ];
+  }, [sortedFields]);
+
+  const highlightedFieldSet = useMemo(() => new Set((highlightedFields || []).filter(Boolean)), [highlightedFields]);
+  const normalizedFocusField = focusField && highlightedFieldSet.has(focusField) ? focusField : highlightedFields?.find(Boolean);
+
+  useEffect(() => {
+    if (!normalizedFocusField) return;
+    const timer = window.setTimeout(() => {
+      document.getElementById(`dynamic-field-${normalizedFocusField}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
+    return () => window.clearTimeout(timer);
+  }, [normalizedFocusField]);
 
   const getConditionalRules = (fieldCode: string) => {
     if (!conditionalRequired) return [];
@@ -201,15 +244,12 @@ function DynamicForm({
             {...commonProps}
             fieldProps={{
               ...commonProps.fieldProps,
-              mode: 'tags',
-              maxCount: 1,
-              tokenSeparators: [',', '，'],
               showSearch: true,
               allowClear: true,
+              optionFilterProp: 'label',
               getPopupContainer: (triggerNode: HTMLElement) => triggerNode.parentElement || document.body,
             }}
             options={field.dropdown_options || []}
-            normalize={(value: unknown) => Array.isArray(value) && value.length > 1 ? [value[value.length - 1]] : value}
           />
         );
       case 'textarea':
@@ -266,7 +306,31 @@ function DynamicForm({
       }
       layout="vertical"
     >
-      {sortedFields.map(renderField)}
+      {groupedFields.map(([groupName, groupFields]) => (
+        <Card key={groupName} title={groupName} size="small" style={{ marginBottom: 16 }}>
+          <Row gutter={[16, 16]}>
+            {groupFields.map((field) => {
+              const node = renderField(field);
+              if (!node) return null;
+              const highlighted = highlightedFieldSet.has(field.field_code);
+              return (
+                <Col
+                  id={`dynamic-field-${field.field_code}`}
+                  key={field.field_code}
+                  xs={24}
+                  sm={24}
+                  md={12}
+                  lg={8}
+                  xl={8}
+                  style={highlighted ? { background: '#fffbe6', border: '1px solid #ffe58f', borderRadius: 8, padding: 8 } : undefined}
+                >
+                  {node}
+                </Col>
+              );
+            })}
+          </Row>
+        </Card>
+      ))}
     </ProForm>
   );
 }

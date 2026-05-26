@@ -94,7 +94,7 @@ export class AiSettingsService {
   async updateConfig(dto: UpdateAiSettingsDto): Promise<AiConfigPublic> {
     const existingRead = await this.readStored();
     if (!existingRead.decryptOk) {
-      throw new BadRequestException('AI settings cannot be updated while existing encrypted config cannot be decrypted; please reset API key');
+      throw new BadRequestException('现有加密配置无法解密，无法更新 AI 设置；请重新设置 API 密钥');
     }
 
     const existing = existingRead.value;
@@ -180,7 +180,7 @@ export class AiSettingsService {
         throw new Error('unsupported_protocol');
       }
     } catch {
-      throw new BadRequestException('AI Base URL must be a valid http/https URL');
+      throw new BadRequestException('AI 接口地址必须是有效的 http/https URL');
     }
   }
 

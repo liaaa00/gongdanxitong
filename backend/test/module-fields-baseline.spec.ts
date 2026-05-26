@@ -14,6 +14,7 @@ describe('onboarding module_fields baseline', () => {
     expect(extractFields('onboarding_contact')).toEqual([
       'customer_name', 'customer_code', 'employee_name', 'id_card_no',
       'mobile', 'email',
+      'bank_name', 'bank_account',
       'need_onboarding_contact', 'onboarding_feedback',
     ]);
 
@@ -50,7 +51,10 @@ describe('onboarding module_fields baseline', () => {
   });
 
   it('keeps suspended fields out of child module_fields until product confirmation', () => {
-    expect(extractFields('social_insurance')).not.toContain('social_urge');
+    expect(extractFields('social_insurance')).toEqual([
+      'customer_name', 'customer_code', 'employee_name', 'id_card_no',
+      'social_location', 'start_month', 'social_base', 'fund_base', 'fund_ratio',
+    ]);
     expect(extractFields('social_insurance')).not.toContain('remark');
     expect(extractFields('data_entry')).not.toContain('base_salary');
   });

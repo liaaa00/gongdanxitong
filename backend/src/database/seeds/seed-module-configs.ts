@@ -24,10 +24,24 @@ const modules: Array<Partial<WorkOrderModuleConfig>> = [
   { moduleCode: 'resignation_cert', moduleName: '离职证明', moduleType: 'sub_module', parentModuleCode: 'resignation_management', displayOrder: 32, description: '离职证明开具' },
 ];
 
+const defaultSlaByModule: Record<string, { slaHours: number; reminderBeforeHours: number }> = {
+  data_entry: { slaHours: 24, reminderBeforeHours: 4 },
+  onboarding_contact: { slaHours: 24, reminderBeforeHours: 4 },
+  contract: { slaHours: 48, reminderBeforeHours: 8 },
+  social_insurance: { slaHours: 48, reminderBeforeHours: 8 },
+  renewal_contract: { slaHours: 48, reminderBeforeHours: 8 },
+  benefit: { slaHours: 48, reminderBeforeHours: 8 },
+  benefit_apply: { slaHours: 48, reminderBeforeHours: 8 },
+  resignation_contact: { slaHours: 24, reminderBeforeHours: 4 },
+  resignation_cert: { slaHours: 24, reminderBeforeHours: 4 },
+  data_entry_resign: { slaHours: 24, reminderBeforeHours: 4 },
+};
+
 const moduleFields: Record<string, string[]> = {
   onboarding_contact: [
     'customer_name', 'customer_code', 'employee_name', 'id_card_no',
     'mobile', 'email',
+    'bank_name', 'bank_account',
     'need_onboarding_contact', 'onboarding_feedback',
   ],
   contract: [
@@ -64,7 +78,7 @@ const supervisorSeeds: Array<{ moduleCode: string; usernames: string[] }> = [
   { moduleCode: 'onboarding_contact', usernames: ['jianglu', 'socialsup01'] },
   { moduleCode: 'contract', usernames: ['jianglu', 'contractsup01'] },
   { moduleCode: 'data_entry', usernames: ['annazhen', 'dataentrysup01'] },
-  { moduleCode: 'social_insurance', usernames: ['socialsup01', 'jianglu'] },
+  { moduleCode: 'social_insurance', usernames: ['fuqianwen'] },
 ];
 
 const actionSeeds: Array<Partial<ActionConfig>> = [
@@ -87,6 +101,7 @@ export async function seedModuleConfigs(dataSource: DataSource): Promise<void> {
   if (!(await hasTable(dataSource, 'work_order_modules'))) {
     return;
   }
+  await ensureDispatchSlaColumns(dataSource);
 
   const moduleRepo = dataSource.getRepository(WorkOrderModuleConfig);
   const moduleFieldRepo = dataSource.getRepository(ModuleField);
@@ -97,14 +112,26 @@ export async function seedModuleConfigs(dataSource: DataSource): Promise<void> {
   const exportTemplateRepo = dataSource.getRepository(ExportTemplate);
 
   for (const seed of modules) {
+    const defaults = defaultSlaByModule[seed.moduleCode!];
     const existed = await moduleRepo.findOne({ where: { moduleCode: seed.moduleCode! } });
     if (existed) {
       Object.assign(existed, seed, { isActive: true });
+      if (defaults) {
+        existed.slaHours = existed.slaHours ?? defaults.slaHours;
+        existed.slaReminderBeforeHours = existed.slaReminderBeforeHours ?? defaults.reminderBeforeHours;
+      }
       await moduleRepo.save(existed);
     } else {
-      await moduleRepo.save(moduleRepo.create({ ...seed, isActive: true }));
+      await moduleRepo.save(moduleRepo.create({
+        ...seed,
+        isActive: true,
+        slaHours: defaults?.slaHours ?? null,
+        slaReminderBeforeHours: defaults?.reminderBeforeHours ?? null,
+      }));
     }
   }
+
+  await backfillDispatchedOrderDueAt(dataSource);
 
   for (const [moduleCode, fieldCodes] of Object.entries(moduleFields)) {
     await moduleFieldRepo
@@ -186,6 +213,49 @@ async function hasTable(dataSource: DataSource, tableName: string): Promise<bool
     [tableName],
   );
   return Boolean(rows[0]?.exists);
+}
+
+async function ensureDispatchSlaColumns(dataSource: DataSource): Promise<void> {
+  const rows = await dataSource.query<Array<{ table_name: string; column_name: string }>>(
+    `
+      SELECT table_name, column_name
+      FROM information_schema.columns
+      WHERE table_schema = current_schema()
+        AND table_name IN ('work_order_modules', 'dispatched_orders')
+        AND column_name IN ('sla_hours', 'sla_reminder_before_hours', 'due_at')
+    `,
+  );
+  const existingColumns = new Set(rows.map((row) => `${row.table_name}.${row.column_name}`));
+
+  if (!existingColumns.has('work_order_modules.sla_hours')) {
+    await dataSource.query('ALTER TABLE work_order_modules ADD COLUMN sla_hours integer NULL');
+  }
+  if (!existingColumns.has('work_order_modules.sla_reminder_before_hours')) {
+    await dataSource.query('ALTER TABLE work_order_modules ADD COLUMN sla_reminder_before_hours integer NULL');
+  }
+  if (!existingColumns.has('dispatched_orders.due_at')) {
+    await dataSource.query('ALTER TABLE dispatched_orders ADD COLUMN due_at timestamptz NULL');
+  }
+  if (!existingColumns.has('dispatched_orders.sla_hours')) {
+    await dataSource.query('ALTER TABLE dispatched_orders ADD COLUMN sla_hours integer NULL');
+  }
+  if (!existingColumns.has('dispatched_orders.sla_reminder_before_hours')) {
+    await dataSource.query('ALTER TABLE dispatched_orders ADD COLUMN sla_reminder_before_hours integer NULL');
+  }
+  await dataSource.query('CREATE INDEX IF NOT EXISTS idx_dispatched_orders_due_at ON dispatched_orders(due_at)');
+}
+
+async function backfillDispatchedOrderDueAt(dataSource: DataSource): Promise<void> {
+  await dataSource.query(`
+    UPDATE dispatched_orders d
+       SET sla_hours = COALESCE(d.sla_hours, m.sla_hours),
+           sla_reminder_before_hours = COALESCE(d.sla_reminder_before_hours, m.sla_reminder_before_hours),
+           due_at = COALESCE(d.due_at, COALESCE(d.dispatched_at, d.created_at) + (m.sla_hours || ' hours')::interval)
+      FROM work_order_modules m
+     WHERE d.module_code = m.module_code
+       AND m.sla_hours IS NOT NULL
+       AND (d.due_at IS NULL OR d.sla_hours IS NULL OR d.sla_reminder_before_hours IS NULL)
+  `);
 }
 
 function defaultGroupName(moduleCode: string): string {

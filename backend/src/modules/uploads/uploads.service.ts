@@ -72,6 +72,6 @@ export class UploadsService {
     if (meta.ownerId === null || meta.ownerId === user.sub || user.roles.includes('admin')) {
       return;
     }
-    throw new ForbiddenException('No permission to access this file');
+    throw new ForbiddenException('无权限访问该文件');
   }
 }

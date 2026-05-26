@@ -9,6 +9,10 @@ export class ListWorkOrderQueryDto extends PaginationQueryDto {
   orderType?: OrderType;
 
   @IsOptional()
+  @IsEnum(OrderType)
+  order_type?: OrderType;
+
+  @IsOptional()
   @IsEnum(WorkOrderStatus)
   status?: WorkOrderStatus;
 
@@ -38,6 +42,16 @@ export class ListWorkOrderQueryDto extends PaginationQueryDto {
   @IsString()
   @MaxLength(128)
   customerName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  employeeName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  idCardNo?: string;
 
   @IsOptional()
   @IsString()

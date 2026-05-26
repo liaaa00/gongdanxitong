@@ -1,0 +1,390 @@
+### P5 permission + edit-resubmit acceptance HTTP script
+### Usage: VS Code REST Client / JetBrains HTTP Client / Postman import.
+### Replace tokens and ids before execution. Prepared by QA; do not run blindly against production data.
+
+@baseUrl = http://localhost:3000/api
+@frontendUrl = http://localhost:5173
+@runId = P5-0520-manual
+
+### -----------------------------------------------------------------------------
+### Tokens: prepare 10 roles. All non-admin tokens MUST NOT include role code "admin".
+### -----------------------------------------------------------------------------
+@adminToken = <ADMIN_JWT>
+@businessOwnerToken = <BUSINESS_OWNER_OR_BIZ_MANAGER_JWT>
+@businessLeaderToken = <BUSINESS_GROUP_LEADER_OR_BIZ_LEADER_JWT>
+@businessMemberToken = <BUSINESS_GROUP_MEMBER_OR_BIZ_MEMBER_JWT>
+@dataEntryToken = <DATA_ENTRY_LEADER_JWT>
+@sharedOwnerToken = <SHARED_TEAM_OWNER_OR_SHARED_LEADER_JWT>
+@contractToken = <LABOR_CONTRACT_MEMBER_OR_CONTRACT_SPECIALIST_JWT>
+@onboardingToken = <ONBOARDING_RESIGNATION_MEMBER_OR_ONBOARDING_SPECIALIST_JWT>
+@socialToken = <SOCIAL_INSURANCE_SPECIALIST_OR_SOCIAL_SECURITY_TEAM_JWT>
+@nonAdminToken = <PLAIN_NON_ADMIN_JWT>
+
+### -----------------------------------------------------------------------------
+### Test ids / mutable values
+### -----------------------------------------------------------------------------
+@roleIdForFieldPermissionTest = <ROLE_UUID_USED_ONLY_FOR_FIELD_PERMISSION_TEST>
+@exportTemplateId = <EXPORT_TEMPLATE_UUID>
+@processingWorkOrderId = <PROCESSING_WORK_ORDER_UUID_CREATED_BY_BUSINESS_MEMBER>
+@returnedWorkOrderId = <RETURNED_WORK_ORDER_UUID_CREATED_BY_BUSINESS_MEMBER>
+@terminalWorkOrderId = <COMPLETED_OR_VOID_OR_WITHDRAWN_WORK_ORDER_UUID>
+
+### -----------------------------------------------------------------------------
+### 0. Identity sanity checks: EXPECT 200 and verify role codes manually.
+### -----------------------------------------------------------------------------
+
+### admin identity
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{adminToken}}
+
+### business owner identity - EXPECT no admin role
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{businessOwnerToken}}
+
+### business leader identity - EXPECT no admin role
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{businessLeaderToken}}
+
+### business member identity - EXPECT no admin role
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{businessMemberToken}}
+
+### data entry identity - EXPECT no admin role
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{dataEntryToken}}
+
+### shared owner identity - EXPECT no admin role
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{sharedOwnerToken}}
+
+### contract identity - EXPECT no admin role
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{contractToken}}
+
+### onboarding identity - EXPECT no admin role
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{onboardingToken}}
+
+### social insurance identity - EXPECT no admin role
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{socialToken}}
+
+### plain non-admin identity - EXPECT no admin role
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{nonAdminToken}}
+
+### -----------------------------------------------------------------------------
+### P5-A Field management permission: admin allowed / all non-admin denied.
+### -----------------------------------------------------------------------------
+
+### P5-A-01 admin can read field configs - EXPECT 200
+GET {{baseUrl}}/admin/fields?page=1&pageSize=20
+Authorization: Bearer {{adminToken}}
+
+### P5-A-02 admin can read field permission matrix - EXPECT 200
+GET {{baseUrl}}/admin/field-permissions/matrix
+Authorization: Bearer {{adminToken}}
+
+### P5-A-03 admin can write field permission test item - EXPECT 200/201
+### Use a disposable role/field only. Revert manually if needed.
+POST {{baseUrl}}/admin/field-permissions/batch
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "items": [
+    {
+      "roleId": "{{roleIdForFieldPermissionTest}}",
+      "fieldCode": "mobile",
+      "scenario": "main",
+      "permission": "visible"
+    }
+  ]
+}
+
+### P5-A-04 business owner cannot read fields - EXPECT 401/403
+GET {{baseUrl}}/admin/fields?page=1&pageSize=20
+Authorization: Bearer {{businessOwnerToken}}
+
+### P5-A-05 business leader cannot read field matrix - EXPECT 401/403
+GET {{baseUrl}}/admin/field-permissions/matrix
+Authorization: Bearer {{businessLeaderToken}}
+
+### P5-A-06 business member cannot write field permissions - EXPECT 401/403
+POST {{baseUrl}}/admin/field-permissions/batch
+Authorization: Bearer {{businessMemberToken}}
+Content-Type: application/json
+
+{
+  "items": [
+    {
+      "roleId": "{{roleIdForFieldPermissionTest}}",
+      "fieldCode": "mobile",
+      "scenario": "main",
+      "permission": "visible"
+    }
+  ]
+}
+
+### P5-A-07 data entry cannot read fields - EXPECT 401/403
+GET {{baseUrl}}/admin/fields?page=1&pageSize=20
+Authorization: Bearer {{dataEntryToken}}
+
+### P5-A-08 shared owner cannot read fields - EXPECT 401/403
+GET {{baseUrl}}/admin/fields?page=1&pageSize=20
+Authorization: Bearer {{sharedOwnerToken}}
+
+### P5-A-09 contract member cannot read fields - EXPECT 401/403
+GET {{baseUrl}}/admin/fields?page=1&pageSize=20
+Authorization: Bearer {{contractToken}}
+
+### P5-A-10 onboarding member cannot read fields - EXPECT 401/403
+GET {{baseUrl}}/admin/fields?page=1&pageSize=20
+Authorization: Bearer {{onboardingToken}}
+
+### P5-A-11 social insurance member cannot read fields - EXPECT 401/403
+GET {{baseUrl}}/admin/fields?page=1&pageSize=20
+Authorization: Bearer {{socialToken}}
+
+### P5-A-12 plain non-admin cannot read my-field-permissions/admin matrix - EXPECT 401/403
+GET {{baseUrl}}/admin/field-permissions/matrix
+Authorization: Bearer {{nonAdminToken}}
+
+### -----------------------------------------------------------------------------
+### P5-B Export template configuration permission: admin allowed / all non-admin denied.
+### Important: both /admin/export-templates and compatible /export-templates must be protected.
+### -----------------------------------------------------------------------------
+
+### P5-B-01 admin can read admin export templates - EXPECT 200
+GET {{baseUrl}}/admin/export-templates?page=1&pageSize=20
+Authorization: Bearer {{adminToken}}
+
+### P5-B-02 admin can read compatible export templates path - EXPECT 200
+GET {{baseUrl}}/export-templates?page=1&pageSize=20
+Authorization: Bearer {{adminToken}}
+
+### P5-B-03 admin can create disposable export template - EXPECT 200/201; copy id if cleanup needed
+POST {{baseUrl}}/admin/export-templates
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "templateName": "P5权限测试模板-{{runId}}",
+  "moduleCode": "data_entry",
+  "fieldList": [
+    { "fieldCode": "employee_name", "fieldName": "员工姓名" },
+    { "fieldCode": "id_card_no", "fieldName": "证件号码" }
+  ],
+  "isShared": false
+}
+
+### P5-B-04 business owner cannot read admin export templates - EXPECT 401/403
+GET {{baseUrl}}/admin/export-templates?page=1&pageSize=20
+Authorization: Bearer {{businessOwnerToken}}
+
+### P5-B-05 business leader cannot read compatible export templates - EXPECT 401/403
+GET {{baseUrl}}/export-templates?page=1&pageSize=20
+Authorization: Bearer {{businessLeaderToken}}
+
+### P5-B-06 business member cannot create export template - EXPECT 401/403
+POST {{baseUrl}}/admin/export-templates
+Authorization: Bearer {{businessMemberToken}}
+Content-Type: application/json
+
+{
+  "templateName": "非法模板-{{runId}}",
+  "moduleCode": "data_entry",
+  "fieldList": [ { "fieldCode": "employee_name", "fieldName": "员工姓名" } ],
+  "isShared": false
+}
+
+### P5-B-07 data entry cannot read export templates - EXPECT 401/403
+GET {{baseUrl}}/admin/export-templates?page=1&pageSize=20
+Authorization: Bearer {{dataEntryToken}}
+
+### P5-B-08 shared owner cannot read export templates - EXPECT 401/403
+GET {{baseUrl}}/admin/export-templates?page=1&pageSize=20
+Authorization: Bearer {{sharedOwnerToken}}
+
+### P5-B-09 contract member cannot read export templates - EXPECT 401/403
+GET {{baseUrl}}/admin/export-templates?page=1&pageSize=20
+Authorization: Bearer {{contractToken}}
+
+### P5-B-10 onboarding member cannot read export templates - EXPECT 401/403
+GET {{baseUrl}}/admin/export-templates?page=1&pageSize=20
+Authorization: Bearer {{onboardingToken}}
+
+### P5-B-11 social insurance member cannot read export templates - EXPECT 401/403
+GET {{baseUrl}}/admin/export-templates?page=1&pageSize=20
+Authorization: Bearer {{socialToken}}
+
+### P5-B-12 plain non-admin cannot read export templates - EXPECT 401/403
+GET {{baseUrl}}/admin/export-templates?page=1&pageSize=20
+Authorization: Bearer {{nonAdminToken}}
+
+### -----------------------------------------------------------------------------
+### P5-C Portal / dashboard configuration permission: admin allowed / all non-admin denied.
+### Current config endpoint: /admin/system-settings/operation-log-retention.
+### If /admin/dashboard-config or /admin/portal-config is added later, append same checks.
+### Plain dashboard viewing /dashboard/cards is NOT configuration and should not be blocked incorrectly.
+### -----------------------------------------------------------------------------
+
+### P5-C-01 admin can read config - EXPECT 200
+GET {{baseUrl}}/admin/system-settings/operation-log-retention
+Authorization: Bearer {{adminToken}}
+
+### P5-C-02 admin can update config - EXPECT 200
+### Use same/safe retention value in test environment.
+PUT {{baseUrl}}/admin/system-settings/operation-log-retention
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "retentionDays": 180
+}
+
+### P5-C-03 business owner cannot read config - EXPECT 401/403
+GET {{baseUrl}}/admin/system-settings/operation-log-retention
+Authorization: Bearer {{businessOwnerToken}}
+
+### P5-C-04 business leader cannot update config - EXPECT 401/403
+PUT {{baseUrl}}/admin/system-settings/operation-log-retention
+Authorization: Bearer {{businessLeaderToken}}
+Content-Type: application/json
+
+{
+  "retentionDays": 90
+}
+
+### P5-C-05 business member cannot read config - EXPECT 401/403
+GET {{baseUrl}}/admin/system-settings/operation-log-retention
+Authorization: Bearer {{businessMemberToken}}
+
+### P5-C-06 data entry cannot read config - EXPECT 401/403
+GET {{baseUrl}}/admin/system-settings/operation-log-retention
+Authorization: Bearer {{dataEntryToken}}
+
+### P5-C-07 shared owner cannot read config - EXPECT 401/403
+GET {{baseUrl}}/admin/system-settings/operation-log-retention
+Authorization: Bearer {{sharedOwnerToken}}
+
+### P5-C-08 contract member cannot read config - EXPECT 401/403
+GET {{baseUrl}}/admin/system-settings/operation-log-retention
+Authorization: Bearer {{contractToken}}
+
+### P5-C-09 onboarding member cannot read config - EXPECT 401/403
+GET {{baseUrl}}/admin/system-settings/operation-log-retention
+Authorization: Bearer {{onboardingToken}}
+
+### P5-C-10 social insurance member cannot read config - EXPECT 401/403
+GET {{baseUrl}}/admin/system-settings/operation-log-retention
+Authorization: Bearer {{socialToken}}
+
+### P5-C-11 plain non-admin cannot read config - EXPECT 401/403
+GET {{baseUrl}}/admin/system-settings/operation-log-retention
+Authorization: Bearer {{nonAdminToken}}
+
+### P5-C-12 business dashboard viewing must not regress - EXPECT 200 or original role-based result, not blocked because of config permission
+GET {{baseUrl}}/dashboard/cards
+Authorization: Bearer {{businessMemberToken}}
+
+### -----------------------------------------------------------------------------
+### P5-D Edit must force resubmit: UI should confirm, API must prove resubmit/reset.
+### Execute only on disposable test work orders.
+### -----------------------------------------------------------------------------
+
+### P5-D-00 inspect processing work order before edit - EXPECT status processing and no completed child if testing editable path
+GET {{baseUrl}}/work-orders/{{processingWorkOrderId}}
+Authorization: Bearer {{businessMemberToken}}
+
+### P5-D-01 inspect timeline before edit
+GET {{baseUrl}}/work-orders/{{processingWorkOrderId}}/timeline
+Authorization: Bearer {{businessMemberToken}}
+
+### P5-D-02 processing edit via PUT - EXPECT not silent old-flow save.
+### Acceptable only if response/timeline proves forced resubmit semantics OR followed POST /resubmit succeeds.
+### If PUT changes status to pending and following POST /resubmit returns 409, frontend protocol must be fixed.
+PUT {{baseUrl}}/work-orders/{{processingWorkOrderId}}
+Authorization: Bearer {{businessMemberToken}}
+Content-Type: application/json
+
+{
+  "extraData": {
+    "mobile": "13800005200",
+    "special_remark": "P5编辑后必须重新提交-{{runId}}"
+  }
+}
+
+### P5-D-03 explicit resubmit after edit - EXPECT 200 if API contract requires explicit resubmit.
+### If this returns 409 because PUT already completed forced resubmit, verify UI does not call this second step.
+POST {{baseUrl}}/work-orders/{{processingWorkOrderId}}/resubmit
+Authorization: Bearer {{businessMemberToken}}
+Content-Type: application/json
+
+{
+  "extraData": {
+    "mobile": "13800005200",
+    "special_remark": "P5编辑后必须重新提交-{{runId}}"
+  }
+}
+
+### P5-D-04 inspect processing work order after edit/resubmit - EXPECT pending/processing according to agreed flow, latest fields visible
+GET {{baseUrl}}/work-orders/{{processingWorkOrderId}}
+Authorization: Bearer {{businessMemberToken}}
+
+### P5-D-05 inspect timeline after edit/resubmit - EXPECT salesperson_modify_resubmit or equivalent audit record
+GET {{baseUrl}}/work-orders/{{processingWorkOrderId}}/timeline
+Authorization: Bearer {{businessMemberToken}}
+
+### P5-D-06 inspect as backend handler after resubmit - EXPECT pending/new task uses latest field snapshot
+GET {{baseUrl}}/my-dispatched?status=pending&page=1&pageSize=20
+Authorization: Bearer {{dataEntryToken}}
+
+### P5-D-07 inspect handler notifications - EXPECT dispatch_resubmit or equivalent notification
+GET {{baseUrl}}/notifications?page=1&pageSize=20
+Authorization: Bearer {{dataEntryToken}}
+
+### P5-D-08 returned work order explicit resubmit path - EXPECT 200 and reset dispatch/timeline
+POST {{baseUrl}}/work-orders/{{returnedWorkOrderId}}/resubmit
+Authorization: Bearer {{businessMemberToken}}
+Content-Type: application/json
+
+{
+  "extraData": {
+    "special_remark": "P5退回后修改并重新提交-{{runId}}"
+  }
+}
+
+### P5-D-09 terminal work order cannot be edited - EXPECT 409/403
+PUT {{baseUrl}}/work-orders/{{terminalWorkOrderId}}
+Authorization: Bearer {{businessMemberToken}}
+Content-Type: application/json
+
+{
+  "extraData": {
+    "special_remark": "P5终态非法修改-{{runId}}"
+  }
+}
+
+### P5-D-10 terminal work order cannot be resubmitted - EXPECT 409/403
+POST {{baseUrl}}/work-orders/{{terminalWorkOrderId}}/resubmit
+Authorization: Bearer {{businessMemberToken}}
+Content-Type: application/json
+
+{
+  "extraData": {
+    "special_remark": "P5终态非法重提-{{runId}}"
+  }
+}
+
+### -----------------------------------------------------------------------------
+### P5-E Adjacent regression: workflow config is also admin-only and should stay protected.
+### -----------------------------------------------------------------------------
+
+### P5-E-01 admin can list workflow config - EXPECT 200
+GET {{baseUrl}}/admin/workflows?page=1&pageSize=20
+Authorization: Bearer {{adminToken}}
+
+### P5-E-02 non-admin cannot list workflow config - EXPECT 401/403
+GET {{baseUrl}}/admin/workflows?page=1&pageSize=20
+Authorization: Bearer {{businessMemberToken}}

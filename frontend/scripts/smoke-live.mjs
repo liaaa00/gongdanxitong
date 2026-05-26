@@ -28,7 +28,7 @@ async function main() {
   console.log('1️⃣  POST /api/auth/login');
   const login = await req('/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ username: 'admin', password: 'admin123' }),
+    body: JSON.stringify({ username: 'lizhanbo', password: '123456' }),
   });
   if (!log('Login', login)) { console.log('❌ Login failed, aborting.'); return; }
   if (login.body?.data?.accessToken) {

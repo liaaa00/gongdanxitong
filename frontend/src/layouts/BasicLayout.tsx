@@ -1,23 +1,24 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { ProLayout } from '@ant-design/pro-components';
-import { Dropdown, App, Badge, Popover, List, Button, Empty, Tabs, Tag, Space } from 'antd';
+import { App, Badge, Popover, List, Button, Empty, Tabs, Tag, Space } from 'antd';
 import {
   DashboardOutlined, FileTextOutlined, SettingOutlined, LogoutOutlined,
-  UserOutlined, TeamOutlined, SafetyOutlined, ApartmentOutlined, IdcardOutlined,
+  TeamOutlined, SafetyOutlined, ApartmentOutlined, IdcardOutlined,
   FieldStringOutlined, LockOutlined, BranchesOutlined, UserSwitchOutlined,
   AuditOutlined, CheckSquareOutlined,
   BarChartOutlined, BellOutlined, SoundOutlined, AlertOutlined, InfoCircleOutlined,
   ExperimentOutlined,
   SafetyCertificateOutlined,
-  DownOutlined,
+  NodeIndexOutlined,
 } from '@ant-design/icons';
 import { useUserStore } from '@/stores/userStore';
 import { logout as logoutApi } from '@/services/auth';
 import { canAccessPath } from '@/config/routeVisibility';
 import { ROLE, userHasAnyCanonicalRole, type CanonicalRole } from '@/constants/roles';
-import { getNotifications, markNotificationRead, markAllRead, getUnreadCount } from '@/services/notifications';
-import type { NotificationItem } from '@/services/notifications';
+import { getNotifications, markNotificationRead, markAllRead, getUnreadCountByBucket, getNotificationBucket } from '@/services/notifications';
+import type { NotificationBucketKey, NotificationItem, UnreadCountByBucket } from '@/services/notifications';
+import { getNotificationDisplayContent, getNotificationDisplayTitle } from '@/utils/notificationDisplay';
 
 // 菜单项类型：roles 字段未声明 = 所有登录用户可见；声明 = 仅这些规范角色可见
 type MenuItem = {
@@ -63,13 +64,14 @@ const OFFBOARDING_ROLES = [
 ] as const satisfies readonly CanonicalRole[];
 
 const INITIATED_WORK_ROLES = [
+  ROLE.ADMIN,
+  ROLE.BUSINESS_OWNER,
+  ROLE.BUSINESS_GROUP_LEADER,
   ROLE.BUSINESS_GROUP_MEMBER,
 ] as const satisfies readonly CanonicalRole[];
 
 const PENDING_WORK_ROLES = [
   ROLE.ADMIN,
-  ROLE.BUSINESS_GROUP_LEADER,
-  ROLE.BUSINESS_GROUP_MEMBER,
   ROLE.DATA_ENTRY_LEADER,
   ROLE.SHARED_TEAM_OWNER,
   ROLE.LABOR_CONTRACT_MEMBER,
@@ -106,7 +108,7 @@ const RAW_MENU: MenuItem[] = [
       { path: '/onboarding/contract', name: '合同签订子工单', roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.LABOR_CONTRACT_MEMBER] },
       { path: '/onboarding/onboarding_contact', name: '入职联系子工单', roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.ONBOARDING_RESIGNATION_MEMBER] },
       { path: '/onboarding/data_entry', name: '数据录入子工单', roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.DATA_ENTRY_LEADER, ROLE.SHARED_TEAM_OWNER] },
-      { path: '/onboarding/social_insurance', name: '社保公积金办理子工单', roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.SOCIAL_INSURANCE_SPECIALIST] },
+      { path: '/onboarding/social_insurance', name: '社保公积金办理子工单', roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SOCIAL_INSURANCE_SPECIALIST] },
     ],
   },
   {
@@ -115,8 +117,10 @@ const RAW_MENU: MenuItem[] = [
     icon: <FileTextOutlined />,
     roles: [...IN_SERVICE_ROLES],
     children: [
-      { path: '/renewal', name: '续签合同', key: 'renewal-list', roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.LABOR_CONTRACT_MEMBER] },
-      { path: '/benefit', name: '待遇申报', key: 'benefit-list', roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.DATA_ENTRY_LEADER, ROLE.SHARED_TEAM_OWNER, ROLE.SOCIAL_INSURANCE_SPECIALIST] },
+      { path: '/renewal', name: '续签主工单列表', key: 'renewal-list', roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.LABOR_CONTRACT_MEMBER] },
+      { path: '/onboarding/renewal_contract', name: '续签合同子工单', key: 'renewal-contract-sub-list', roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.LABOR_CONTRACT_MEMBER] },
+      { path: '/benefit', name: '待遇申报主工单列表', key: 'benefit-list', roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.DATA_ENTRY_LEADER, ROLE.SHARED_TEAM_OWNER, ROLE.SOCIAL_INSURANCE_SPECIALIST] },
+      { path: '/onboarding/benefit_apply', name: '待遇申报子工单', key: 'benefit-apply-sub-list', roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.DATA_ENTRY_LEADER, ROLE.SHARED_TEAM_OWNER, ROLE.SOCIAL_INSURANCE_SPECIALIST] },
     ],
   },
   {
@@ -125,7 +129,10 @@ const RAW_MENU: MenuItem[] = [
     icon: <FileTextOutlined />,
     roles: [...OFFBOARDING_ROLES],
     children: [
-      { path: '/resignation', name: '离职办理', key: 'resignation-list', roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.ONBOARDING_RESIGNATION_MEMBER] },
+      { path: '/resignation', name: '离职主工单列表', key: 'resignation-list', roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.ONBOARDING_RESIGNATION_MEMBER] },
+      { path: '/onboarding/resignation_contact', name: '离职联系子工单', key: 'resignation-contact-sub-list', roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.ONBOARDING_RESIGNATION_MEMBER] },
+      { path: '/onboarding/resignation_cert', name: '离职证明子工单', key: 'resignation-cert-sub-list', roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.ONBOARDING_RESIGNATION_MEMBER] },
+      { path: '/onboarding/data_entry_resign', name: '社保停保子工单', key: 'data-entry-resign-sub-list', roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.DATA_ENTRY_LEADER, ROLE.SHARED_TEAM_OWNER, ROLE.SOCIAL_INSURANCE_SPECIALIST] },
       { path: '/resignation/:id/cert', name: '离职证明', key: 'resignation-cert', menuVisible: false, roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.ONBOARDING_RESIGNATION_MEMBER] },
     ],
   },
@@ -138,6 +145,7 @@ const RAW_MENU: MenuItem[] = [
       { path: '/my-work/pending', name: '我的待办', key: 'my-work-pending', roles: [...PENDING_WORK_ROLES] },
       { path: '/my-work/done', name: '我的已办', key: 'my-work-done', roles: [...DONE_WORK_ROLES] },
       { path: '/my-work/team', name: '团队工单', key: 'my-work-team', icon: <BarChartOutlined />, roles: [...TEAM_WORK_ROLES] },
+      { path: '/my-work/history', name: '历史工单', key: 'my-work-history', roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.DATA_ENTRY_LEADER, ROLE.SHARED_TEAM_OWNER, ROLE.LABOR_CONTRACT_MEMBER, ROLE.ONBOARDING_RESIGNATION_MEMBER, ROLE.SOCIAL_INSURANCE_SPECIALIST] },
     ],
   },
   { path: '/notifications', name: '消息通知', icon: <BellOutlined /> },
@@ -152,6 +160,7 @@ const RAW_MENU: MenuItem[] = [
       { path: '/admin/fields', name: '字段配置', icon: <FieldStringOutlined /> },
       { path: '/admin/field-permissions', name: '字段权限', icon: <LockOutlined /> },
       { path: '/admin/dispatch-config', name: '派发配置', icon: <UserSwitchOutlined /> },
+      { path: '/admin/workflows', name: '工单流程配置', icon: <NodeIndexOutlined />, key: 'admin-workflows' },
       { path: '/admin/export-templates', name: '导出模板配置', key: 'admin-export-templates' },
       { path: '/admin/system-settings', name: '门户配置', icon: <SettingOutlined />, key: 'admin-portal-config' },
       { path: '/admin/ai-settings', name: '智能字段映射', icon: <ExperimentOutlined /> },
@@ -178,12 +187,38 @@ function filterMenuByRoles(items: MenuItem[], userRoles: { code?: string }[] | u
 const OPEN_KEYS_STORAGE = 'menu_open_keys_v1';
 
 const POLL_INTERVAL = 30000;
-const BIZ_TYPE_COLOR: Record<string, string> = { sla: 'red', task: 'blue', system: 'default' };
-const BIZ_TYPE_ICON: Record<string, React.ReactNode> = {
-  sla: <AlertOutlined style={{ color: '#ff4d4f' }} />,
-  task: <SoundOutlined style={{ color: '#1677ff' }} />,
-  system: <InfoCircleOutlined style={{ color: '#999' }} />,
+const EMPTY_UNREAD_BUCKETS: UnreadCountByBucket = {
+  total: 0,
+  salesperson: { field_changed: 0, returned: 0, urge_feedback: 0, withdraw_void_result: 0 },
+  backend: { todo: 0, urge: 0, sla_warning: 0, sla_breached: 0, creator_modified: 0, withdraw_void_request: 0 },
+  system: 0,
 };
+
+const SALESPERSON_NOTIFICATION_TABS: Array<{ key: NotificationBucketKey; label: string; icon?: React.ReactNode }> = [
+  { key: 'field_changed', label: '后道数据修改', icon: <InfoCircleOutlined style={{ color: '#1677ff' }} /> },
+  { key: 'returned', label: '退回', icon: <RollbackIcon /> },
+  { key: 'urge_feedback', label: '催办反馈', icon: <SoundOutlined style={{ color: '#1677ff' }} /> },
+  { key: 'withdraw_void_result', label: '撤回/作废结果', icon: <InfoCircleOutlined style={{ color: '#722ed1' }} /> },
+  { key: 'system', label: '系统', icon: <InfoCircleOutlined style={{ color: '#999' }} /> },
+];
+
+const BACKEND_NOTIFICATION_TABS: Array<{ key: NotificationBucketKey; label: string; icon?: React.ReactNode }> = [
+  { key: 'todo', label: '待办', icon: <CheckSquareOutlined style={{ color: '#1677ff' }} /> },
+  { key: 'urge', label: '催办', icon: <SoundOutlined style={{ color: '#1677ff' }} /> },
+  { key: 'sla_warning', label: '即将超时', icon: <AlertOutlined style={{ color: '#faad14' }} /> },
+  { key: 'sla_breached', label: '已超时', icon: <AlertOutlined style={{ color: '#ff4d4f' }} /> },
+  { key: 'creator_modified', label: '业务员数据修改', icon: <InfoCircleOutlined style={{ color: '#faad14' }} /> },
+  { key: 'withdraw_void_request', label: '撤回/作废申请', icon: <AlertOutlined style={{ color: '#fa541c' }} /> },
+  { key: 'system', label: '系统', icon: <InfoCircleOutlined style={{ color: '#999' }} /> },
+];
+
+const NOTIFICATION_BUCKET_ICON: Partial<Record<NotificationBucketKey, React.ReactNode>> = Object.fromEntries(
+  [...SALESPERSON_NOTIFICATION_TABS, ...BACKEND_NOTIFICATION_TABS].map((item) => [item.key, item.icon]),
+) as Partial<Record<NotificationBucketKey, React.ReactNode>>;
+
+function RollbackIcon() {
+  return <AlertOutlined style={{ color: '#faad14' }} />;
+}
 
 const BasicLayout: React.FC = () => {
   const navigate = useNavigate();
@@ -191,7 +226,7 @@ const BasicLayout: React.FC = () => {
   const { user, logout: storeLogout } = useUserStore();
   const { message } = App.useApp();
   const [unreadCount, setUnreadCount] = useState(0);
-  const [unreadByType, setUnreadByType] = useState({ sla: 0, task: 0, system: 0 });
+  const [unreadBuckets, setUnreadBuckets] = useState<UnreadCountByBucket>(EMPTY_UNREAD_BUCKETS);
   const [allNotifications, setAllNotifications] = useState<NotificationItem[]>([]);
   const [notifOpen, setNotifOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<string>('all');
@@ -207,6 +242,25 @@ const BasicLayout: React.FC = () => {
     () => filteredMenu.filter((item) => item.children?.length).map((item) => item.path),
     [filteredMenu],
   );
+
+  const isSalespersonNotificationView = useMemo(
+    () => userHasAnyCanonicalRole(user?.roles, [ROLE.BUSINESS_GROUP_MEMBER, ROLE.BUSINESS_GROUP_LEADER]),
+    [user?.roles],
+  );
+
+  const notificationTabs = isSalespersonNotificationView ? SALESPERSON_NOTIFICATION_TABS : BACKEND_NOTIFICATION_TABS;
+
+  const getBucketCount = useCallback((key: NotificationBucketKey): number => {
+    if (key === 'system') return unreadBuckets.system;
+    if (key in unreadBuckets.salesperson) return unreadBuckets.salesperson[key as keyof typeof unreadBuckets.salesperson];
+    if (key in unreadBuckets.backend) return unreadBuckets.backend[key as keyof typeof unreadBuckets.backend];
+    return 0;
+  }, [unreadBuckets]);
+
+  useEffect(() => {
+    if (activeTab === 'all') return;
+    if (!notificationTabs.some((tab) => tab.key === activeTab)) setActiveTab('all');
+  }, [activeTab, notificationTabs]);
 
   // 受控的菜单展开状态 + localStorage 持久化（解决「点子工单后父级收起」「刷新后丢失展开态」）
   const [openKeys, setOpenKeys] = useState<string[]>(() => {
@@ -249,15 +303,14 @@ const BasicLayout: React.FC = () => {
 
   const fetchAll = useCallback(async () => {
     try {
-      const count = await getUnreadCount();
-      setUnreadCount(count);
-      const result = await getNotifications({ unread: true, page: 1, pageSize: 50 });
+      const [bucketCounts, result] = await Promise.all([
+        getUnreadCountByBucket(),
+        getNotifications({ unread: true, page: 1, pageSize: 50 }),
+      ]);
       const list = Array.isArray(result?.list) ? result.list : [];
       setAllNotifications(list);
-      const sla = list.filter((n) => n.biz_type === 'sla' && !n.is_read).length;
-      const task = list.filter((n) => n.biz_type === 'task' && !n.is_read).length;
-      const system = list.filter((n) => n.biz_type === 'system' && !n.is_read).length;
-      setUnreadByType({ sla, task, system });
+      setUnreadBuckets(bucketCounts);
+      setUnreadCount(bucketCounts.total);
     } catch { /* ignore */ }
   }, []);
 
@@ -282,28 +335,63 @@ const BasicLayout: React.FC = () => {
     try {
       await markAllRead();
       setUnreadCount(0);
-      setUnreadByType({ sla: 0, task: 0, system: 0 });
+      setUnreadBuckets(EMPTY_UNREAD_BUCKETS);
       setAllNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
     } catch { /* ignore */ }
   };
 
-  const handleNotifClick = (item: NotificationItem) => {
-    handleMarkRead(item);
-    if (item.link) navigate(item.link);
+  const buildNotificationLink = (item: NotificationItem): string | null => {
+    const query = new URLSearchParams();
+    const rawType = `${item.biz_type || ''} ${item.type || ''}`.toLowerCase();
+    const shouldOpenEdit = rawType.includes('returned') || rawType.includes('return') || rawType.includes('withdraw_approved') || rawType.includes('dispatched_returned');
+    query.set('fromNotification', item.id);
+    if (shouldOpenEdit) query.set('action', 'edit');
+    if (item.ref_order_no || item.order_no) query.set('highlightOrderNo', item.ref_order_no || item.order_no || '');
+    if (Array.isArray(item.diff_fields) && item.diff_fields.length > 0) {
+      const fields = item.diff_fields.map((field) => field.field_code).filter(Boolean);
+      query.set('highlightFields', fields.join(','));
+      if (fields[0]) query.set('focus', fields[0]);
+    }
+    const suffix = query.toString();
+
+    if (item.entity_type === 'dispatched_order' && item.entity_id) {
+      return `/my-dispatched/${item.entity_id}?${suffix}`;
+    }
+    if (item.ref_order_id) return `/work-orders/${item.ref_order_id}?${suffix}`;
+    if (item.link) {
+      const normalized = item.link.replace(/^\/dispatched\//, '/my-dispatched/');
+      return `${normalized}${normalized.includes('?') ? '&' : '?'}${suffix}`;
+    }
+    return null;
+  };
+
+  const handleNotifProcess = (item: NotificationItem) => {
+    const link = buildNotificationLink(item);
+    if (link) {
+      setNotifOpen(false);
+      navigate(link);
+    } else {
+      message.info('该消息暂无可处理的关联工单');
+    }
   };
 
   const filteredNotifications = activeTab === 'all'
     ? allNotifications
-    : allNotifications.filter((n) => n.biz_type === activeTab);
+    : allNotifications.filter((n) => getNotificationBucket(n) === activeTab);
 
   const notifContent = (
     <div style={{ width: 360, maxHeight: 520 }}>
       <Tabs activeKey={activeTab} onChange={setActiveTab} size="small"
         items={[
           { key: 'all', label: <Badge count={unreadCount} size="small" offset={[6, -2]}>全部</Badge> },
-          { key: 'sla', label: <Badge count={unreadByType.sla} size="small" offset={[6, -2]}><Space size={2}>{BIZ_TYPE_ICON.sla}服务时限</Space></Badge> },
-          { key: 'task', label: <Badge count={unreadByType.task} size="small" offset={[6, -2]}>任务</Badge> },
-          { key: 'system', label: <Badge count={unreadByType.system} size="small" offset={[6, -2]}>系统</Badge> },
+          ...notificationTabs.map((tab) => ({
+            key: tab.key,
+            label: (
+              <Badge count={getBucketCount(tab.key)} size="small" offset={[6, -2]}>
+                <Space size={2}>{tab.icon}{tab.label}</Space>
+              </Badge>
+            ),
+          })),
         ]}
         tabBarExtraContent={
           unreadCount > 0 ? <Button type="link" size="small" onClick={handleMarkAll}>全部已读</Button> : null
@@ -315,26 +403,29 @@ const BasicLayout: React.FC = () => {
           style={{ maxHeight: 360, overflow: 'auto' }}
           renderItem={(item) => (
             <List.Item
-              style={{ cursor: 'pointer', padding: '8px 12px', background: item.is_read ? 'transparent' : '#f6ffed' }}
-              onClick={() => handleNotifClick(item)}
+              style={{ padding: '8px 12px', background: item.is_read ? 'transparent' : '#f6ffed' }}
             >
               <List.Item.Meta
-                avatar={BIZ_TYPE_ICON[item.biz_type] || BIZ_TYPE_ICON.system}
+                avatar={NOTIFICATION_BUCKET_ICON[getNotificationBucket(item)] || <InfoCircleOutlined style={{ color: '#999' }} />}
                 title={
                   <Space size={4}>
                     <Tag color={item.priority === 'urgent' ? 'red' : item.priority === 'normal' ? 'blue' : 'default'} style={{ fontSize: 10, lineHeight: '16px' }}>
                       {item.priority === 'urgent' ? '紧急' : item.priority === 'normal' ? '普通' : '低'}
                     </Tag>
                     {!item.is_read && <Badge status="processing" />}
-                    <span style={{ fontWeight: item.is_read ? 'normal' : 'bold', fontSize: 13 }}>{item.title}</span>
+                    <span style={{ fontWeight: item.is_read ? 'normal' : 'bold', fontSize: 13 }}>{getNotificationDisplayTitle(item)}</span>
                   </Space>
                 }
                 description={
                   <>
-                    <div style={{ fontSize: 12 }}>{item.content}</div>
+                    <div style={{ fontSize: 12 }}>{getNotificationDisplayContent(item)}</div>
                     <div style={{ fontSize: 11, color: '#999', marginTop: 2 }}>
                       {new Date(item.created_at).toLocaleString('zh-CN')}
                     </div>
+                    <Space size={8} style={{ marginTop: 6 }}>
+                      <Button size="small" type="link" disabled={item.is_read} onClick={() => handleMarkRead(item)}>已读</Button>
+                      <Button size="small" type="primary" onClick={() => handleNotifProcess(item)}>处理</Button>
+                    </Space>
                   </>
                 }
               />
@@ -352,12 +443,6 @@ const BasicLayout: React.FC = () => {
     storeLogout();
     message.success('已退出登录');
     navigate('/login', { replace: true });
-  };
-
-  const avatarMenu = {
-    items: [
-      { key: 'logout', label: '退出登录', icon: <LogoutOutlined />, onClick: handleLogout },
-    ],
   };
 
   const handleMenuClick = (path: string) => {
@@ -387,44 +472,43 @@ const BasicLayout: React.FC = () => {
         },
       }}
       menuItemRender={(item, dom) => (
-        <a onClick={() => item.path && handleMenuClick(item.path)}>{dom}</a>
+        <button
+          type="button"
+          onClick={() => item.path && handleMenuClick(item.path)}
+          style={{ all: 'unset', display: 'block', width: '100%', cursor: 'pointer' }}
+        >
+          {dom}
+        </button>
       )}
-      avatarProps={{
-        icon: <UserOutlined />,
-        title: user?.real_name || user?.username,
-        render: (_props, dom) => {
-          const displayName = user?.real_name || user?.username || '用户';
-          return (
-            <Space size={6} align="center" style={{ maxWidth: 180, overflow: 'hidden' }}>
-              {dom}
-              <span
-                title={displayName}
-                style={{
-                  display: 'inline-block',
-                  maxWidth: 96,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  verticalAlign: 'middle',
-                }}
-              >
-                {displayName}
-              </span>
-              <Dropdown menu={avatarMenu} trigger={['click']} placement="topRight">
-                <DownOutlined style={{ fontSize: 12, cursor: 'pointer', color: 'rgba(0, 0, 0, 0.45)' }} />
-              </Dropdown>
-            </Space>
-          );
-        },
-      }}
       actionsRender={() => [
-        <Popover key="notif" content={notifContent} title={null} trigger="click"
-          open={notifOpen} onOpenChange={setNotifOpen} placement="bottomRight">
-          <Badge count={unreadCount} size="small" offset={[-2, 4]}>
-            <BellOutlined style={{ fontSize: 18, cursor: 'pointer', padding: '4px 8px' }}
-              onClick={() => { fetchAll(); setNotifOpen(!notifOpen); }} />
-          </Badge>
-        </Popover>,
+        <Space key="top-actions" size={8} align="center" style={{ flexWrap: 'nowrap', marginRight: 8 }}>
+          <span
+            title={user?.real_name || user?.username || '当前用户'}
+            style={{
+              display: 'inline-block',
+              maxWidth: 96,
+              padding: '2px 8px',
+              borderRadius: 12,
+              background: '#f5f5f5',
+              color: 'rgba(0, 0, 0, 0.65)',
+              fontSize: 13,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              verticalAlign: 'middle',
+            }}
+          >
+            {user?.real_name || user?.username || '用户'}
+          </span>
+          <Popover content={notifContent} title={null} trigger="click"
+            open={notifOpen} onOpenChange={setNotifOpen} placement="bottomRight">
+            <Badge count={unreadCount} size="small" offset={[-2, 4]}>
+              <BellOutlined style={{ fontSize: 18, cursor: 'pointer', padding: '4px 6px' }}
+                onClick={() => { fetchAll(); setNotifOpen(!notifOpen); }} />
+            </Badge>
+          </Popover>
+          <Button size="small" icon={<LogoutOutlined />} onClick={handleLogout}>退出</Button>
+        </Space>,
       ]}
       menuHeaderRender={undefined}
     >

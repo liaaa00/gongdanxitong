@@ -141,8 +141,17 @@ const userSeeds: UserSeed[] = [
       { roleCode: 'onboarding_specialist', departmentCode: 'SHARED_ONBOARDING_RESIGNATION', isPrimary: true },
     ],
   },
+  {
+    username: 'fuqianwen',
+    realName: '傅倩雯',
+    email: 'fuqianwen@example.com',
+    phone: '13800000025',
+    roles: [
+      { roleCode: 'social_insurance_specialist', departmentCode: 'WELFARE_SECURITY', isPrimary: true },
+    ],
+  },
 
-  // Backward-compatible demo/service accounts kept active but not counted as the real 24-person org.
+  // Backward-compatible demo/service accounts kept active but not counted as the real org.
   { username: 'admin', realName: '系统管理员（兼容账号）', email: 'admin@example.com', phone: '13800000901', roles: [{ roleCode: 'admin', departmentCode: 'SYSTEM_ADMIN', isPrimary: true }] },
   { username: 'contractsup01', realName: '合同主管（兼容账号）', email: 'contractsup01@example.com', phone: '13800000902', roles: [{ roleCode: 'shared_leader', departmentCode: 'SHARED_TEAM', isPrimary: true }, { roleCode: 'contract_specialist', departmentCode: 'SHARED_CONTRACT' }] },
   { username: 'onboardsup01', realName: '入职联系主管（兼容账号）', email: 'onboardsup01@example.com', phone: '13800000903', roles: [{ roleCode: 'shared_leader', departmentCode: 'SHARED_TEAM', isPrimary: true }, { roleCode: 'onboarding_specialist', departmentCode: 'SHARED_ONBOARDING_RESIGNATION' }] },
@@ -152,6 +161,8 @@ const userSeeds: UserSeed[] = [
 ];
 
 export async function seedUsers(dataSource: DataSource): Promise<void> {
+  await dataSource.query('SELECT pg_advisory_lock(hashtext($1))', ['seedUsers']);
+  try {
   const userRepository = dataSource.getRepository(User);
   const roleRepository = dataSource.getRepository(Role);
   const departmentRepository = dataSource.getRepository(Department);
@@ -210,5 +221,8 @@ export async function seedUsers(dataSource: DataSource): Promise<void> {
         isPrimary: relation.isPrimary === true,
       }));
     }
+  }
+  } finally {
+    await dataSource.query('SELECT pg_advisory_unlock(hashtext($1))', ['seedUsers']).catch(() => undefined);
   }
 }

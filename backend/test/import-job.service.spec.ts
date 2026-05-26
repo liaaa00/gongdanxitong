@@ -86,7 +86,7 @@ describe('ImportJobService', () => {
             { row: 5, field: 'id_card_no', message: '身份证号格式错误', code: 'VALIDATION_FAILED' },
           ],
           warnings: [
-            { row: 3, field: 'social_urge', message: '已留空，请补全', code: 'left_blank', normalizedValue: null },
+            { row: 3, field: 'special_remark', message: '已留空，请补全', code: 'left_blank', normalizedValue: null },
           ],
         },
       },
@@ -105,7 +105,7 @@ describe('ImportJobService', () => {
     expect(result.validationErrors).toHaveLength(2);
     expect(result.validationErrors?.[0].message).toContain('姓名不能为空');
     expect(result.warnings).toHaveLength(1);
-    expect(result.warnings?.[0]).toMatchObject({ row: 3, field: 'social_urge', code: 'left_blank', normalizedValue: null });
+    expect(result.warnings?.[0]).toMatchObject({ row: 3, field: 'special_remark', code: 'left_blank', normalizedValue: null });
     expect(result.errorMessage).toContain('姓名不能为空');
   });
 
@@ -144,7 +144,7 @@ describe('ImportJobService', () => {
         rowNo: 2,
         errors: [],
         warnings: [
-          { fieldCode: 'social_urge', message: '请补全', code: 'left_blank', normalizedValue: null },
+          { fieldCode: 'special_remark', message: '请补全', code: 'left_blank', normalizedValue: null },
         ],
         normalized: { employee_name: '李四' },
         raw: { 姓名: '李四' },

@@ -12,6 +12,11 @@ import {
 import { businessException } from 'src/common/exceptions/business-exception';
 import { FieldPermissionService } from 'src/modules/field-permissions/field-permission.service';
 import { FieldChangeHook } from 'src/modules/notifications/field-change.hook';
+import {
+  buildDiffSummary,
+  buildReadableFieldChangeContent,
+  normalizeReadableDiffFields,
+} from 'src/modules/notifications/notification-display.util';
 
 @Injectable()
 export class FieldSupplementService {
@@ -123,17 +128,35 @@ export class FieldSupplementService {
       }
     }
 
+    const diffFields = normalizeReadableDiffFields({
+      diff: [{ field: input.fieldCode, before: oldValue, after: input.newValue }],
+    });
+    const diffSummary = buildDiffSummary(diffFields);
+    const content = buildReadableFieldChangeContent({
+      actorName: '操作人',
+      objectName: '工单字段',
+      diffFields,
+      action: '补充了',
+    }) ?? `工单 ${workOrder.orderNo} 的字段已补充`;
+
     await this.notificationRepository.save(
       this.notificationRepository.create({
         userId: workOrder.createdBy,
         bizType: 'field_supplement',
         title: '工单字段已补充',
-        content: `工单 ${workOrder.orderNo} 的字段 ${input.fieldCode} 已补充`,
+        content,
         link: `/work-orders/${workOrder.id}`,
         payload: {
           workOrderId: workOrder.id,
+          orderNo: workOrder.orderNo,
           dispatchedOrderId: dispatchedOrder.id,
           fieldCode: input.fieldCode,
+          fieldName: diffFields[0]?.field_name,
+          oldValue,
+          newValue: input.newValue,
+          diff: [{ field: input.fieldCode, before: oldValue, after: input.newValue }],
+          diffFields,
+          diffSummary,
         },
         isRead: false,
         readAt: null,

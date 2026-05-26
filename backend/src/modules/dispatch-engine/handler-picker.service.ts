@@ -27,7 +27,7 @@ export class HandlerPickerService {
       throw businessException(1000, 500, 'HandlerPickerService is not ready');
     }
 
-    if (strategy === DispatchStrategy.POOL) {
+    if (strategy === DispatchStrategy.POOL || strategy === DispatchStrategy.TEAM_CLAIM) {
       return null;
     }
 
@@ -53,7 +53,7 @@ export class HandlerPickerService {
         candidate.moduleCode === moduleCode && candidate.isActive && !candidate.isBackup,
     );
 
-    if (strategy === DispatchStrategy.POOL) {
+    if (strategy === DispatchStrategy.POOL || strategy === DispatchStrategy.TEAM_CLAIM) {
       return null;
     }
 

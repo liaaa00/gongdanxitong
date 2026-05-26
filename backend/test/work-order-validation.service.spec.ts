@@ -55,7 +55,6 @@ describe('WorkOrderValidationService submit validation', () => {
     field({ fieldCode: 'need_company_contract', fieldName: '是否企服发起劳动合同', fieldType: FieldType.DROPDOWN, dropdownOptions: ['是', '否'] }),
     field({ fieldCode: 'contract_template', fieldName: '劳动合同模板', conditionalRequired: { field: 'need_company_contract', op: 'EQ', value: '是' } }),
     field({ fieldCode: 'household_type', fieldName: '户籍性质', fieldType: FieldType.DROPDOWN, dropdownOptions: ['农业', '非农业'] }),
-    field({ fieldCode: 'social_urge', fieldName: '社保公积金未办是否需要催办', fieldType: FieldType.DROPDOWN, isRequired: true, defaultRequired: true, dropdownOptions: ['是', '否'] }),
   ];
 
   const fieldConfigRepository = {
@@ -82,12 +81,11 @@ describe('WorkOrderValidationService submit validation', () => {
     }))).resolves.toBeUndefined();
   });
 
-  it('allows submit when social_urge is blank because it is only soft required', async () => {
+  it('allows submit without the removed social insurance urge field', async () => {
     await expect(service.validateWorkOrder(makeWorkOrder({
       employee_name: '周九',
       id_card_no: '330102199001010011',
       need_company_contract: '否',
-      social_urge: null,
     }))).resolves.toBeUndefined();
   });
 

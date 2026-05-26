@@ -10,6 +10,7 @@ import { seedModuleHandlers } from './seed-module-handlers';
 import { seedNotificationTemplates } from './seed-notification-templates';
 import { seedRoles } from './seed-roles';
 import { seedUsers } from './seed-users';
+import { ensureWorkflowRuntimeSchema } from './database-schema-guard';
 
 @Injectable()
 export class SeedOnBootstrapService implements OnApplicationBootstrap {
@@ -25,6 +26,7 @@ export class SeedOnBootstrapService implements OnApplicationBootstrap {
     }
 
     await this.ensureStageAUserColumns();
+    await ensureWorkflowRuntimeSchema(this.dataSource, this.logger);
 
     await seedRoles(this.dataSource);
     await seedDepartments(this.dataSource);

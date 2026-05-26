@@ -1,4 +1,4 @@
-import type { ProColumns } from '@ant-design/pro-components';
+import type { ProColumns, ProTableProps } from '@ant-design/pro-components';
 
 export type ViewMode = 'table' | 'kanban' | 'grid';
 
@@ -35,8 +35,16 @@ export interface MultiViewTableProps<T extends Record<string, unknown>> {
   toolBarRender?: () => React.ReactNode[];
   headerTitle?: string;
   batchActions?: (selectedRowKeys: React.Key[], clearSelection: () => void) => React.ReactNode;
+  /** ProTable 内置搜索表单配置；false 表示关闭 */
+  search?: ProTableProps<T, Record<string, unknown>>['search'];
   /** 关闭 ProTable 内置 options，避免默认工具栏 Tooltip 链路触发 findDOMNode */
   proTableOptions?: false;
   /** 关闭 ProTable 内置 toolBarRender，仅保留 MultiViewTable 自定义工具栏 */
   proTableToolBarRender?: false;
+  /** 是否展示表格/看板/网格切换入口，默认不展示，按业务反馈固定表格呈现 */
+  showViewSwitcher?: boolean;
+  /** 是否展示常用筛选视图入口，默认不展示 */
+  showFilterViews?: boolean;
+  /** 是否展示列配置入口，默认不展示 */
+  showColumnsConfig?: boolean;
 }

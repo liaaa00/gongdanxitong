@@ -31,6 +31,7 @@ interface SaveFieldInput {
   orderType?: OrderType | null;
   businessContext?: OrderType[] | null;
   conditionalRequired?: Record<string, unknown> | null;
+  collectionGroup?: string | null;
   displayOrder?: number;
   isActive?: boolean;
 }
@@ -86,7 +87,11 @@ export class FieldsService {
       .take(pageSize)
       .getManyAndCount();
 
-    return toPageResult(page, pageSize, total, rows);
+    return toPageResult(page, pageSize, total, rows.map((row) => this.toFieldView(row)));
+  }
+
+  private toFieldView(field: FieldConfig): FieldConfig & { collection_group: string | null } {
+    return Object.assign(field, { collection_group: field.collectionGroup ?? null });
   }
 
   async create(input: SaveFieldInput): Promise<FieldConfig> {

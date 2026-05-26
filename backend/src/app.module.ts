@@ -37,6 +37,7 @@ import {
   WorkOrder,
   WorkOrderFieldDirtyMark,
   WorkOrderModuleConfig,
+  WorkflowDefinition,
 } from './entities';
 import { AdminModule } from './modules/admin/admin.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -50,8 +51,10 @@ import { AttachmentsModule } from './modules/attachments/attachments.module';
 import { ImportsModule } from './modules/imports/imports.module';
 import { StagesModule } from './modules/stages/stages.module';
 import { NotificationModule } from './modules/notifications/notification.module';
+import { RoleActionPermissionModule } from './modules/role-action-permissions/role-action-permission.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 import { WorkOrderModule } from './modules/work-orders/work-order.module';
+import { WorkflowModule } from './modules/workflows/workflow.module';
 import { SeedOnBootstrapService } from './database/seeds/seed-on-bootstrap.service';
 import { OperationLogCleanupService } from './modules/operation-logs/operation-log-cleanup.service';
 
@@ -105,6 +108,7 @@ import { OperationLogCleanupService } from './modules/operation-logs/operation-l
           WorkOrder,
           WorkOrderFieldDirtyMark,
           WorkOrderModuleConfig,
+          WorkflowDefinition,
         ],
       }),
     }),
@@ -113,6 +117,7 @@ import { OperationLogCleanupService } from './modules/operation-logs/operation-l
     AdminModule,
     FieldPermissionsModule,
     WorkOrderModule,
+    WorkflowModule,
     DispatchedOrderModule,
     DashboardModule,
     AiModule,
@@ -121,6 +126,7 @@ import { OperationLogCleanupService } from './modules/operation-logs/operation-l
     StagesModule,
     UploadsModule,
     NotificationModule,
+    RoleActionPermissionModule,
     HealthModule,
   ],
   providers: [

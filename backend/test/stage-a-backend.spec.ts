@@ -55,14 +55,17 @@ describe('BE-A5 dispatch rule priority', () => {
     ];
     const service = new DispatchEngineService(
       { find: jest.fn(async () => rules) } as never,
+      { find: jest.fn(async () => []) } as never,
       new AstEvaluator(),
       { pick: jest.fn(async () => 'picked') } as never,
       { getVisibleFieldsForScenario: jest.fn(async () => ['employee_name']) } as never,
     );
     const manager = {
-      getRepository: jest.fn((entity) => entity.name === 'DispatchRule'
-        ? { find: jest.fn(async () => rules) }
-        : { findOne: jest.fn(async ({ where }: { where: { id: string } }) => where.id === 'fallback-user' ? { id: 'fallback-user', isActive: true } : null) }),
+      getRepository: jest.fn((entity) => {
+        if (entity.name === 'DispatchRule') return { find: jest.fn(async () => rules) };
+        if (entity.name === 'WorkOrderModuleConfig') return { find: jest.fn(async () => []) };
+        return { findOne: jest.fn(async ({ where }: { where: { id: string } }) => where.id === 'fallback-user' ? { id: 'fallback-user', isActive: true } : null) };
+      }),
     } as never;
     const result = await service.evaluateDetailed({ id: 'wo', orderType: OrderType.ONBOARDING, customerId: 'cus-1', departmentId: 'dep-1', extraData: {} } as WorkOrder, manager);
     const contract = result.childrenToCreate.find((child) => child.moduleCode === 'contract');
@@ -73,7 +76,7 @@ describe('BE-A5 dispatch rule priority', () => {
 
 describe('BE-A6 field diff hook', () => {
   it('builds meaningful diffs and ignores audit fields', () => {
-    const hook = new FieldChangeHook(null as never, null as never, null as never);
+    const hook = new FieldChangeHook(null as never, null as never, null as never, null as never);
     expect(hook.buildDiff({ a: 1, updatedAt: 'old' }, { a: 2, updatedAt: 'new' })).toEqual([{ field: 'a', before: 1, after: 2 }]);
   });
 
@@ -82,6 +85,7 @@ describe('BE-A6 field diff hook', () => {
     const hook = new FieldChangeHook(
       { findOne: jest.fn(async () => ({ id: 'wo', orderNo: 'ON1', createdBy: 'creator', creator: { id: 'creator', realName: '发起人' } })) } as never,
       { find: jest.fn(async () => [{ handlerId: 'h1' }, { handlerId: 'actor' }, { handlerId: null }]) } as never,
+      { findOne: jest.fn(async ({ where }: { where: { id: string } }) => ({ id: where.id, realName: where.id })) } as never,
       notificationService as never,
     );
     await hook.onWorkOrderUpdated({ orderId: 'wo', actorUserId: 'actor', diff: [{ field: 'x', before: '1', after: '2' }] });
@@ -90,16 +94,17 @@ describe('BE-A6 field diff hook', () => {
     expect(rows[0].bizType).toBe('order.field_changed');
   });
 
-  it('keeps downstream targets and skips creator when actor is creator', async () => {
+  it('keeps downstream targets and creator audit notification when actor is creator', async () => {
     const notificationService = { bulkCreate: jest.fn(async (rows) => rows) };
     const hook = new FieldChangeHook(
       { findOne: jest.fn(async () => ({ id: 'wo', orderNo: 'ON1', createdBy: 'creator', creator: { id: 'creator', realName: '发起人' } })) } as never,
       { find: jest.fn(async () => [{ handlerId: 'h1' }, { handlerId: 'h2' }, { handlerId: 'h3' }]) } as never,
+      { findOne: jest.fn(async ({ where }: { where: { id: string } }) => ({ id: where.id, realName: where.id })) } as never,
       notificationService as never,
     );
     await hook.onWorkOrderUpdated({ orderId: 'wo', actorUserId: 'creator', diff: [{ field: 'x', before: '1', after: '2' }] });
     const rows = notificationService.bulkCreate.mock.calls[0][0];
-    expect(rows.map((row: { userId: string }) => row.userId).sort()).toEqual(['h1', 'h2', 'h3']);
+    expect(rows.map((row: { userId: string }) => row.userId).sort()).toEqual(['creator', 'h1', 'h2', 'h3']);
   });
 
   it('notifies creator when actor is not creator and downstream is empty', async () => {
@@ -107,6 +112,7 @@ describe('BE-A6 field diff hook', () => {
     const hook = new FieldChangeHook(
       { findOne: jest.fn(async () => ({ id: 'wo', orderNo: 'ON1', createdBy: 'creator', creator: { id: 'creator', realName: '发起人' } })) } as never,
       { find: jest.fn(async () => []) } as never,
+      { findOne: jest.fn(async ({ where }: { where: { id: string } }) => ({ id: where.id, realName: where.id })) } as never,
       notificationService as never,
     );
     await hook.onWorkOrderUpdated({ orderId: 'wo', actorUserId: 'actor', diff: [{ field: 'x', before: '1', after: '2' }] });
