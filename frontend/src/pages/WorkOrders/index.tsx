@@ -2,10 +2,10 @@ import { forwardRef, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { PageContainer } from '@ant-design/pro-components';
 import type { ProColumns } from '@ant-design/pro-components';
-import { App, Badge, Button, Input, Popconfirm, Radio, Space, Tag, Tooltip } from 'antd';
+import { App, Badge, Button, Input, Radio, Space, Tag, Tooltip } from 'antd';
 import { ExportOutlined, EyeOutlined, ImportOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import MultiViewTable from '@/components/MultiViewTable';
-import { batchDeleteWorkOrders, deleteWorkOrder, getWorkOrders } from '@/services/workOrders';
+import { getWorkOrders } from '@/services/workOrders';
 import type { DispatchedOrderSummary, WorkOrderItem } from '@/services/workOrders';
 import { getMyRoleActions, type RoleActionCode } from '@/services/roleActionPermissions';
 import type { PageParams } from '@/services/mock';
@@ -179,10 +179,10 @@ const WorkOrders: React.FC = () => {
     ROLE.SOCIAL_INSURANCE_SPECIALIST,
   ].some((role) => hasRole(role));
   const isBackendOnly = isBackendProcessor && !isAdmin && !isBusinessOwner && !isGroupLeader && !isGroupMember;
-  const canDelete = isAdmin;
-  const canCreateWorkOrder = isAdmin || allowedActions.includes('work_order.create') || (!allowedActions.length && (isGroupMember || isGroupLeader));
-  const canImportWorkOrder = isAdmin || allowedActions.includes('work_order.import') || (!allowedActions.length && (isGroupMember || isGroupLeader));
   const isInitiatedPage = location.pathname.includes('/my-work/initiated');
+  const canCreateWorkOrder = !isInitiatedPage && (isAdmin || allowedActions.includes('work_order.create'));
+  const canImportWorkOrder = !isInitiatedPage && (isAdmin || allowedActions.includes('work_order.import'));
+  const canExportWorkOrder = !isInitiatedPage && (isAdmin || allowedActions.includes('work_order.export'));
   const pageTitle = isInitiatedPage ? '我发起的工单' : '主工单列表';
 
   const urlFilters = useMemo(() => {
@@ -201,26 +201,7 @@ const WorkOrders: React.FC = () => {
     }
   }, [isBackendOnly, navigate]);
 
-  const handleDelete = async (id: string) => {
-    try {
-      await deleteWorkOrder(id);
-      message.success('已删除');
-      setRefreshKey((value) => value + 1);
-    } catch {
-      message.error('删除失败');
-    }
-  };
-
-  const handleBatchDelete = async (ids: React.Key[], clear: () => void) => {
-    try {
-      const res = await batchDeleteWorkOrders(ids.map(String));
-      message.success(`已删除 ${res.deleted} 条`);
-      clear();
-      setRefreshKey((value) => value + 1);
-    } catch {
-      message.error('批量删除失败');
-    }
-  };
+  // 主工单列表仅查看，删除类操作入口已移除。
 
   const handleBatchExport = () => {
     message.info('主工单批量导出暂未开放，请在对应子工单页面按固定模板导出');
@@ -356,21 +337,11 @@ const WorkOrders: React.FC = () => {
           <RefButton type="link" size="small" icon={<EyeOutlined />} onClick={() => navigate(`/work-orders/${record.id}`)}>
             详情
           </RefButton>
-          {canDelete && (
-            <Popconfirm
-              title="确定删除此工单？"
-              description="删除后不可恢复，相关子工单也将一并清除。"
-              okText="删除"
-              okButtonProps={{ danger: true }}
-              onConfirm={() => handleDelete(record.id)}
-            >
-              <RefButton type="link" size="small" danger>删除</RefButton>
-            </Popconfirm>
-          )}
+          {/* 主工单列表仅查看，不提供删除操作。 */}
         </Space>
       ),
     },
-  ], [canDelete, isAdmin, isBusinessOwner, isGroupLeader, navigate]);
+  ], [isAdmin, isBusinessOwner, isGroupLeader, navigate]);
 
   const requestFn = async (params: Record<string, unknown>) => {
     const query = {
@@ -411,29 +382,15 @@ const WorkOrders: React.FC = () => {
               批量导入
             </RefButton>
           ),
-          <RefButton key="export" icon={<ExportOutlined />} onClick={handleBatchExport}>
-            批量导出
-          </RefButton>,
+          canExportWorkOrder && (
+            <RefButton key="export" icon={<ExportOutlined />} onClick={handleBatchExport}>
+              批量导出
+            </RefButton>
+          ),
         ].filter(Boolean) as React.ReactNode[]}
         proTableOptions={false}
         proTableToolBarRender={false}
-        batchActions={(selectedKeys, clear) => canDelete ? (
-          <Space>
-            <Popconfirm
-              title={`确定删除选中的 ${selectedKeys.length} 条工单？`}
-              description="删除后不可恢复，相关子工单也将一并清除。"
-              okText="删除"
-              okButtonProps={{ danger: true }}
-              disabled={selectedKeys.length === 0}
-              onConfirm={() => handleBatchDelete(selectedKeys, clear)}
-            >
-              <RefButton danger disabled={selectedKeys.length === 0}>
-                批量删除
-              </RefButton>
-            </Popconfirm>
-            <RefButton onClick={clear}>取消选择</RefButton>
-          </Space>
-        ) : undefined}
+        batchActions={() => null}
       />
     </PageContainer>
   );

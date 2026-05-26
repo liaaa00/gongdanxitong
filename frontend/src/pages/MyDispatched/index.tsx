@@ -52,6 +52,15 @@ interface MyDispatchedProps {
 
 const ACTIVE_DISPATCHED_STATUSES = new Set(['pending', 'processing']);
 
+const PRIORITY_OPTIONS = [
+  { label: '紧急', value: 'urgent', color: 'red' },
+  { label: '普通', value: 'normal', color: 'blue' },
+];
+
+function getPriorityMeta(priority?: string | null) {
+  return PRIORITY_OPTIONS.find((item) => item.value === priority) || PRIORITY_OPTIONS[1];
+}
+
 const WORK_TYPE_OPTIONS = [
   { label: '数据录入子工单', value: 'data_entry' },
   { label: '社保公积金办理子工单', value: 'social_insurance' },
@@ -95,7 +104,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { message } = App.useApp();
-  const { hasAnyRole } = useAuth();
+  const { hasAnyRole, hasPermission } = useAuth();
   const actionRef = useRef<ActionType>();
   const routeMode: MyDispatchedMode = location.pathname.includes('/my-work/done') ? 'done' : 'pending';
   const currentMode = mode || routeMode;
@@ -105,6 +114,12 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
   const headerTitle = isDoneMode ? '我的已办' : '我的待办';
   const childTableTitle = isDoneMode ? '当月已办子工单' : (isBusinessInitiator ? '退回待处理子工单' : '待办子工单');
   const emptyText = isDoneMode ? '本月暂无已办子工单' : (isBusinessInitiator ? '暂无退回待处理子工单' : '暂无待办子工单');
+  const canAcceptOrder = !isDoneMode && !isBusinessInitiator && hasPermission(['action:dispatched_order.accept']);
+  const canBatchComplete = !isDoneMode && !isBusinessInitiator && hasPermission(['action:dispatched_order.complete']);
+  const canBatchReturn = !isDoneMode && !isBusinessInitiator && hasPermission(['action:dispatched_order.return']);
+  const canBatchUrge = !isDoneMode && hasPermission(['action:dispatched_order.urge']);
+  const canBatchImport = !isDoneMode && !isBusinessInitiator && hasPermission(['action:dispatched_order.import']);
+  const canBatchExport = !isDoneMode && hasPermission(['action:dispatched_order.export']);
   const [exporting, setExporting] = useState(false);
   const [batchImportMode, setBatchImportMode] = useState<DispatchedBatchImportMode | null>(null);
   const [slaWarningCount, setSlaWarningCount] = useState(0);
@@ -268,7 +283,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
       render: (_, record) => (
         <Space wrap size={[4, 4]}>
           <RefButton type="link" size="small" icon={<EyeOutlined />} onClick={() => navigate('/my-dispatched/' + record.id)}>详情</RefButton>
-          {record.status === 'pending' && (
+          {canAcceptOrder && record.status === 'pending' && (
             <RefButton type="primary" size="small" icon={<CheckCircleOutlined />} onClick={() => handleAccept(record.id)}>接单</RefButton>
           )}
         </Space>
@@ -308,6 +323,14 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
     },
     { title: '工单所属月份', dataIndex: 'orderMonth', key: 'orderMonth', valueType: 'dateMonth', hideInTable: true },
     {
+      title: '优先级', dataIndex: 'priority', key: 'priority', width: 90, valueType: 'select',
+      fieldProps: { options: PRIORITY_OPTIONS.map(({ label, value }) => ({ label, value })) },
+      render: (_, record) => {
+        const priority = getPriorityMeta(record.priority);
+        return <Tag color={priority.color}>{priority.label}</Tag>;
+      },
+    },
+    {
       title: '超时状态', key: 'sla', width: 110, hideInSearch: true,
       render: (_, record) => {
         const sla = getSlaStatus(record.status, record.due_at, record.sla_reminder_before_hours ?? record.slaReminderBeforeHours ?? null);
@@ -330,7 +353,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
     { title: '派发时间', dataIndex: 'dispatchedRange', key: 'dispatchedRange', valueType: 'dateTimeRange', hideInTable: true },
     { title: '完成时间', dataIndex: 'completedRange', key: 'completedRange', valueType: 'dateTimeRange', hideInTable: true },
 
-  ], [navigate, isDoneMode, isBusinessInitiator]);
+  ], [navigate, isDoneMode, isBusinessInitiator, canAcceptOrder]);
 
   const returnedWorkOrderColumns: ProColumns<WorkOrderItem>[] = useMemo(() => [
     { title: '工单编号', dataIndex: 'order_no', key: 'order_no', width: 150, copyable: true },
@@ -491,7 +514,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
         request={requestDispatchedOrders}
         search={{ labelWidth: 'auto', defaultCollapsed: false }} headerTitle={childTableTitle}
         options={false}
-        toolBarRender={!isDoneMode && !isBusinessInitiator ? () => [
+        toolBarRender={canBatchImport ? () => [
           <RefButton key="import-status" icon={<UploadOutlined />} onClick={() => setBatchImportMode('status')}>导入办理结果</RefButton>,
           <RefButton key="import-fields" icon={<UploadOutlined />} onClick={() => setBatchImportMode('fields')}>导入银行卡修改</RefButton>,
         ] : false}
@@ -499,7 +522,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
         scroll={{ x: 1500 }}
         dateFormatter="string"
         locale={{ emptyText }}
-        rowSelection={{ preserveSelectedRowKeys: true }}
+        rowSelection={(canBatchComplete || canBatchReturn || canBatchUrge || canBatchExport) ? { preserveSelectedRowKeys: true } : false}
         tableAlertRender={({ selectedRowKeys, selectedRows, onCleanSelected }) => {
           const selected = selectedRows as DispatchedOrderItem[];
           const completable = selected.filter((r) => ACTIVE_DISPATCHED_STATUSES.has(r.status));
@@ -507,7 +530,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
             <Space wrap>
               <span>已选 {selectedRowKeys.length} 项</span>
               <RefButton size="small" onClick={onCleanSelected}>取消</RefButton>
-              {!isDoneMode && (
+              {canBatchComplete && (
                 <RefButton
                   size="small"
                   type="primary"
@@ -521,7 +544,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
                   }}
                 >批量完成{completable.length > 0 ? `（${completable.length}）` : ''}</RefButton>
               )}
-              {!isDoneMode && (
+              {canBatchUrge && (
                 <RefButton
                   size="small"
                   icon={<BellOutlined />}
@@ -534,7 +557,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
                   }}
                 >批量催办{completable.length > 0 ? `（${completable.length}）` : ''}</RefButton>
               )}
-              {!isDoneMode && (
+              {canBatchReturn && (
                 <RefButton
                   size="small"
                   danger
@@ -548,8 +571,10 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
                   }}
                 >批量退回{completable.length > 0 ? `（${completable.length}）` : ''}</RefButton>
               )}
-              <RefButton size="small" type="primary" icon={<ExportOutlined />} loading={exporting}
-                onClick={() => handleBatchExport((selectedRowKeys as React.Key[]).map(String))}>按固定模板导出</RefButton>
+              {canBatchExport && (
+                <RefButton size="small" type="primary" icon={<ExportOutlined />} loading={exporting}
+                  onClick={() => handleBatchExport((selectedRowKeys as React.Key[]).map(String))}>按固定模板导出</RefButton>
+              )}
             </Space>
           );
         }}

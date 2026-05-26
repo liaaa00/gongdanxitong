@@ -1,5 +1,7 @@
 import { matchPath } from 'react-router-dom';
 import { ROLE, canonicalRoleCodes, userHasAnyCanonicalRole, type CanonicalRole } from '@/constants/roles';
+import type { RoleActionCode } from '@/services/roleActionPermissions';
+import { hasActionPermission } from '@/utils/permission';
 
 /**
  * 路由×角色可见性表。
@@ -89,6 +91,7 @@ const HISTORY_WORK_ROLES = [
   ROLE.ADMIN,
   ROLE.BUSINESS_OWNER,
   ROLE.BUSINESS_GROUP_LEADER,
+  ROLE.BUSINESS_GROUP_MEMBER,
   ROLE.DATA_ENTRY_LEADER,
   ROLE.SHARED_TEAM_OWNER,
   ROLE.LABOR_CONTRACT_MEMBER,
@@ -184,6 +187,20 @@ export const ROUTE_VISIBILITY = {
 
 export type VisibilityRoute = keyof typeof ROUTE_VISIBILITY;
 
+const ROUTE_ACTION_VISIBILITY: Partial<Record<VisibilityRoute, readonly RoleActionCode[]>> = {
+  '/work-orders': ['page.work_order.main'],
+  '/work-orders/create': ['work_order.create'],
+  '/work-orders/import': ['work_order.import'],
+  '/work-orders/:id': ['work_order.view'],
+  '/my-work/initiated': ['page.my_work.initiated'],
+  '/my-work/pending': ['page.my_work.pending'],
+  '/my-work/done': ['page.my_work.done'],
+  '/my-work/team': ['page.my_work.team'],
+  '/my-work/history': ['page.my_work.history'],
+  '/dispatched-orders': ['page.my_work.pending'],
+  '/my-dispatched/:id': ['dispatched_order.view'],
+};
+
 const LEGACY_ROUTE_ALIASES: Record<string, VisibilityRoute> = {
   '/work-orders/new': '/work-orders/create',
   '/my-dispatched': '/my-work/pending',
@@ -234,7 +251,21 @@ export function getRequiredRolesForPath(pathname: string): readonly CanonicalRol
   return route ? ROUTE_VISIBILITY[route] : [];
 }
 
-export function canAccessPath(pathname: string, userRoles: { code?: string }[] | undefined): boolean {
+export function getRequiredActionsForPath(pathname: string): readonly RoleActionCode[] {
+  const route = resolveVisibilityRoute(pathname);
+  return route ? ROUTE_ACTION_VISIBILITY[route] || [] : [];
+}
+
+export function canAccessPath(
+  pathname: string,
+  userRoles: { code?: string }[] | undefined,
+  userPermissions: string[] = [],
+): boolean {
+  const requiredActions = getRequiredActionsForPath(pathname);
+  if (requiredActions.length > 0) {
+    if (userPermissions.length > 0) return hasActionPermission(userPermissions, [...requiredActions]);
+    // 兼容旧会话：完全没有权限字段时才回退到角色表；新登录态一律以权限矩阵为准。
+  }
   const requiredRoles = getRequiredRolesForPath(pathname);
   if (!requiredRoles.length) return false;
   return userHasAnyCanonicalRole(userRoles, [...requiredRoles]);

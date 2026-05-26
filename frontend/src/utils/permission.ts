@@ -9,7 +9,16 @@ export function hasPermission(
   if (!requiredPermissions || requiredPermissions.length === 0) {
     return true;
   }
+  if (userPermissions.includes('*')) return true;
   return requiredPermissions.some((p) => userPermissions.includes(p));
+}
+
+export function hasActionPermission(
+  userPermissions: PermissionCode[],
+  requiredActions: string[],
+): boolean {
+  if (!requiredActions || requiredActions.length === 0) return true;
+  return hasPermission(userPermissions, requiredActions.map((action) => `action:${action}`));
 }
 
 export function hasRole(

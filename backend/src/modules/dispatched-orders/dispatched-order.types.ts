@@ -47,6 +47,7 @@ export interface DispatchedOrderListItem {
   sla_hours?: number | null;
   slaReminderBeforeHours?: number | null;
   sla_reminder_before_hours?: number | null;
+  priority?: 'urgent' | 'normal';
   acceptedAt: Date | null;
   accepted_at?: Date | null;
   completedAt: Date | null;

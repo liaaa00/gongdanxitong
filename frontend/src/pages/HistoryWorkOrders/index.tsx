@@ -14,6 +14,15 @@ import { useRef } from 'react';
 
 const HISTORY_STATUSES = new Set(['completed', 'returned', 'withdrawn', 'void']);
 
+const PRIORITY_OPTIONS = [
+  { label: '紧急', value: 'urgent', color: 'red' },
+  { label: '普通', value: 'normal', color: 'blue' },
+];
+
+function getPriorityMeta(priority?: string | null) {
+  return PRIORITY_OPTIONS.find((item) => item.value === priority) || PRIORITY_OPTIONS[1];
+}
+
 const HistoryWorkOrders: React.FC = () => {
   const navigate = useNavigate();
   const actionRef = useRef<ActionType>();
@@ -27,6 +36,14 @@ const HistoryWorkOrders: React.FC = () => {
     { title: '客户代码', dataIndex: 'customer_code', width: 120 },
     { title: '客户名称', dataIndex: 'customer_name', width: 160, ellipsis: true },
     { title: '状态', dataIndex: 'status', width: 110, render: (_, row) => <Tag color={getStatusColor(row.void_at ? 'void' : row.status)}>{getStatusText(row.void_at ? 'void' : row.status)}</Tag> },
+    {
+      title: '优先级', dataIndex: 'priority', width: 90, valueType: 'select',
+      fieldProps: { options: PRIORITY_OPTIONS.map(({ label, value }) => ({ label, value })) },
+      render: (_, row) => {
+        const priority = getPriorityMeta(row.priority);
+        return <Tag color={priority.color}>{priority.label}</Tag>;
+      },
+    },
     { title: '派发时间', dataIndex: 'dispatched_at', valueType: 'dateTime', width: 170 },
     { title: '完成时间', dataIndex: 'completed_at', valueType: 'dateTime', width: 170 },
     {

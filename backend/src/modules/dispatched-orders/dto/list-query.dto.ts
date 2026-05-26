@@ -140,6 +140,10 @@ export class ListDispatchedOrderQueryDto extends PaginationQueryDto {
 
   @IsOptional()
   @IsString()
+  priority?: string;
+
+  @IsOptional()
+  @IsString()
   dispatchedFrom?: string;
 
   @IsOptional()

@@ -8,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
 import { Repository } from 'typeorm';
 import { User } from 'src/entities';
+import { RoleActionPermissionService } from 'src/modules/role-action-permissions/role-action-permission.service';
 import { JwtUserPayload, LoginResult } from './auth.types';
 
 @Injectable()
@@ -16,6 +17,7 @@ export class AuthService {
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     private readonly jwtService: JwtService,
+    private readonly roleActionPermissionService: RoleActionPermissionService,
   ) {}
 
   async login(username: string, password: string): Promise<LoginResult> {
@@ -43,6 +45,7 @@ export class AuthService {
     const roleCodes = Array.from(
       new Set(user.userRoles.map((userRole) => userRole.role.code)),
     );
+    const actionPermissions = await this.roleActionPermissionService.getAllowedActionsForRoles(roleCodes);
     const payload: JwtUserPayload = {
       sub: user.id,
       username: user.username,
@@ -65,7 +68,8 @@ export class AuthService {
         email: user.email,
         phone: user.phone,
         roles: roleCodes,
-        permissions: roleCodes.map((code) => `role:${code}`),
+        permissions: [...roleCodes.map((code) => `role:${code}`), ...actionPermissions.map((code) => `action:${code}`)],
+        action_permissions: actionPermissions,
         mustChangePassword: user.mustChangePassword,
         must_change_password: user.mustChangePassword,
       },
@@ -109,6 +113,8 @@ export class AuthService {
       departmentName: string;
       isPrimary: boolean;
     }>;
+    permissions: string[];
+    action_permissions: string[];
   }> {
     const user = await this.userRepository.findOne({
       where: { id: userId },
@@ -123,6 +129,11 @@ export class AuthService {
     if (!user) {
       throw new UnauthorizedException('用户不存在');
     }
+
+    const roleCodes = Array.from(
+      new Set(user.userRoles.map((userRole) => userRole.role.code)),
+    );
+    const actionPermissions = await this.roleActionPermissionService.getAllowedActionsForRoles(roleCodes);
 
     return {
       id: user.id,
@@ -139,6 +150,8 @@ export class AuthService {
         departmentName: userRole.department.name,
         isPrimary: userRole.isPrimary,
       })),
+      permissions: [...roleCodes.map((code) => `role:${code}`), ...actionPermissions.map((code) => `action:${code}`)],
+      action_permissions: actionPermissions,
     };
   }
 

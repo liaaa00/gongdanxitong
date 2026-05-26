@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Post, Query, UseInterceptors } from '@nestjs/common';
 import { ApiResponse } from 'src/common/decorators/api-response.decorator';
 import { Audit } from 'src/common/decorators/audit.decorator';
+import { BusinessPermission } from 'src/common/decorators/business-permission.decorator';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { AuditInterceptor } from 'src/common/interceptors/audit.interceptor';
@@ -81,6 +82,7 @@ export class DispatchedOrderController {
   }
 
   @Post('batch-complete')
+  @BusinessPermission('dispatched_order.complete')
   @FieldPermissionScenario('dispatched:auto')
   batchComplete(
     @Body() payload: BatchCompleteDispatchedOrderDto,
@@ -90,6 +92,7 @@ export class DispatchedOrderController {
   }
 
   @Post('batch-return')
+  @BusinessPermission('dispatched_order.return')
   @FieldPermissionScenario('dispatched:auto')
   batchReturn(
     @Body() payload: BatchReturnDispatchedOrderDto,
@@ -99,6 +102,7 @@ export class DispatchedOrderController {
   }
 
   @Post('batch-urge')
+  @BusinessPermission('dispatched_order.urge')
   @FieldPermissionScenario('dispatched:auto')
   batchUrge(
     @Body() payload: { ids?: string[]; reason?: string },
@@ -108,6 +112,7 @@ export class DispatchedOrderController {
   }
 
   @Post('batch-import')
+  @BusinessPermission('dispatched_order.import')
   @FieldPermissionScenario('dispatched:auto')
   batchImport(
     @Body() payload: BatchImportDispatchedOrdersDto,
@@ -117,6 +122,7 @@ export class DispatchedOrderController {
   }
 
   @Post('batch-export')
+  @BusinessPermission('dispatched_order.export')
   @FieldPermissionScenario('dispatched:auto')
   batchExport(
     @Body() payload: BatchExportDispatchedOrderDto,
@@ -126,6 +132,7 @@ export class DispatchedOrderController {
   }
 
   @Post('social-insurance/batch-complete')
+  @BusinessPermission('dispatched_order.complete')
   @FieldPermissionScenario('dispatched:social_insurance')
   batchCompleteSocialInsurance(
     @Body() payload: BatchCompleteDispatchedOrderDto,
@@ -135,6 +142,7 @@ export class DispatchedOrderController {
   }
 
   @Post(':id/accept')
+  @BusinessPermission('dispatched_order.accept')
   @FieldPermissionScenario('dispatched:auto')
   accept(
     @Param('id') id: string,
@@ -145,6 +153,7 @@ export class DispatchedOrderController {
   }
 
   @Post(':id/claim')
+  @BusinessPermission('dispatched_order.accept')
   @FieldPermissionScenario('dispatched:auto')
   claim(@Param('id') id: string, @CurrentUser() user: JwtUserPayload) {
     return this.dispatchedOrderService.claim(assertUuidParam(id, '子工单不存在'), user);
@@ -157,6 +166,7 @@ export class DispatchedOrderController {
   }
 
   @Post(':id/complete')
+  @BusinessPermission('dispatched_order.complete')
   @FieldPermissionScenario('dispatched:auto')
   complete(
     @Param('id') id: string,
@@ -167,6 +177,7 @@ export class DispatchedOrderController {
   }
 
   @Post(':id/return')
+  @BusinessPermission('dispatched_order.return')
   @FieldPermissionScenario('dispatched:auto')
   returnOrder(
     @Param('id') id: string,
@@ -177,6 +188,7 @@ export class DispatchedOrderController {
   }
 
   @Post(':id/creator-update')
+  @BusinessPermission('dispatched_order.creator_update')
   @FieldPermissionScenario('dispatched:auto')
   creatorUpdateFields(
     @Param('id') id: string,
@@ -187,6 +199,7 @@ export class DispatchedOrderController {
   }
 
   @Post(':id/urge')
+  @BusinessPermission('dispatched_order.urge')
   @FieldPermissionScenario('dispatched:auto')
   urge(
     @Param('id') id: string,
@@ -197,6 +210,7 @@ export class DispatchedOrderController {
   }
 
   @Post(':id/withdraw')
+  @BusinessPermission('dispatched_order.withdraw')
   @FieldPermissionScenario('dispatched:auto')
   withdraw(
     @Param('id') id: string,
@@ -217,6 +231,7 @@ export class DispatchedOrderController {
   }
 
   @Post(':id/void')
+  @BusinessPermission('dispatched_order.void')
   @FieldPermissionScenario('dispatched:auto')
   voidByCreator(
     @Param('id') id: string,
@@ -237,6 +252,7 @@ export class DispatchedOrderController {
   }
 
   @Post(':id/supplement')
+  @BusinessPermission('dispatched_order.supplement')
   supplement(
     @Param('id') id: string,
     @Body() payload: SupplementFieldDto,
@@ -246,6 +262,7 @@ export class DispatchedOrderController {
   }
 
   @Post(':id/reassign')
+  @BusinessPermission('dispatched_order.reassign')
   @FieldPermissionScenario('dispatched:auto')
   reassign(
     @Param('id') id: string,
@@ -256,6 +273,7 @@ export class DispatchedOrderController {
   }
 
   @Post(':id/benefit/transition')
+  @BusinessPermission('dispatched_order.supplement')
   @FieldPermissionScenario('dispatched:auto')
   transitionBenefitStage(
     @Param('id') id: string,
@@ -266,6 +284,7 @@ export class DispatchedOrderController {
   }
 
   @Post(':id/export')
+  @BusinessPermission('dispatched_order.export')
   exportOrder(
     @Param('id') id: string,
     @Body() payload: ExportDispatchedOrderDto,
@@ -280,6 +299,7 @@ export class WorkOrderSubOrderController {
   constructor(private readonly dispatchedOrderService: DispatchedOrderService) {}
 
   @Post(':id/reassign')
+  @BusinessPermission('dispatched_order.reassign')
   @FieldPermissionScenario('dispatched:auto')
   reassign(
     @Param('id') id: string,

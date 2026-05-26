@@ -52,6 +52,7 @@ export interface DispatchedOrderItem {
   slaHours?: number | null;
   sla_reminder_before_hours?: number | null;
   slaReminderBeforeHours?: number | null;
+  priority?: 'urgent' | 'normal' | string;
   created_at: string;
 }
 
@@ -207,6 +208,7 @@ function normalizeDispatchedOrderItem(raw: unknown): DispatchedOrderItem {
     slaHours: (row.slaHours ?? row.sla_hours ?? null) as number | null,
     sla_reminder_before_hours: (row.sla_reminder_before_hours ?? row.slaReminderBeforeHours ?? null) as number | null,
     slaReminderBeforeHours: (row.slaReminderBeforeHours ?? row.sla_reminder_before_hours ?? null) as number | null,
+    priority: (row.priority ?? 'normal') as string,
     created_at: String(row.created_at ?? row.createdAt ?? row.dispatched_at ?? row.dispatchedAt ?? new Date().toISOString()),
   } as DispatchedOrderItem;
 }
@@ -665,16 +667,14 @@ export function downloadDispatchedExport(result: DispatchedOrderExportResult, fa
   a.click();
 }
 
-export async function exportDispatchedOrder(id: string, templateId?: string): Promise<DispatchedOrderExportResult> {
-  if (isMockMode) return mockDelay({ templateId: templateId || null, templateName: 'mock', moduleCode: 'mock', rowCount: 1, fileName: 'mock.xlsx' });
-  const body: Record<string, unknown> = {};
-  if (templateId) body.templateId = templateId;
-  return request.post(`/dispatched-orders/${id}/export`, body) as Promise<DispatchedOrderExportResult>;
+export async function exportDispatchedOrder(id: string): Promise<DispatchedOrderExportResult> {
+  if (isMockMode) return mockDelay({ templateId: null, templateName: 'mock fixed', moduleCode: 'mock', rowCount: 1, fileName: 'mock.xlsx' });
+  return request.post(`/dispatched-orders/${id}/export`, {}) as Promise<DispatchedOrderExportResult>;
 }
 
-export async function batchExportDispatchedOrders(ids: string[], templateId?: string): Promise<DispatchedOrderExportResult> {
-  if (isMockMode) return mockDelay({ templateId: templateId || null, templateName: 'mock batch', moduleCode: 'mixed', rowCount: ids.length, fileName: 'mock-batch.xlsx' });
-  return request.post('/dispatched-orders/batch-export', { ids, templateId }) as Promise<DispatchedOrderExportResult>;
+export async function batchExportDispatchedOrders(ids: string[]): Promise<DispatchedOrderExportResult> {
+  if (isMockMode) return mockDelay({ templateId: null, templateName: 'mock fixed batch', moduleCode: 'mixed', rowCount: ids.length, fileName: 'mock-batch.xlsx' });
+  return request.post('/dispatched-orders/batch-export', { ids }) as Promise<DispatchedOrderExportResult>;
 }
 
 export async function deleteDispatchedOrder(id: string): Promise<void> {

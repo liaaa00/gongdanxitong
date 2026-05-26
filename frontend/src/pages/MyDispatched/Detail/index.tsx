@@ -95,7 +95,7 @@ const MyDispatchedDetail: React.FC = () => {
   const location = useLocation();
   const autoActionHandledRef = useRef<string>('');
   const { message, modal } = App.useApp();
-  const { hasRole, user } = useAuth();
+  const { hasRole, hasPermission, user } = useAuth();
   const scenario = 'dispatched:' + (id || '');
   const { permissions } = useFieldPermissions(scenario);
 
@@ -223,17 +223,17 @@ const MyDispatchedDetail: React.FC = () => {
   const isOrderCreator = Boolean(user?.id && parentCreatedBy === user.id);
   const isCreator = isAdminUser || isOrderCreator;
   const isVoided = Boolean(order?.void_at || order?.voidAt);
-  const canAccept = canBackendOperate && !isVoided && order?.status === 'pending';
-  const canComplete = canBackendOperate && !isVoided && order?.status === 'processing';
-  const canReturn = canBackendOperate && !isVoided && (order?.status === 'processing' || order?.status === 'pending');
-  const canSupplement = canBackendOperate && !isVoided && order?.status === 'processing' && supplementableFields.length > 0;
+  const canAccept = canBackendOperate && hasPermission(['action:dispatched_order.accept']) && !isVoided && order?.status === 'pending';
+  const canComplete = canBackendOperate && hasPermission(['action:dispatched_order.complete']) && !isVoided && order?.status === 'processing';
+  const canReturn = canBackendOperate && hasPermission(['action:dispatched_order.return']) && !isVoided && (order?.status === 'processing' || order?.status === 'pending');
+  const canSupplement = canBackendOperate && hasPermission(['action:dispatched_order.supplement']) && !isVoided && order?.status === 'processing' && supplementableFields.length > 0;
   const isTerminalStatus = Boolean(order && ['completed', 'withdraw_pending', 'withdrawn', 'void_pending', 'void'].includes(order.status));
   const isTerminal = isVoided || isTerminalStatus;
   const canCreatorOperate = Boolean(order && isCreator && !isVoided && !isTerminalStatus);
-  const canCreatorUpdate = canCreatorOperate;
-  const canCreatorUrge = canCreatorOperate && order?.status !== 'returned';
-  const canCreatorWithdraw = canCreatorOperate && order?.status !== 'returned';
-  const canCreatorVoid = canCreatorOperate;
+  const canCreatorUpdate = canCreatorOperate && hasPermission(['action:dispatched_order.creator_update']);
+  const canCreatorUrge = canCreatorOperate && hasPermission(['action:dispatched_order.urge']) && order?.status !== 'returned';
+  const canCreatorWithdraw = canCreatorOperate && hasPermission(['action:dispatched_order.withdraw']) && order?.status !== 'returned';
+  const canCreatorVoid = canCreatorOperate && hasPermission(['action:dispatched_order.void']);
   const canApproveWithdraw = canBackendOperate && order?.status === 'withdraw_pending' && (isAdminUser || !isOrderCreator);
   const canApproveVoid = canBackendOperate && order?.status === 'void_pending' && (isAdminUser || !isOrderCreator);
   const canReturnCompleted = canBackendOperate && !isVoided && order?.status === 'completed' && (
@@ -674,7 +674,7 @@ const MyDispatchedDetail: React.FC = () => {
           onCancel={() => setVoidOpen(false)} confirmLoading={actionLoading}
           okButtonProps={{ danger: true }} destroyOnHidden>
           <Alert style={{ marginBottom: 12 }} type="error" showIcon
-            message="作废只影响当前子工单，作废后该子工单不可继续办理。" />
+            message={order?.status === 'returned' ? '当前子工单已退回，作废将直接生效，不需要后道审批，仅记录审计日志。' : '作废只影响当前子工单，作废后该子工单不可继续办理。'} />
           <Form form={voidForm} layout="vertical">
             <Form.Item name="reason" label="作废原因"
               rules={[

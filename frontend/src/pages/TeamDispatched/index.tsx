@@ -2,28 +2,20 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageContainer, ProTable } from '@ant-design/pro-components';
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
-import { Alert, App, Button, Input, Modal, Popconfirm, Space, Tag, Tooltip } from 'antd';
-import { CheckCircleOutlined, DeleteOutlined, ExportOutlined, EyeOutlined, RollbackOutlined, UploadOutlined } from '@ant-design/icons';
+import { App, Button, Space, Tag, Tooltip } from 'antd';
+import { ExportOutlined, EyeOutlined } from '@ant-design/icons';
 import {
-  batchCompleteDispatchedOrders,
-  batchDeleteDispatchedOrders,
   batchExportDispatchedOrders,
-  batchReturnDispatchedOrders,
-  deleteDispatchedOrder,
   downloadDispatchedExport,
   getDispatchedOrders,
 } from '@/services/dispatchedOrders';
 import type { DispatchedOrderItem } from '@/services/dispatchedOrders';
-import DispatchedBatchImportModal from '@/components/DispatchedBatchImportModal';
-import type { DispatchedBatchImportMode } from '@/components/DispatchedBatchImportModal';
 import type { PageParams } from '@/services/mock';
 import { getModuleConfigs } from '@/services/moduleConfigs';
 import type { ModuleConfigItem } from '@/services/moduleConfigs';
 import { useAuth } from '@/hooks/useAuth';
-import { ROLE } from '@/constants/roles';
+// 团队页权限由角色动作矩阵控制，不再按固定角色放开办理入口。
 import { DISPATCHED_PROCESSING_STATUS_FILTER_VALUE, normalizeDispatchedStatusSearchParams } from '@/utils/dispatchedStatusFilter';
-
-const TERMINAL_OR_APPROVAL_STATUSES = ['completed', 'withdraw_pending', 'withdrawn', 'void_pending', 'void'];
 
 const STATUS_OPTIONS = [
   { value: DISPATCHED_PROCESSING_STATUS_FILTER_VALUE, label: '处理中', color: 'blue' },
@@ -35,6 +27,15 @@ const STATUS_OPTIONS = [
   { value: 'void_pending', label: '作废审批中', color: 'gold' },
 ];
 const STATUS_MAP: Record<string, { label: string; color: string }> = Object.fromEntries(STATUS_OPTIONS.map((item) => [item.value, item]));
+
+const PRIORITY_OPTIONS = [
+  { label: '紧急', value: 'urgent', color: 'red' },
+  { label: '普通', value: 'normal', color: 'blue' },
+];
+
+function getPriorityMeta(priority?: string | null) {
+  return PRIORITY_OPTIONS.find((item) => item.value === priority) || PRIORITY_OPTIONS[1];
+}
 
 const FALLBACK_MODULE_OPTIONS = [
   { label: '数据录入', value: 'data_entry' },
@@ -65,20 +66,10 @@ function getOperatorDisplay(record: DispatchedOrderItem) {
 const TeamDispatched: React.FC = () => {
   const navigate = useNavigate();
   const { message } = App.useApp();
-  const { hasRole } = useAuth();
-  const isAdmin = hasRole(ROLE.ADMIN);
+  const { hasPermission } = useAuth();
+  const canExport = hasPermission(['action:dispatched_order.export']);
   const actionRef = useRef<ActionType>();
   const [exporting, setExporting] = useState(false);
-  const [batchImportMode, setBatchImportMode] = useState<DispatchedBatchImportMode | null>(null);
-  const [batchCompleteVisible, setBatchCompleteVisible] = useState(false);
-  const [batchCompleteIds, setBatchCompleteIds] = useState<string[]>([]);
-  const [batchCompleteRemark, setBatchCompleteRemark] = useState('');
-  const [batchCompleteLoading, setBatchCompleteLoading] = useState(false);
-  const [batchReturnVisible, setBatchReturnVisible] = useState(false);
-  const [batchReturnIds, setBatchReturnIds] = useState<string[]>([]);
-  const [batchReturnReason, setBatchReturnReason] = useState('');
-  const [batchReturnLoading, setBatchReturnLoading] = useState(false);
-  const [batchCleanFn, setBatchCleanFn] = useState<(() => void) | null>(null);
   const [moduleOptions, setModuleOptions] = useState<Array<{ label: string; value: string }>>(FALLBACK_MODULE_OPTIONS);
 
   useEffect(() => {
@@ -103,62 +94,6 @@ const TeamDispatched: React.FC = () => {
   const moduleLabelMap = useMemo(() => Object.fromEntries(moduleOptions.map((item) => [item.value, item.label])), [moduleOptions]);
   const getModuleName = (code?: string | null) => moduleLabelMap[String(code || '')] || String(code || '未知模块');
 
-  const handleBatchComplete = async () => {
-    const remark = batchCompleteRemark.trim();
-    if (!remark) {
-      message.warning('请填写批量完成备注');
-      return;
-    }
-    if (batchCompleteIds.length === 0) {
-      message.warning('未选择任何子工单');
-      return;
-    }
-    setBatchCompleteLoading(true);
-    try {
-      const res = await batchCompleteDispatchedOrders(batchCompleteIds, remark);
-      const skipped = res.skipped?.length ?? 0;
-      if (skipped > 0) message.warning(`成功完成 ${res.completed} 条，${skipped} 条跳过`);
-      else message.success(`已批量完成 ${res.completed} 条子工单`);
-      setBatchCompleteVisible(false);
-      setBatchCompleteRemark('');
-      setBatchCompleteIds([]);
-      batchCleanFn?.();
-      actionRef.current?.reload();
-    } catch {
-      message.error('批量完成失败');
-    } finally {
-      setBatchCompleteLoading(false);
-    }
-  };
-
-  const handleBatchReturn = async () => {
-    const reason = batchReturnReason.trim();
-    if (!reason) {
-      message.warning('请填写批量退回原因');
-      return;
-    }
-    if (batchReturnIds.length === 0) {
-      message.warning('未选择任何子工单');
-      return;
-    }
-    setBatchReturnLoading(true);
-    try {
-      const res = await batchReturnDispatchedOrders(batchReturnIds, reason);
-      const skipped = res.skipped?.length ?? 0;
-      if (skipped > 0) message.warning(`成功退回 ${res.returned} 条，${skipped} 条跳过`);
-      else message.success(`已批量退回 ${res.returned} 条子工单`);
-      setBatchReturnVisible(false);
-      setBatchReturnReason('');
-      setBatchReturnIds([]);
-      batchCleanFn?.();
-      actionRef.current?.reload();
-    } catch {
-      message.error('批量退回失败');
-    } finally {
-      setBatchReturnLoading(false);
-    }
-  };
-
   const handleBatchExport = async (ids: string[]) => {
     if (ids.length === 0) {
       message.warning('请先选择要导出的子工单');
@@ -174,42 +109,6 @@ const TeamDispatched: React.FC = () => {
     } finally {
       setExporting(false);
     }
-  };
-
-  const handleDelete = async (id: string) => {
-    try {
-      await deleteDispatchedOrder(id);
-      message.success('删除成功');
-      actionRef.current?.reload();
-    } catch (err) {
-      message.error('删除失败');
-      throw err;
-    }
-  };
-
-  const handleBatchDelete = (ids: string[], onCleanSelected: () => void) => {
-    Modal.confirm({
-      title: '确认批量删除选中的部门子工单？',
-      content: `将删除已选 ${ids.length} 条子工单，建议仅用于清理测试数据，请再次确认。`,
-      okText: '确认删除',
-      okButtonProps: { danger: true },
-      cancelText: '取消',
-      onOk: async () => {
-        try {
-          const result = await batchDeleteDispatchedOrders(ids);
-          if (result.failed > 0) {
-            message.warning(`删除完成：成功 ${result.success} 条，失败 ${result.failed} 条`);
-          } else {
-            message.success(`已删除 ${result.success} 条子工单`);
-          }
-          onCleanSelected();
-          actionRef.current?.reload();
-        } catch (err) {
-          message.error('批量删除失败');
-          throw err;
-        }
-      },
-    });
   };
 
   const columns: ProColumns<DispatchedOrderItem>[] = useMemo(() => [
@@ -262,6 +161,14 @@ const TeamDispatched: React.FC = () => {
         return record.status === 'completed' ? text : <Tag color={text === '负责人未配置' ? 'orange' : 'blue'}>{text}</Tag>;
       },
     },
+    {
+      title: '优先级', dataIndex: 'priority', key: 'priority', width: 90, valueType: 'select',
+      fieldProps: { options: PRIORITY_OPTIONS.map(({ label, value }) => ({ label, value })) },
+      render: (_, record) => {
+        const priority = getPriorityMeta(record.priority);
+        return <Tag color={priority.color}>{priority.label}</Tag>;
+      },
+    },
     { title: '派发时间', dataIndex: 'dispatched_at', key: 'dispatched_at', width: 150, valueType: 'dateTime', hideInSearch: true },
     { title: '完成时间', dataIndex: 'completed_at', key: 'completed_at', width: 150, valueType: 'dateTime', hideInSearch: true },
     {
@@ -290,22 +197,11 @@ const TeamDispatched: React.FC = () => {
           <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => navigate('/my-dispatched/' + record.id)}>
             详情
           </Button>
-          {isAdmin && (
-            <Popconfirm
-              title="确认删除该部门子工单？"
-              description="删除后不可恢复，建议仅用于清理测试数据。"
-              okText="确认删除"
-              cancelText="取消"
-              okButtonProps={{ danger: true }}
-              onConfirm={() => handleDelete(record.id)}
-            >
-              <Button type="link" size="small" danger icon={<DeleteOutlined />}>删除</Button>
-            </Popconfirm>
-          )}
+          {/* 团队工单仅查看，不提供删除操作 */}
         </Space>
       ),
     },
-  ], [getModuleName, isAdmin, moduleOptions, navigate]);
+  ], [getModuleName, moduleOptions, navigate]);
 
   return (
     <PageContainer header={{ title: '部门子工单管理' }}>
@@ -320,120 +216,22 @@ const TeamDispatched: React.FC = () => {
         rowKey="id"
         search={{ labelWidth: 'auto' }}
         headerTitle="部门子工单列表"
-        toolBarRender={() => [
-          <Button key="import-status" icon={<UploadOutlined />} onClick={() => setBatchImportMode('status')}>导入办理结果</Button>,
-          <Button key="import-fields" icon={<UploadOutlined />} onClick={() => setBatchImportMode('fields')}>导入银行卡修改</Button>,
-        ]}
+        toolBarRender={false}
         pagination={{ defaultPageSize: 20, showSizeChanger: true }}
         dateFormatter="string"
-        rowSelection={{ preserveSelectedRowKeys: true }}
-        tableAlertRender={({ selectedRowKeys, selectedRows, onCleanSelected }) => {
-          const selected = selectedRows as DispatchedOrderItem[];
-          const operable = selected.filter((record) => !TERMINAL_OR_APPROVAL_STATUSES.includes(record.status) && !record.void_at);
-          return (
-            <Space wrap>
-              <span>已选 {selectedRowKeys.length} 项</span>
-              <Button size="small" onClick={onCleanSelected}>取消</Button>
-              <Button
-                size="small"
-                type="primary"
-                icon={<CheckCircleOutlined />}
-                disabled={operable.length === 0}
-                onClick={() => {
-                  setBatchCompleteIds(operable.map((record) => record.id));
-                  setBatchCompleteRemark('');
-                  setBatchCleanFn(() => onCleanSelected);
-                  setBatchCompleteVisible(true);
-                }}
-              >
-                批量完成{operable.length > 0 ? `（${operable.length}）` : ''}
-              </Button>
-              <Button
-                size="small"
-                danger
-                icon={<RollbackOutlined />}
-                disabled={operable.length === 0}
-                onClick={() => {
-                  setBatchReturnIds(operable.map((record) => record.id));
-                  setBatchReturnReason('');
-                  setBatchCleanFn(() => onCleanSelected);
-                  setBatchReturnVisible(true);
-                }}
-              >
-                批量退回{operable.length > 0 ? `（${operable.length}）` : ''}
-              </Button>
-              <Button size="small" icon={<ExportOutlined />} loading={exporting} onClick={() => handleBatchExport(selectedRowKeys.map(String))}>
-                按固定模板导出
-              </Button>
-              {isAdmin && (
-                <Button size="small" danger icon={<DeleteOutlined />} onClick={() => handleBatchDelete(selectedRowKeys.map(String), onCleanSelected)}>
-                  批量删除
-                </Button>
-              )}
-            </Space>
-          );
-        }}
+        rowSelection={canExport ? { preserveSelectedRowKeys: true } : false}
+        tableAlertRender={({ selectedRowKeys, onCleanSelected }) => (
+          <Space wrap>
+            <span>已选 {selectedRowKeys.length} 项</span>
+            <Button size="small" onClick={onCleanSelected}>取消</Button>
+            <Button size="small" icon={<ExportOutlined />} loading={exporting} onClick={() => handleBatchExport(selectedRowKeys.map(String))}>
+              按固定模板导出
+            </Button>
+          </Space>
+        )}
       />
 
-      <Modal
-        title="批量完成子工单"
-        open={batchCompleteVisible}
-        confirmLoading={batchCompleteLoading}
-        onOk={handleBatchComplete}
-        onCancel={() => {
-          setBatchCompleteVisible(false);
-          setBatchCompleteRemark('');
-        }}
-        width={520}
-      >
-        <Space direction="vertical" style={{ width: '100%' }}>
-          <Alert type="info" showIcon message={`将批量完成 ${batchCompleteIds.length} 条子工单，已完成或审批中的子单已自动跳过。`} />
-          <span>批量完成备注（必填）：</span>
-          <Input.TextArea
-            rows={4}
-            value={batchCompleteRemark}
-            onChange={(event) => setBatchCompleteRemark(event.target.value)}
-            placeholder="请输入批量完成说明，例如：本批次已线下办理完成"
-            maxLength={1024}
-            showCount
-          />
-        </Space>
-      </Modal>
-
-      <Modal
-        title="批量退回子工单"
-        open={batchReturnVisible}
-        confirmLoading={batchReturnLoading}
-        onOk={handleBatchReturn}
-        onCancel={() => {
-          setBatchReturnVisible(false);
-          setBatchReturnReason('');
-        }}
-        width={520}
-        okButtonProps={{ danger: true }}
-      >
-        <Space direction="vertical" style={{ width: '100%' }}>
-          <Alert type="warning" showIcon message={`将批量退回 ${batchReturnIds.length} 条子工单，已完成或审批中的子单已自动跳过。`} />
-          <span>批量退回原因（必填）：</span>
-          <Input.TextArea
-            rows={4}
-            value={batchReturnReason}
-            onChange={(event) => setBatchReturnReason(event.target.value)}
-            placeholder="请输入退回原因，例如：资料不完整，需要业务员补充"
-            maxLength={512}
-            showCount
-          />
-        </Space>
-      </Modal>
-
-      <DispatchedBatchImportModal
-        open={batchImportMode !== null}
-        mode={batchImportMode || 'status'}
-        moduleOptions={moduleOptions}
-        defaultModuleCode="onboarding_contact"
-        onClose={() => setBatchImportMode(null)}
-        onImported={() => actionRef.current?.reload()}
-      />
+      {/* 团队工单仅查看：不提供导入、批量完成、批量退回、删除等办理入口。 */}
     </PageContainer>
   );
 };

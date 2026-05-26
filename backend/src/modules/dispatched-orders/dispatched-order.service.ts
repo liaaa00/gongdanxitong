@@ -823,7 +823,8 @@ export class DispatchedOrderService {
   ): Promise<DispatchedOrderExportResult> {
     const order = await this.loadDispatchedOrder(id);
     await this.assertCanRead(order, user);
-    return this.exportTemplatesService.exportSingleDispatchedOrder(id, payload.templateId, user);
+    // 会议口径：子工单导出统一使用系统固定模板，不接受用户选择模板。
+    return this.exportTemplatesService.exportSingleDispatchedOrder(id, undefined, user);
   }
 
   async batchExport(payload: BatchExportDispatchedOrderDto, user: JwtUserPayload): Promise<DispatchedOrderExportResult> {
@@ -832,7 +833,8 @@ export class DispatchedOrderService {
       const order = await this.loadDispatchedOrder(id);
       await this.assertCanRead(order, user);
     }
-    return this.exportTemplatesService.exportDispatchedOrdersAuto(ids, payload.templateId ?? payload.template_id, user);
+    // 会议口径：批量导出同样统一使用系统固定模板，不接受用户选择模板。
+    return this.exportTemplatesService.exportDispatchedOrdersAuto(ids, undefined, user);
   }
 
   async remove(id: string, user: JwtUserPayload): Promise<{ success: boolean; id: string }> {
@@ -1090,6 +1092,15 @@ export class DispatchedOrderService {
     if (query.dispatchedTo) qb.andWhere('d.dispatched_at <= :dispatchedTo', { dispatchedTo: query.dispatchedTo });
     if (query.completedFrom) qb.andWhere('d.completed_at >= :completedFrom', { completedFrom: query.completedFrom });
     if (query.completedTo) qb.andWhere('d.completed_at <= :completedTo', { completedTo: query.completedTo });
+    if (query.priority === 'urgent') {
+      qb.andWhere('d.due_at IS NOT NULL AND d.due_at < NOW() AND d.status NOT IN (:...priorityTerminalStatuses)', {
+        priorityTerminalStatuses: [DispatchedOrderStatus.COMPLETED, DispatchedOrderStatus.WITHDRAWN, DispatchedOrderStatus.VOID],
+      });
+    } else if (query.priority === 'normal') {
+      qb.andWhere('(d.due_at IS NULL OR d.due_at >= NOW() OR d.status IN (:...priorityTerminalStatuses))', {
+        priorityTerminalStatuses: [DispatchedOrderStatus.COMPLETED, DispatchedOrderStatus.WITHDRAWN, DispatchedOrderStatus.VOID],
+      });
+    }
     if (query.onlyDirty) {
       qb.andWhere('EXISTS (SELECT 1 FROM work_order_field_dirty_marks dm WHERE dm.dispatched_order_id = d.id AND dm.is_active = true)');
     }
@@ -1337,6 +1348,7 @@ export class DispatchedOrderService {
       sla_hours: order.slaHours ?? null,
       slaReminderBeforeHours: order.slaReminderBeforeHours ?? null,
       sla_reminder_before_hours: order.slaReminderBeforeHours ?? null,
+      priority: this.resolvePriority(order),
       acceptedAt: order.acceptedAt,
       accepted_at: order.acceptedAt,
       completedAt: order.completedAt,
@@ -1350,6 +1362,12 @@ export class DispatchedOrderService {
       configuredHandlerNames,
       configured_handler_names: configuredHandlerNames,
     };
+  }
+
+  private resolvePriority(order: DispatchedOrder): 'urgent' | 'normal' {
+    const terminalStatuses = [DispatchedOrderStatus.COMPLETED, DispatchedOrderStatus.WITHDRAWN, DispatchedOrderStatus.VOID];
+    if (order.dueAt && order.dueAt.getTime() < Date.now() && !terminalStatuses.includes(order.status)) return 'urgent';
+    return 'normal';
   }
 
   private async assertCanRead(order: DispatchedOrder, user: JwtUserPayload): Promise<void> {

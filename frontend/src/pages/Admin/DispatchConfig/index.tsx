@@ -346,17 +346,22 @@ const AdminDispatchConfig: React.FC = () => {
     }
   };
 
-  const renderPerson = (person?: DispatchConfigPerson | string | null, fallbackUserId?: string) => {
+  const renderPerson = (person?: DispatchConfigPerson | string | null, fallbackUserId?: string, roleLabel?: string) => {
     const userId = firstValidText(fallbackUserId, personUserId(person), typeof person === 'string' ? person : undefined);
     const name = userLabel(userId) || personName(person);
     if (!name) {
       return (
         <Tooltip title={EMPTY_PERSON_TIP}>
-          <Tag color="warning">未配置</Tag>
+          <Tag color="warning">{roleLabel ? `${roleLabel}未配置` : '未配置'}</Tag>
         </Tooltip>
       );
     }
-    return <Tag color="blue">{name}</Tag>;
+    return (
+      <Space size={4} wrap>
+        {roleLabel && <Tag color={roleLabel === '主' ? 'green' : 'geekblue'}>{roleLabel}</Tag>}
+        <Tag color="blue">{name}</Tag>
+      </Space>
+    );
   };
 
   const renderActive = (row: DispatchConfigItem) => (
@@ -594,9 +599,9 @@ const AdminDispatchConfig: React.FC = () => {
 
   const defaultColumns: ProColumns<DispatchConfigItem>[] = [
     { title: '模块', width: 220, render: (_, row) => <Text strong>{rowModuleLabel(row)}</Text> },
-    { title: '主负责人', width: 170, render: (_, row) => renderPerson(row.primary, rowPrimaryId(row)) },
-    { title: 'AB角 1', width: 170, render: (_, row) => renderPerson(row.backup1) },
-    { title: 'AB角 2', width: 170, render: (_, row) => renderPerson(row.backup2) },
+    { title: '主负责人', width: 190, render: (_, row) => renderPerson(row.primary, rowPrimaryId(row), '主') },
+    { title: '备用负责人 1', width: 190, render: (_, row) => renderPerson(row.backup1, undefined, '备1') },
+    { title: '备用负责人 2', width: 190, render: (_, row) => renderPerson(row.backup2, undefined, '备2') },
     { title: '启用', width: 100, render: (_, row) => renderActive(row) },
     {
       title: '办理时限',

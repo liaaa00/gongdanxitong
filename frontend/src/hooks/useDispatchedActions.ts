@@ -66,10 +66,10 @@ export function useDispatchedActions({ orderId, order, onOrderUpdated }: UseDisp
     return null;
   }, [orderId, onOrderUpdated]);
 
-  const handleExport = useCallback(async (templateId?: string) => {
+  const handleExport = useCallback(async () => {
     setActionLoading(true);
     try {
-      const result = await exportDispatchedOrder(orderId, templateId || undefined);
+      const result = await exportDispatchedOrder(orderId);
       downloadDispatchedExport(result, `子工单_${order?.order_no || orderId}.xlsx`);
       message.success('导出成功');
     } catch { message.error('导出失败'); }

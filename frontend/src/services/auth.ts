@@ -4,6 +4,7 @@ import { isMockMode, mockDelay } from './mock';
 import { validateUserCredentials, changeUserPassword } from './users';
 import { loadList } from './_mockStore';
 import type { RoleItem } from './roles';
+import { DEFAULT_MATRIX, type RoleActionCode } from './roleActionPermissions';
 
 const ROLES_KEY = 'mock_admin_roles_v3'; // ★ v3: 新增福保负责人角色（与 roles.ts 一致）
 const ROLES_SEED: RoleItem[] = [
@@ -31,6 +32,7 @@ type RawUser = Partial<UserInfo> & {
   avatarUrl?: string | null;
   roles?: RawRole[];
   permissions?: string[];
+  action_permissions?: string[];
 };
 
 type RawLoginResponse = Partial<LoginResponse> & {
@@ -39,6 +41,7 @@ type RawLoginResponse = Partial<LoginResponse> & {
   user?: RawUser;
   roles?: RawRole[];
   permissions?: string[];
+  action_permissions?: string[];
 };
 
 function getRolesMap(): Map<string, RoleItem> {
@@ -62,6 +65,14 @@ function setMockSessionUser(user: UserInfo) {
   try { window.localStorage.setItem(MOCK_SESSION_KEY, JSON.stringify(user)); } catch { /* ignore */ }
 }
 
+function getMockActionPermissions(roleCodes: string[]): RoleActionCode[] {
+  const allowed = new Set<RoleActionCode>();
+  for (const code of roleCodes) {
+    for (const action of DEFAULT_MATRIX[code] || []) allowed.add(action);
+  }
+  return Array.from(allowed);
+}
+
 function normalizeRole(role: RawRole, rolesMap = getRolesMap()): RoleInfo {
   if (typeof role === 'string') {
     const roleDef = Array.from(rolesMap.values()).find((item) => item.code === role);
@@ -83,9 +94,11 @@ function normalizeRole(role: RawRole, rolesMap = getRolesMap()): RoleInfo {
   };
 }
 
-function normalizeUserInfo(rawUser: RawUser | undefined, rawRoles?: RawRole[], rawPermissions?: string[]): UserInfo {
+function normalizeUserInfo(rawUser: RawUser | undefined, rawRoles?: RawRole[], rawPermissions?: string[], rawActionPermissions?: string[]): UserInfo {
   const roles = (rawRoles || rawUser?.roles || []).map((role) => normalizeRole(role));
-  const permissions = rawPermissions || rawUser?.permissions || roles.map((role) => `role:${role.code}`);
+  const actionPermissions = rawActionPermissions || rawUser?.action_permissions || [];
+  const basePermissions = rawPermissions || rawUser?.permissions || roles.map((role) => `role:${role.code}`);
+  const permissions = Array.from(new Set([...basePermissions, ...actionPermissions.map((code) => `action:${code}`)]));
 
   return {
     id: rawUser?.id || '',
@@ -97,12 +110,13 @@ function normalizeUserInfo(rawUser: RawUser | undefined, rawRoles?: RawRole[], r
     is_active: rawUser?.is_active ?? rawUser?.isActive ?? true,
     roles,
     permissions,
+    action_permissions: actionPermissions,
   };
 }
 
 function normalizeLoginResponse(raw: RawLoginResponse): LoginResponse {
   const token = raw.token || raw.accessToken || '';
-  const user = normalizeUserInfo(raw.user, raw.roles, raw.permissions);
+  const user = normalizeUserInfo(raw.user, raw.roles, raw.permissions, raw.action_permissions);
   return {
     token,
     accessToken: raw.accessToken || token,
@@ -110,6 +124,7 @@ function normalizeLoginResponse(raw: RawLoginResponse): LoginResponse {
     user,
     roles: user.roles,
     permissions: user.permissions,
+    action_permissions: user.action_permissions,
     must_change_password: raw.must_change_password ?? user.must_change_password ?? false,
   };
 }
@@ -120,6 +135,17 @@ export async function login(data: LoginRequest): Promise<LoginResponse> {
     const user = validateUserCredentials(data.username, data.password);
     if (user) {
       const rolesMap = getRolesMap();
+      const roles = user.roles.map((r) => {
+        const roleDef = rolesMap.get(r.role_id);
+        return {
+          id: r.role_id,
+          code: roleDef?.code || r.role_id,
+          name: roleDef?.name || r.role_name,
+          level: roleDef?.level || '',
+        };
+      });
+      const actionPermissions = getMockActionPermissions(roles.map((role) => role.code));
+      const isAdmin = roles.some((role) => role.code === 'admin');
       const userInfo: UserInfo = {
         id: user.id,
         username: user.username,
@@ -128,16 +154,9 @@ export async function login(data: LoginRequest): Promise<LoginResponse> {
         phone: user.phone,
         avatar_url: null,
         is_active: user.is_active,
-        roles: user.roles.map((r) => {
-          const roleDef = rolesMap.get(r.role_id);
-          return {
-            id: r.role_id,
-            code: roleDef?.code || r.role_id,
-            name: roleDef?.name || r.role_name,
-            level: roleDef?.level || '',
-          };
-        }),
-        permissions: user.roles.some((r) => rolesMap.get(r.role_id)?.code === 'admin') ? ['*'] : [],
+        roles,
+        permissions: isAdmin ? ['*'] : actionPermissions.map((code) => `action:${code}`),
+        action_permissions: actionPermissions,
       };
       setMockSessionUser(userInfo);
       return {
@@ -145,6 +164,7 @@ export async function login(data: LoginRequest): Promise<LoginResponse> {
         user: userInfo,
         roles: userInfo.roles,
         permissions: userInfo.permissions,
+        action_permissions: userInfo.action_permissions,
       };
     }
     throw new Error('用户名或密码错误');

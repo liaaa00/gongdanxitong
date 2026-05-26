@@ -92,7 +92,7 @@ const RoleRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useUserStore();
   const location = useLocation();
   if (!user) return <Loading />;
-  if (!canAccessPath(location.pathname, user.roles)) return <Navigate to="/403" replace />;
+  if (!canAccessPath(location.pathname, user.roles, user.permissions)) return <Navigate to="/403" replace />;
   return <>{children}</>;
 };
 

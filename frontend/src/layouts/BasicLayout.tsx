@@ -145,7 +145,7 @@ const RAW_MENU: MenuItem[] = [
       { path: '/my-work/pending', name: '我的待办', key: 'my-work-pending', roles: [...PENDING_WORK_ROLES] },
       { path: '/my-work/done', name: '我的已办', key: 'my-work-done', roles: [...DONE_WORK_ROLES] },
       { path: '/my-work/team', name: '团队工单', key: 'my-work-team', icon: <BarChartOutlined />, roles: [...TEAM_WORK_ROLES] },
-      { path: '/my-work/history', name: '历史工单', key: 'my-work-history', roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.DATA_ENTRY_LEADER, ROLE.SHARED_TEAM_OWNER, ROLE.LABOR_CONTRACT_MEMBER, ROLE.ONBOARDING_RESIGNATION_MEMBER, ROLE.SOCIAL_INSURANCE_SPECIALIST] },
+      { path: '/my-work/history', name: '历史工单', key: 'my-work-history', roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.DATA_ENTRY_LEADER, ROLE.SHARED_TEAM_OWNER, ROLE.LABOR_CONTRACT_MEMBER, ROLE.ONBOARDING_RESIGNATION_MEMBER, ROLE.SOCIAL_INSURANCE_SPECIALIST] },
     ],
   },
   { path: '/notifications', name: '消息通知', icon: <BellOutlined /> },
@@ -170,13 +170,13 @@ const RAW_MENU: MenuItem[] = [
   },
 ];
 
-function filterMenuByRoles(items: MenuItem[], userRoles: { code?: string }[] | undefined): MenuItem[] {
+function filterMenuByRoles(items: MenuItem[], userRoles: { code?: string }[] | undefined, userPermissions: string[] = []): MenuItem[] {
   const next: MenuItem[] = [];
   for (const it of items) {
     if (it.menuVisible === false) continue;
-    const filteredChildren = it.children?.length ? filterMenuByRoles(it.children, userRoles) : undefined;
+    const filteredChildren = it.children?.length ? filterMenuByRoles(it.children, userRoles, userPermissions) : undefined;
     const roleAllowed = !it.roles?.length || userHasAnyCanonicalRole(userRoles, it.roles);
-    const pathAllowed = canAccessPath(it.path, userRoles);
+    const pathAllowed = canAccessPath(it.path, userRoles, userPermissions);
     const selfAllowed = roleAllowed && pathAllowed;
     if (!selfAllowed && (!filteredChildren || filteredChildren.length === 0)) continue;
     next.push({ ...it, children: filteredChildren });
@@ -234,8 +234,8 @@ const BasicLayout: React.FC = () => {
 
   // 按角色过滤菜单（用户没有权限的页面，菜单直接不渲染）
   const filteredMenu = useMemo(
-    () => filterMenuByRoles(RAW_MENU, user?.roles),
-    [user?.roles],
+    () => filterMenuByRoles(RAW_MENU, user?.roles, user?.permissions || []),
+    [user?.roles, user?.permissions],
   );
 
   const rootSubmenuKeys = useMemo(

@@ -15,6 +15,7 @@ export interface LoginResult {
     phone: string | null;
     roles: string[];
     permissions: string[];
+    action_permissions: string[];
     mustChangePassword: boolean;
     must_change_password: boolean;
   };

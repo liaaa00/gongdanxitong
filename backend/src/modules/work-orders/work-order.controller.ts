@@ -71,6 +71,7 @@ export class WorkOrderController {
   }
 
   @Put(':id')
+  @BusinessPermission('work_order.update')
   @FieldPermissionScenario('main')
   update(
     @Param('id') id: string,
@@ -81,6 +82,7 @@ export class WorkOrderController {
   }
 
   @Post(':id/submit')
+  @BusinessPermission('work_order.update')
   @FieldPermissionScenario('main')
   submit(
     @Param('id') id: string,
@@ -91,6 +93,7 @@ export class WorkOrderController {
   }
 
   @Post(':id/resubmit')
+  @BusinessPermission('work_order.update')
   @FieldPermissionScenario('main')
   resubmit(
     @Param('id') id: string,
@@ -101,6 +104,7 @@ export class WorkOrderController {
   }
 
   @Post(':id/withdraw')
+  @BusinessPermission('work_order.withdraw')
   @FieldPermissionScenario('main')
   withdraw(
     @Param('id') id: string,
@@ -121,6 +125,7 @@ export class WorkOrderController {
   }
 
   @Post(':id/urge')
+  @BusinessPermission('work_order.urge')
   @FieldPermissionScenario('main')
   urge(
     @Param('id') id: string,
@@ -131,6 +136,7 @@ export class WorkOrderController {
   }
 
   @Post(':id/void')
+  @BusinessPermission('work_order.void')
   @FieldPermissionScenario('main')
   voidWorkOrder(
     @Param('id') id: string,
