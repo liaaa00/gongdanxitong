@@ -19,8 +19,8 @@ import { WorkOrderDetailItem, WorkOrderSubOrderItem } from './work-order.types';
 import { SubmitWorkOrderDto } from './dto/submit.dto';
 import { WorkOrderValidationService } from './work-order-validation.service';
 import {
-  OnboardingChild,
-  buildOnboardingChildren,
+  DispatchChild,
+  buildWorkOrderDispatchChildren,
 } from './onboarding-dispatch.helper';
 
 @Injectable()
@@ -66,9 +66,9 @@ export class WorkOrderResubmitService {
       const before = snapshotWorkOrder(workOrder);
       this.mergeExtraData(workOrder, payload.extraData);
       await this.validationService.validateWorkOrder(workOrder);
-      const childrenToCreate = await buildOnboardingChildren(workOrder, manager, this.fieldPermissionService);
+      const childrenToCreate = await buildWorkOrderDispatchChildren(workOrder, manager, this.fieldPermissionService);
       if (childrenToCreate.length === 0) {
-        throw businessException(4202, HttpStatus.BAD_REQUEST, '无可派发规则命中');
+        throw businessException(4202, HttpStatus.BAD_REQUEST, '无可派发办理模块');
       }
       const existing = await dispatchedRepo.find({ where: { parentOrderId: workOrder.id } });
       const touched = await this.applyChildren(dispatchedRepo, existing, childrenToCreate, workOrder.id);
@@ -125,7 +125,7 @@ export class WorkOrderResubmitService {
   private async applyChildren(
     repository: Repository<DispatchedOrder>,
     existingChildren: DispatchedOrder[],
-    nextChildren: OnboardingChild[],
+    nextChildren: DispatchChild[],
     parentOrderId: string,
   ): Promise<DispatchedOrder[]> {
     const byModule = new Map(existingChildren.map((child) => [child.moduleCode, child]));

@@ -1,6 +1,7 @@
 import { DataSource } from 'typeorm';
 import {
   ActionConfig,
+  DispatchStrategy,
   ExportTemplate,
   FieldConfig,
   ModuleField,

@@ -8,6 +8,7 @@ export interface DispatchConfigPerson {
   userId?: string;
   name?: string;
   displayName?: string | null;
+  display_name?: string | null;
   real_name?: string;
   realName?: string;
   username?: string;
@@ -28,6 +29,9 @@ export interface DispatchConfigItem {
   primary?: DispatchConfigPerson | string | null;
   backup1?: DispatchConfigPerson | string | null;
   backup2?: DispatchConfigPerson | string | null;
+  handlers?: DispatchConfigPerson[];
+  handlerIds?: string[];
+  handler_ids?: string[];
   handler_id?: string;
   handlerId?: string;
   handler_name?: string;
@@ -56,6 +60,10 @@ export interface DispatchConfigItem {
   allow_manual_override?: boolean;
   allowManualOverride?: boolean;
   priority?: number;
+  sla_hours?: number;
+  slaHours?: number;
+  parent_module_code?: string | null;
+  parentModuleCode?: string | null;
 }
 
 function normalizeDispatchConfigItem(item: any): DispatchConfigItem {
@@ -67,6 +75,8 @@ function normalizeDispatchConfigItem(item: any): DispatchConfigItem {
   const triggerConditions = item.trigger_conditions ?? item.triggerConditions ?? advanced.triggerConditions ?? advanced.trigger_conditions;
   const allowManualOverride = item.allow_manual_override ?? item.allowManualOverride ?? advanced.allowManualOverride ?? advanced.allow_manual_override;
   const isActive = item.is_active ?? item.isActive ?? advanced.isActive ?? advanced.is_active;
+  const handlerIds = item.handler_ids ?? item.handlerIds ?? [];
+  const slaHours = item.sla_hours ?? item.slaHours;
 
   return {
     ...item,
@@ -84,6 +94,9 @@ function normalizeDispatchConfigItem(item: any): DispatchConfigItem {
     primary: item.primary ?? null,
     backup1: item.backup1 ?? null,
     backup2: item.backup2 ?? null,
+    handlers: Array.isArray(item.handlers) ? item.handlers : [],
+    handlerIds,
+    handler_ids: handlerIds,
     rule_name: item.rule_name ?? item.ruleName ?? advanced.ruleName ?? advanced.rule_name,
     ruleName: item.ruleName ?? item.rule_name ?? advanced.ruleName ?? advanced.rule_name,
     order_type: orderType,
@@ -103,6 +116,10 @@ function normalizeDispatchConfigItem(item: any): DispatchConfigItem {
     allow_manual_override: allowManualOverride,
     allowManualOverride,
     priority: item.priority ?? advanced.priority,
+    sla_hours: slaHours,
+    slaHours,
+    parent_module_code: item.parent_module_code ?? item.parentModuleCode,
+    parentModuleCode: item.parentModuleCode ?? item.parent_module_code,
     is_active: isActive,
     isActive,
   } as DispatchConfigItem;

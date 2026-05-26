@@ -65,6 +65,11 @@ export enum DispatchModuleCode {
   SOCIAL_INSURANCE = 'social_insurance',
   ONBOARDING_CONTACT = 'onboarding_contact',
   CONTRACT = 'contract',
+  RENEWAL_CONTRACT = 'renewal_contract',
+  BENEFIT_APPLY = 'benefit_apply',
+  RESIGNATION_CONTACT = 'resignation_contact',
+  RESIGNATION_CERT = 'resignation_cert',
+  DATA_ENTRY_RESIGN = 'data_entry_resign',
 }
 
 export const ONBOARDING_DISPATCH_MODULE_CODES: readonly DispatchModuleCode[] = [
@@ -74,9 +79,21 @@ export const ONBOARDING_DISPATCH_MODULE_CODES: readonly DispatchModuleCode[] = [
   DispatchModuleCode.CONTRACT,
 ];
 
+export const ALL_DISPATCH_MODULE_CODES: readonly DispatchModuleCode[] = [
+  DispatchModuleCode.DATA_ENTRY,
+  DispatchModuleCode.SOCIAL_INSURANCE,
+  DispatchModuleCode.ONBOARDING_CONTACT,
+  DispatchModuleCode.CONTRACT,
+  DispatchModuleCode.RENEWAL_CONTRACT,
+  DispatchModuleCode.BENEFIT_APPLY,
+  DispatchModuleCode.RESIGNATION_CONTACT,
+  DispatchModuleCode.RESIGNATION_CERT,
+  DispatchModuleCode.DATA_ENTRY_RESIGN,
+];
+
 export function isDispatchModuleCode(value: unknown): value is DispatchModuleCode {
   return typeof value === 'string'
-    && (ONBOARDING_DISPATCH_MODULE_CODES as readonly string[]).includes(value);
+    && (ALL_DISPATCH_MODULE_CODES as readonly string[]).includes(value);
 }
 
 export enum ImportJobStatus {

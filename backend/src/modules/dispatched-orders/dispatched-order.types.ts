@@ -19,6 +19,8 @@ export interface DispatchedOrderListItem {
   status: DispatchedOrderStatus;
   handlerId: string | null;
   handler_id?: string | null;
+  handlerName?: string | null;
+  handler_name?: string | null;
   employeeName: string;
   employee_name?: string;
   customerId: string;

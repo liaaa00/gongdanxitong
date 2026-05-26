@@ -284,7 +284,7 @@ function deleteChildInParent(childId: string): boolean {
   return false;
 }
 
-export async function getDispatchedOrders(params: PageParams & { module_code?: string; handlerId?: string; handler_id?: string }): Promise<PageResult<DispatchedOrderItem>> {
+export async function getDispatchedOrders(params: PageParams & { module_code?: string; moduleCode?: string; handlerId?: string; handler_id?: string; onlyPool?: boolean; onlyUnclaimed?: boolean }): Promise<PageResult<DispatchedOrderItem>> {
   if (isMockMode) {
     let list = flattenDispatched();
     if (params.status) list = list.filter((d) => d.status === params.status);

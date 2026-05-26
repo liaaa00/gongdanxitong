@@ -8,6 +8,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { DispatchStrategy } from './enums';
 
 @Entity({ name: 'work_order_modules' })
 export class WorkOrderModuleConfig {
@@ -41,6 +42,17 @@ export class WorkOrderModuleConfig {
 
   @Column({ name: 'display_order', type: 'int', default: 0 })
   displayOrder!: number;
+
+  @Column({
+    name: 'dispatch_strategy',
+    type: 'enum',
+    enum: DispatchStrategy,
+    default: DispatchStrategy.POOL,
+  })
+  dispatchStrategy!: DispatchStrategy;
+
+  @Column({ name: 'sla_hours', type: 'int', default: 72 })
+  slaHours!: number;
 
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive!: boolean;

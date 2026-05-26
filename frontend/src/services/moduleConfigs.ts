@@ -10,6 +10,8 @@ export interface ModuleConfigItem {
   module_type?: string;
   description?: string | null;
   display_order?: number;
+  dispatch_strategy?: string;
+  sla_hours?: number;
   is_active: boolean;
   created_at?: string;
   updated_at?: string;
@@ -18,6 +20,8 @@ export interface ModuleConfigItem {
   parentModuleCode?: string | null;
   moduleType?: string;
   displayOrder?: number;
+  dispatchStrategy?: string;
+  slaHours?: number;
   isActive?: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -49,6 +53,8 @@ function normalizeModuleConfig(raw: any): ModuleConfigItem {
     module_type: raw.module_type ?? raw.moduleType,
     description: raw.description ?? null,
     display_order: raw.display_order ?? raw.displayOrder ?? 0,
+    dispatch_strategy: raw.dispatch_strategy ?? raw.dispatchStrategy ?? 'pool',
+    sla_hours: raw.sla_hours ?? raw.slaHours ?? 72,
     is_active: raw.is_active ?? raw.isActive ?? true,
     created_at: raw.created_at ?? raw.createdAt,
     updated_at: raw.updated_at ?? raw.updatedAt,
@@ -63,6 +69,8 @@ function packModuleConfig(data: Partial<ModuleConfigItem>): Record<string, unkno
   if (data.module_type !== undefined || data.moduleType !== undefined) body.moduleType = data.module_type ?? data.moduleType;
   if (data.description !== undefined) body.description = data.description;
   if (data.display_order !== undefined || data.displayOrder !== undefined) body.displayOrder = data.display_order ?? data.displayOrder;
+  if (data.dispatch_strategy !== undefined || data.dispatchStrategy !== undefined) body.dispatchStrategy = data.dispatch_strategy ?? data.dispatchStrategy;
+  if (data.sla_hours !== undefined || data.slaHours !== undefined) body.slaHours = data.sla_hours ?? data.slaHours;
   if (data.is_active !== undefined || data.isActive !== undefined) body.isActive = data.is_active ?? data.isActive;
   return body;
 }

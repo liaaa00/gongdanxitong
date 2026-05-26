@@ -177,7 +177,7 @@ const MyDispatched: React.FC = () => {
       <ProTable<DispatchedOrderItem>
         actionRef={actionRef} columns={columns} rowKey="id"
         request={async (params: PageParams) => {
-          const result = await getDispatchedOrders({ ...params, handlerId: 'current' });
+          const result = await getDispatchedOrders({ ...params });
           const warnCount = result.list.filter((d) => {
             const sla = getSlaStatus(d.dispatched_at, d.status, d.due_at);
             return sla && (sla.color === '#ff4d4f' || sla.color === '#000');

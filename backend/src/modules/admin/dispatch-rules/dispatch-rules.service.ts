@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { DispatchRule, DispatchStrategy, ModuleHandler, OrderType } from 'src/entities';
+import { DispatchRule, DispatchStrategy, ModuleHandler, OrderType, WorkOrderModuleConfig } from 'src/entities';
 import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 import { toPageResult } from 'src/common/types/pagination.types';
 import { AstValidator } from 'src/modules/dispatch/ast.validator';
@@ -32,7 +32,12 @@ interface SaveDispatchRuleInput {
 
 export interface DispatchConfigPerson {
   userId: string | null;
+  user_id: string | null;
   displayName: string | null;
+  display_name: string | null;
+  realName?: string | null;
+  real_name?: string | null;
+  username?: string | null;
 }
 
 export interface DispatchConfigResponse {
@@ -46,6 +51,8 @@ export class DispatchRulesService {
     private readonly repository: Repository<DispatchRule>,
     @InjectRepository(ModuleHandler)
     private readonly moduleHandlerRepository: Repository<ModuleHandler>,
+    @InjectRepository(WorkOrderModuleConfig)
+    private readonly moduleRepository: Repository<WorkOrderModuleConfig>,
     private readonly astValidator: AstValidator,
     private readonly dispatchEngine: DispatchEngineService,
   ) {}
@@ -79,17 +86,16 @@ export class DispatchRulesService {
   }
 
   async getDispatchConfig(): Promise<DispatchConfigResponse> {
-    const handlers = await this.moduleHandlerRepository.find({
-      where: { isActive: true },
-      relations: { handler: true },
-      order: { moduleCode: 'ASC', isBackup: 'ASC', weight: 'DESC', id: 'ASC' },
-    });
-
-    const rules = await this.repository.find({
-      where: { isActive: true },
-      relations: { customer: true, assigneeUser: true, fallbackUser: true },
-      order: { targetModule: 'ASC', subModule: 'ASC', priority: 'ASC', createdAt: 'ASC' },
-    });
+    const [modules, handlers] = await Promise.all([
+      this.moduleRepository.find({
+        order: { displayOrder: 'ASC', moduleCode: 'ASC' },
+      }),
+      this.moduleHandlerRepository.find({
+        where: { isActive: true },
+        relations: { handler: true },
+        order: { moduleCode: 'ASC', isBackup: 'ASC', weight: 'DESC', id: 'ASC' },
+      }),
+    ]);
 
     const handlersByModule = new Map<string, ModuleHandler[]>();
     for (const handler of handlers) {
@@ -98,49 +104,47 @@ export class DispatchRulesService {
       handlersByModule.set(handler.moduleCode, group);
     }
 
-    const handlerRows = Array.from(handlersByModule.entries()).map(([moduleCode, moduleHandlers]) => {
-      const ordered = [...moduleHandlers].sort((left, right) => {
-        if (left.isBackup !== right.isBackup) return Number(left.isBackup) - Number(right.isBackup);
-        return right.weight - left.weight || left.id.localeCompare(right.id);
+    const rows = modules
+      .filter((module) => !['business_module', 'main'].includes(module.moduleType))
+      .map((module) => {
+        const moduleHandlers = [...(handlersByModule.get(module.moduleCode) ?? [])].sort((left, right) => {
+          if (left.isBackup !== right.isBackup) return Number(left.isBackup) - Number(right.isBackup);
+          return right.weight - left.weight || left.id.localeCompare(right.id);
+        });
+        const handlerPeople = moduleHandlers.map((handler) => this.toDispatchConfigPerson(handler));
+
+        return {
+          id: module.id,
+          source: 'handlers' as const,
+          module: module.moduleName,
+          moduleName: module.moduleName,
+          module_name: module.moduleName,
+          moduleCode: module.moduleCode,
+          module_code: module.moduleCode,
+          subModule: module.moduleCode,
+          sub_module: module.moduleCode,
+          parentModuleCode: module.parentModuleCode,
+          parent_module_code: module.parentModuleCode,
+          customerName: '全部客户',
+          customer_name: '全部客户',
+          customerId: null,
+          customer_id: null,
+          primary: handlerPeople[0] ?? null,
+          backup1: handlerPeople[1] ?? null,
+          backup2: handlerPeople[2] ?? null,
+          handlers: handlerPeople,
+          handlerIds: moduleHandlers.map((handler) => handler.handlerId),
+          handler_ids: moduleHandlers.map((handler) => handler.handlerId),
+          dispatchStrategy: module.dispatchStrategy ?? DispatchStrategy.POOL,
+          dispatch_strategy: module.dispatchStrategy ?? DispatchStrategy.POOL,
+          slaHours: module.slaHours ?? 72,
+          sla_hours: module.slaHours ?? 72,
+          isActive: module.isActive,
+          is_active: module.isActive,
+        };
       });
 
-      return {
-        id: ordered[0]?.id ?? moduleCode,
-        source: 'handlers' as const,
-        module: moduleCode,
-        subModule: moduleCode,
-        customerName: '全部客户',
-        customerId: null,
-        primary: this.toDispatchConfigPerson(ordered[0]),
-        backup1: this.toDispatchConfigPerson(ordered[1]),
-        backup2: this.toDispatchConfigPerson(ordered[2]),
-      };
-    });
-
-    const ruleRows = rules.map((rule) => ({
-      id: rule.id,
-      source: 'rules' as const,
-      module: rule.targetModule,
-      subModule: rule.subModule ?? rule.targetModule,
-      customerName: rule.customer?.customerName ?? (rule.customerId ? '指定客户' : '全部客户（按条件）'),
-      customerId: rule.customerId,
-      primary: this.toDispatchConfigPersonFromUser(rule.assigneeUserId, rule.assigneeUser),
-      backup1: this.toDispatchConfigPersonFromUser(rule.fallbackUserId, rule.fallbackUser),
-      backup2: null,
-      advanced: {
-        ruleName: rule.ruleName,
-        orderType: rule.orderType,
-        triggerConditions: rule.triggerConditions,
-        departmentId: rule.departmentId,
-        strategy: rule.dispatchStrategy,
-        dispatchStrategy: rule.dispatchStrategy,
-        allowManualOverride: rule.allowManualOverride,
-        priority: rule.priority,
-        isActive: rule.isActive,
-      },
-    }));
-
-    return { rows: [...handlerRows, ...ruleRows] };
+    return { rows };
   }
 
   async getById(id: string): Promise<DispatchRule> {
@@ -223,9 +227,15 @@ export class DispatchRulesService {
     user?: { realName?: string | null; username?: string | null } | null,
   ): DispatchConfigPerson | null {
     if (!userId) return null;
+    const displayName = user?.realName ?? user?.username ?? userId;
     return {
       userId,
-      displayName: user?.realName ?? user?.username ?? userId,
+      user_id: userId,
+      displayName,
+      display_name: displayName,
+      realName: user?.realName ?? null,
+      real_name: user?.realName ?? null,
+      username: user?.username ?? null,
     };
   }
 }

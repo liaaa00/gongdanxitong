@@ -29,7 +29,7 @@ import {
   isDispatchModuleCode,
 } from 'src/entities';
 import {
-  buildOnboardingChildren,
+  buildWorkOrderDispatchChildren,
   getModuleSortOrder,
 } from './onboarding-dispatch.helper';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
@@ -306,9 +306,9 @@ export class WorkOrderService {
         };
       }
 
-      const childrenToCreate = await buildOnboardingChildren(workOrder, manager, this.fieldPermissionService);
+      const childrenToCreate = await buildWorkOrderDispatchChildren(workOrder, manager, this.fieldPermissionService);
       if (childrenToCreate.length === 0) {
-        throw businessException(4202, HttpStatus.BAD_REQUEST, '无可派发规则命中');
+        throw businessException(4202, HttpStatus.BAD_REQUEST, '无可派发办理模块');
       }
 
       workOrder.status = WorkOrderStatus.PENDING;
@@ -337,6 +337,7 @@ export class WorkOrderService {
       workOrder.status = WorkOrderStatus.PROCESSING;
       await workOrderRepo.save(workOrder);
 
+      const dispatchStrategyByModule = new Map<string, string>(childrenToCreate.map((child) => [child.moduleCode, child.dispatchStrategy]));
       for (const child of savedChildren) {
         await operationLogRepo.save(operationLogRepo.create({
           entityType: 'dispatched_order',
@@ -350,6 +351,7 @@ export class WorkOrderService {
             moduleCode: child.moduleCode,
             handlerId: child.handlerId,
             toUserId: child.handlerId,
+            dispatchStrategy: dispatchStrategyByModule.get(child.moduleCode) ?? null,
             status: child.status,
             contextFields: {
               parentOrderId: workOrder.id,
@@ -357,6 +359,7 @@ export class WorkOrderService {
               moduleCode: child.moduleCode,
               handlerId: child.handlerId,
               toUserId: child.handlerId,
+              dispatchStrategy: dispatchStrategyByModule.get(child.moduleCode) ?? null,
             },
           },
           ipAddress: null,

@@ -740,6 +740,8 @@ export class DispatchedOrderService {
       status: order.status,
       handlerId: order.handlerId,
       handler_id: order.handlerId,
+      handlerName: order.handler?.realName ?? null,
+      handler_name: order.handler?.realName ?? null,
       employeeName: order.parentOrder.employeeName,
       employee_name: order.parentOrder.employeeName,
       customerId: order.parentOrder.customerId,
