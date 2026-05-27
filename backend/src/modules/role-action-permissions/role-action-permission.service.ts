@@ -128,14 +128,15 @@ export class RoleActionPermissionService {
 
   async updateMatrix(matrix: RoleActionPermissionMatrix): Promise<RoleActionPermissionMatrix> {
     const normalized = this.normalizeMatrix(matrix);
-    const merged = { ...DEFAULT_ROLE_ACTION_PERMISSIONS, ...normalized };
+    const merged = { ...DEFAULT_ROLE_ACTION_PERMISSIONS, ...normalized, admin: ALL_ACTIONS };
     await this.saveStoredMatrix(merged);
     return merged;
   }
 
   async setRolePermissions(roleCode: string, actions: string[]): Promise<RoleActionPermissionMatrix> {
     const matrix = await this.getMatrix();
-    matrix[roleCode] = this.normalizeActions(actions);
+    matrix[roleCode] = roleCode === 'admin' ? ALL_ACTIONS : this.normalizeActions(actions);
+    matrix.admin = ALL_ACTIONS;
     await this.saveStoredMatrix(matrix);
     return matrix;
   }
