@@ -9,7 +9,7 @@ export function hasPermission(
   if (!requiredPermissions || requiredPermissions.length === 0) {
     return true;
   }
-  if (userPermissions.includes('*')) return true;
+  if (userPermissions.includes('*') || userPermissions.includes('role:admin')) return true;
   return requiredPermissions.some((p) => userPermissions.includes(p));
 }
 

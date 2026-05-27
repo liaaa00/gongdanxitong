@@ -123,7 +123,7 @@ export class RoleActionPermissionService {
 
   async getMatrix(): Promise<RoleActionPermissionMatrix> {
     const stored = await this.readStoredMatrix();
-    return { ...DEFAULT_ROLE_ACTION_PERMISSIONS, ...stored };
+    return { ...DEFAULT_ROLE_ACTION_PERMISSIONS, ...stored, admin: ALL_ACTIONS };
   }
 
   async updateMatrix(matrix: RoleActionPermissionMatrix): Promise<RoleActionPermissionMatrix> {
@@ -141,6 +141,8 @@ export class RoleActionPermissionService {
   }
 
   async getAllowedActionsForRoles(roleCodes: readonly string[]): Promise<RoleActionCode[]> {
+    if (roleCodes.includes('admin')) return ALL_ACTIONS;
+
     const matrix = await this.getMatrix();
     const allowed = new Set<RoleActionCode>();
     for (const roleCode of roleCodes) {

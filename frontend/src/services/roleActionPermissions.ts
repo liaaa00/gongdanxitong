@@ -150,12 +150,16 @@ export const DEFAULT_MATRIX: RoleActionMatrix = {
 const store = () => loadList<{ roleCode: string; actions: RoleActionCode[] }>(KEY, Object.entries(DEFAULT_MATRIX).map(([roleCode, actions]) => ({ roleCode, actions })));
 const commit = (matrix: RoleActionMatrix) => saveList(KEY, Object.entries(matrix).map(([roleCode, actions]) => ({ roleCode, actions })));
 
+function withAdminFullAccess(matrix: RoleActionMatrix): RoleActionMatrix {
+  return { ...matrix, admin: DEFAULT_MATRIX.admin };
+}
+
 function storeToMatrix(): RoleActionMatrix {
-  return Object.fromEntries(store().map((item) => [item.roleCode, item.actions])) as RoleActionMatrix;
+  return withAdminFullAccess(Object.fromEntries(store().map((item) => [item.roleCode, item.actions])) as RoleActionMatrix);
 }
 
 export async function getRoleActionPermissions(): Promise<RoleActionPermissionPayload> {
-  if (isMockMode) return mockDelay({ actions: DEFAULT_ACTIONS, roles: { ...DEFAULT_MATRIX, ...storeToMatrix() } });
+  if (isMockMode) return mockDelay({ actions: DEFAULT_ACTIONS, roles: withAdminFullAccess({ ...DEFAULT_MATRIX, ...storeToMatrix() }) });
   const result = await request.get('/admin/role-action-permissions') as any;
   return {
     actions: Array.isArray(result?.actions) ? result.actions : DEFAULT_ACTIONS,
@@ -165,8 +169,9 @@ export async function getRoleActionPermissions(): Promise<RoleActionPermissionPa
 
 export async function updateRoleActionPermissions(roles: RoleActionMatrix): Promise<RoleActionPermissionPayload> {
   if (isMockMode) {
-    commit(roles);
-    return mockDelay({ actions: DEFAULT_ACTIONS, roles });
+    const next = withAdminFullAccess(roles);
+    commit(next);
+    return mockDelay({ actions: DEFAULT_ACTIONS, roles: next });
   }
   const result = await request.put('/admin/role-action-permissions', { roles }) as any;
   return {
@@ -177,7 +182,7 @@ export async function updateRoleActionPermissions(roles: RoleActionMatrix): Prom
 
 export async function updateRoleActions(roleCode: string, actions: RoleActionCode[]): Promise<RoleActionPermissionPayload> {
   if (isMockMode) {
-    const next = { ...DEFAULT_MATRIX, ...storeToMatrix(), [roleCode]: actions };
+    const next = withAdminFullAccess({ ...DEFAULT_MATRIX, ...storeToMatrix(), [roleCode]: actions });
     commit(next);
     return mockDelay({ actions: DEFAULT_ACTIONS, roles: next });
   }

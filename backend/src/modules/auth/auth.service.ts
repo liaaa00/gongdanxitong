@@ -46,6 +46,7 @@ export class AuthService {
       new Set(user.userRoles.map((userRole) => userRole.role.code)),
     );
     const actionPermissions = await this.roleActionPermissionService.getAllowedActionsForRoles(roleCodes);
+    const isAdmin = roleCodes.includes('admin');
     const payload: JwtUserPayload = {
       sub: user.id,
       username: user.username,
@@ -68,7 +69,7 @@ export class AuthService {
         email: user.email,
         phone: user.phone,
         roles: roleCodes,
-        permissions: [...roleCodes.map((code) => `role:${code}`), ...actionPermissions.map((code) => `action:${code}`)],
+        permissions: isAdmin ? ['*', ...roleCodes.map((code) => `role:${code}`), ...actionPermissions.map((code) => `action:${code}`)] : [...roleCodes.map((code) => `role:${code}`), ...actionPermissions.map((code) => `action:${code}`)],
         action_permissions: actionPermissions,
         mustChangePassword: user.mustChangePassword,
         must_change_password: user.mustChangePassword,
@@ -134,6 +135,7 @@ export class AuthService {
       new Set(user.userRoles.map((userRole) => userRole.role.code)),
     );
     const actionPermissions = await this.roleActionPermissionService.getAllowedActionsForRoles(roleCodes);
+    const isAdmin = roleCodes.includes('admin');
 
     return {
       id: user.id,
@@ -150,7 +152,7 @@ export class AuthService {
         departmentName: userRole.department.name,
         isPrimary: userRole.isPrimary,
       })),
-      permissions: [...roleCodes.map((code) => `role:${code}`), ...actionPermissions.map((code) => `action:${code}`)],
+      permissions: isAdmin ? ['*', ...roleCodes.map((code) => `role:${code}`), ...actionPermissions.map((code) => `action:${code}`)] : [...roleCodes.map((code) => `role:${code}`), ...actionPermissions.map((code) => `action:${code}`)],
       action_permissions: actionPermissions,
     };
   }

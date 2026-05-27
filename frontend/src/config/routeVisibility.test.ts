@@ -19,6 +19,16 @@ describe('routeVisibility admin-only configuration routes', () => {
     expect(canAccessPath('/admin/login-debug', adminRoles)).toBe(true);
   });
 
+  it('allows admin to access action-matrix controlled work-order routes even without cached action permissions', () => {
+    const adminRoles = roles([ROLE.ADMIN]);
+    expect(canAccessPath('/work-orders', adminRoles, [])).toBe(true);
+    expect(canAccessPath('/my-work/initiated', adminRoles, [])).toBe(true);
+    expect(canAccessPath('/my-work/pending', adminRoles, [])).toBe(true);
+    expect(canAccessPath('/my-work/team', adminRoles, [])).toBe(true);
+    expect(canAccessPath('/my-work/history', adminRoles, [])).toBe(true);
+    expect(canAccessPath('/my-dispatched/123', adminRoles, [])).toBe(true);
+  });
+
   it('blocks non-admin direct URL access to restricted configuration routes', () => {
     const businessRoles = roles([ROLE.BUSINESS_GROUP_MEMBER]);
     expect(canAccessPath('/admin/fields', businessRoles)).toBe(false);

@@ -261,6 +261,8 @@ export function canAccessPath(
   userRoles: { code?: string }[] | undefined,
   userPermissions: string[] = [],
 ): boolean {
+  if (userHasAnyCanonicalRole(userRoles, [ROLE.ADMIN])) return true;
+
   const requiredActions = getRequiredActionsForPath(pathname);
   if (requiredActions.length > 0) {
     if (userPermissions.length > 0) return hasActionPermission(userPermissions, [...requiredActions]);
