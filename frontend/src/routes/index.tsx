@@ -23,9 +23,16 @@ const HistoryWorkOrders = lazy(() => import('@/pages/HistoryWorkOrders'));
 const ExportTemplates = lazy(() => import('@/pages/ExportTemplates'));
 const NotificationsPage = lazy(() => import('@/pages/Notifications'));
 
+const OnboardingModule = lazy(() => import('@/pages/OnboardingModule'));
+const RenewalList = lazy(() => import('@/pages/Renewal'));
+const RenewalNew = lazy(() => import('@/pages/Renewal/New'));
 const RenewalDetail = lazy(() => import('@/pages/Renewal/Detail'));
+const ResignationList = lazy(() => import('@/pages/Resignation'));
+const ResignationNew = lazy(() => import('@/pages/Resignation/New'));
 const ResignationDetail = lazy(() => import('@/pages/Resignation/Detail'));
 const ResignationCert = lazy(() => import('@/pages/Resignation/Cert'));
+const BenefitList = lazy(() => import('@/pages/Benefit'));
+const BenefitNew = lazy(() => import('@/pages/Benefit/New'));
 const BenefitDetail = lazy(() => import('@/pages/Benefit/Detail'));
 
 const AdminUsers = lazy(() => import('@/pages/Admin/Users'));
@@ -114,7 +121,7 @@ const AppRoutes: React.FC = () => (
         <Route path="work-orders/import" element={<RoleRoute><RouteGuard moduleName="批量导入"><WorkOrdersImport /></RouteGuard></RoleRoute>} />
         <Route path="work-orders/:id" element={<RoleRoute><RouteGuard moduleName="工单详情"><WorkOrdersDetail /></RouteGuard></RoleRoute>} />
 
-        <Route path="onboarding/:moduleCode" element={<Navigate to="/my-work/pending" replace />} />
+        <Route path="onboarding/:moduleCode" element={<RoleRoute><RouteGuard moduleName="子工单模块"><OnboardingModule /></RouteGuard></RoleRoute>} />
 
         <Route path="my-work/initiated" element={<RoleRoute><RouteGuard moduleName="我发起的"><WorkOrders /></RouteGuard></RoleRoute>} />
         <Route path="my-work/pending" element={<RoleRoute><RouteGuard moduleName="我的待办"><MyDispatched mode="pending" /></RouteGuard></RoleRoute>} />
@@ -133,17 +140,17 @@ const AppRoutes: React.FC = () => (
         {/* 字段权限入口仅管理员可访问；保留旧路径并由 RoleRoute 按 ADMIN 权限拦截。*/}
         <Route path="my-field-permissions" element={<RoleRoute><RouteGuard moduleName="字段权限"><AdminFieldPermissions /></RouteGuard></RoleRoute>} />
 
-        <Route path="renewal" element={<Navigate to="/work-orders" replace />} />
-        <Route path="renewal/new" element={<Navigate to="/work-orders/new" replace />} />
+        <Route path="renewal" element={<RoleRoute><RouteGuard moduleName="续签管理"><RenewalList /></RouteGuard></RoleRoute>} />
+        <Route path="renewal/new" element={<RoleRoute><RouteGuard moduleName="续签新建"><RenewalNew /></RouteGuard></RoleRoute>} />
         <Route path="renewal/:id" element={<RoleRoute><RouteGuard moduleName="续签详情"><RenewalDetail /></RouteGuard></RoleRoute>} />
 
-        <Route path="resignation" element={<Navigate to="/work-orders" replace />} />
-        <Route path="resignation/new" element={<Navigate to="/work-orders/new" replace />} />
+        <Route path="resignation" element={<RoleRoute><RouteGuard moduleName="离职管理"><ResignationList /></RouteGuard></RoleRoute>} />
+        <Route path="resignation/new" element={<RoleRoute><RouteGuard moduleName="离职新建"><ResignationNew /></RouteGuard></RoleRoute>} />
         <Route path="resignation/:id" element={<RoleRoute><RouteGuard moduleName="离职详情"><ResignationDetail /></RouteGuard></RoleRoute>} />
         <Route path="resignation/:id/cert" element={<RoleRoute><RouteGuard moduleName="离职证明"><ResignationCert /></RouteGuard></RoleRoute>} />
 
-        <Route path="benefit" element={<Navigate to="/work-orders" replace />} />
-        <Route path="benefit/new" element={<Navigate to="/work-orders/new" replace />} />
+        <Route path="benefit" element={<RoleRoute><RouteGuard moduleName="待遇申报"><BenefitList /></RouteGuard></RoleRoute>} />
+        <Route path="benefit/new" element={<RoleRoute><RouteGuard moduleName="申报新建"><BenefitNew /></RouteGuard></RoleRoute>} />
         <Route path="benefit/:id" element={<RoleRoute><RouteGuard moduleName="申报详情"><BenefitDetail /></RouteGuard></RoleRoute>} />
 
         <Route

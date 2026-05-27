@@ -29,6 +29,23 @@ describe('routeVisibility admin-only configuration routes', () => {
     expect(canAccessPath('/my-dispatched/123', adminRoles, [])).toBe(true);
   });
 
+  it('keeps restored business module routes accessible for admin and authorized roles', () => {
+    const adminRoles = roles([ROLE.ADMIN]);
+    expect(canAccessPath('/onboarding/contract', adminRoles, [])).toBe(true);
+    expect(canAccessPath('/onboarding/onboarding_contact', adminRoles, [])).toBe(true);
+    expect(canAccessPath('/onboarding/data_entry', adminRoles, [])).toBe(true);
+    expect(canAccessPath('/onboarding/social_insurance', adminRoles, [])).toBe(true);
+    expect(canAccessPath('/renewal', adminRoles, [])).toBe(true);
+    expect(canAccessPath('/benefit', adminRoles, [])).toBe(true);
+    expect(canAccessPath('/resignation', adminRoles, [])).toBe(true);
+    expect(canAccessPath('/onboarding/resignation_cert', adminRoles, [])).toBe(true);
+
+    expect(canAccessPath('/onboarding/data_entry', roles([ROLE.DATA_ENTRY_LEADER]))).toBe(true);
+    expect(canAccessPath('/onboarding/contract', roles([ROLE.LABOR_CONTRACT_MEMBER]))).toBe(true);
+    expect(canAccessPath('/onboarding/resignation_contact', roles([ROLE.ONBOARDING_RESIGNATION_MEMBER]))).toBe(true);
+    expect(canAccessPath('/onboarding/social_insurance', roles([ROLE.SOCIAL_INSURANCE_SPECIALIST]))).toBe(true);
+  });
+
   it('blocks non-admin direct URL access to restricted configuration routes', () => {
     const businessRoles = roles([ROLE.BUSINESS_GROUP_MEMBER]);
     expect(canAccessPath('/admin/fields', businessRoles)).toBe(false);
