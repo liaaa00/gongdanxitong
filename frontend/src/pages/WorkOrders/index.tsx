@@ -136,7 +136,7 @@ function getStatusMeta(status?: string | null) {
   return STATUS_MAP[normalized] || { label: '状态未知', color: 'default' };
 }
 
-function getDispatchedProgressMeta(child: DispatchedOrderSummary): { label: string; badge: 'success' | 'warning' | 'processing' | 'error' | 'default'; color: string } {
+function getDispatchedProgressMeta(child: DispatchedOrderSummary): { label: string; badge: 'success' | 'warning' | 'processing' | 'error' | 'default'; color: string; badgeColor?: string } {
   const status = String(child.status || '').toLowerCase();
   if (child.is_overdue) return { label: '已超时', badge: 'error', color: 'red' };
   if (status === 'completed') return { label: '已完成', badge: 'success', color: 'success' };
@@ -146,7 +146,7 @@ function getDispatchedProgressMeta(child: DispatchedOrderSummary): { label: stri
   if (status === 'void' || child.void_at || child.voidAt) return { label: '已作废', badge: 'default', color: 'default' };
   if (status === 'returned') return { label: '已退回', badge: 'warning', color: 'warning' };
   if (['processing', 'accepted', 'in_progress', 'pending', 'created', 'waiting_dispatch', 'to_dispatch'].includes(status)) {
-    return { label: '处理中', badge: 'processing', color: 'processing' };
+    return { label: '处理中', badge: 'default', badgeColor: '#1677ff', color: 'processing' };
   }
   return { label: getStatusMeta(status).label, badge: 'default', color: 'default' };
 }
@@ -309,7 +309,7 @@ const WorkOrders: React.FC = () => {
               return (
                 <Tooltip key={child.id} title={details}>
                   <Tag color={meta.color} style={{ marginInlineEnd: 0 }}>
-                    <Badge status={meta.badge} text={`${moduleLabel} · ${meta.label}`} />
+                    <Badge status={meta.badge} color={meta.badgeColor} text={`${moduleLabel} · ${meta.label}`} />
                   </Tag>
                 </Tooltip>
               );

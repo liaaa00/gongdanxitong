@@ -15,6 +15,20 @@ interface ExportColumn {
   order: number;
 }
 
+const DEFAULT_EXPORT_FIELD_CODES = [
+  'order_no',
+  'module_code',
+  'status',
+  'employee_name',
+  'employee_id_card',
+  'customer_code',
+  'customer_name',
+  'handler_name',
+  'dispatched_at',
+  'accepted_at',
+  'completed_at',
+];
+
 export interface ExportTemplateView {
   id: string;
   templateName: string;
@@ -240,9 +254,14 @@ export class ExportTemplatesService {
   }
 
   private async resolveDefaultTemplate(moduleCode: string, visibleFields: string[]): Promise<ExportTemplate> {
+    const fallbackFields = this.buildFallbackFieldList(visibleFields);
     const shared = await this.repository.findOne({ where: { moduleCode, isShared: true }, order: { createdAt: 'ASC' } });
-    if (shared) return shared;
-    return this.repository.create({ id: '', templateName: `${moduleCode}-default`, moduleCode, fieldList: visibleFields.map((fieldCode, order) => ({ fieldCode, alias: fieldCode, order })), createdBy: '', isShared: false });
+    if (shared) {
+      const columns = this.resolveColumns(shared, await this.loadFieldNameMap());
+      if (columns.length > 0) return shared;
+      return this.repository.create({ ...shared, fieldList: fallbackFields });
+    }
+    return this.repository.create({ id: '', templateName: `${moduleCode}-default`, moduleCode, fieldList: fallbackFields, createdBy: '', isShared: false });
   }
 
   private buildResult(
@@ -250,13 +269,29 @@ export class ExportTemplatesService {
     orders: DispatchedOrder[],
     fieldNameMap: Map<string, string>,
   ): DispatchedOrderExportResult {
-    const columns = this.resolveColumns(template, fieldNameMap);
+    let columns = this.resolveColumns(template, fieldNameMap);
+    if (columns.length === 0) {
+      const visibleFields = Array.from(new Set(orders.flatMap((order) => order.visibleFields ?? [])));
+      columns = this.buildFallbackColumns(visibleFields, fieldNameMap);
+    }
     const rows = orders.map((order) => {
       const row: Record<string, unknown> = {};
       for (const column of columns) row[column.title] = this.renderExportValue(column.fieldCode, order);
       return row;
     });
     return { templateId: template.id || null, templateName: template.templateName, moduleCode: template.moduleCode, columns, rows, rowCount: rows.length };
+  }
+
+  private buildFallbackFieldList(visibleFields: string[]): Array<Record<string, unknown>> {
+    const fields = Array.from(new Set([...DEFAULT_EXPORT_FIELD_CODES, ...visibleFields]));
+    return fields.map((fieldCode, order) => ({ fieldCode, alias: fieldCode, order }));
+  }
+
+  private buildFallbackColumns(visibleFields: string[], fieldNameMap: Map<string, string>): ExportColumn[] {
+    return this.buildFallbackFieldList(visibleFields).map((item, index) => {
+      const fieldCode = String(item.fieldCode || '');
+      return { fieldCode, title: fieldNameMap.get(fieldCode) ?? fieldCode, order: index };
+    });
   }
 
   private resolveColumns(template: ExportTemplate, fieldNameMap: Map<string, string>): ExportColumn[] {

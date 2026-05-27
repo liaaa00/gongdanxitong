@@ -404,7 +404,7 @@ const Dashboard: React.FC = () => {
           </Col>
           <Col xs={24} sm={12} xl={6}>
             <Card loading={loading} bodyStyle={CARD_BODY_STYLE}>
-              <Statistic title="处理中" value={cards.processing} prefix={<SyncOutlined spin />} valueStyle={{ color: '#1677ff' }} />
+              <Statistic title="处理中" value={cards.processing} prefix={<SyncOutlined />} valueStyle={{ color: '#1677ff' }} />
             </Card>
           </Col>
           <Col xs={24} sm={12} xl={6}>

@@ -14,6 +14,7 @@ import type { PageParams } from '@/services/mock';
 import { getModuleConfigs } from '@/services/moduleConfigs';
 import type { ModuleConfigItem } from '@/services/moduleConfigs';
 import { useAuth } from '@/hooks/useAuth';
+import { useResizableProColumns } from '@/hooks/useResizableProColumns';
 // 团队页权限由角色动作矩阵控制，不再按固定角色放开办理入口。
 import { DISPATCHED_PROCESSING_STATUS_FILTER_VALUE, normalizeDispatchedStatusSearchParams } from '@/utils/dispatchedStatusFilter';
 
@@ -102,7 +103,7 @@ const TeamDispatched: React.FC = () => {
     setExporting(true);
     try {
       const result = await batchExportDispatchedOrders(ids);
-      downloadDispatchedExport(result, '部门子工单固定模板导出.xlsx');
+      await downloadDispatchedExport(result, '部门子工单固定模板导出.xlsx');
       message.success('导出成功');
     } catch {
       message.error('导出失败');
@@ -203,11 +204,13 @@ const TeamDispatched: React.FC = () => {
     },
   ], [getModuleName, moduleOptions, navigate]);
 
+  const teamTable = useResizableProColumns(columns, { storageKey: 'team-dispatched', defaultWidth: 150 });
+
   return (
     <PageContainer header={{ title: '部门子工单管理' }}>
       <ProTable<DispatchedOrderItem>
         actionRef={actionRef}
-        columns={columns}
+        columns={teamTable.columns}
         request={async (params: PageParams & Record<string, unknown>) => {
           const query = normalizeDispatchedStatusSearchParams(params);
           const result = await getDispatchedOrders(query);
@@ -219,6 +222,8 @@ const TeamDispatched: React.FC = () => {
         toolBarRender={false}
         pagination={{ defaultPageSize: 20, showSizeChanger: true }}
         dateFormatter="string"
+        components={teamTable.components}
+        scroll={{ x: teamTable.scrollX }}
         rowSelection={canExport ? { preserveSelectedRowKeys: true } : false}
         tableAlertRender={({ selectedRowKeys, onCleanSelected }) => (
           <Space wrap>

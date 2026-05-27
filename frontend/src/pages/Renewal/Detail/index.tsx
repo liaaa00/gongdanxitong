@@ -15,7 +15,7 @@ import { getStatusColor, getStatusText } from '@/constants/dictionaries';
 const STATUS_STEPS = [
   { title: '草稿', value: 'draft', icon: <ClockCircleOutlined /> },
   { title: '待派发', value: 'pending', icon: <SyncOutlined /> },
-  { title: '处理中', value: 'processing', icon: <SyncOutlined spin /> },
+  { title: '处理中', value: 'processing', icon: <SyncOutlined /> },
   { title: '已完成', value: 'completed', icon: <CheckCircleOutlined /> },
 ];
 const STATUS_EXTRA: Array<{ value: string; title: string; icon: React.ReactNode }> = [

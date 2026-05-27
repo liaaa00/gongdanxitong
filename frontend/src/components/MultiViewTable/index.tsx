@@ -9,6 +9,7 @@ import ColumnsConfigDrawer from './ColumnsConfigDrawer';
 import FilterViews from './FilterViews';
 import KanbanView from './KanbanView';
 import GridView from './GridView';
+import { useResizableProColumns } from '@/hooks/useResizableProColumns';
 import type { ViewMode, MultiViewTableProps, ViewConfig, FilterCondition, SavedFilter } from './types';
 
 const STORAGE_PREFIX = 'mv_config_';
@@ -144,6 +145,7 @@ function MultiViewTable<T extends Record<string, unknown>>(props: MultiViewTable
   }, [dataSource, kanbanColumnKey, kanbanAllowedValues]);
 
   const viewConfig: ViewConfig = { viewMode, columnsOrder: colOrder, columnsHidden: hiddenKeys, columnWidths: {} };
+  const resizableTable = useResizableProColumns(resolvedColumns, { storageKey: viewId, defaultWidth: 150 });
 
   return (
     <div>
@@ -175,13 +177,14 @@ function MultiViewTable<T extends Record<string, unknown>>(props: MultiViewTable
       {viewMode === 'table' && (
         <ProTable<T>
           actionRef={actionRef}
-          columns={resolvedColumns}
+          columns={resizableTable.columns}
           request={wrappedRequest}
           rowKey={rowKey}
           search={search}
           headerTitle={headerTitle}
           pagination={{ defaultPageSize: 20, showSizeChanger: true }}
-          scroll={{ x: 1280 }}
+          components={resizableTable.components}
+          scroll={{ x: resizableTable.scrollX }}
           dateFormatter="string"
           options={proTableOptions === false ? false : { reload: () => actionRef.current?.reload() }}
           toolBarRender={proTableToolBarRender === false ? false : undefined}

@@ -69,7 +69,7 @@ export const DEFAULT_ACTIONS: RoleActionDefinition[] = [
   { code: 'work_order.void', name: '主工单-作废（预留）', description: '会议口径下作废在子工单完成；如确需恢复可在此勾选' },
   { code: 'work_order.urge', name: '主工单-催办（预留）', description: '会议口径下催办在子工单完成；如确需恢复可在此勾选' },
   { code: 'work_order.export', name: '主工单-导出', description: '允许导出有权限查看的主工单数据' },
-  { code: 'work_order.delete', name: '主工单-删除', description: '允许删除工单；建议仅管理员拥有' },
+  { code: 'work_order.delete', name: '主工单-删除（管理员）', description: '删除数据仅由管理员后台处理；业务员需邮件联系管理员，不建议给业务员勾选' },
   { code: 'dispatched_order.view', name: '子工单-查看', description: '允许查看本人相关子工单详情' },
   { code: 'dispatched_order.view_team', name: '子工单-查看团队', description: '允许查看团队范围子工单，默认只读' },
   { code: 'dispatched_order.accept', name: '子工单-接单', description: '允许在“我的待办”接单' },

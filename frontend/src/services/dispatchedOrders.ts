@@ -650,21 +650,36 @@ export function resolveExportDownloadUrl(result: DispatchedOrderExportResult): s
   return `${base}${url.startsWith('/api') ? url : `/api${url.startsWith('/') ? url : `/${url}`}`}`;
 }
 
-export function downloadDispatchedExport(result: DispatchedOrderExportResult, fallbackName: string): void {
+export async function downloadDispatchedExport(result: DispatchedOrderExportResult, fallbackName: string): Promise<void> {
   const url = resolveExportDownloadUrl(result);
+  const fileName = result.fileName || fallbackName;
+
   if (!url) {
     const blobUrl = window.URL.createObjectURL(new Blob(['mock export data'], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
     const a = document.createElement('a');
     a.href = blobUrl;
-    a.download = fallbackName;
+    a.download = fileName;
+    document.body.appendChild(a);
     a.click();
+    a.remove();
     window.URL.revokeObjectURL(blobUrl);
     return;
   }
+
+  const headers: Record<string, string> = {};
+  const token = typeof window !== 'undefined' ? window.localStorage.getItem('token') : null;
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const response = await fetch(url, { headers });
+  if (!response.ok) throw new Error('导出文件下载失败');
+  const blob = await response.blob();
+  const blobUrl = window.URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url;
-  a.download = result.fileName || fallbackName;
+  a.href = blobUrl;
+  a.download = fileName;
+  document.body.appendChild(a);
   a.click();
+  a.remove();
+  window.URL.revokeObjectURL(blobUrl);
 }
 
 export async function exportDispatchedOrder(id: string): Promise<DispatchedOrderExportResult> {

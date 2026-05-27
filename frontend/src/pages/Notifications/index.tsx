@@ -9,6 +9,7 @@ import { getNotifications, markNotificationRead, markAllRead, markNotificationsR
 import type { NotificationItem } from '@/services/notifications';
 import type { PageParams } from '@/services/mock';
 import { useAuth } from '@/hooks/useAuth';
+import { useResizableProColumns } from '@/hooks/useResizableProColumns';
 import { ROLE } from '@/constants/roles';
 import {
   getNotificationDisplayContent,
@@ -120,19 +121,7 @@ const BACKEND_ROLES = [
 
 const BUSINESS_ROLES = [ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER];
 
-const BIZ_COLOR: Record<NotificationTabKey | string, string> = {
-  all: 'default',
-  salesperson_field_changed: 'purple',
-  salesperson_returned: 'orange',
-  salesperson_urge_feedback: 'gold',
-  salesperson_withdraw_void_result: 'blue',
-  backend_creator_modified: 'purple',
-  backend_urge: 'gold',
-  backend_sla_warning: 'orange',
-  backend_sla_breached: 'red',
-  backend_withdraw_void_request: 'volcano',
-  system: 'default',
-};
+const CATEGORY_TEXT_STYLE = { color: '#4b5563', whiteSpace: 'nowrap' } as const;
 
 const BIZ_LABEL: Record<NotificationTabKey | string, string> = {
   all: '全部消息',
@@ -336,29 +325,29 @@ const NotificationsPage: React.FC = () => {
       title: '状态',
       dataIndex: 'is_read',
       key: 'is_read',
-      width: 76,
+      width: 96,
       hideInSearch: true,
       render: (_, r) => r.is_read ? <Tag>已读</Tag> : <Tag color="blue">未读</Tag>,
     },
-    { title: '标题', dataIndex: 'title', key: 'title', width: 220, ellipsis: true },
+    { title: '标题', dataIndex: 'title', key: 'title', width: 260, ellipsis: true },
     {
-      title: '分类', dataIndex: 'biz_type', key: 'biz_type', width: 130,
+      title: '分类', dataIndex: 'biz_type', key: 'biz_type', width: 160,
       render: (_, r) => {
         const bucket = classifyNotification(r);
-        return <Tag color={BIZ_COLOR[bucket]}>{BIZ_LABEL[bucket]}</Tag>;
+        return <span style={CATEGORY_TEXT_STYLE}>{BIZ_LABEL[bucket]}</span>;
       },
     },
     {
-      title: '优先级', dataIndex: 'priority', key: 'priority', width: 88,
+      title: '优先级', dataIndex: 'priority', key: 'priority', width: 110,
       render: (_, r) => <Tag color={PRI_COLOR[r.priority]}>{PRI_LABEL[r.priority] || r.priority || '普通'}</Tag>,
     },
     {
-      title: '内容', dataIndex: 'content', key: 'content', width: 360, ellipsis: true,
+      title: '内容', dataIndex: 'content', key: 'content', width: 460, ellipsis: true,
       render: (_dom: unknown, r: NotificationItem) => {
         const displayContent = getNotificationDisplayContent(r);
         return (
           <Space size={4}>
-            {!r.is_read && <Badge status="processing" />}
+            {!r.is_read && <Badge status="default" color="#1677ff" />}
             <Tooltip title={displayContent}>
               <Text ellipsis style={{ maxWidth: 320 }}>
                 {displayContent}
@@ -370,7 +359,7 @@ const NotificationsPage: React.FC = () => {
       },
     },
     {
-      title: '关联工单', dataIndex: 'order_no', key: 'order_no', width: 140,
+      title: '关联工单', dataIndex: 'order_no', key: 'order_no', width: 180,
       render: (_dom: unknown, r: NotificationItem) =>
         (r.order_no || r.ref_order_no || r.ref_order_id || r.entity_id) ? (
           <Button type="link" size="small" icon={<LinkOutlined />}
@@ -379,9 +368,9 @@ const NotificationsPage: React.FC = () => {
           </Button>
         ) : <Text type="secondary">-</Text>,
     },
-    { title: '时间', dataIndex: 'created_at', key: 'created_at', width: 170, valueType: 'dateTime' },
+    { title: '时间', dataIndex: 'created_at', key: 'created_at', width: 190, valueType: 'dateTime' },
     {
-      title: '操作', key: 'actions', width: 180, hideInSearch: true, fixed: 'right',
+      title: '操作', key: 'actions', width: 220, hideInSearch: true, fixed: 'right',
       render: (_, r) => (
         <Space size={4}>
           {!r.is_read && (
@@ -402,13 +391,34 @@ const NotificationsPage: React.FC = () => {
     },
   ];
 
+  const renderTabLabel = (key: NotificationTabKey) => {
+    const active = activeTab === key;
+    const count = key === 'all' ? unreadByType.all || 0 : unreadByType[key] || 0;
+    return (
+      <Badge count={count} size="small" offset={[8, -4]}>
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            height: 34,
+            padding: '0 2px',
+            color: active ? '#111827' : '#8c8c8c',
+            fontWeight: active ? 600 : 400,
+            borderBottom: active ? '2px solid #1677ff' : '2px solid transparent',
+          }}
+        >
+          {BIZ_LABEL[key]}
+        </span>
+      </Badge>
+    );
+  };
+
   const allTabItems: Array<{ key: NotificationTabKey; label: React.ReactNode }> = ALL_TAB_KEYS.map((key) => ({
     key,
-    label: key === 'all'
-      ? <Badge count={unreadByType.all || 0} size="small" offset={[6, -2]}>全部消息</Badge>
-      : <Badge count={unreadByType[key] || 0} size="small" offset={[6, -2]}><Tag color={BIZ_COLOR[key]} style={{ margin: 0 }}>{BIZ_LABEL[key]}</Tag></Badge>,
+    label: renderTabLabel(key),
   }));
   const tabItems = allTabItems.filter((item) => visibleTabKeys.includes(item.key));
+  const notificationTable = useResizableProColumns(columns, { storageKey: 'notifications', defaultWidth: 150 });
 
   return (
     <PageContainer
@@ -440,7 +450,7 @@ const NotificationsPage: React.FC = () => {
       </div>
       <ProTable<NotificationItem>
         actionRef={actionRef}
-        columns={columns}
+        columns={notificationTable.columns}
         request={async (params: PageParams) => {
           const bucket = TAB_BUCKET_MAP[activeTab];
           const result = await getNotifications({
@@ -457,7 +467,8 @@ const NotificationsPage: React.FC = () => {
         search={false}
         headerTitle="通知列表"
         pagination={{ defaultPageSize: 20, pageSizeOptions: ['20', '50', '100'], showSizeChanger: true }}
-        scroll={{ x: 1280 }}
+        components={notificationTable.components}
+        scroll={{ x: notificationTable.scrollX }}
         dateFormatter="string"
         onRow={(record) => ({
           onClick: () => handleRowClick(record),
@@ -489,7 +500,7 @@ const NotificationsPage: React.FC = () => {
             <Descriptions.Item label="分类">
               {(() => {
                 const bucket = classifyNotification(detailItem);
-                return <Tag color={BIZ_COLOR[bucket]}>{BIZ_LABEL[bucket]}</Tag>;
+                return <span style={CATEGORY_TEXT_STYLE}>{BIZ_LABEL[bucket]}</span>;
               })()}
             </Descriptions.Item>
             <Descriptions.Item label="状态">{detailItem.is_read ? '已读' : '未读'}</Descriptions.Item>

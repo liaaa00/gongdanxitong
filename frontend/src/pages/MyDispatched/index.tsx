@@ -28,6 +28,7 @@ import type { UserItem } from '@/services/users';
 import { getWorkOrders } from '@/services/workOrders';
 import type { WorkOrderItem } from '@/services/workOrders';
 import { useAuth } from '@/hooks/useAuth';
+import { useResizableProColumns } from '@/hooks/useResizableProColumns';
 import { getModuleLabel } from '@/constants/modules';
 import { getStatusColor, getStatusText } from '@/constants/dictionaries';
 import { ROLE } from '@/constants/roles';
@@ -271,7 +272,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
     setExporting(true);
     try {
       const result = await batchExportDispatchedOrders(ids);
-      downloadDispatchedExport(result, '批量导出子工单.xlsx');
+      await downloadDispatchedExport(result, '批量导出子工单.xlsx');
       message.success('导出成功');
     } catch { message.error('导出失败'); }
     finally { setExporting(false); }
@@ -354,6 +355,8 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
     { title: '完成时间', dataIndex: 'completedRange', key: 'completedRange', valueType: 'dateTimeRange', hideInTable: true },
 
   ], [navigate, isDoneMode, isBusinessInitiator, canAcceptOrder]);
+
+  const dispatchedTable = useResizableProColumns(columns, { storageKey: `my-dispatched-${currentMode}`, defaultWidth: 150 });
 
   const returnedWorkOrderColumns: ProColumns<WorkOrderItem>[] = useMemo(() => [
     { title: '工单编号', dataIndex: 'order_no', key: 'order_no', width: 150, copyable: true },
@@ -510,7 +513,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
         />
       )}
       <ProTable<DispatchedOrderItem>
-        actionRef={actionRef} columns={columns} rowKey="id"
+        actionRef={actionRef} columns={dispatchedTable.columns} rowKey="id"
         request={requestDispatchedOrders}
         search={{ labelWidth: 'auto', defaultCollapsed: false }} headerTitle={childTableTitle}
         options={false}
@@ -519,7 +522,8 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
           <RefButton key="import-fields" icon={<UploadOutlined />} onClick={() => setBatchImportMode('fields')}>导入银行卡修改</RefButton>,
         ] : false}
         pagination={{ defaultPageSize: 20, showSizeChanger: true }}
-        scroll={{ x: 1500 }}
+        components={dispatchedTable.components}
+        scroll={{ x: dispatchedTable.scrollX }}
         dateFormatter="string"
         locale={{ emptyText }}
         rowSelection={(canBatchComplete || canBatchReturn || canBatchUrge || canBatchExport) ? { preserveSelectedRowKeys: true } : false}

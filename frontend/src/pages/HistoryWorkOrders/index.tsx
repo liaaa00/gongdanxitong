@@ -10,6 +10,7 @@ import type { DispatchedOrderItem } from '@/services/dispatchedOrders';
 import type { PageParams } from '@/services/mock';
 import { getModuleLabel } from '@/constants/modules';
 import { getStatusColor, getStatusText } from '@/constants/dictionaries';
+import { useResizableProColumns } from '@/hooks/useResizableProColumns';
 import { useRef } from 'react';
 
 const HISTORY_STATUSES = new Set(['completed', 'returned', 'withdrawn', 'void']);
@@ -70,6 +71,8 @@ const HistoryWorkOrders: React.FC = () => {
     },
   ], [navigate]);
 
+  const historyTable = useResizableProColumns(columns, { storageKey: 'history-work-orders', defaultWidth: 150 });
+
   return (
     <PageContainer
       header={{
@@ -91,11 +94,13 @@ const HistoryWorkOrders: React.FC = () => {
       <ProTable<DispatchedOrderItem>
         actionRef={actionRef}
         rowKey="id"
-        columns={columns}
+        columns={historyTable.columns}
         search={{ labelWidth: 'auto' }}
         options={false}
         pagination={{ defaultPageSize: 20, pageSizeOptions: ['20', '50', '100'], showSizeChanger: true }}
         dateFormatter="string"
+        components={historyTable.components}
+        scroll={{ x: historyTable.scrollX }}
         request={async (params: PageParams & Record<string, unknown>) => {
           const moduleValue = params.moduleCode || params.module_code;
           const result = await getDispatchedOrders({

@@ -383,7 +383,7 @@ const BasicLayout: React.FC = () => {
                     <Tag color={item.priority === 'urgent' ? 'red' : item.priority === 'normal' ? 'blue' : 'default'} style={{ fontSize: 10, lineHeight: '16px' }}>
                       {item.priority === 'urgent' ? '紧急' : item.priority === 'normal' ? '普通' : '低'}
                     </Tag>
-                    {!item.is_read && <Badge status="processing" />}
+                    {!item.is_read && <Badge status="default" color="#1677ff" />}
                     <span style={{ fontWeight: item.is_read ? 'normal' : 'bold', fontSize: 13 }}>{getNotificationDisplayTitle(item)}</span>
                   </Space>
                 }
