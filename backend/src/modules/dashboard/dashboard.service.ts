@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, Optional } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import {
@@ -12,6 +12,7 @@ import {
 } from 'src/common/auth/role-permissions';
 import { DISPATCH_MODULE_LABELS, resolveDispatchModuleCode } from 'src/common/constants/dispatch-modules';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
+import { RoleActionPermissionService } from 'src/modules/role-action-permissions/role-action-permission.service';
 import { WorkOrderValidationService } from 'src/modules/work-orders/work-order-validation.service';
 import { DashboardCardsDto } from './dto/dashboard-cards.dto';
 
@@ -40,6 +41,15 @@ interface DashboardRow {
   payload?: unknown;
 }
 
+interface DashboardCardsRow {
+  totalThisMonth?: number | string;
+  processing?: number | string;
+  completed?: number | string;
+  voided?: number | string;
+  voidCount?: number | string;
+  void_count?: number | string;
+}
+
 interface BackendDashboardScope {
   modules: string[];
   includeModuleAll: boolean;
@@ -47,15 +57,33 @@ interface BackendDashboardScope {
 
 @Injectable()
 export class DashboardService {
+  private readonly logger = new Logger(DashboardService.name);
+
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly workOrderValidationService: WorkOrderValidationService,
+    @Optional()
+    private readonly roleActionPermissionService?: RoleActionPermissionService,
   ) {}
 
-  async getDashboardCards(user: JwtUserPayload): Promise<DashboardCardsDto> {
+  async getDashboardCards(user: JwtUserPayload, requestedScope?: 'mine' | 'team'): Promise<DashboardCardsDto> {
     const myMessages = await this.countUnreadMessages(user.sub);
 
-    if (this.isGlobalBusinessOverview(user)) {
+    if (this.isBackendHandler(user)) {
+      return { ...(await this.queryDispatchedOrderCards(user)), myMessages, scope: 'backend_module' };
+    }
+
+    if (requestedScope === 'mine') {
+      return { ...(await this.queryWorkOrderCards('owner', user.sub)), myMessages, scope: 'mine' };
+    }
+
+    if (requestedScope === 'team' && (hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES) || hasAnyRole(user.roles, BUSINESS_LEADER_ROLES))) {
+      const departmentIds = await this.workOrderValidationService.resolveUserDepartmentIds(user.sub);
+      if (departmentIds.length === 0) return { ...this.emptyCards(), myMessages, scope: 'team' };
+      return { ...(await this.queryWorkOrderCards('department', departmentIds)), myMessages, scope: 'team' };
+    }
+
+    if (await this.canViewAllWorkOrders(user)) {
       return { ...(await this.queryWorkOrderCards(null, null)), myMessages, scope: 'global' };
     }
 
@@ -63,10 +91,6 @@ export class DashboardService {
       const departmentIds = await this.workOrderValidationService.resolveUserDepartmentIds(user.sub);
       if (departmentIds.length === 0) return { ...this.emptyCards(), myMessages, scope: 'team' };
       return { ...(await this.queryWorkOrderCards('department', departmentIds)), myMessages, scope: 'team' };
-    }
-
-    if (this.isBackendHandler(user)) {
-      return { ...(await this.queryDispatchedOrderCards(user)), myMessages, scope: 'backend_module' };
     }
 
     return { ...(await this.queryWorkOrderCards('owner', user.sub)), myMessages, scope: 'mine' };
@@ -156,12 +180,14 @@ export class DashboardService {
       ),
       counts AS (
         SELECT
-          COUNT(*) FILTER (WHERE status = 'pending') AS pending,
-          COUNT(*) FILTER (WHERE status = 'processing') AS processing,
+          COUNT(*) FILTER (WHERE status = 'pending' AND void_at IS NULL) AS pending,
+          COUNT(*) FILTER (WHERE status = 'processing' AND void_at IS NULL) AS processing,
           COUNT(*) FILTER (WHERE status = 'completed') AS completed,
-          COUNT(*) FILTER (WHERE status = 'returned') AS returned,
+          COUNT(*) FILTER (WHERE status = 'returned' AND void_at IS NULL) AS returned,
+          COUNT(*) FILTER (WHERE status = 'void' OR void_at IS NOT NULL) AS voided,
           COUNT(*) FILTER (
             WHERE status IN ('pending','processing')
+              AND void_at IS NULL
               AND due_at IS NOT NULL
               AND due_at < now()
           ) AS sla_breach
@@ -174,7 +200,7 @@ export class DashboardService {
           COUNT(d.id) AS total,
           COUNT(d.id) FILTER (WHERE d.status = 'completed') AS completed,
           AVG(EXTRACT(EPOCH FROM (d.completed_at - d.accepted_at))) FILTER (WHERE d.status = 'completed') AS avg_handle_seconds,
-          COUNT(d.id) FILTER (WHERE d.status IN ('pending','processing')) AS in_flight
+          COUNT(d.id) FILTER (WHERE d.status IN ('pending','processing') AND d.void_at IS NULL) AS in_flight
         FROM module_handlers mh
         JOIN users u ON u.id = mh.handler_id
         LEFT JOIN cur_do d ON d.handler_id = u.id
@@ -235,10 +261,11 @@ export class DashboardService {
         SELECT
           d.module_code,
           COUNT(*) AS total,
-          COUNT(*) FILTER (WHERE d.status = 'pending') AS pending,
-          COUNT(*) FILTER (WHERE d.status = 'processing') AS processing,
+          COUNT(*) FILTER (WHERE d.status = 'pending' AND d.void_at IS NULL) AS pending,
+          COUNT(*) FILTER (WHERE d.status = 'processing' AND d.void_at IS NULL) AS processing,
           COUNT(*) FILTER (WHERE d.status = 'completed') AS completed,
-          COUNT(*) FILTER (WHERE d.status = 'returned') AS returned,
+          COUNT(*) FILTER (WHERE d.status = 'returned' AND d.void_at IS NULL) AS returned,
+          COUNT(*) FILTER (WHERE d.status = 'void' OR d.void_at IS NOT NULL) AS voided,
           ROUND(AVG(EXTRACT(EPOCH FROM (d.completed_at - d.dispatched_at))/3600)
             FILTER (WHERE d.status = 'completed'), 2) AS avg_h
         FROM dispatched_orders d, bounds b
@@ -300,7 +327,10 @@ export class DashboardService {
        FROM notifications
        WHERE user_id = $1
          AND is_read = false
-         AND biz_type NOT IN ('dispatch', 'dispatch_created', 'dispatched_new', 'dispatched_accepted', 'dispatched_completed')`,
+         AND biz_type NOT IN (
+           'dispatch', 'dispatch_created', 'dispatched_new', 'dispatched_accepted', 'dispatched_completed',
+           'urge_feedback', 'backend_urge_creator'
+         )`,
       [userId],
     ) as Array<{ count: number | string }>;
     return Number(rows[0]?.count ?? 0);
@@ -313,24 +343,30 @@ export class DashboardService {
         SELECT
           date_trunc('month', now() AT TIME ZONE 'Asia/Shanghai') AS cur_start,
           date_trunc('month', now() AT TIME ZONE 'Asia/Shanghai') + interval '1 month' AS cur_end
-      ), scoped AS (
+      ), scoped_wo AS (
         SELECT wo.*
-          FROM work_orders wo, bounds b
-         WHERE COALESCE(wo.submitted_at, wo.created_at) >= b.cur_start
-           AND COALESCE(wo.submitted_at, wo.created_at) < b.cur_end
-           AND wo.status <> 'draft'
+          FROM work_orders wo
+         WHERE wo.status <> 'draft'
            AND ($1::text IS NULL
              OR ($1::text = 'owner' AND wo.created_by = $2::uuid)
              OR ($1::text = 'department' AND wo.department_id = ANY($3::uuid[])))
+      ), scoped AS (
+        SELECT d.*
+          FROM dispatched_orders d
+          JOIN scoped_wo wo ON wo.id = d.parent_order_id
+          CROSS JOIN bounds b
+         WHERE COALESCE(d.dispatched_at, d.created_at) >= b.cur_start
+           AND COALESCE(d.dispatched_at, d.created_at) < b.cur_end
       )
       SELECT
         COUNT(*)::int AS "totalThisMonth",
-        COUNT(*) FILTER (WHERE status::text NOT IN ('completed','withdrawn','void','draft'))::int AS processing,
-        COUNT(*) FILTER (WHERE status = 'completed')::int AS completed
+        COUNT(*) FILTER (WHERE status::text NOT IN ('completed','void') AND void_at IS NULL)::int AS processing,
+        COUNT(*) FILTER (WHERE status = 'completed')::int AS completed,
+        COUNT(*) FILTER (WHERE status = 'void' OR void_at IS NOT NULL)::int AS voided
       FROM scoped
       `,
       [scope, scope === 'owner' ? value : null, scope === 'department' ? value : []],
-    ) as Array<{ totalThisMonth: number | string; processing: number | string; completed: number | string }>;
+    ) as DashboardCardsRow[];
     return this.toCardsWithoutMessages(rows[0]);
   }
 
@@ -363,27 +399,32 @@ export class DashboardService {
       )
       SELECT
         COUNT(*)::int AS "totalThisMonth",
-        COUNT(*) FILTER (WHERE status::text NOT IN ('completed','withdrawn','void','draft'))::int AS processing,
-        COUNT(*) FILTER (WHERE status = 'completed')::int AS completed
+        COUNT(*) FILTER (WHERE status::text NOT IN ('completed','void') AND void_at IS NULL)::int AS processing,
+        COUNT(*) FILTER (WHERE status = 'completed')::int AS completed,
+        COUNT(*) FILTER (WHERE status = 'void' OR void_at IS NOT NULL)::int AS voided
       FROM scoped
       `,
       [user.sub],
-    ) as Array<{ totalThisMonth: number | string; processing: number | string; completed: number | string }>;
+    ) as DashboardCardsRow[];
     return this.toCardsWithoutMessages(rows[0]);
   }
 
-  private toCardsWithoutMessages(row?: { totalThisMonth?: number | string; processing?: number | string; completed?: number | string }): Omit<DashboardCardsDto, 'myMessages'> {
+  private toCardsWithoutMessages(row?: DashboardCardsRow): Omit<DashboardCardsDto, 'myMessages'> {
+    const voided = Number(row?.voided ?? row?.voidCount ?? row?.void_count ?? 0);
     return {
       totalThisMonth: Number(row?.totalThisMonth ?? 0),
       processing: Number(row?.processing ?? 0),
       completed: Number(row?.completed ?? 0),
+      voided,
+      voidCount: voided,
+      void_count: voided,
     };
   }
 
   private async resolveDepartmentScope(
     user: JwtUserPayload,
   ): Promise<{ departmentIds: string[] | null; empty: boolean }> {
-    if (this.isGlobalBusinessOverview(user)) {
+    if (await this.canViewAllWorkOrders(user)) {
       return { departmentIds: null, empty: false };
     }
     if (
@@ -403,12 +444,17 @@ export class DashboardService {
     return isAdminRole(user.roles) || user.roles.includes('business_owner') || user.roles.includes('manager');
   }
 
+  private async canViewAllWorkOrders(user: JwtUserPayload): Promise<boolean> {
+    if (this.isGlobalBusinessOverview(user)) return true;
+    return this.roleActionPermissionService?.hasAnyRoleAction(user.roles, 'work_order.view_all') ?? false;
+  }
+
   private isBackendHandler(user: JwtUserPayload): boolean {
     return hasAnyRole(user.roles, BACKEND_HANDLER_ROLES) || user.roles.some((role) => role.endsWith('_supervisor'));
   }
 
   private async canViewBackendModuleAll(user: JwtUserPayload, moduleCode: string): Promise<boolean> {
-    if (isAdminRole(user.roles) || hasManagementScopeRole(user.roles)) return true;
+    if (await this.canViewAllWorkOrders(user) || hasManagementScopeRole(user.roles)) return true;
     if (!hasModuleSupervisorRole(user.roles) && !user.roles.some((role) => role.endsWith('_supervisor'))) return false;
     if (await this.hasModuleAccess(user.sub, moduleCode)) return true;
     if (await this.hasModuleSupervisorConfig(user.sub, moduleCode)) return true;
@@ -417,7 +463,7 @@ export class DashboardService {
 
   private async resolveBackendDashboardScope(user: JwtUserPayload): Promise<BackendDashboardScope> {
     const modules = await this.getAccessibleModules(user.sub);
-    const includeModuleAll = isAdminRole(user.roles)
+    const includeModuleAll = await this.canViewAllWorkOrders(user)
       || hasManagementScopeRole(user.roles)
       || hasModuleSupervisorRole(user.roles)
       || await this.hasSupervisorLevel(user.sub);
@@ -473,7 +519,7 @@ export class DashboardService {
   }
 
   private emptyCards(): Omit<DashboardCardsDto, 'myMessages'> {
-    return { totalThisMonth: 0, processing: 0, completed: 0 };
+    return { totalThisMonth: 0, processing: 0, completed: 0, voided: 0, voidCount: 0, void_count: 0 };
   }
 
   private emptySalesperson(): Record<string, unknown> {
@@ -481,19 +527,19 @@ export class DashboardService {
   }
 
   private emptyTeam(moduleCode: string): Record<string, unknown> {
-    return { moduleCode, counts: { pending: 0, processing: 0, completed: 0, returned: 0, slaBreach: 0 }, pool: { poolPending: 0 }, top5: [], members: [] };
+    return { moduleCode, counts: { pending: 0, processing: 0, completed: 0, returned: 0, voided: 0, slaBreach: 0 }, pool: { poolPending: 0 }, top5: [], members: [] };
   }
 
   private emptyManager(): Record<string, unknown> {
     return { modules: [], topCustomers: [], ratios: { totalSubmitted: 0, returnRatio: null, withdrawRatio: null, avgCloseHours: null }, trend: [] };
   }
 
-  async getOrderTypeMatrix(user: JwtUserPayload, dimension: 'orderType' | 'node' = 'orderType'): Promise<unknown> {
+  async getOrderTypeMatrix(user: JwtUserPayload, dimension: 'orderType' | 'node' = 'orderType', requestedScope?: 'mine' | 'team'): Promise<unknown> {
     if (dimension === 'node' && this.isBackendHandler(user) && !this.isGlobalBusinessOverview(user)) {
       return { rows: await this.queryBackendNodeMatrixRows(user) };
     }
 
-    const scope = await this.resolveDashboardScope(user);
+    const scope = await this.resolveDashboardScope(user, requestedScope);
     if (scope.empty) {
       return { rows: [] };
     }
@@ -529,26 +575,32 @@ export class DashboardService {
       ),
       scoped_wo AS (
         SELECT wo.*
-          FROM work_orders wo, bounds b
-         WHERE COALESCE(wo.submitted_at, wo.created_at) >= b.cur_start
-           AND COALESCE(wo.submitted_at, wo.created_at) < b.cur_end
-           AND wo.status::text <> 'draft'
+          FROM work_orders wo
+         WHERE wo.status::text <> 'draft'
            AND ($1::boolean = false
              OR ($2::uuid[] IS NOT NULL AND array_length($2::uuid[], 1) > 0 AND wo.department_id = ANY($2::uuid[]))
              OR ($3::uuid IS NOT NULL AND wo.created_by = $3::uuid))
+      ), scoped_do AS (
+        SELECT d.*, wo.order_type
+          FROM dispatched_orders d
+          JOIN scoped_wo wo ON wo.id = d.parent_order_id
+          CROSS JOIN bounds b
+         WHERE COALESCE(d.dispatched_at, d.created_at) >= b.cur_start
+           AND COALESCE(d.dispatched_at, d.created_at) < b.cur_end
       )
       SELECT
         ot.order_type AS "orderType",
         ot.label,
-        COALESCE(COUNT(wo.id), 0)::int AS total,
-        COALESCE(COUNT(wo.id) FILTER (WHERE wo.status::text NOT IN ('completed','withdrawn','void','draft')), 0)::int AS processing,
-        COALESCE(COUNT(wo.id) FILTER (WHERE wo.status::text = 'completed'), 0)::int AS completed,
+        COALESCE(COUNT(d.id), 0)::int AS total,
+        COALESCE(COUNT(d.id) FILTER (WHERE d.status::text NOT IN ('completed','void') AND d.void_at IS NULL), 0)::int AS processing,
+        COALESCE(COUNT(d.id) FILTER (WHERE d.status::text = 'completed'), 0)::int AS completed,
+        COALESCE(COUNT(d.id) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL), 0)::int AS voided,
         CASE
-          WHEN COUNT(wo.id) = 0 THEN 0
-          ELSE ROUND(COUNT(wo.id) FILTER (WHERE wo.status::text = 'completed')::numeric * 100 / COUNT(wo.id), 1)
+          WHEN COUNT(d.id) = 0 THEN 0
+          ELSE ROUND(COUNT(d.id) FILTER (WHERE d.status::text = 'completed')::numeric * 100 / COUNT(d.id), 1)
         END AS "completionRate"
       FROM order_types ot
-      LEFT JOIN scoped_wo wo ON wo.order_type::text = ot.order_type
+      LEFT JOIN scoped_do d ON d.order_type::text = ot.order_type
       GROUP BY ot.order_type, ot.label, ot.sort_order
       ORDER BY ot.sort_order
       `,
@@ -588,8 +640,9 @@ export class DashboardService {
       SELECT
         d.module_code AS "moduleCode",
         COUNT(*)::int AS total,
-        COUNT(*) FILTER (WHERE d.status::text <> 'completed')::int AS processing,
+        COUNT(*) FILTER (WHERE d.status::text NOT IN ('completed','void') AND d.void_at IS NULL)::int AS processing,
         COUNT(*) FILTER (WHERE d.status::text = 'completed')::int AS completed,
+        COUNT(*) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)::int AS voided,
         CASE
           WHEN COUNT(*) = 0 THEN 0
           ELSE ROUND(COUNT(*) FILTER (WHERE d.status::text = 'completed')::numeric * 100 / COUNT(*), 1)
@@ -617,10 +670,8 @@ export class DashboardService {
       ),
       scoped_wo AS (
         SELECT wo.*
-          FROM work_orders wo, bounds b
-         WHERE COALESCE(wo.submitted_at, wo.created_at) >= b.cur_start
-           AND COALESCE(wo.submitted_at, wo.created_at) < b.cur_end
-           AND wo.status <> 'draft'
+          FROM work_orders wo
+         WHERE wo.status <> 'draft'
            AND ($1::boolean = false
              OR ($2::uuid[] IS NOT NULL AND array_length($2::uuid[], 1) > 0 AND wo.department_id = ANY($2::uuid[]))
              OR ($3::uuid IS NOT NULL AND wo.created_by = $3::uuid))
@@ -629,12 +680,16 @@ export class DashboardService {
         SELECT d.*
           FROM dispatched_orders d
           JOIN scoped_wo wo ON wo.id = d.parent_order_id
+          CROSS JOIN bounds b
+         WHERE COALESCE(d.dispatched_at, d.created_at) >= b.cur_start
+           AND COALESCE(d.dispatched_at, d.created_at) < b.cur_end
       )
       SELECT
         d.module_code AS "moduleCode",
         COUNT(*)::int AS total,
-        COUNT(*) FILTER (WHERE d.status::text <> 'completed')::int AS processing,
+        COUNT(*) FILTER (WHERE d.status::text NOT IN ('completed','void') AND d.void_at IS NULL)::int AS processing,
         COUNT(*) FILTER (WHERE d.status::text = 'completed')::int AS completed,
+        COUNT(*) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)::int AS voided,
         CASE
           WHEN COUNT(*) = 0 THEN 0
           ELSE ROUND(COUNT(*) FILTER (WHERE d.status::text = 'completed')::numeric * 100 / COUNT(*), 1)
@@ -652,14 +707,37 @@ export class DashboardService {
     }));
   }
 
-  async getLeaderTrend(orderType: string, user: JwtUserPayload, moduleCode?: string): Promise<unknown> {
-    const scope = await this.resolveDashboardScope(user);
-    if (scope.empty) {
-      return { orderType, buckets: [] };
-    }
-
-    const hasScopeFilter = scope.departmentIds !== null || scope.ownerId !== null;
+  async getLeaderTrend(orderType: string, user: JwtUserPayload, moduleCode?: string, requestedScope?: 'mine' | 'team'): Promise<unknown> {
+    const normalizedOrderType = this.normalizeLeaderTrendOrderType(orderType);
     const moduleFilter = resolveDispatchModuleCode(moduleCode) ?? null;
+
+    try {
+      const scope = await this.resolveDashboardScope(user, requestedScope);
+      if (!scope.empty) {
+        const rows = await this.queryLeaderTrendByDashboardScope(normalizedOrderType, scope, moduleFilter);
+        return { orderType: normalizedOrderType, moduleCode: moduleFilter, buckets: this.normalizeLeaderTrendBuckets(rows) };
+      }
+
+      if (this.isBackendHandler(user)) {
+        const backendScope = await this.resolveBackendDashboardScope(user);
+        const rows = await this.queryLeaderTrendByBackendScope(normalizedOrderType, user, backendScope, moduleFilter);
+        return { orderType: normalizedOrderType, moduleCode: moduleFilter, buckets: this.normalizeLeaderTrendBuckets(rows) };
+      }
+
+      return this.emptyLeaderTrend(normalizedOrderType, moduleFilter);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`leader-trend fallback: ${message}`);
+      return this.emptyLeaderTrend(normalizedOrderType, moduleFilter);
+    }
+  }
+
+  private async queryLeaderTrendByDashboardScope(
+    orderType: string,
+    scope: { departmentIds: string[] | null; ownerId: string | null; empty: boolean },
+    moduleFilter: string | null,
+  ): Promise<Array<Record<string, unknown>>> {
+    const hasScopeFilter = scope.departmentIds !== null || scope.ownerId !== null;
     const params: unknown[] = [
       orderType,
       hasScopeFilter,
@@ -668,7 +746,7 @@ export class DashboardService {
       moduleFilter,
     ];
 
-    const rows = await this.dataSource.query(
+    return this.dataSource.query(
       `
       WITH months AS (
         SELECT generate_series(
@@ -678,45 +756,161 @@ export class DashboardService {
         ) AS month_start
       ),
       scoped_wo AS (
-        SELECT
-          wo.*,
-          date_trunc('month', COALESCE(wo.submitted_at, wo.created_at) AT TIME ZONE 'Asia/Shanghai') AS wo_month
+        SELECT wo.*
         FROM work_orders wo
-        WHERE wo.order_type = $1
-          AND wo.status <> 'draft'
-          AND COALESCE(wo.submitted_at, wo.created_at) >= (SELECT MIN(month_start) FROM months)
+        WHERE wo.order_type::text = $1
+          AND wo.status::text <> 'draft'
           AND ($2::boolean = false
             OR ($3::uuid[] IS NOT NULL AND array_length($3::uuid[], 1) > 0 AND wo.department_id = ANY($3::uuid[]))
             OR ($4::uuid IS NOT NULL AND wo.created_by = $4::uuid))
-          AND ($5::text IS NULL OR EXISTS (
-            SELECT 1 FROM dispatched_orders d
-             WHERE d.parent_order_id = wo.id
-               AND d.module_code = $5::text
-          ))
+      ),
+      scoped_do AS (
+        SELECT
+          d.*,
+          date_trunc('month', COALESCE(d.dispatched_at, d.created_at) AT TIME ZONE 'Asia/Shanghai') AS bucket_month
+        FROM dispatched_orders d
+        JOIN scoped_wo wo ON wo.id = d.parent_order_id
+        WHERE COALESCE(d.dispatched_at, d.created_at) >= (SELECT MIN(month_start) FROM months)
+          AND ($5::text IS NULL OR d.module_code = $5::text)
       )
       SELECT
         to_char(m.month_start, 'YYYY-MM') AS month,
-        COUNT(wo.id)::int AS total,
-        COUNT(wo.id) FILTER (WHERE wo.status = 'completed')::int AS completed,
+        COUNT(d.id)::int AS total,
+        COUNT(d.id) FILTER (WHERE d.status::text = 'completed')::int AS completed,
+        COUNT(d.id) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)::int AS voided,
         CASE
-          WHEN COUNT(wo.id) = 0 THEN 0
-          ELSE ROUND(COUNT(wo.id) FILTER (WHERE wo.status = 'completed')::numeric * 100 / COUNT(wo.id), 1)
+          WHEN COUNT(d.id) = 0 THEN 0
+          ELSE ROUND(COUNT(d.id) FILTER (WHERE d.status::text = 'completed')::numeric * 100 / COUNT(d.id), 1)
         END AS rate
       FROM months m
-      LEFT JOIN scoped_wo wo ON wo.wo_month = m.month_start
+      LEFT JOIN scoped_do d ON d.bucket_month = m.month_start
       GROUP BY m.month_start
       ORDER BY m.month_start
       `,
       params,
-    );
+    ) as Promise<Array<Record<string, unknown>>>;
+  }
 
-    return { orderType, moduleCode: moduleFilter, buckets: rows };
+  private async queryLeaderTrendByBackendScope(
+    orderType: string,
+    user: JwtUserPayload,
+    scope: BackendDashboardScope,
+    moduleFilter: string | null,
+  ): Promise<Array<Record<string, unknown>>> {
+    const moduleCodes = moduleFilter
+      ? (scope.modules.includes(moduleFilter) ? [moduleFilter] : [])
+      : scope.modules;
+    const params: unknown[] = [
+      orderType,
+      scope.includeModuleAll,
+      user.sub,
+      moduleFilter,
+      moduleCodes,
+    ];
+
+    return this.dataSource.query(
+      `
+      WITH months AS (
+        SELECT generate_series(
+          date_trunc('month', now() AT TIME ZONE 'Asia/Shanghai') - interval '11 months',
+          date_trunc('month', now() AT TIME ZONE 'Asia/Shanghai'),
+          interval '1 month'
+        ) AS month_start
+      ),
+      scoped_do AS (
+        SELECT
+          d.*,
+          date_trunc('month', COALESCE(d.dispatched_at, d.created_at) AT TIME ZONE 'Asia/Shanghai') AS bucket_month
+        FROM dispatched_orders d
+        JOIN work_orders wo ON wo.id = d.parent_order_id
+        WHERE wo.order_type::text = $1
+          AND wo.status::text <> 'draft'
+          AND COALESCE(d.dispatched_at, d.created_at) >= (SELECT MIN(month_start) FROM months)
+          AND ($4::text IS NULL OR d.module_code = $4::text)
+          AND (
+            d.handler_id = $3::uuid
+            OR (array_length($5::text[], 1) > 0 AND d.handler_id IS NULL AND d.module_code = ANY($5::text[]))
+            OR ($2::boolean = true AND array_length($5::text[], 1) > 0 AND d.module_code = ANY($5::text[]))
+          )
+      )
+      SELECT
+        to_char(m.month_start, 'YYYY-MM') AS month,
+        COUNT(d.id)::int AS total,
+        COUNT(d.id) FILTER (WHERE d.status::text = 'completed')::int AS completed,
+        COUNT(d.id) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)::int AS voided,
+        CASE
+          WHEN COUNT(d.id) = 0 THEN 0
+          ELSE ROUND(COUNT(d.id) FILTER (WHERE d.status::text = 'completed')::numeric * 100 / COUNT(d.id), 1)
+        END AS rate
+      FROM months m
+      LEFT JOIN scoped_do d ON d.bucket_month = m.month_start
+      GROUP BY m.month_start
+      ORDER BY m.month_start
+      `,
+      params,
+    ) as Promise<Array<Record<string, unknown>>>;
+  }
+
+  private normalizeLeaderTrendOrderType(orderType: string): string {
+    return ['onboarding', 'renewal', 'resignation', 'benefit'].includes(orderType) ? orderType : 'onboarding';
+  }
+
+  private normalizeLeaderTrendBuckets(rows: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+    if (!rows.length) {
+      return this.emptyLeaderTrendBuckets();
+    }
+
+    return rows.map((row) => {
+      const total = Number(row.total ?? 0);
+      const completed = Number(row.completed ?? 0);
+      const voided = Number(row.voided ?? 0);
+      const rate = row.rate === null || row.rate === undefined
+        ? (total === 0 ? 0 : Number(((completed / total) * 100).toFixed(1)))
+        : Number(row.rate);
+      return {
+        month: String(row.month ?? ''),
+        total,
+        completed,
+        voided,
+        rate,
+      };
+    });
+  }
+
+  private emptyLeaderTrend(orderType: string, moduleCode: string | null): Record<string, unknown> {
+    return { orderType, moduleCode, buckets: this.emptyLeaderTrendBuckets() };
+  }
+
+  private emptyLeaderTrendBuckets(): Array<Record<string, unknown>> {
+    const now = new Date();
+    const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    return Array.from({ length: 12 }, (_, index) => {
+      const bucket = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 11 + index, 1);
+      return {
+        month: `${bucket.getFullYear()}-${String(bucket.getMonth() + 1).padStart(2, '0')}`,
+        total: 0,
+        completed: 0,
+        voided: 0,
+        rate: 0,
+      };
+    });
   }
 
   private async resolveDashboardScope(
     user: JwtUserPayload,
+    requestedScope?: 'mine' | 'team',
   ): Promise<{ departmentIds: string[] | null; ownerId: string | null; empty: boolean }> {
-    if (this.isGlobalBusinessOverview(user)) {
+    if (requestedScope === 'mine') {
+      return { departmentIds: null, ownerId: user.sub, empty: false };
+    }
+    if (requestedScope === 'team' && (hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES) || hasAnyRole(user.roles, BUSINESS_LEADER_ROLES))) {
+      const departmentIds = await this.workOrderValidationService.resolveUserDepartmentIds(user.sub);
+      if (departmentIds.length === 0) {
+        return { departmentIds: [], ownerId: null, empty: true };
+      }
+      return { departmentIds, ownerId: null, empty: false };
+    }
+    if (await this.canViewAllWorkOrders(user)) {
       return { departmentIds: null, ownerId: null, empty: false };
     }
     if (hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES) || hasAnyRole(user.roles, BUSINESS_LEADER_ROLES)) {

@@ -1,7 +1,11 @@
+import { Reflector } from '@nestjs/core';
+import { ROLES_KEY } from 'src/common/decorators/roles.decorator';
+import { DashboardController } from 'src/modules/dashboard/dashboard.controller';
 import { DashboardService } from 'src/modules/dashboard/dashboard.service';
 
 describe('DashboardService', () => {
   const validationStub = { resolveUserDepartmentIds: jest.fn(async () => ['dept-1']) } as never;
+  const zeroVoided = { voided: 0, voidCount: 0, void_count: 0 };
 
   it('returns dashboard cards for admin with global work order scope', async () => {
     const dataSource = { query: jest.fn()
@@ -11,10 +15,11 @@ describe('DashboardService', () => {
 
     const result = await service.getDashboardCards({ sub: 'admin-1', roles: ['admin'] } as never);
 
-    expect(result).toEqual({ totalThisMonth: 45, processing: 12, completed: 30, myMessages: 8, scope: 'global' });
+    expect(result).toEqual({ totalThisMonth: 45, processing: 12, completed: 30, ...zeroVoided, myMessages: 8, scope: 'global' });
     expect(dataSource.query).toHaveBeenNthCalledWith(1, expect.stringContaining('notifications'), ['admin-1']);
-    expect(dataSource.query).toHaveBeenNthCalledWith(2, expect.stringContaining('FROM work_orders'), [null, null, []]);
-    expect(dataSource.query.mock.calls[1][0]).toContain("status::text NOT IN ('completed','withdrawn','void','draft')");
+    expect(dataSource.query).toHaveBeenNthCalledWith(2, expect.stringContaining('FROM dispatched_orders'), [null, null, []]);
+    expect(dataSource.query.mock.calls[1][0]).toContain("status::text NOT IN ('completed','void') AND void_at IS NULL");
+    expect(dataSource.query.mock.calls[1][0]).toContain('AS voided');
   });
 
   it('returns dashboard cards for salesperson with owner work order scope', async () => {
@@ -25,7 +30,7 @@ describe('DashboardService', () => {
 
     const result = await service.getDashboardCards({ sub: 'sales-1', roles: ['salesperson'] } as never);
 
-    expect(result).toEqual({ totalThisMonth: 5, processing: 3, completed: 1, myMessages: 2, scope: 'mine' });
+    expect(result).toEqual({ totalThisMonth: 5, processing: 3, completed: 1, ...zeroVoided, myMessages: 2, scope: 'mine' });
     expect(dataSource.query).toHaveBeenNthCalledWith(2, expect.stringContaining('wo.created_by = $2::uuid'), ['owner', 'sales-1', []]);
   });
 
@@ -39,7 +44,7 @@ describe('DashboardService', () => {
     const result = await service.getDashboardCards({ sub: 'leader-1', roles: ['biz_leader'] } as never);
 
     expect(resolve).toHaveBeenCalledWith('leader-1');
-    expect(result).toEqual({ totalThisMonth: 9, processing: 4, completed: 5, myMessages: 1, scope: 'team' });
+    expect(result).toEqual({ totalThisMonth: 9, processing: 4, completed: 5, ...zeroVoided, myMessages: 1, scope: 'team' });
     expect(dataSource.query).toHaveBeenNthCalledWith(2, expect.stringContaining('wo.department_id = ANY($3::uuid[])'), ['department', null, ['dept-a', 'dept-b']]);
   });
 
@@ -51,8 +56,8 @@ describe('DashboardService', () => {
 
     const result = await service.getDashboardCards({ sub: 'manager-1', roles: ['business_owner'] } as never);
 
-    expect(result).toEqual({ totalThisMonth: 30, processing: 8, completed: 20, myMessages: 3, scope: 'global' });
-    expect(dataSource.query).toHaveBeenNthCalledWith(2, expect.stringContaining('FROM work_orders'), [null, null, []]);
+    expect(result).toEqual({ totalThisMonth: 30, processing: 8, completed: 20, ...zeroVoided, myMessages: 3, scope: 'global' });
+    expect(dataSource.query).toHaveBeenNthCalledWith(2, expect.stringContaining('FROM dispatched_orders'), [null, null, []]);
   });
 
   it('returns dashboard cards for backend handler with dispatched order scope', async () => {
@@ -63,9 +68,10 @@ describe('DashboardService', () => {
 
     const result = await service.getDashboardCards({ sub: 'handler-1', roles: ['contract_specialist'] } as never);
 
-    expect(result).toEqual({ totalThisMonth: 7, processing: 2, completed: 5, myMessages: 4, scope: 'backend_module' });
+    expect(result).toEqual({ totalThisMonth: 7, processing: 2, completed: 5, ...zeroVoided, myMessages: 4, scope: 'backend_module' });
     expect(dataSource.query).toHaveBeenNthCalledWith(2, expect.stringContaining('FROM dispatched_orders'), ['handler-1']);
-    expect(dataSource.query.mock.calls[1][0]).toContain("status::text NOT IN ('completed','withdrawn','void','draft')");
+    expect(dataSource.query.mock.calls[1][0]).toContain("status::text NOT IN ('completed','void') AND void_at IS NULL");
+    expect(dataSource.query.mock.calls[1][0]).toContain('AS voided');
   });
 
   it('returns empty dashboard cards when business leader has no departments', async () => {
@@ -74,7 +80,7 @@ describe('DashboardService', () => {
     const service = new DashboardService(dataSource as never, { resolveUserDepartmentIds: resolve } as never);
 
     await expect(service.getDashboardCards({ sub: 'leader-2', roles: ['business_group_leader'] } as never))
-      .resolves.toEqual({ totalThisMonth: 0, processing: 0, completed: 0, myMessages: 6, scope: 'team' });
+      .resolves.toEqual({ totalThisMonth: 0, processing: 0, completed: 0, ...zeroVoided, myMessages: 6, scope: 'team' });
     expect(dataSource.query).toHaveBeenCalledTimes(1);
   });
 
@@ -156,6 +162,22 @@ describe('DashboardService', () => {
     const result = await service.getLeaderTrend('onboarding', { sub: 'admin-1', roles: ['admin'] } as never, '入职联系');
 
     expect(dataSource.query).toHaveBeenCalledWith(expect.stringContaining('d.module_code = $5::text'), ['onboarding', false, [], null, 'onboarding_contact']);
-    expect(result).toEqual({ orderType: 'onboarding', moduleCode: 'onboarding_contact', buckets: [{ month: '2026-05', total: 1, completed: 0, rate: 0 }] });
+    expect(result).toEqual({ orderType: 'onboarding', moduleCode: 'onboarding_contact', buckets: [{ month: '2026-05', total: 1, completed: 0, voided: 0, rate: 0 }] });
+  });
+
+  it('allows all frontend-visible leader trend roles at controller metadata level', () => {
+    const roles = new Reflector().get<string[]>(ROLES_KEY, DashboardController.prototype.leaderTrend);
+
+    expect(roles).toEqual(expect.arrayContaining([
+      'admin',
+      'business_owner',
+      'biz_manager',
+      'manager',
+      'business_group_leader',
+      'biz_leader',
+      'data_entry_leader',
+      'shared_team_owner',
+      'shared_leader',
+    ]));
   });
 });

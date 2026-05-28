@@ -1,7 +1,7 @@
 import { ForbiddenException, HttpStatus, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, In, QueryFailedError, Repository, SelectQueryBuilder } from 'typeorm';
-import { hasAnyRole, hasManagementScopeRole, hasModuleSupervisorRole, isAdminRole } from 'src/common/auth/role-permissions';
+import { Brackets, In, MoreThan, QueryFailedError, Repository, SelectQueryBuilder } from 'typeorm';
+import { BUSINESS_MEMBER_ROLES, hasAnyRole, hasManagementScopeRole, hasModuleSupervisorRole, isAdminRole } from 'src/common/auth/role-permissions';
 import { resolveDispatchModuleCode } from 'src/common/constants/dispatch-modules';
 import { businessException } from 'src/common/exceptions/business-exception';
 import { isUuidLike } from 'src/common/utils/uuid-param';
@@ -292,6 +292,7 @@ export class DispatchedOrderService {
     }
 
     await this.checkMainOrderComplete(order.parentOrderId);
+    await this.markTodoNotificationsReadForDispatchedOrder(order, user.sub);
     await this.writeLog('dispatched_order', id, user.sub, 'complete', this.snapshot(order), payload.extraData ?? {});
     return this.findOne(id, user);
   }
@@ -422,6 +423,7 @@ export class DispatchedOrderService {
       order.completionRemark = remark;
       await this.dispatchedOrderRepository.save(order);
       await this.checkMainOrderComplete(order.parentOrderId);
+      await this.markTodoNotificationsReadForDispatchedOrder(order, user.sub);
       await this.writeLog('dispatched_order', id, user.sub, 'social_insurance_batch_complete', this.snapshot(order), { remark });
       completed += 1;
     }
@@ -596,16 +598,28 @@ export class DispatchedOrderService {
   }
 
   private async urgeLoadedOrder(order: DispatchedOrder, reasonInput: string | undefined, user: JwtUserPayload): Promise<void> {
-    this.assertCanCreatorOperate(order, user, '催办');
-    this.assertCreatorActionAllowed(order, '催办');
-    if (order.status === DispatchedOrderStatus.RETURNED) {
-      throw businessException(4201, HttpStatus.CONFLICT, '已退回/已撤回的子工单不需要催办，请先修改后重新处理');
+    if (![DispatchedOrderStatus.PENDING, DispatchedOrderStatus.PROCESSING].includes(order.status)) {
+      throw businessException(4201, HttpStatus.CONFLICT, '仅处理中子工单可催办');
     }
 
     const reason = reasonInput?.trim() || '请尽快处理该子工单';
-    const recipients = await this.resolveDispatchedRecipients(order);
-    await this.notifyUsers(order, recipients, 'creator_urge', '业务员催办子工单', reason);
-    await this.writeLog('dispatched_order', order.id, user.sub, 'creator_urge', this.snapshot(order), { reason });
+    if (this.isAdmin(user) || order.parentOrder.createdBy === user.sub) {
+      this.assertCreatorActionAllowed(order, '催办');
+      await this.assertUrgeNotTooFrequent(order.id, user.sub, 'creator_urge');
+      const recipients = await this.resolveDispatchedRecipients(order);
+      await this.notifyUsers(order, recipients, 'creator_urge', '业务员催办子工单', reason);
+      await this.writeLog('dispatched_order', order.id, user.sub, 'creator_urge', this.snapshot(order), { reason, recipients });
+      return;
+    }
+
+    if (order.handlerId === user.sub || (await this.canActAsModuleSupervisor(user, order.moduleCode))) {
+      await this.assertUrgeNotTooFrequent(order.id, user.sub, 'backend_urge_creator');
+      // 0528 feedback: cancel salesperson-side urge feedback notifications; keep audit log only.
+      await this.writeLog('dispatched_order', order.id, user.sub, 'backend_urge_creator', this.snapshot(order), { reason, recipient: order.parentOrder.createdBy });
+      return;
+    }
+
+    throw businessException(5000, HttpStatus.FORBIDDEN, '无权催办该子工单');
   }
 
   async withdraw(id: string, payload: { reason?: string; moduleCode?: string; module_code?: string }, user: JwtUserPayload): Promise<DispatchedOrderDetailItem> {
@@ -639,18 +653,18 @@ export class DispatchedOrderService {
     const previousStatus = await this.readPreviousDispatchedStatus(order.id, 'creator_withdraw_request', DispatchedOrderStatus.PROCESSING);
     const comment = payload.comment?.trim() || null;
 
-    order.status = approved ? DispatchedOrderStatus.RETURNED : previousStatus;
+    order.status = approved ? DispatchedOrderStatus.WITHDRAWN : previousStatus;
     order.returnReason = approved
-      ? (comment ? `撤回已通过：${comment}` : (order.returnReason || '业务员撤回已通过，请修改后重新提交或直接作废'))
+      ? (comment ? `撤回已通过：${comment}` : (order.returnReason || '业务员撤回已通过，可直接作废'))
       : comment ? `撤回已拒绝：${comment}` : null;
-    order.completedAt = null;
+    order.completedAt = approved ? (order.completedAt ?? new Date()) : null;
     if (approved) {
-      order.parentOrder.status = WorkOrderStatus.RETURNED;
-      order.parentOrder.completedAt = null;
+      order.parentOrder.status = WorkOrderStatus.WITHDRAWN;
+      order.parentOrder.completedAt = order.parentOrder.completedAt ?? new Date();
       await this.workOrderRepository.save(order.parentOrder);
     }
     await this.dispatchedOrderRepository.save(order);
-    await this.notifyCreator(order, approved ? 'withdraw_approved' : 'withdraw_rejected', approved ? '子工单撤回已通过，请修改后重新提交或直接作废' : '子工单撤回已拒绝', comment || (approved ? '撤回申请已通过' : '撤回申请已拒绝'));
+    await this.notifyCreator(order, approved ? 'withdraw_approved' : 'withdraw_rejected', approved ? '子工单撤回已通过，可直接作废' : '子工单撤回已拒绝', comment || (approved ? '撤回申请已通过' : '撤回申请已拒绝'));
     await this.writeLog('dispatched_order', id, user.sub, approved ? 'creator_withdraw_approved' : 'creator_withdraw_rejected', before, { approved, comment, previousStatus, status: order.status });
     return this.findOne(id, user);
   }
@@ -666,14 +680,16 @@ export class DispatchedOrderService {
 
     const before = this.snapshot(order);
     const previousStatus = order.status;
-    if (order.status === DispatchedOrderStatus.RETURNED) {
+    if ([DispatchedOrderStatus.RETURNED, DispatchedOrderStatus.WITHDRAWN].includes(order.status)) {
+      const directVoidAction = order.status === DispatchedOrderStatus.WITHDRAWN ? 'creator_void_after_withdraw' : 'creator_void_after_return';
       order.status = DispatchedOrderStatus.VOID;
       order.voidAt = new Date();
-      order.returnReason = `退回后业务员直接作废：${reason}`;
+      order.returnReason = previousStatus === DispatchedOrderStatus.WITHDRAWN
+        ? `撤回后业务员直接作废：${reason}`
+        : `退回后业务员直接作废：${reason}`;
       order.completedAt = order.completedAt ?? new Date();
       await this.dispatchedOrderRepository.save(order);
-      await this.notifyUsers(order, await this.resolveDispatchedRecipients(order), 'creator_void_after_return', '退回子工单已由业务员作废', reason);
-      await this.writeLog('dispatched_order', order.id, user.sub, 'creator_void_after_return', before, { reason, previousStatus, status: order.status, voidAt: order.voidAt });
+      await this.writeLog('dispatched_order', order.id, user.sub, directVoidAction, before, { reason, previousStatus, status: order.status, voidAt: order.voidAt });
       return this.findOne(order.id, user);
     }
 
@@ -704,6 +720,32 @@ export class DispatchedOrderService {
     await this.dispatchedOrderRepository.save(order);
     await this.notifyCreator(order, approved ? 'void_approved' : 'void_rejected', approved ? '子工单作废已通过' : '子工单作废已拒绝', comment || (approved ? '作废申请已通过' : '作废申请已拒绝'));
     await this.writeLog('dispatched_order', id, user.sub, approved ? 'creator_void_approved' : 'creator_void_rejected', before, { approved, comment, previousStatus, status: order.status, voidAt: order.voidAt });
+    return this.findOne(id, user);
+  }
+
+  async restoreVoidByCreator(id: string, payload: { moduleCode?: string; module_code?: string }, user: JwtUserPayload): Promise<DispatchedOrderDetailItem> {
+    const order = await this.loadDispatchedOrderForCreatorAction(id, payload.moduleCode ?? payload.module_code);
+    this.assertCanCreatorRestoreVoid(order, user);
+    if (order.status !== DispatchedOrderStatus.VOID || !order.voidAt) {
+      throw businessException(4201, HttpStatus.CONFLICT, '仅已作废的子工单可撤销作废');
+    }
+    if ([WorkOrderStatus.VOID_PENDING, WorkOrderStatus.WITHDRAW_PENDING].includes(order.parentOrder.status)) {
+      throw businessException(4204, HttpStatus.CONFLICT, '父工单审批中，暂不可撤销作废');
+    }
+
+    const before = this.snapshot(order);
+    order.status = DispatchedOrderStatus.PENDING;
+    order.voidAt = null;
+    order.completedAt = null;
+    order.returnReason = null;
+    if ([WorkOrderStatus.VOID, WorkOrderStatus.WITHDRAWN, WorkOrderStatus.COMPLETED].includes(order.parentOrder.status)) {
+      order.parentOrder.status = WorkOrderStatus.PROCESSING;
+      order.parentOrder.completedAt = null;
+      await this.workOrderRepository.save(order.parentOrder);
+    }
+    await this.dispatchedOrderRepository.save(order);
+    await this.writeLog('dispatched_order', id, user.sub, 'creator_restore_void', before, { status: order.status, voidAt: order.voidAt, parentStatus: order.parentOrder.status });
+    // 0528 feedback: restoring a void child order must not create a new notification.
     return this.findOne(id, user);
   }
 
@@ -837,6 +879,7 @@ export class DispatchedOrderService {
 
   async remove(id: string, user: JwtUserPayload): Promise<{ success: boolean; id: string }> {
     const order = await this.loadDispatchedOrder(id);
+    await this.markTodoNotificationsReadForDispatchedOrder(order, order.handlerId ?? user.sub);
     await this.dispatchedOrderRepository.delete(id);
     await this.writeLog('dispatched_order', id, user.sub, 'delete', this.snapshot(order), { deleted: true });
     return { success: true, id };
@@ -966,7 +1009,49 @@ export class DispatchedOrderService {
     order.completionRemark = remark;
     await this.dispatchedOrderRepository.save(order);
     await this.checkMainOrderComplete(order.parentOrderId);
+    await this.markTodoNotificationsReadForDispatchedOrder(order, user.sub);
     await this.writeLog('dispatched_order', order.id, user.sub, 'batch_import_complete', before, { remark });
+  }
+
+  private async markTodoNotificationsReadForDispatchedOrder(order: DispatchedOrder, userId: string): Promise<void> {
+    const readAt = new Date();
+    const todoBizTypes = [
+      'dispatch',
+      'dispatch_created',
+      'dispatch_resubmit',
+      'dispatched_new',
+      'dispatch_reassign',
+      'reassigned_to_you',
+      'pool_new',
+    ];
+    const rows = await this.notificationRepository.find({
+      where: {
+        userId,
+        isRead: false,
+        bizType: In(todoBizTypes),
+      },
+    });
+    const matched = rows.filter((row) => this.notificationMatchesDispatchedOrder(row, order));
+    if (matched.length === 0) return;
+
+    for (const row of matched) {
+      row.isRead = true;
+      row.readAt = readAt;
+    }
+    await this.notificationRepository.save(matched);
+  }
+
+  private notificationMatchesDispatchedOrder(notification: Notification, order: DispatchedOrder): boolean {
+    const payload = (notification.payload ?? {}) as Record<string, unknown>;
+    const dispatchedOrderId = this.readImportString(payload.dispatchedOrderId ?? payload.dispatched_order_id ?? payload.entityId ?? payload.entity_id);
+    if (dispatchedOrderId && dispatchedOrderId === order.id) return true;
+
+    const workOrderId = this.readImportString(payload.workOrderId ?? payload.work_order_id ?? payload.parentOrderId ?? payload.parent_order_id);
+    const moduleCode = this.readImportString(payload.moduleCode ?? payload.module_code);
+    if (workOrderId === order.parentOrderId && (!moduleCode || moduleCode === order.moduleCode)) return true;
+
+    const link = notification.link ?? '';
+    return link.includes(order.id) || (link.includes(order.parentOrderId) && (!moduleCode || moduleCode === order.moduleCode));
   }
 
   private readImportString(value: unknown): string | null {
@@ -1376,15 +1461,23 @@ export class DispatchedOrderService {
     throw businessException(5000, HttpStatus.FORBIDDEN, `仅工单发起人可${actionLabel}该子工单`);
   }
 
+  private assertCanCreatorRestoreVoid(order: DispatchedOrder, user: JwtUserPayload): void {
+    if (order.parentOrder.createdBy !== user.sub || !hasAnyRole(user.roles, BUSINESS_MEMBER_ROLES)) {
+      throw businessException(5000, HttpStatus.FORBIDDEN, '仅创建该工单的业务员可撤销作废该子工单');
+    }
+  }
+
   private assertCreatorActionAllowed(order: DispatchedOrder, actionLabel: string): void {
-    this.assertParentAllowsDispatchedHandling(order);
+    if (!(actionLabel === '作废' && order.status === DispatchedOrderStatus.WITHDRAWN)) {
+      this.assertParentAllowsDispatchedHandling(order);
+    }
     if (order.voidAt || order.status === DispatchedOrderStatus.VOID) {
       throw businessException(4201, HttpStatus.CONFLICT, `已作废的子工单不允许${actionLabel}`);
     }
     if (order.status === DispatchedOrderStatus.COMPLETED) {
       throw businessException(4201, HttpStatus.CONFLICT, `已完成的子工单不允许${actionLabel}`);
     }
-    if (order.status === DispatchedOrderStatus.WITHDRAWN) {
+    if (order.status === DispatchedOrderStatus.WITHDRAWN && actionLabel !== '作废') {
       throw businessException(4201, HttpStatus.CONFLICT, `已撤回的子工单不允许${actionLabel}`);
     }
     if ([DispatchedOrderStatus.WITHDRAW_PENDING, DispatchedOrderStatus.VOID_PENDING].includes(order.status)) {
@@ -1461,10 +1554,9 @@ export class DispatchedOrderService {
 
   private async checkMainOrderComplete(parentOrderId: string): Promise<void> {
     const children = await this.dispatchedOrderRepository.find({ where: { parentOrderId } });
-    const closedStatuses = new Set<DispatchedOrderStatus>([DispatchedOrderStatus.COMPLETED, DispatchedOrderStatus.WITHDRAWN, DispatchedOrderStatus.VOID]);
-    if (children.length === 0 || children.some((child) => !closedStatuses.has(child.status))) return;
+    if (children.length === 0 || children.some((child) => child.status !== DispatchedOrderStatus.COMPLETED)) return;
     const workOrder = await this.workOrderRepository.findOne({ where: { id: parentOrderId } });
-    if (!workOrder || workOrder.status === WorkOrderStatus.COMPLETED) return;
+    if (!workOrder || workOrder.status === WorkOrderStatus.COMPLETED || [WorkOrderStatus.WITHDRAWN, WorkOrderStatus.VOID].includes(workOrder.status)) return;
     const before = {
       id: workOrder.id,
       orderNo: workOrder.orderNo,
@@ -1602,6 +1694,21 @@ export class DispatchedOrderService {
     const mappedModules = modulesByField.get(fieldCode);
     if (mappedModules && mappedModules.size > 0) return mappedModules.has(child.moduleCode);
     return !child.visibleFields || child.visibleFields.includes(fieldCode);
+  }
+
+  private async assertUrgeNotTooFrequent(id: string, userId: string, actionType: string): Promise<void> {
+    const recent = await this.operationLogRepository.count({
+      where: {
+        entityType: 'dispatched_order',
+        entityId: id,
+        userId,
+        actionType,
+        createdAt: MoreThan(new Date(Date.now() - 5 * 60 * 1000)),
+      },
+    });
+    if (recent > 0) {
+      throw businessException(4226, HttpStatus.TOO_MANY_REQUESTS, '已催办过该子工单，请 5 分钟后再试');
+    }
   }
 
   private async readPreviousDispatchedStatus(id: string, actionType: string, fallback: DispatchedOrderStatus): Promise<DispatchedOrderStatus> {

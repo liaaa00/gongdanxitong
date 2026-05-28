@@ -236,6 +236,16 @@ export class DispatchedOrderController {
     return this.dispatchedOrderService.approveVoid(assertUuidParam(id, '子工单不存在'), payload, user);
   }
 
+  @Post(':id/void/restore')
+  @FieldPermissionScenario('dispatched:auto')
+  restoreVoidByCreator(
+    @Param('id') id: string,
+    @Body() payload: { moduleCode?: string; module_code?: string },
+    @CurrentUser() user: JwtUserPayload,
+  ) {
+    return this.dispatchedOrderService.restoreVoidByCreator(assertUuidParam(id, '子工单不存在'), payload, user);
+  }
+
   @Post(':id/supplement')
   supplement(
     @Param('id') id: string,

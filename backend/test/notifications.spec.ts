@@ -132,7 +132,9 @@ describe('NotificationService read response and filters', () => {
 
     await service.list('user-1', { includeDispatch: true, page: 1, pageSize: 20 });
 
-    expect(getWhere(repo.find)).toEqual({ userId: 'user-1' });
+    const where = getWhere(repo.find) as { userId?: string; bizType?: unknown };
+    expect(where).toEqual(expect.objectContaining({ userId: 'user-1' }));
+    expect(where.bizType).toBeDefined();
   });
 
   it('normalizes legacy field-change actor placeholders in list response', async () => {

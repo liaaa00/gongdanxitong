@@ -122,8 +122,8 @@ export interface SendNotificationInput {
 
 type BooleanLike = boolean | string | undefined;
 
-type SalespersonNotificationBucket = 'field_changed' | 'returned' | 'urge_feedback' | 'withdraw_void_result' | 'system';
-type SalespersonUnreadBucket = Exclude<SalespersonNotificationBucket, 'urge_feedback'>;
+type SalespersonNotificationBucket = 'field_changed' | 'returned' | 'withdraw_void_result' | 'system';
+type SalespersonUnreadBucket = SalespersonNotificationBucket;
 type BackendNotificationBucket = 'todo' | 'urge' | 'sla_warning' | 'sla_breached' | 'creator_modified' | 'withdraw_void_request' | 'system';
 type BackendUnreadBucket = BackendNotificationBucket;
 type NotificationBucket = SalespersonNotificationBucket | BackendNotificationBucket;
@@ -151,6 +151,11 @@ const DISPATCH_BIZ_TYPES = [
   'dispatched_new',
   'dispatched_accepted',
   'dispatched_completed',
+] as const;
+
+const CANCELED_URGE_FEEDBACK_BIZ_TYPES = [
+  'urge_feedback',
+  'backend_urge_creator',
 ] as const;
 
 @Injectable()
@@ -369,9 +374,10 @@ export class NotificationService {
 
     // 按 bucket 过滤（与 countUnreadByBucket 口径一致）
     const bucket = query.bucket;
+    const visibleRows = rows.filter((row) => !this.isCanceledUrgeFeedback(row.bizType));
     const filteredRows = bucket
-      ? rows.filter((row) => this.toNotificationBucket(row.bizType) === bucket)
-      : rows;
+      ? visibleRows.filter((row) => this.toNotificationBucket(row.bizType) === bucket)
+      : visibleRows;
 
     const actorNames = await this.resolveActorDisplayNames(filteredRows);
     const fieldLabels = await this.resolveFieldLabels(filteredRows);
@@ -424,9 +430,10 @@ export class NotificationService {
     });
     // 按 bucket 过滤（与 list / countUnreadByBucket 口径一致）
     const bucket = query.bucket;
+    const visibleRows = rows.filter((row) => !this.isCanceledUrgeFeedback(row.bizType));
     const filteredRows = bucket
-      ? rows.filter((row) => this.toNotificationBucket(row.bizType) === bucket)
-      : rows;
+      ? visibleRows.filter((row) => this.toNotificationBucket(row.bizType) === bucket)
+      : visibleRows;
     for (const row of filteredRows) {
       row.isRead = true;
       row.readAt = new Date();
@@ -461,6 +468,7 @@ export class NotificationService {
 
     const counts = this.emptyUnreadCountByBucket();
     for (const row of rows) {
+      if (this.isCanceledUrgeFeedback(row.bizType)) continue;
       this.incrementUnreadBucket(counts, this.toNotificationBucket(row.bizType));
     }
     return counts;
@@ -474,6 +482,7 @@ export class NotificationService {
 
     const counts: Record<string, number> = { sla: 0, task: 0, system: 0 };
     for (const row of rows) {
+      if (this.isCanceledUrgeFeedback(row.bizType)) continue;
       const key = this.toUnreadBucket(row.bizType);
       counts[key] = (counts[key] ?? 0) + 1;
     }
@@ -496,16 +505,16 @@ export class NotificationService {
     if (options.bucket) {
       // 不做 bizType 过滤，只做 isRead + includeDispatch
       if (!includeDispatch) {
-        where.bizType = Not(In([...DISPATCH_BIZ_TYPES]));
+        where.bizType = Not(In([...DISPATCH_BIZ_TYPES, ...CANCELED_URGE_FEEDBACK_BIZ_TYPES]));
+      } else {
+        where.bizType = Not(In([...CANCELED_URGE_FEEDBACK_BIZ_TYPES]));
       }
       return where;
     }
 
     if (bizType) {
       const bizTypes = bizType.split(',').map((item) => item.trim()).filter(Boolean);
-      const allowedBizTypes = !includeDispatch
-        ? bizTypes.filter((item) => !this.isDispatchBizType(item))
-        : bizTypes;
+      const allowedBizTypes = bizTypes.filter((item) => !this.isCanceledUrgeFeedback(item) && (includeDispatch || !this.isDispatchBizType(item)));
       where.bizType = allowedBizTypes.length === 0
         ? In([])
         : allowedBizTypes.length === 1
@@ -515,9 +524,11 @@ export class NotificationService {
     }
 
     if (!includeDispatch) {
-      where.bizType = Not(In([...DISPATCH_BIZ_TYPES]));
+      where.bizType = Not(In([...DISPATCH_BIZ_TYPES, ...CANCELED_URGE_FEEDBACK_BIZ_TYPES]));
+      return where;
     }
 
+    where.bizType = Not(In([...CANCELED_URGE_FEEDBACK_BIZ_TYPES]));
     return where;
   }
 
@@ -558,17 +569,17 @@ export class NotificationService {
       return;
     }
 
-    if (bucket === 'urge_feedback') {
-      counts.salesperson.system += 1;
-      return;
-    }
-
     if (bucket === 'todo' || bucket === 'creator_modified' || bucket === 'withdraw_void_request') {
       counts.backend[bucket] += 1;
       return;
     }
 
     counts.backend[bucket] += 1;
+  }
+
+  private isCanceledUrgeFeedback(bizType: string): boolean {
+    const normalized = bizType.toLowerCase().replace(/[.:]/g, '_');
+    return (CANCELED_URGE_FEEDBACK_BIZ_TYPES as readonly string[]).includes(normalized) || normalized.includes('urge_feedback');
   }
 
   private toNotificationBucket(bizType: string): NotificationBucket {
@@ -587,9 +598,6 @@ export class NotificationService {
     }
     if (normalized.includes('sla_warning') || normalized.includes('sla_warn') || normalized.includes('warning') || normalized.includes('timeout')) {
       return 'sla_warning';
-    }
-    if (normalized.includes('urge_feedback')) {
-      return 'urge_feedback';
     }
     if (normalized.includes('urge')) {
       return 'urge';
@@ -829,7 +837,7 @@ export class NotificationService {
   }
 
   private toSalespersonCategory(bucket: NotificationBucket): SalespersonNotificationBucket | null {
-    if (bucket === 'field_changed' || bucket === 'returned' || bucket === 'urge_feedback' || bucket === 'withdraw_void_result' || bucket === 'system') {
+    if (bucket === 'field_changed' || bucket === 'returned' || bucket === 'withdraw_void_result' || bucket === 'system') {
       return bucket;
     }
     return null;

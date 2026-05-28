@@ -3,7 +3,7 @@ import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { DashboardService } from './dashboard.service';
-import { LeaderTrendQueryDto, OrderTypeMatrixQueryDto } from './dto/dashboard-query.dto';
+import { DashboardScopeQueryDto, LeaderTrendQueryDto, OrderTypeMatrixQueryDto } from './dto/dashboard-query.dto';
 
 const TEAM_DASHBOARD_ROLES = [
   'contract_specialist',
@@ -28,22 +28,34 @@ const TEAM_DASHBOARD_ROLES = [
   'admin',
 ];
 
+const LEADER_TREND_ROLES = [
+  'admin',
+  'business_owner',
+  'biz_manager',
+  'manager',
+  'business_group_leader',
+  'biz_leader',
+  'data_entry_leader',
+  'shared_team_owner',
+  'shared_leader',
+];
+
 @Controller('dashboard')
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
   @Get('cards')
-  cards(@CurrentUser() user: JwtUserPayload) {
-    return this.dashboardService.getDashboardCards(user);
+  cards(@Query() query: DashboardScopeQueryDto, @CurrentUser() user: JwtUserPayload) {
+    return this.dashboardService.getDashboardCards(user, query.scope);
   }
 
-  /** @Deprecated 保留 1 个版本，请使用 GET /dashboard/cards。 */
+  /** @Deprecated retained for compatibility; use GET /dashboard/cards. */
   @Get('salesperson')
   salesperson(@CurrentUser() user: JwtUserPayload) {
     return this.dashboardService.getSalespersonMetrics(user.sub);
   }
 
-  /** @Deprecated 保留 1 个版本，请使用 GET /dashboard/cards。 */
+  /** @Deprecated retained for compatibility; use GET /dashboard/cards. */
   @Get('team/:module')
   @Roles(...TEAM_DASHBOARD_ROLES)
   team(@Param('module') moduleCode: string, @CurrentUser() user: JwtUserPayload) {
@@ -56,7 +68,7 @@ export class DashboardController {
     return this.dashboardService.getTeamMetrics(moduleCode, user);
   }
 
-  /** @Deprecated 保留 1 个版本，请使用 GET /dashboard/cards。 */
+  /** @Deprecated retained for compatibility; use GET /dashboard/cards. */
   @Get('manager')
   @Roles('manager', 'admin')
   manager(@CurrentUser() user: JwtUserPayload) {
@@ -71,12 +83,12 @@ export class DashboardController {
 
   @Get('order-type-matrix')
   orderTypeMatrix(@Query() query: OrderTypeMatrixQueryDto, @CurrentUser() user: JwtUserPayload) {
-    return this.dashboardService.getOrderTypeMatrix(user, query.dimension ?? 'orderType');
+    return this.dashboardService.getOrderTypeMatrix(user, query.dimension ?? 'orderType', query.scope);
   }
 
   @Get('leader-trend')
-  @Roles('business_owner', 'admin')
+  @Roles(...LEADER_TREND_ROLES)
   leaderTrend(@Query() query: LeaderTrendQueryDto, @CurrentUser() user: JwtUserPayload) {
-    return this.dashboardService.getLeaderTrend(query.orderType, user, query.moduleCode);
+    return this.dashboardService.getLeaderTrend(query.orderType ?? 'onboarding', user, query.moduleCode, query.scope);
   }
 }
