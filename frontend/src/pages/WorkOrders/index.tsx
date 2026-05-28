@@ -179,10 +179,10 @@ const WorkOrders: React.FC = () => {
     ROLE.SOCIAL_INSURANCE_SPECIALIST,
   ].some((role) => hasRole(role));
   const isBackendOnly = isBackendProcessor && !isAdmin && !isBusinessOwner && !isGroupLeader && !isGroupMember;
-  const canDelete = isAdmin;
-  const canCreateWorkOrder = isAdmin || allowedActions.includes('work_order.create') || (!allowedActions.length && (isGroupMember || isGroupLeader));
-  const canImportWorkOrder = isAdmin || allowedActions.includes('work_order.import') || (!allowedActions.length && (isGroupMember || isGroupLeader));
   const isInitiatedPage = location.pathname.includes('/my-work/initiated');
+  const canDelete = !isInitiatedPage && isAdmin;
+  const canCreateWorkOrder = !isInitiatedPage && (isAdmin || allowedActions.includes('work_order.create') || (!allowedActions.length && (isGroupMember || isGroupLeader)));
+  const canImportWorkOrder = !isInitiatedPage && (isAdmin || allowedActions.includes('work_order.import') || (!allowedActions.length && (isGroupMember || isGroupLeader)));
   const pageTitle = isInitiatedPage ? '我发起的工单' : '主工单列表';
 
   const urlFilters = useMemo(() => {
@@ -226,7 +226,8 @@ const WorkOrders: React.FC = () => {
     message.info('主工单批量导出暂未开放，请在对应子工单页面按固定模板导出');
   };
 
-  const columns: ProColumns<WorkOrderItem>[] = useMemo(() => [
+  const columns: ProColumns<WorkOrderItem>[] = useMemo(() => {
+    const baseColumns: ProColumns<WorkOrderItem>[] = [
     {
       title: '工单编号',
       dataIndex: 'order_no',
@@ -370,20 +371,25 @@ const WorkOrders: React.FC = () => {
         </Space>
       ),
     },
-  ], [canDelete, isAdmin, isBusinessOwner, isGroupLeader, navigate]);
+    ];
+    return isInitiatedPage ? baseColumns.filter((column) => column.key !== 'actions') : baseColumns;
+  }, [canDelete, isAdmin, isBusinessOwner, isGroupLeader, isInitiatedPage, navigate]);
 
   const requestFn = async (params: Record<string, unknown>) => {
-    const query = {
+    const query: Record<string, unknown> = {
       ...urlFilters,
       ...params,
-      orderNo: params.orderNo || params.order_no,
-      customerCode: params.customerCode || params.customer_code,
-      customerName: params.customerName || params.customer_name,
-      employeeName: params.employeeName || params.employee_name,
-      idCardNo: params.idCardNo || params.employee_id_card,
-      orderType: params.orderType || params.order_type,
-      status: params.status,
+      orderNo: params.orderNo || params.order_no || urlFilters.orderNo,
+      customerCode: params.customerCode || params.customer_code || urlFilters.customerCode,
+      customerName: params.customerName || params.customer_name || urlFilters.customerName,
+      employeeName: params.employeeName || params.employee_name || urlFilters.employeeName,
+      idCardNo: params.idCardNo || params.employee_id_card || urlFilters.idCardNo,
+      orderType: params.orderType || params.order_type || urlFilters.orderType,
+      status: params.status || urlFilters.status,
     };
+    Object.keys(query).forEach((key) => {
+      if (query[key] === undefined || query[key] === '') delete query[key];
+    });
     const result = await getWorkOrders(query as PageParams);
     return { data: result.list, success: true, total: result.total };
   };
@@ -392,7 +398,7 @@ const WorkOrders: React.FC = () => {
     <PageContainer header={{ title: pageTitle }}>
       <MultiViewTable<WorkOrderItem>
         key={`${refreshKey}-${location.search}`}
-        viewId="work-orders-main"
+        viewId={isInitiatedPage ? 'my-work-initiated-readonly' : 'work-orders-main'}
         columns={columns}
         request={requestFn}
         rowKey="id"
@@ -400,7 +406,7 @@ const WorkOrders: React.FC = () => {
         search={false}
         kanbanColumnKey="status"
         kanbanAllowedValues={STATUS_OPTIONS}
-        toolBarRender={() => [
+        toolBarRender={isInitiatedPage ? undefined : () => [
           canCreateWorkOrder && (
             <RefButton key="new" type="primary" icon={<PlusOutlined />} onClick={() => navigate('/work-orders/new')}>
               新建工单
@@ -417,7 +423,7 @@ const WorkOrders: React.FC = () => {
         ].filter(Boolean) as React.ReactNode[]}
         proTableOptions={false}
         proTableToolBarRender={false}
-        batchActions={(selectedKeys, clear) => canDelete ? (
+        batchActions={!isInitiatedPage && canDelete ? (selectedKeys, clear) => (
           <Space>
             <Popconfirm
               title={`确定删除选中的 ${selectedKeys.length} 条工单？`}
