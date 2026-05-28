@@ -372,8 +372,8 @@ const WorkOrders: React.FC = () => {
       ),
     },
     ];
-    return isInitiatedPage ? baseColumns.filter((column) => column.key !== 'actions') : baseColumns;
-  }, [canDelete, isAdmin, isBusinessOwner, isGroupLeader, isInitiatedPage, navigate]);
+    return baseColumns;
+  }, [canDelete, isAdmin, isBusinessOwner, isGroupLeader, navigate]);
 
   const requestFn = async (params: Record<string, unknown>) => {
     const query: Record<string, unknown> = {

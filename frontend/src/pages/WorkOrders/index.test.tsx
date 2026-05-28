@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import WorkOrders from './index';
 
@@ -80,7 +81,8 @@ describe('WorkOrders initiated read-only view', () => {
     return columns.find((column) => column.dataIndex === dataIndexOrKey || column.key === dataIndexOrKey);
   }
 
-  it('renders my initiated work orders as a query-only list without create, batch or row actions', async () => {
+  it('renders my initiated work orders as a read-only query list with detail viewing only', async () => {
+    const user = userEvent.setup();
     render(<WorkOrders />);
 
     expect(screen.getByRole('heading', { name: '我发起的工单' })).toBeInTheDocument();
@@ -88,15 +90,18 @@ describe('WorkOrders initiated read-only view', () => {
     expect(screen.getByTestId('multi-view-table')).toHaveAttribute('data-has-batch-actions', 'false');
     expect(mocks.latestTableProps.toolBarRender).toBeUndefined();
     expect(mocks.latestTableProps.batchActions).toBeUndefined();
-    expect(getColumn('actions')).toBeUndefined();
+    expect(getColumn('actions')).toBeDefined();
 
+    expect(screen.getByRole('button', { name: /详情/ })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /新建工单/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /批量导入/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /批量导出/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /批量删除/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /取消选择/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /删除/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /详情/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^删除$/ })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /详情/ }));
+    expect(mocks.navigate).toHaveBeenCalledWith('/work-orders/wo-1');
 
     await mocks.latestTableProps.request({ current: 1, pageSize: 20, customer_name: '客户A', order_type: 'onboarding' });
 
