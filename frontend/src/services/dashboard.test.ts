@@ -41,7 +41,7 @@ describe('dashboard services', () => {
       })
       .mockResolvedValueOnce({
         total: 4,
-        salesperson: { field_changed: 2, returned: 1, urge_feedback: 0, withdraw_void_result: 1 },
+        salesperson: { field_changed: 2, returned: 1, withdraw_void_result: 1 },
         backend: { todo: 0, urge: 0, sla_warning: 0, sla_breached: 0, creator_modified: 0, withdraw_void_request: 0 },
         system: 0,
       });

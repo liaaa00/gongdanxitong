@@ -18,6 +18,7 @@ import type { PageParams } from '@/services/mock';
 import { getModuleLabel, getModuleTitle } from '@/constants/modules';
 import { getStatusColor, getStatusText, STATUS_MAP, WORK_ORDER_STATUS_CODES } from '@/constants/dictionaries';
 import { useAuth } from '@/hooks/useAuth';
+import { DISPATCHED_PROCESSING_STATUS_OPTION } from '@/utils/dispatchedStatusFilter';
 
 const RefButton = forwardRef<HTMLButtonElement, React.ComponentProps<typeof Button>>((props, ref) => (
   <Button ref={ref} {...props} />
@@ -29,10 +30,7 @@ const ACTIVE_DISPATCHED_STATUSES = new Set(['pending', 'processing']);
 const DISPATCHED_PROCESSING_FILTER_STATUSES = ['pending', 'processing'] as const;
 
 export const DISPATCHED_STATUS_FILTER_OPTIONS: Array<{ label: string; value: string }> = [
-  {
-    label: STATUS_MAP.processing?.label || getStatusText('processing'),
-    value: DISPATCHED_PROCESSING_FILTER_STATUSES.join(','),
-  },
+  DISPATCHED_PROCESSING_STATUS_OPTION,
   ...WORK_ORDER_STATUS_CODES
     .filter((value) => value !== 'processing')
     .map((value) => ({ value, label: STATUS_MAP[value]?.label || getStatusText(value) })),

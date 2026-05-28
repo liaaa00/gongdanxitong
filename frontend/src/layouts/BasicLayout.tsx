@@ -7,7 +7,7 @@ import {
   TeamOutlined, SafetyOutlined, ApartmentOutlined, IdcardOutlined,
   FieldStringOutlined, LockOutlined, BranchesOutlined, UserSwitchOutlined,
   AuditOutlined, CheckSquareOutlined,
-  BarChartOutlined, BellOutlined, SoundOutlined, AlertOutlined, InfoCircleOutlined,
+  BarChartOutlined, BellOutlined, AlertOutlined, InfoCircleOutlined, SoundOutlined,
   ExperimentOutlined,
   SafetyCertificateOutlined,
   NodeIndexOutlined,
@@ -16,7 +16,7 @@ import { useUserStore } from '@/stores/userStore';
 import { logout as logoutApi } from '@/services/auth';
 import { canAccessPath } from '@/config/routeVisibility';
 import { ROLE, userHasAnyCanonicalRole, type CanonicalRole } from '@/constants/roles';
-import { getNotifications, markNotificationRead, markAllRead, getUnreadCountByBucket, getNotificationBucket } from '@/services/notifications';
+import { getNotifications, markNotificationRead, getUnreadCountByBucket, getNotificationBucket } from '@/services/notifications';
 import type { NotificationBucketKey, NotificationItem, UnreadCountByBucket } from '@/services/notifications';
 import { getNotificationDisplayContent, getNotificationDisplayTitle } from '@/utils/notificationDisplay';
 
@@ -70,6 +70,12 @@ const INITIATED_WORK_ROLES = [
   ROLE.BUSINESS_GROUP_MEMBER,
 ] as const satisfies readonly CanonicalRole[];
 
+const RETURNED_WORK_ROLES = [
+  ROLE.ADMIN,
+  ROLE.BUSINESS_GROUP_LEADER,
+  ROLE.BUSINESS_GROUP_MEMBER,
+] as const satisfies readonly CanonicalRole[];
+
 const PENDING_WORK_ROLES = [
   ROLE.ADMIN,
   ROLE.DATA_ENTRY_LEADER,
@@ -94,6 +100,17 @@ const TEAM_WORK_ROLES = [
   ROLE.BUSINESS_GROUP_LEADER,
   ROLE.DATA_ENTRY_LEADER,
   ROLE.SHARED_TEAM_OWNER,
+] as const satisfies readonly CanonicalRole[];
+
+const NOTIFICATION_ROLES = [
+  ROLE.ADMIN,
+  ROLE.BUSINESS_GROUP_LEADER,
+  ROLE.BUSINESS_GROUP_MEMBER,
+  ROLE.DATA_ENTRY_LEADER,
+  ROLE.SHARED_TEAM_OWNER,
+  ROLE.LABOR_CONTRACT_MEMBER,
+  ROLE.ONBOARDING_RESIGNATION_MEMBER,
+  ROLE.SOCIAL_INSURANCE_SPECIALIST,
 ] as const satisfies readonly CanonicalRole[];
 
 const RAW_MENU: MenuItem[] = [
@@ -142,13 +159,14 @@ const RAW_MENU: MenuItem[] = [
     icon: <CheckSquareOutlined />,
     children: [
       { path: '/my-work/initiated', name: '我发起的', key: 'my-work-initiated', roles: [...INITIATED_WORK_ROLES] },
+      { path: '/my-work/returned', name: '我的退回', key: 'my-work-returned', roles: [...RETURNED_WORK_ROLES] },
       { path: '/my-work/pending', name: '我的待办', key: 'my-work-pending', roles: [...PENDING_WORK_ROLES] },
       { path: '/my-work/done', name: '我的已办', key: 'my-work-done', roles: [...DONE_WORK_ROLES] },
       { path: '/my-work/team', name: '团队工单', key: 'my-work-team', icon: <BarChartOutlined />, roles: [...TEAM_WORK_ROLES] },
       { path: '/my-work/history', name: '历史工单', key: 'my-work-history', roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.DATA_ENTRY_LEADER, ROLE.SHARED_TEAM_OWNER, ROLE.LABOR_CONTRACT_MEMBER, ROLE.ONBOARDING_RESIGNATION_MEMBER, ROLE.SOCIAL_INSURANCE_SPECIALIST] },
     ],
   },
-  { path: '/notifications', name: '消息通知', icon: <BellOutlined /> },
+  { path: '/notifications', name: '消息通知', icon: <BellOutlined />, roles: [...NOTIFICATION_ROLES] },
   { path: '/admin', name: '管理后台', icon: <SettingOutlined />,
     roles: [ROLE.ADMIN],
     children: [
@@ -189,7 +207,7 @@ const OPEN_KEYS_STORAGE = 'menu_open_keys_v1';
 const POLL_INTERVAL = 30000;
 const EMPTY_UNREAD_BUCKETS: UnreadCountByBucket = {
   total: 0,
-  salesperson: { field_changed: 0, returned: 0, urge_feedback: 0, withdraw_void_result: 0 },
+  salesperson: { field_changed: 0, returned: 0, withdraw_void_result: 0 },
   backend: { todo: 0, urge: 0, sla_warning: 0, sla_breached: 0, creator_modified: 0, withdraw_void_request: 0 },
   system: 0,
 };
@@ -197,7 +215,6 @@ const EMPTY_UNREAD_BUCKETS: UnreadCountByBucket = {
 const SALESPERSON_NOTIFICATION_TABS: Array<{ key: NotificationBucketKey; label: string; icon?: React.ReactNode }> = [
   { key: 'field_changed', label: '后道数据修改', icon: <InfoCircleOutlined style={{ color: '#1677ff' }} /> },
   { key: 'returned', label: '退回', icon: <RollbackIcon /> },
-  { key: 'urge_feedback', label: '催办反馈', icon: <SoundOutlined style={{ color: '#1677ff' }} /> },
   { key: 'withdraw_void_result', label: '撤回/作废结果', icon: <InfoCircleOutlined style={{ color: '#722ed1' }} /> },
   { key: 'system', label: '系统', icon: <InfoCircleOutlined style={{ color: '#999' }} /> },
 ];
@@ -241,6 +258,11 @@ const BasicLayout: React.FC = () => {
   const rootSubmenuKeys = useMemo(
     () => filteredMenu.filter((item) => item.children?.length).map((item) => item.path),
     [filteredMenu],
+  );
+
+  const canViewNotifications = useMemo(
+    () => userHasAnyCanonicalRole(user?.roles, [...NOTIFICATION_ROLES]),
+    [user?.roles],
   );
 
   const isSalespersonNotificationView = useMemo(
@@ -302,6 +324,12 @@ const BasicLayout: React.FC = () => {
   }, [openKeys]);
 
   const fetchAll = useCallback(async () => {
+    if (!canViewNotifications) {
+      setUnreadCount(0);
+      setUnreadBuckets(EMPTY_UNREAD_BUCKETS);
+      setAllNotifications([]);
+      return;
+    }
     try {
       const [bucketCounts, result] = await Promise.all([
         getUnreadCountByBucket(),
@@ -312,13 +340,18 @@ const BasicLayout: React.FC = () => {
       setUnreadBuckets(bucketCounts);
       setUnreadCount(bucketCounts.total);
     } catch { /* ignore */ }
-  }, []);
+  }, [canViewNotifications]);
 
   useEffect(() => {
     fetchAll();
+    if (!canViewNotifications) {
+      if (timerRef.current) clearInterval(timerRef.current);
+      timerRef.current = null;
+      return;
+    }
     timerRef.current = setInterval(fetchAll, POLL_INTERVAL);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [fetchAll]);
+  }, [canViewNotifications, fetchAll]);
 
   const handleMarkRead = async (item: NotificationItem) => {
     try {
@@ -328,15 +361,6 @@ const BasicLayout: React.FC = () => {
         prev.map((n) => (n.id === item.id ? { ...n, is_read: true } : n))
       );
       fetchAll();
-    } catch { /* ignore */ }
-  };
-
-  const handleMarkAll = async () => {
-    try {
-      await markAllRead();
-      setUnreadCount(0);
-      setUnreadBuckets(EMPTY_UNREAD_BUCKETS);
-      setAllNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
     } catch { /* ignore */ }
   };
 
@@ -393,9 +417,7 @@ const BasicLayout: React.FC = () => {
             ),
           })),
         ]}
-        tabBarExtraContent={
-          unreadCount > 0 ? <Button type="link" size="small" onClick={handleMarkAll}>全部已读</Button> : null
-        }
+
       />
       {filteredNotifications.length > 0 ? (
         <List
@@ -500,13 +522,15 @@ const BasicLayout: React.FC = () => {
           >
             {user?.real_name || user?.username || '用户'}
           </span>
-          <Popover content={notifContent} title={null} trigger="click"
-            open={notifOpen} onOpenChange={setNotifOpen} placement="bottomRight">
-            <Badge count={unreadCount} size="small" offset={[-2, 4]}>
-              <BellOutlined style={{ fontSize: 18, cursor: 'pointer', padding: '4px 6px' }}
-                onClick={() => { fetchAll(); setNotifOpen(!notifOpen); }} />
-            </Badge>
-          </Popover>
+          {canViewNotifications ? (
+            <Popover content={notifContent} title={null} trigger="click"
+              open={notifOpen} onOpenChange={setNotifOpen} placement="bottomRight">
+              <Badge count={unreadCount} size="small" offset={[-2, 4]}>
+                <BellOutlined style={{ fontSize: 18, cursor: 'pointer', padding: '4px 6px' }}
+                  onClick={() => { fetchAll(); setNotifOpen(!notifOpen); }} />
+              </Badge>
+            </Popover>
+          ) : null}
           <Button size="small" icon={<LogoutOutlined />} onClick={handleLogout}>退出</Button>
         </Space>,
       ]}

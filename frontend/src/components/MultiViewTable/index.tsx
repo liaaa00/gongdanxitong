@@ -49,6 +49,21 @@ export function mergeTableFiltersIntoParams(
   return merged;
 }
 
+export function mergeTableSorterIntoParams(
+  params: Record<string, unknown>,
+  sorter: Record<string, unknown> = {},
+): Record<string, unknown> {
+  const merged = { ...params };
+  const normalized = Object.entries(sorter)
+    .map(([field, order]) => {
+      if (order !== 'ascend' && order !== 'descend') return null;
+      return `${field}:${order === 'ascend' ? 'asc' : 'desc'}`;
+    })
+    .filter((item): item is string => Boolean(item));
+  if (normalized.length > 0) merged.sort = normalized.join(',');
+  return merged;
+}
+
 function MultiViewTable<T extends Record<string, unknown>>(props: MultiViewTableProps<T>) {
   const {
     columns, request, rowKey = 'id', viewId,
@@ -119,10 +134,13 @@ function MultiViewTable<T extends Record<string, unknown>>(props: MultiViewTable
 
   const wrappedRequest = useCallback(async (
     params: Record<string, unknown>,
-    _sort: Record<string, unknown>,
+    sort: Record<string, unknown>,
     tableFilters: Record<string, unknown[] | null> = {},
   ) => {
-    const merged = mergeTableFiltersIntoParams(params, tableFilters);
+    const merged = mergeTableSorterIntoParams(
+      mergeTableFiltersIntoParams(params, tableFilters),
+      sort,
+    );
     if (filterConditions.length > 0) {
       merged._filters = JSON.stringify(filterConditions);
     }

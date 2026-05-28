@@ -9,7 +9,7 @@ import {
 describe('dispatched status search params', () => {
   it('exposes one visible processing option that represents pending plus processing', () => {
     expect(DISPATCHED_PROCESSING_STATUS_OPTION).toEqual({
-      label: '处理中',
+      label: '未办结',
       value: 'pending,processing',
     });
     expect(DISPATCHED_PROCESSING_STATUS_FILTER_VALUE).toBe('pending,processing');

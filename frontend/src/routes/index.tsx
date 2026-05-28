@@ -124,6 +124,7 @@ const AppRoutes: React.FC = () => (
         <Route path="onboarding/:moduleCode" element={<RoleRoute><RouteGuard moduleName="入职模块"><OnboardingModule /></RouteGuard></RoleRoute>} />
 
         <Route path="my-work/initiated" element={<RoleRoute><RouteGuard moduleName="我发起的"><WorkOrders /></RouteGuard></RoleRoute>} />
+        <Route path="my-work/returned" element={<RoleRoute><RouteGuard moduleName="我的退回"><MyDispatched mode="pending" /></RouteGuard></RoleRoute>} />
         <Route path="my-work/pending" element={<RoleRoute><RouteGuard moduleName="我的待办"><MyDispatched mode="pending" /></RouteGuard></RoleRoute>} />
         <Route path="my-work/done" element={<RoleRoute><RouteGuard moduleName="我的已办"><MyDispatched mode="done" /></RouteGuard></RoleRoute>} />
         <Route path="my-work/team" element={<RoleRoute><RouteGuard moduleName="团队工单"><TeamDispatched /></RouteGuard></RoleRoute>} />

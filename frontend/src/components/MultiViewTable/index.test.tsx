@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import MultiViewTable, { mergeTableFiltersIntoParams } from './index';
+import MultiViewTable, { mergeTableFiltersIntoParams, mergeTableSorterIntoParams } from './index';
 
 const mockColumns = [
   { title: 'Name', dataIndex: 'name', key: 'name' },
@@ -31,6 +31,13 @@ describe('MultiViewTable', () => {
       { page: 1, keyword: 'alice' },
       { status: [], owner: null, priority: [' urgent '] },
     )).toEqual({ page: 1, keyword: 'alice', priority: 'urgent' });
+  });
+
+  it('serializes ProTable sorter into backend sort params', () => {
+    expect(mergeTableSorterIntoParams(
+      { page: 1 },
+      { created_at: 'descend', name: undefined, updated_at: 'ascend' },
+    )).toEqual({ page: 1, sort: 'created_at:desc,updated_at:asc' });
   });
 
   it('renders table view by default', async () => {

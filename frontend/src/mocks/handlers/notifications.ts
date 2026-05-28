@@ -38,7 +38,7 @@ export const notificationHandlers = [
       salesperson: {
         field_changed: unread.filter((n) => n.biz_type === 'field_change' || n.type === 'field_changed').length,
         returned: unread.filter((n) => n.type === 'returned').length,
-        urge_feedback: unread.filter((n) => n.type === 'urge_feedback').length,
+
         withdraw_void_result: unread.filter((n) => ['withdraw_approved', 'withdraw_rejected', 'void_approved', 'void_rejected'].includes(n.type)).length,
       },
       backend: {

@@ -52,7 +52,7 @@ vi.mock('@/services/notifications', async () => {
     markAllRead: vi.fn().mockResolvedValue(undefined),
     getUnreadCountByBucket: vi.fn().mockResolvedValue({
       total: 1,
-      salesperson: { field_changed: 0, returned: 0, urge_feedback: 0, withdraw_void_result: 0 },
+      salesperson: { field_changed: 0, returned: 0, withdraw_void_result: 0 },
       backend: { todo: 0, urge: 0, sla_warning: 0, sla_breached: 0, creator_modified: 1, withdraw_void_request: 0 },
       system: 0,
     }),

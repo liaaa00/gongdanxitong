@@ -4,7 +4,7 @@ import TeamDispatched from './index';
 
 const mocks = vi.hoisted(() => ({
   latestProTableProps: undefined as any,
-  getDispatchedOrders: vi.fn(),
+  getWorkOrders: vi.fn(),
   navigate: vi.fn(),
 }));
 
@@ -24,86 +24,48 @@ vi.mock('react-router-dom', async () => {
   };
 });
 
-vi.mock('@/hooks/useAuth', () => ({
-  useAuth: () => ({ hasRole: () => false }),
+vi.mock('@/services/workOrders', () => ({
+  getWorkOrders: (...args: unknown[]) => mocks.getWorkOrders(...args),
 }));
 
-vi.mock('@/components/DispatchedBatchImportModal', () => ({
-  default: () => null,
-}));
-
-vi.mock('@/services/moduleConfigs', () => ({
-  getModuleConfigs: vi.fn().mockResolvedValue([]),
-}));
-
-vi.mock('@/services/dispatchedOrders', () => ({
-  getDispatchedOrders: (...args: unknown[]) => mocks.getDispatchedOrders(...args),
-  batchCompleteDispatchedOrders: vi.fn(),
-  batchDeleteDispatchedOrders: vi.fn(),
-  batchExportDispatchedOrders: vi.fn(),
-  batchReturnDispatchedOrders: vi.fn(),
-  deleteDispatchedOrder: vi.fn(),
-  downloadDispatchedExport: vi.fn(),
-}));
-
-describe('TeamDispatched processing status filter', () => {
+describe('TeamDispatched team work-order view', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.latestProTableProps = undefined;
-    mocks.getDispatchedOrders.mockResolvedValue({ list: [], total: 0 });
+    mocks.getWorkOrders.mockResolvedValue({ list: [], total: 0 });
   });
 
-  function getStatusColumn() {
+  function getColumn(dataIndexOrKey: string) {
     const columns = mocks.latestProTableProps.columns as Array<Record<string, any>>;
-    return columns.find((column) => column.dataIndex === 'status');
+    return columns.find((column) => column.dataIndex === dataIndexOrKey || column.key === dataIndexOrKey);
   }
 
-  it('shows one processing option that sends pending plus processing', async () => {
+  it('uses main work-order columns and the main work-order API', async () => {
     render(<TeamDispatched />);
 
-    const statusColumn = getStatusColumn();
-    expect(statusColumn.fieldProps.options.filter((option: { label: string }) => option.label === '处理中')).toEqual([
-      { label: '处理中', value: 'pending,processing' },
-    ]);
+    expect(getColumn('order_no')?.title).toBe('主工单编号');
+    expect(getColumn('created_at')?.sorter).toBe(true);
+    expect(getColumn('dispatched_status')?.title).toBe('子工单进度');
 
-    await mocks.latestProTableProps.request({ current: 1, pageSize: 20, status: 'pending,processing', module_code: 'contract' });
+    await mocks.latestProTableProps.request({ current: 1, pageSize: 20, order_no: 'WO-001', customer_name: '客户A' });
 
-    await waitFor(() => expect(mocks.getDispatchedOrders).toHaveBeenCalledWith(expect.objectContaining({
-      current: 1,
+    await waitFor(() => expect(mocks.getWorkOrders).toHaveBeenCalledWith(expect.objectContaining({
+      page: 1,
       pageSize: 20,
-      module_code: 'contract',
-      statuses: 'pending,processing',
+      orderNo: 'WO-001',
+      customerName: '客户A',
     })));
-    const params = mocks.getDispatchedOrders.mock.calls.at(-1)?.[0] as Record<string, unknown>;
-    expect(params.status).toBeUndefined();
   });
 
-  it('clears status search without reusing stale statuses', async () => {
+  it('keeps created time sort params visible to the request layer', async () => {
     render(<TeamDispatched />);
 
-    await mocks.latestProTableProps.request({ current: 1, pageSize: 20, status: '', statuses: 'pending,processing', keyword: 'abc' });
+    await mocks.latestProTableProps.request({ current: 2, pageSize: 10, sort: 'created_at:desc' });
 
-    await waitFor(() => expect(mocks.getDispatchedOrders).toHaveBeenCalledWith(expect.objectContaining({
-      current: 1,
-      pageSize: 20,
-      keyword: 'abc',
+    await waitFor(() => expect(mocks.getWorkOrders).toHaveBeenCalledWith(expect.objectContaining({
+      page: 2,
+      pageSize: 10,
+      sort: 'created_at:desc',
     })));
-    const params = mocks.getDispatchedOrders.mock.calls.at(-1)?.[0] as Record<string, unknown>;
-    expect(params.status).toBeUndefined();
-    expect(params.statuses).toBeUndefined();
-  });
-
-  it('keeps other statuses as single status filters', async () => {
-    render(<TeamDispatched />);
-
-    await mocks.latestProTableProps.request({ current: 1, pageSize: 20, status: 'completed', statuses: 'pending,processing' });
-
-    await waitFor(() => expect(mocks.getDispatchedOrders).toHaveBeenCalledWith(expect.objectContaining({
-      current: 1,
-      pageSize: 20,
-      status: 'completed',
-    })));
-    const params = mocks.getDispatchedOrders.mock.calls.at(-1)?.[0] as Record<string, unknown>;
-    expect(params.statuses).toBeUndefined();
   });
 });

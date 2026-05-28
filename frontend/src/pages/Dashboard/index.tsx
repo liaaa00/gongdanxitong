@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageContainer, ProTable } from '@ant-design/pro-components';
 import type { ProColumns } from '@ant-design/pro-components';
-import { BellOutlined, CheckCircleOutlined, FileTextOutlined, RiseOutlined, SyncOutlined } from '@ant-design/icons';
+import { BellOutlined, CheckCircleOutlined, FileTextOutlined, RiseOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import { Card, Col, Empty, Progress, Row, Select, Space, Spin, Statistic, Tag, Tooltip, Typography } from 'antd';
 import { canonicalRoleCodes, ROLE } from '@/constants/roles';
 import { useUserStore } from '@/stores/userStore';
@@ -47,6 +47,17 @@ const BUSINESS_ROLES = [
   ROLE.BUSINESS_OWNER,
   ROLE.BUSINESS_GROUP_LEADER,
   ROLE.BUSINESS_GROUP_MEMBER,
+];
+
+const NOTIFICATION_ROLES = [
+  ROLE.ADMIN,
+  ROLE.BUSINESS_GROUP_LEADER,
+  ROLE.BUSINESS_GROUP_MEMBER,
+  ROLE.DATA_ENTRY_LEADER,
+  ROLE.SHARED_TEAM_OWNER,
+  ROLE.LABOR_CONTRACT_MEMBER,
+  ROLE.ONBOARDING_RESIGNATION_MEMBER,
+  ROLE.SOCIAL_INSURANCE_SPECIALIST,
 ];
 
 const CARD_BODY_STYLE: React.CSSProperties = { minHeight: 112 };
@@ -298,6 +309,7 @@ const Dashboard: React.FC = () => {
 
   const roles = useMemo(() => canonicalRoleCodes(user?.roles), [user?.roles]);
   const canViewLeaderTrend = roles.includes(ROLE.ADMIN) || roles.includes(ROLE.BUSINESS_OWNER);
+  const canViewNotifications = roles.some((role) => NOTIFICATION_ROLES.includes(role as typeof NOTIFICATION_ROLES[number]));
   const dashboardAudience = useMemo<DashboardAudience>(() => {
     const hasBackendRole = roles.some((role) => BACKEND_ROLES.includes(role as typeof BACKEND_ROLES[number]));
     const hasBusinessRole = roles.some((role) => BUSINESS_ROLES.includes(role as typeof BUSINESS_ROLES[number]));
@@ -334,7 +346,7 @@ const Dashboard: React.FC = () => {
       sorter: (a, b) => a.total - b.total,
     },
     {
-      title: '处理中',
+      title: '未办结',
       dataIndex: 'processing',
       key: 'processing',
       align: 'right',
@@ -404,7 +416,7 @@ const Dashboard: React.FC = () => {
           </Col>
           <Col xs={24} sm={12} xl={6}>
             <Card loading={loading} bodyStyle={CARD_BODY_STYLE}>
-              <Statistic title="处理中" value={cards.processing} prefix={<SyncOutlined spin />} valueStyle={{ color: '#1677ff' }} />
+              <Statistic title="未办结" value={cards.processing} prefix={<ClockCircleOutlined />} valueStyle={{ color: '#1677ff' }} />
             </Card>
           </Col>
           <Col xs={24} sm={12} xl={6}>
@@ -412,16 +424,18 @@ const Dashboard: React.FC = () => {
               <Statistic title="已完成" value={cards.completed} prefix={<CheckCircleOutlined />} valueStyle={{ color: '#52c41a' }} />
             </Card>
           </Col>
-          <Col xs={24} sm={12} xl={6}>
-            <Card
-              hoverable
-              loading={loading}
-              bodyStyle={CARD_BODY_STYLE}
-              onClick={() => navigate('/notifications')}
-            >
-              <Statistic title="我的消息" value={cards.myMessages} prefix={<BellOutlined />} valueStyle={{ color: '#faad14' }} />
-            </Card>
-          </Col>
+          {canViewNotifications && (
+            <Col xs={24} sm={12} xl={6}>
+              <Card
+                hoverable
+                loading={loading}
+                bodyStyle={CARD_BODY_STYLE}
+                onClick={() => navigate('/notifications')}
+              >
+                <Statistic title="我的消息" value={cards.myMessages} prefix={<BellOutlined />} valueStyle={{ color: '#faad14' }} />
+              </Card>
+            </Col>
+          )}
         </Row>
 
         <ProTable<DashboardMatrixTreeRow>
@@ -464,7 +478,7 @@ const Dashboard: React.FC = () => {
                   <Statistic title="总数" value={selectedMatrixRow.total} />
                 </Col>
                 <Col xs={8} md={4}>
-                  <Statistic title="处理中" value={selectedMatrixRow.processing} valueStyle={{ color: '#1677ff' }} />
+                  <Statistic title="未办结" value={selectedMatrixRow.processing} valueStyle={{ color: '#1677ff' }} />
                 </Col>
                 <Col xs={8} md={4}>
                   <Statistic title="已完成" value={selectedMatrixRow.completed} valueStyle={{ color: '#52c41a' }} />
@@ -482,7 +496,7 @@ const Dashboard: React.FC = () => {
                       <Card size="small" hoverable onClick={() => setSelectedMatrixRow(child)}>
                         <Space direction="vertical" size={4} style={{ width: '100%' }}>
                           <Text strong>{child.label}</Text>
-                          <Text type="secondary">总数 {child.total} ｜ 处理中 {child.processing} ｜ 已完成 {child.completed}</Text>
+                          <Text type="secondary">总数 {child.total} ｜ 未办结 {child.processing} ｜ 已完成 {child.completed}</Text>
                           <Progress percent={clampRate(child.completionRate)} size="small" />
                         </Space>
                       </Card>

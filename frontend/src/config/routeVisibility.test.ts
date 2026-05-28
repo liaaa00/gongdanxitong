@@ -33,4 +33,10 @@ describe('routeVisibility admin-only configuration routes', () => {
     expect(canAccessPath('/admin/login-debug', businessRoles)).toBe(false);
     expect(canAccessPath('/my-field-permissions', businessRoles)).toBe(false);
   });
+
+  it('does not expose notification route to business owner only role', () => {
+    expect(canAccessPath('/notifications', roles([ROLE.BUSINESS_OWNER]))).toBe(false);
+    expect(canAccessPath('/notifications', roles([ROLE.BUSINESS_GROUP_MEMBER]))).toBe(true);
+    expect(canAccessPath('/notifications', roles([ROLE.LABOR_CONTRACT_MEMBER]))).toBe(true);
+  });
 });

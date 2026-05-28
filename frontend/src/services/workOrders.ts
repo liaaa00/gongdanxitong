@@ -2,6 +2,7 @@ import request from './request';
 import { isMockMode, mockDelay, type PageParams, type PageResult } from './mock';
 import * as XLSX from 'xlsx';
 import { addMockNotification } from './notifications';
+import { getFields } from './fields';
 import { uploadExcel } from './upload';
 
 export interface WorkOrderItem {
@@ -695,7 +696,7 @@ function buildMockTimeline(order: WorkOrderItem): WorkOrderTimelineItem[] {
         actionType: 'return',
         actionLabel: '退回子工单',
         title: '退回子工单',
-        description: '退回处理中子工单',
+        description: '退回未办结子工单',
         contextFields: { oldStatus: 'processing', newStatus: 'returned', returnReason: child.return_reason, moduleCode: child.module_code },
         beforeData: { status: 'processing' },
         afterData: { status: 'returned', returnReason: child.return_reason },
@@ -1370,6 +1371,41 @@ export async function confirmImport(
     ...(newFields && newFields.length > 0 ? { newFields } : {}),
   }) as RawImportJob;
   return normalizeImportJobResponse(result);
+}
+
+const IMPORT_TEMPLATE_SHEET_NAME = '当前字段配置';
+const IMPORT_TEMPLATE_FILE_NAME = '工单管理系统-入职导入模板.xlsx';
+
+function buildImportTemplateExample(fieldCode: string, fieldType?: string): string | number {
+  const normalized = fieldCode.toLowerCase();
+  if (normalized.includes('customer_name')) return '示例客户';
+  if (normalized.includes('customer_code')) return 'CUST001';
+  if (normalized.includes('employee_name')) return '张三';
+  if (normalized.includes('id_card') || normalized.includes('identity')) return '330106199001011234';
+  if (normalized.includes('mobile') || normalized.includes('phone')) return '13800138000';
+  if (normalized.includes('email')) return 'demo@example.com';
+  if (normalized.includes('date') || fieldType === 'date') return '2026-06-01';
+  if (normalized.startsWith('need_') || normalized.includes('是否')) return '是';
+  if (fieldType === 'number') return 1000;
+  return '';
+}
+
+export async function downloadCurrentImportTemplate(orderType = 'onboarding'): Promise<{ fieldCount: number; fileName: string }> {
+  const fields = (await getFields(orderType))
+    .filter((field) => field.is_active !== false)
+    .sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+  if (fields.length === 0) {
+    throw new Error('NO_FIELDS');
+  }
+
+  const headers = fields.map((field) => field.field_name || field.field_code);
+  const example = fields.map((field) => buildImportTemplateExample(field.field_code, field.field_type));
+  const worksheet = XLSX.utils.aoa_to_sheet([headers, example]);
+  worksheet['!cols'] = headers.map((header) => ({ wch: Math.max(12, Math.min(28, String(header).length + 4)) }));
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, IMPORT_TEMPLATE_SHEET_NAME);
+  XLSX.writeFile(workbook, IMPORT_TEMPLATE_FILE_NAME);
+  return { fieldCount: fields.length, fileName: IMPORT_TEMPLATE_FILE_NAME };
 }
 
 export function downloadImportErrorReport(jobId: string) {

@@ -59,6 +59,12 @@ const INITIATED_WORK_ROLES = [
   ROLE.BUSINESS_GROUP_MEMBER,
 ] as const satisfies readonly CanonicalRole[];
 
+const RETURNED_WORK_ROLES = [
+  ROLE.ADMIN,
+  ROLE.BUSINESS_GROUP_LEADER,
+  ROLE.BUSINESS_GROUP_MEMBER,
+] as const satisfies readonly CanonicalRole[];
+
 const PENDING_WORK_ROLES = [
   ROLE.ADMIN,
   ROLE.DATA_ENTRY_LEADER,
@@ -70,6 +76,17 @@ const PENDING_WORK_ROLES = [
 
 const DONE_WORK_ROLES = [
   ROLE.ADMIN,
+  ROLE.DATA_ENTRY_LEADER,
+  ROLE.SHARED_TEAM_OWNER,
+  ROLE.LABOR_CONTRACT_MEMBER,
+  ROLE.ONBOARDING_RESIGNATION_MEMBER,
+  ROLE.SOCIAL_INSURANCE_SPECIALIST,
+] as const satisfies readonly CanonicalRole[];
+
+const NOTIFICATION_ROLES = [
+  ROLE.ADMIN,
+  ROLE.BUSINESS_GROUP_LEADER,
+  ROLE.BUSINESS_GROUP_MEMBER,
   ROLE.DATA_ENTRY_LEADER,
   ROLE.SHARED_TEAM_OWNER,
   ROLE.LABOR_CONTRACT_MEMBER,
@@ -107,7 +124,7 @@ const DISPATCHED_DETAIL_ROLES = [
 
 export const ROUTE_VISIBILITY = {
   '/dashboard': ALL_ROLES,
-  '/notifications': ALL_ROLES,
+  '/notifications': NOTIFICATION_ROLES,
   '/profile': ALL_ROLES,
 
   // 主工单列表/创建入口：菜单中只保留 /work-orders，创建页由列表 toolBar 进入。
@@ -121,6 +138,7 @@ export const ROUTE_VISIBILITY = {
 
   // 我的工单 4 视图（FE-08 会承接页面/路由实现；本文件先统一权限口径）。
   '/my-work/initiated': INITIATED_WORK_ROLES,
+  '/my-work/returned': RETURNED_WORK_ROLES,
   '/my-work/pending': PENDING_WORK_ROLES,
   '/my-work/done': DONE_WORK_ROLES,
   '/my-work/team': TEAM_WORK_ROLES,

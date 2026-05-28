@@ -56,7 +56,7 @@ export const DEFAULT_MATRIX: RoleActionMatrix = {
   shared_team_owner: ['work_order.view_team', 'work_order.export'],
   data_entry_leader: ['work_order.view_team', 'work_order.export'],
   labor_contract_member: ['work_order.view', 'work_order.export'],
-  onboarding_resignation_member: ['work_order.view', 'work_order.export'],
+  onboarding_resignation_member: ['work_order.view', 'work_order.update', 'work_order.export'],
   social_insurance_specialist: ['work_order.view', 'work_order.export'],
 };
 

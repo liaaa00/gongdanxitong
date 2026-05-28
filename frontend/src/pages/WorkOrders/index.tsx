@@ -18,7 +18,7 @@ const RefButton = forwardRef<HTMLButtonElement, React.ComponentProps<typeof Butt
 RefButton.displayName = 'RefButton';
 
 const STATUS_OPTIONS = [
-  { value: 'processing', label: '处理中', color: 'blue' },
+  { value: 'processing', label: '未办结', color: 'blue' },
   { value: 'completed', label: '已完成', color: 'success' },
   { value: 'returned', label: '已退回', color: 'warning' },
   { value: 'withdrawn', label: '已撤回', color: 'default' },
@@ -146,7 +146,7 @@ function getDispatchedProgressMeta(child: DispatchedOrderSummary): { label: stri
   if (status === 'void' || child.void_at || child.voidAt) return { label: '已作废', badge: 'default', color: 'default' };
   if (status === 'returned') return { label: '已退回', badge: 'warning', color: 'warning' };
   if (['processing', 'accepted', 'in_progress', 'pending', 'created', 'waiting_dispatch', 'to_dispatch'].includes(status)) {
-    return { label: '处理中', badge: 'processing', color: 'processing' };
+    return { label: '待办理/办理中', badge: 'processing', color: 'processing' };
   }
   return { label: getStatusMeta(status).label, badge: 'default', color: 'default' };
 }
@@ -310,7 +310,7 @@ const WorkOrders: React.FC = () => {
       render: (_, record) => {
         const children = record.dispatched_orders;
         if (!children || children.length === 0) {
-          return <Tag color="processing">处理中</Tag>;
+          return <Tag color="default">暂无子工单</Tag>;
         }
         return (
           <Space size={[4, 4]} wrap>

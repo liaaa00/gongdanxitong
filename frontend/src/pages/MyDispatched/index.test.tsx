@@ -68,7 +68,7 @@ describe('MyDispatched processing status filter', () => {
     render(<MyDispatched mode="pending" />);
 
     const statusColumn = getStatusColumn();
-    expect(statusColumn.fieldProps.options).toEqual([{ label: '处理中', value: 'pending,processing' }]);
+    expect(statusColumn.fieldProps.options).toEqual([{ label: '未办结', value: 'pending,processing' }]);
 
     await mocks.latestProTableProps.request({ current: 1, pageSize: 20, status: 'pending,processing', moduleCode: 'contract' });
 

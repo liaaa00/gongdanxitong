@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { PageContainer } from '@ant-design/pro-components';
 import type { ProColumns, ActionType } from '@ant-design/pro-components';
 import { ProTable } from '@ant-design/pro-components';
-import { Tag, Button, Space, App, Badge, Tabs, Popconfirm, Modal, Descriptions, Typography, Segmented, Tooltip } from 'antd';
-import { BellOutlined, DeleteOutlined, CheckOutlined, EyeOutlined, LinkOutlined } from '@ant-design/icons';
-import { getNotifications, markNotificationRead, markAllRead, markNotificationsReadByQuery, deleteNotification, getUnreadCountByBucket } from '@/services/notifications';
+import { Tag, Button, Space, App, Badge, Tabs, Modal, Descriptions, Typography, Tooltip } from 'antd';
+import { BellOutlined, EyeOutlined, LinkOutlined } from '@ant-design/icons';
+import { getNotifications, markNotificationRead, getUnreadCountByBucket } from '@/services/notifications';
 import type { NotificationItem } from '@/services/notifications';
 import type { PageParams } from '@/services/mock';
 import { useAuth } from '@/hooks/useAuth';
@@ -31,7 +31,6 @@ type NotificationTabKey =
   | 'all'
   | 'salesperson_field_changed'
   | 'salesperson_returned'
-  | 'salesperson_urge_feedback'
   | 'salesperson_withdraw_void_result'
   | 'backend_creator_modified'
   | 'backend_urge'
@@ -51,8 +50,7 @@ const BACKEND_CHANGED_TYPES = [
   'backend_supplemented', 'supplement_filled', 'order_field_supplemented',
 ];
 const RETURNED_TYPES = ['returned', 'return', 'task_returned', 'sub_order_returned', 'dispatched_returned', 'dispatched_returned_to_salesperson'];
-const URGE_TYPES = ['urge', 'urge_received', 'urge_work_order', 'reminder'];
-const URGE_FEEDBACK_TYPES = ['urge_feedback', 'urge_replied', 'urge_result'];
+const URGE_TYPES = ['urge', 'urge_received', 'urge_work_order', 'reminder', 'urge_feedback', 'urge_replied', 'urge_result'];
 const SLA_WARNING_TYPES = ['sla_warning', 'sla_warn', 'timeout_warning'];
 const SLA_BREACHED_TYPES = ['sla_breach', 'sla_breached', 'timeout_breached', 'overdue'];
 const WITHDRAW_REQUEST_TYPES = ['withdraw_request', 'creator_withdraw', 'initiator_withdraw', 'work_order_withdraw'];
@@ -66,7 +64,6 @@ const TAB_BUCKET_MAP: Record<NotificationTabKey, string | undefined> = {
   // “业务员数据修改”展示业务员改字段后通知后道的 creator_modified bucket。
   salesperson_field_changed: 'creator_modified',
   salesperson_returned: 'returned',
-  salesperson_urge_feedback: 'urge_feedback',
   salesperson_withdraw_void_result: 'withdraw_void_result',
   // “后道数据修改”展示后道补充/接单/完成后反馈业务员的 field_changed bucket。
   backend_creator_modified: 'field_changed',
@@ -81,7 +78,6 @@ const TAB_TYPE_MAP: Record<NotificationTabKey, string[]> = {
   all: [],
   salesperson_field_changed: CREATOR_CHANGED_TYPES,
   salesperson_returned: RETURNED_TYPES,
-  salesperson_urge_feedback: URGE_FEEDBACK_TYPES,
   salesperson_withdraw_void_result: WITHDRAW_VOID_RESULT_TYPES,
   backend_creator_modified: BACKEND_CHANGED_TYPES,
   backend_urge: URGE_TYPES,
@@ -95,7 +91,6 @@ const SALESPERSON_TAB_KEYS: NotificationTabKey[] = [
   'all',
   'backend_creator_modified',
   'salesperson_returned',
-  'salesperson_urge_feedback',
   'salesperson_withdraw_void_result',
   'system',
 ];
@@ -124,7 +119,6 @@ const BIZ_COLOR: Record<NotificationTabKey | string, string> = {
   all: 'default',
   salesperson_field_changed: 'purple',
   salesperson_returned: 'orange',
-  salesperson_urge_feedback: 'gold',
   salesperson_withdraw_void_result: 'blue',
   backend_creator_modified: 'purple',
   backend_urge: 'gold',
@@ -138,7 +132,6 @@ const BIZ_LABEL: Record<NotificationTabKey | string, string> = {
   all: '全部消息',
   salesperson_field_changed: '业务员数据修改',
   salesperson_returned: '退回',
-  salesperson_urge_feedback: '催办反馈',
   salesperson_withdraw_void_result: '撤回/作废结果',
   backend_creator_modified: '后道数据修改',
   backend_urge: '催办',
@@ -167,7 +160,6 @@ function classifyNotification(item: Pick<NotificationItem, 'biz_type' | 'type' |
   if (matchesTypes(item, [...WITHDRAW_REQUEST_TYPES, ...VOID_REQUEST_TYPES]) || raw.includes('撤回') || raw.includes('作废')) return 'backend_withdraw_void_request';
   if (matchesTypes(item, SLA_BREACHED_TYPES) || raw.includes('已超时') || raw.includes('超期')) return 'backend_sla_breached';
   if (matchesTypes(item, SLA_WARNING_TYPES) || raw.includes('即将超时') || raw.includes('预警')) return 'backend_sla_warning';
-  if (matchesTypes(item, URGE_FEEDBACK_TYPES)) return 'salesperson_urge_feedback';
   if (matchesTypes(item, URGE_TYPES) || raw.includes('催办')) return 'backend_urge';
   if (matchesTypes(item, BACKEND_CHANGED_TYPES) || raw.includes('补充')) return 'backend_creator_modified';
   if (matchesTypes(item, RETURNED_TYPES) || raw.includes('退回')) return 'salesperson_returned';
@@ -199,7 +191,7 @@ const NotificationsPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<NotificationTabKey>('all');
   const [unreadTotal, setUnreadTotal] = useState(0);
   const [unreadByType, setUnreadByType] = useState<Record<string, number>>({});
-  const [readFilter, setReadFilter] = useState<'all' | 'unread' | 'read'>('all');
+
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailItem, setDetailItem] = useState<NotificationItem | null>(null);
 
@@ -223,7 +215,6 @@ const NotificationsPage: React.FC = () => {
       const next: Record<string, number> = {
         salesperson_field_changed: counts.backend.creator_modified || 0,
         salesperson_returned: counts.salesperson.returned || 0,
-        salesperson_urge_feedback: counts.salesperson.urge_feedback || 0,
         salesperson_withdraw_void_result: counts.salesperson.withdraw_void_result || 0,
         backend_creator_modified: counts.salesperson.field_changed || 0,
         backend_urge: counts.backend.urge || 0,
@@ -249,42 +240,8 @@ const NotificationsPage: React.FC = () => {
   const handleMarkRead = async (id: string) => {
     try {
       await markNotificationRead(id);
-      message.success('已标记为已读');
     } catch {
-      message.error('标记已读失败');
-    }
-    refreshCounts();
-    actionRef.current?.reload();
-  };
-
-  const handleDelete = async (id: string) => {
-    await deleteNotification(id);
-    message.success('已删除');
-    refreshCounts();
-    actionRef.current?.reload();
-  };
-
-  const handleMarkAll = async () => {
-    try {
-      await markAllRead();
-      message.success('已全部标记为已读');
-    } catch {
-      message.error('标记失败');
-    }
-    refreshCounts();
-    actionRef.current?.reload();
-  };
-
-  const handleMarkCurrentCategoryRead = async () => {
-    try {
-      const bucket = TAB_BUCKET_MAP[activeTab];
-      const result = await markNotificationsReadByQuery({
-        bucket,
-      }) as { affected?: number } | void;
-      const affected = result && typeof result.affected === 'number' ? result.affected : 0;
-      message.success(activeTab === 'all' ? '已将当前可见消息标为已读' : `已将当前分类 ${affected} 条未读消息标为已读`);
-    } catch {
-      message.error('标记当前分类失败');
+      // 本轮通知口径以“处理”闭环为主，已读失败不阻断跳转。
     }
     refreshCounts();
     actionRef.current?.reload();
@@ -298,6 +255,7 @@ const NotificationsPage: React.FC = () => {
   const handleJumpToOrder = (orderNo?: string, orderId?: string, item?: NotificationItem) => {
     const rawType = `${item?.biz_type || ''} ${item?.type || ''}`.toLowerCase();
     const shouldOpenEdit = rawType.includes('returned') || rawType.includes('return') || rawType.includes('withdraw_approved') || rawType.includes('dispatched_returned');
+    if (item) void handleMarkRead(item.id);
     if (item?.entity_type === 'dispatched_order' && item.entity_id) {
       const query = new URLSearchParams();
       query.set('fromNotification', item.id);
@@ -381,23 +339,15 @@ const NotificationsPage: React.FC = () => {
     },
     { title: '时间', dataIndex: 'created_at', key: 'created_at', width: 170, valueType: 'dateTime' },
     {
-      title: '操作', key: 'actions', width: 180, hideInSearch: true, fixed: 'right',
+      title: '操作', key: 'actions', width: 100, hideInSearch: true, fixed: 'right',
       render: (_, r) => (
-        <Space size={4}>
-          {!r.is_read && (
-            <Button type="link" size="small" icon={<CheckOutlined />} onClick={(e) => { e.stopPropagation(); handleMarkRead(r.id); }}>已读</Button>
-          )}
-          <Button
-            type="link"
-            size="small"
-            icon={<LinkOutlined />}
-            disabled={!canProcess(r)}
-            onClick={(e) => { e.stopPropagation(); handleJumpToOrder(r.order_no || r.ref_order_no, r.ref_order_id, r); }}
-          >处理</Button>
-          <Popconfirm title="确定删除？" onConfirm={(e) => { e?.stopPropagation(); handleDelete(r.id); }}>
-            <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={(e) => e.stopPropagation()} />
-          </Popconfirm>
-        </Space>
+        <Button
+          type="link"
+          size="small"
+          icon={<LinkOutlined />}
+          disabled={!canProcess(r)}
+          onClick={(e) => { e.stopPropagation(); handleJumpToOrder(r.order_no || r.ref_order_no, r.ref_order_id, r); }}
+        >处理</Button>
       ),
     },
   ];
@@ -414,29 +364,14 @@ const NotificationsPage: React.FC = () => {
     <PageContainer
       header={{
         title: '消息通知',
-        subTitle: '红点只有在点击“已读”后才会消失；“处理”只负责跳转到关联工单。',
+        subTitle: '仅保留“处理”入口；进入关联工单处理完成后，责任通知按后端规则自动消失。',
         extra: [
-          <Segmented
-            key="readFilter"
-            size="small"
-            value={readFilter}
-            onChange={(value) => { setReadFilter(value as 'all' | 'unread' | 'read'); actionRef.current?.reload(); }}
-            options={[
-              { label: '全部', value: 'all' },
-              { label: '未读', value: 'unread' },
-              { label: '已读', value: 'read' },
-            ]}
-          />,
           <Badge key="total" count={unreadTotal}><BellOutlined style={{ fontSize: 16 }} /></Badge>,
         ],
       }}
     >
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', marginBottom: -16 }}>
         <Tabs activeKey={activeTab} onChange={(key) => { setActiveTab(key as NotificationTabKey); actionRef.current?.reload(); }} items={tabItems} style={{ flex: 1, minWidth: 0 }} />
-        <Space size="small" style={{ paddingBottom: 16 }}>
-          <Button size="small" icon={<CheckOutlined />} onClick={handleMarkCurrentCategoryRead}>当前分类已读</Button>
-          <Button size="small" onClick={handleMarkAll}>全部已读</Button>
-        </Space>
       </div>
       <ProTable<NotificationItem>
         actionRef={actionRef}
@@ -448,8 +383,7 @@ const NotificationsPage: React.FC = () => {
             // 特定 Tab 用 bucket 过滤（与 countUnreadByBucket 口径一致）
             bucket,
             includeDispatch: activeTab === 'all' ? true : undefined,
-            unread: readFilter === 'unread' ? true : undefined,
-            isRead: readFilter === 'read' ? true : undefined,
+            unread: true,
           });
           return { data: result.list || [], success: true, total: result.total ?? (result.list || []).length };
         }}
@@ -471,9 +405,6 @@ const NotificationsPage: React.FC = () => {
         open={detailOpen}
         onCancel={() => setDetailOpen(false)}
         footer={[
-          detailItem && !detailItem.is_read && (
-            <Button key="read" icon={<CheckOutlined />} onClick={() => handleMarkRead(detailItem.id)}>标记已读</Button>
-          ),
           detailItem && (
             <Button key="jump" type="primary" icon={<EyeOutlined />} disabled={!canProcess(detailItem)}
               onClick={() => handleJumpToOrder(detailItem.ref_order_no || detailItem.order_no, detailItem.ref_order_id, detailItem)}>

@@ -58,7 +58,7 @@ export interface NotificationItem {
   contextFields?: Record<string, unknown>;
 }
 
-export type SalespersonNotificationBucket = 'field_changed' | 'returned' | 'urge_feedback' | 'withdraw_void_result';
+export type SalespersonNotificationBucket = 'field_changed' | 'returned' | 'withdraw_void_result';
 export type BackendNotificationBucket = 'todo' | 'urge' | 'sla_warning' | 'sla_breached' | 'creator_modified' | 'withdraw_void_request';
 export type NotificationBucketKey = SalespersonNotificationBucket | BackendNotificationBucket | 'system';
 
@@ -71,7 +71,7 @@ export interface UnreadCountByBucket {
 
 const EMPTY_BUCKET_COUNTS: UnreadCountByBucket = {
   total: 0,
-  salesperson: { field_changed: 0, returned: 0, urge_feedback: 0, withdraw_void_result: 0 },
+  salesperson: { field_changed: 0, returned: 0, withdraw_void_result: 0 },
   backend: { todo: 0, urge: 0, sla_warning: 0, sla_breached: 0, creator_modified: 0, withdraw_void_request: 0 },
   system: 0,
 };
@@ -94,7 +94,7 @@ export function getNotificationBucket(item: Pick<NotificationItem, 'biz_type' | 
   if (raw.includes('system')) return 'system';
   if (raw.includes('sla_breached') || raw.includes('sla_breach') || raw.includes('breached') || raw.includes('breach') || raw.includes('已超时') || raw.includes('超期')) return 'sla_breached';
   if (raw.includes('sla_warning') || raw.includes('sla_warn') || raw.includes('warning') || raw.includes('timeout') || raw.includes('即将超时') || raw.includes('预警')) return 'sla_warning';
-  if (raw.includes('urge_feedback') || raw.includes('urge_replied') || raw.includes('urge_result')) return 'urge_feedback';
+  if (raw.includes('urge_replied') || raw.includes('urge_result')) return 'urge';
   if (raw.includes('urge_received') || raw.includes('urge') || raw.includes('催办')) return 'urge';
   if (raw.includes('withdraw_request') || raw.includes('void_request') || raw.includes('creator_withdraw') || raw.includes('creator_void') || raw.includes('撤回申请') || raw.includes('作废申请')) return 'withdraw_void_request';
   if (raw.includes('withdraw_approved') || raw.includes('withdraw_rejected') || raw.includes('void_approved') || raw.includes('void_rejected') || raw.includes('withdraw_void_result')) return 'withdraw_void_result';
@@ -129,7 +129,6 @@ function normalizeUnreadCountByBucket(raw: unknown): UnreadCountByBucket {
     salesperson: {
       field_changed: Number(salesperson.field_changed ?? 0),
       returned: Number(salesperson.returned ?? 0),
-      urge_feedback: Number(salesperson.urge_feedback ?? 0),
       withdraw_void_result: Number(salesperson.withdraw_void_result ?? 0),
     },
     backend: {

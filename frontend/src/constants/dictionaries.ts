@@ -11,9 +11,9 @@ export const WORK_ORDER_STATUS_CODES = [
 export type WorkOrderStatusCode = (typeof WORK_ORDER_STATUS_CODES)[number];
 
 export const STATUS_MAP: Record<string, { label: string; color: string }> = {
-  draft: { label: '处理中', color: 'default' },
-  pending: { label: '处理中', color: 'processing' },
-  processing: { label: '处理中', color: 'blue' },
+  draft: { label: '未办结', color: 'default' },
+  pending: { label: '待办理/办理中', color: 'processing' },
+  processing: { label: '待办理/办理中', color: 'blue' },
   completed: { label: '已完成', color: 'success' },
   returned: { label: '已退回', color: 'warning' },
   withdrawn: { label: '已撤回', color: 'default' },
@@ -22,7 +22,7 @@ export const STATUS_MAP: Record<string, { label: string; color: string }> = {
   void: { label: '已作废', color: 'default' },
 
   // 子工单/历史状态兼容：不属于主工单状态机，但复用通用展示函数。
-  accepted: { label: '处理中', color: 'blue' },
+  accepted: { label: '待办理/办理中', color: 'blue' },
   cancelled: { label: '已作废', color: 'default' },
   skipped: { label: '本次不生成', color: 'default' },
 };

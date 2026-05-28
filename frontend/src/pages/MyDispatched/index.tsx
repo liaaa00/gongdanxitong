@@ -97,12 +97,13 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
   const { message } = App.useApp();
   const { hasAnyRole } = useAuth();
   const actionRef = useRef<ActionType>();
+  const isReturnedRoute = location.pathname.includes('/my-work/returned');
   const routeMode: MyDispatchedMode = location.pathname.includes('/my-work/done') ? 'done' : 'pending';
   const currentMode = mode || routeMode;
   const isDoneMode = currentMode === 'done';
   const isBusinessInitiator = hasAnyRole([ROLE.BUSINESS_GROUP_MEMBER, ROLE.BUSINESS_GROUP_LEADER]);
-  const showReturnedMainOrders = currentMode === 'pending' && isBusinessInitiator;
-  const headerTitle = isDoneMode ? '我的已办' : '我的待办';
+  const showReturnedMainOrders = (isReturnedRoute || currentMode === 'pending') && isBusinessInitiator;
+  const headerTitle = isDoneMode ? '我的已办' : (isReturnedRoute ? '我的退回' : '我的待办');
   const childTableTitle = isDoneMode ? '当月已办子工单' : (isBusinessInitiator ? '退回待处理子工单' : '待办子工单');
   const emptyText = isDoneMode ? '本月暂无已办子工单' : (isBusinessInitiator ? '暂无退回待处理子工单' : '暂无待办子工单');
   const [exporting, setExporting] = useState(false);
@@ -302,7 +303,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
           : isBusinessInitiator
             ? [{ label: '已退回', value: 'returned' }]
             : [DISPATCHED_PROCESSING_STATUS_OPTION],
-        placeholder: isDoneMode ? '已完成' : (isBusinessInitiator ? '已退回' : '处理中'),
+        placeholder: isDoneMode ? '已完成' : (isBusinessInitiator ? '已退回' : '待办理/办理中'),
       },
       render: (_, record) => <Tag color={getStatusColor(record.status)}>{getStatusText(record.status)}</Tag>,
     },
@@ -439,7 +440,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
     }
 
     // 普通待办模式：显示 pending 和 processing 状态的子工单。
-    // 用户选择“处理中”时同样传 statuses=pending,processing，避免只筛到 pending 或 processing 之一。
+    // 用户选择“待办理/办理中”时同样传 statuses=pending,processing，避免只筛到 pending 或 processing 之一。
     if (query.statuses) {
       const result = await getDispatchedOrders({ ...query, statuses: String(query.statuses) });
       const list = result.list.filter((d) => ACTIVE_DISPATCHED_STATUSES.has(d.status));
