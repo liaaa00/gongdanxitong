@@ -45,6 +45,8 @@ interface DashboardCardsRow {
   totalThisMonth?: number | string;
   processing?: number | string;
   completed?: number | string;
+  completionRate?: number | string;
+  completion_rate?: number | string;
   voided?: number | string;
   voidCount?: number | string;
   void_count?: number | string;
@@ -410,15 +412,26 @@ export class DashboardService {
   }
 
   private toCardsWithoutMessages(row?: DashboardCardsRow): Omit<DashboardCardsDto, 'myMessages'> {
+    const totalThisMonth = Number(row?.totalThisMonth ?? 0);
+    const completed = Number(row?.completed ?? 0);
     const voided = Number(row?.voided ?? row?.voidCount ?? row?.void_count ?? 0);
+    const completionRate = this.calculateCompletionRate(completed, totalThisMonth, voided);
     return {
-      totalThisMonth: Number(row?.totalThisMonth ?? 0),
+      totalThisMonth,
       processing: Number(row?.processing ?? 0),
-      completed: Number(row?.completed ?? 0),
+      completed,
+      completionRate,
+      completion_rate: completionRate,
       voided,
       voidCount: voided,
       void_count: voided,
     };
+  }
+
+  private calculateCompletionRate(completed: number, total: number, voided: number): number {
+    const denominator = total - voided;
+    if (denominator <= 0) return 0;
+    return Number(((completed / denominator) * 100).toFixed(1));
   }
 
   private async resolveDepartmentScope(
@@ -519,7 +532,7 @@ export class DashboardService {
   }
 
   private emptyCards(): Omit<DashboardCardsDto, 'myMessages'> {
-    return { totalThisMonth: 0, processing: 0, completed: 0, voided: 0, voidCount: 0, void_count: 0 };
+    return { totalThisMonth: 0, processing: 0, completed: 0, completionRate: 0, completion_rate: 0, voided: 0, voidCount: 0, void_count: 0 };
   }
 
   private emptySalesperson(): Record<string, unknown> {
@@ -596,8 +609,12 @@ export class DashboardService {
         COALESCE(COUNT(d.id) FILTER (WHERE d.status::text = 'completed'), 0)::int AS completed,
         COALESCE(COUNT(d.id) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL), 0)::int AS voided,
         CASE
-          WHEN COUNT(d.id) = 0 THEN 0
-          ELSE ROUND(COUNT(d.id) FILTER (WHERE d.status::text = 'completed')::numeric * 100 / COUNT(d.id), 1)
+          WHEN (COUNT(d.id) - COUNT(d.id) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)) <= 0 THEN 0
+          ELSE ROUND(
+            COUNT(d.id) FILTER (WHERE d.status::text = 'completed')::numeric * 100
+            / (COUNT(d.id) - COUNT(d.id) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)),
+            1
+          )
         END AS "completionRate"
       FROM order_types ot
       LEFT JOIN scoped_do d ON d.order_type::text = ot.order_type
@@ -644,8 +661,12 @@ export class DashboardService {
         COUNT(*) FILTER (WHERE d.status::text = 'completed')::int AS completed,
         COUNT(*) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)::int AS voided,
         CASE
-          WHEN COUNT(*) = 0 THEN 0
-          ELSE ROUND(COUNT(*) FILTER (WHERE d.status::text = 'completed')::numeric * 100 / COUNT(*), 1)
+          WHEN (COUNT(*) - COUNT(*) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)) <= 0 THEN 0
+          ELSE ROUND(
+            COUNT(*) FILTER (WHERE d.status::text = 'completed')::numeric * 100
+            / (COUNT(*) - COUNT(*) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)),
+            1
+          )
         END AS "completionRate"
       FROM scoped_do d
       GROUP BY d.module_code
@@ -691,8 +712,12 @@ export class DashboardService {
         COUNT(*) FILTER (WHERE d.status::text = 'completed')::int AS completed,
         COUNT(*) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)::int AS voided,
         CASE
-          WHEN COUNT(*) = 0 THEN 0
-          ELSE ROUND(COUNT(*) FILTER (WHERE d.status::text = 'completed')::numeric * 100 / COUNT(*), 1)
+          WHEN (COUNT(*) - COUNT(*) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)) <= 0 THEN 0
+          ELSE ROUND(
+            COUNT(*) FILTER (WHERE d.status::text = 'completed')::numeric * 100
+            / (COUNT(*) - COUNT(*) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)),
+            1
+          )
         END AS "completionRate"
       FROM scoped_do d
       GROUP BY d.module_code
@@ -779,8 +804,12 @@ export class DashboardService {
         COUNT(d.id) FILTER (WHERE d.status::text = 'completed')::int AS completed,
         COUNT(d.id) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)::int AS voided,
         CASE
-          WHEN COUNT(d.id) = 0 THEN 0
-          ELSE ROUND(COUNT(d.id) FILTER (WHERE d.status::text = 'completed')::numeric * 100 / COUNT(d.id), 1)
+          WHEN (COUNT(d.id) - COUNT(d.id) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)) <= 0 THEN 0
+          ELSE ROUND(
+            COUNT(d.id) FILTER (WHERE d.status::text = 'completed')::numeric * 100
+            / (COUNT(d.id) - COUNT(d.id) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)),
+            1
+          )
         END AS rate
       FROM months m
       LEFT JOIN scoped_do d ON d.bucket_month = m.month_start
@@ -839,8 +868,12 @@ export class DashboardService {
         COUNT(d.id) FILTER (WHERE d.status::text = 'completed')::int AS completed,
         COUNT(d.id) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)::int AS voided,
         CASE
-          WHEN COUNT(d.id) = 0 THEN 0
-          ELSE ROUND(COUNT(d.id) FILTER (WHERE d.status::text = 'completed')::numeric * 100 / COUNT(d.id), 1)
+          WHEN (COUNT(d.id) - COUNT(d.id) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)) <= 0 THEN 0
+          ELSE ROUND(
+            COUNT(d.id) FILTER (WHERE d.status::text = 'completed')::numeric * 100
+            / (COUNT(d.id) - COUNT(d.id) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)),
+            1
+          )
         END AS rate
       FROM months m
       LEFT JOIN scoped_do d ON d.bucket_month = m.month_start
@@ -865,7 +898,7 @@ export class DashboardService {
       const completed = Number(row.completed ?? 0);
       const voided = Number(row.voided ?? 0);
       const rate = row.rate === null || row.rate === undefined
-        ? (total === 0 ? 0 : Number(((completed / total) * 100).toFixed(1)))
+        ? this.calculateCompletionRate(completed, total, voided)
         : Number(row.rate);
       return {
         month: String(row.month ?? ''),

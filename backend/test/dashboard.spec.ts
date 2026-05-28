@@ -6,6 +6,7 @@ import { DashboardService } from 'src/modules/dashboard/dashboard.service';
 describe('DashboardService', () => {
   const validationStub = { resolveUserDepartmentIds: jest.fn(async () => ['dept-1']) } as never;
   const zeroVoided = { voided: 0, voidCount: 0, void_count: 0 };
+  const rateFields = (completionRate: number) => ({ completionRate, completion_rate: completionRate });
 
   it('returns dashboard cards for admin with global work order scope', async () => {
     const dataSource = { query: jest.fn()
@@ -15,7 +16,7 @@ describe('DashboardService', () => {
 
     const result = await service.getDashboardCards({ sub: 'admin-1', roles: ['admin'] } as never);
 
-    expect(result).toEqual({ totalThisMonth: 45, processing: 12, completed: 30, ...zeroVoided, myMessages: 8, scope: 'global' });
+    expect(result).toEqual({ totalThisMonth: 45, processing: 12, completed: 30, ...rateFields(66.7), ...zeroVoided, myMessages: 8, scope: 'global' });
     expect(dataSource.query).toHaveBeenNthCalledWith(1, expect.stringContaining('notifications'), ['admin-1']);
     expect(dataSource.query).toHaveBeenNthCalledWith(2, expect.stringContaining('FROM dispatched_orders'), [null, null, []]);
     expect(dataSource.query.mock.calls[1][0]).toContain("status::text NOT IN ('completed','void') AND void_at IS NULL");
@@ -30,7 +31,7 @@ describe('DashboardService', () => {
 
     const result = await service.getDashboardCards({ sub: 'sales-1', roles: ['salesperson'] } as never);
 
-    expect(result).toEqual({ totalThisMonth: 5, processing: 3, completed: 1, ...zeroVoided, myMessages: 2, scope: 'mine' });
+    expect(result).toEqual({ totalThisMonth: 5, processing: 3, completed: 1, ...rateFields(20), ...zeroVoided, myMessages: 2, scope: 'mine' });
     expect(dataSource.query).toHaveBeenNthCalledWith(2, expect.stringContaining('wo.created_by = $2::uuid'), ['owner', 'sales-1', []]);
   });
 
@@ -44,7 +45,7 @@ describe('DashboardService', () => {
     const result = await service.getDashboardCards({ sub: 'leader-1', roles: ['biz_leader'] } as never);
 
     expect(resolve).toHaveBeenCalledWith('leader-1');
-    expect(result).toEqual({ totalThisMonth: 9, processing: 4, completed: 5, ...zeroVoided, myMessages: 1, scope: 'team' });
+    expect(result).toEqual({ totalThisMonth: 9, processing: 4, completed: 5, ...rateFields(55.6), ...zeroVoided, myMessages: 1, scope: 'team' });
     expect(dataSource.query).toHaveBeenNthCalledWith(2, expect.stringContaining('wo.department_id = ANY($3::uuid[])'), ['department', null, ['dept-a', 'dept-b']]);
   });
 
@@ -56,7 +57,7 @@ describe('DashboardService', () => {
 
     const result = await service.getDashboardCards({ sub: 'manager-1', roles: ['business_owner'] } as never);
 
-    expect(result).toEqual({ totalThisMonth: 30, processing: 8, completed: 20, ...zeroVoided, myMessages: 3, scope: 'global' });
+    expect(result).toEqual({ totalThisMonth: 30, processing: 8, completed: 20, ...rateFields(66.7), ...zeroVoided, myMessages: 3, scope: 'global' });
     expect(dataSource.query).toHaveBeenNthCalledWith(2, expect.stringContaining('FROM dispatched_orders'), [null, null, []]);
   });
 
@@ -68,10 +69,77 @@ describe('DashboardService', () => {
 
     const result = await service.getDashboardCards({ sub: 'handler-1', roles: ['contract_specialist'] } as never);
 
-    expect(result).toEqual({ totalThisMonth: 7, processing: 2, completed: 5, ...zeroVoided, myMessages: 4, scope: 'backend_module' });
+    expect(result).toEqual({ totalThisMonth: 7, processing: 2, completed: 5, ...rateFields(71.4), ...zeroVoided, myMessages: 4, scope: 'backend_module' });
     expect(dataSource.query).toHaveBeenNthCalledWith(2, expect.stringContaining('FROM dispatched_orders'), ['handler-1']);
     expect(dataSource.query.mock.calls[1][0]).toContain("status::text NOT IN ('completed','void') AND void_at IS NULL");
     expect(dataSource.query.mock.calls[1][0]).toContain('AS voided');
+  });
+
+  it('calculates dashboard card completion rate with voided orders excluded from denominator', async () => {
+    const cases = [
+      { totalThisMonth: 100, completed: 98, voided: 2, expected: 100 },
+      { totalThisMonth: 100, completed: 97, voided: 2, expected: 99 },
+      { totalThisMonth: 2, completed: 0, voided: 2, expected: 0 },
+      { totalThisMonth: 0, completed: 0, voided: 0, expected: 0 },
+    ];
+
+    for (const item of cases) {
+      const dataSource = { query: jest.fn()
+        .mockResolvedValueOnce([{ count: 0 }])
+        .mockResolvedValueOnce([{ totalThisMonth: item.totalThisMonth, processing: 0, completed: item.completed, voided: item.voided }]) };
+      const service = new DashboardService(dataSource as never, validationStub);
+
+      const result = await service.getDashboardCards({ sub: 'admin-1', roles: ['admin'] } as never);
+
+      expect(result).toMatchObject({
+        totalThisMonth: item.totalThisMonth,
+        completed: item.completed,
+        voided: item.voided,
+        voidCount: item.voided,
+        void_count: item.voided,
+        completionRate: item.expected,
+        completion_rate: item.expected,
+      });
+    }
+  });
+
+  it('keeps matrix and leader-trend SQL rates on completed over total minus voided', async () => {
+    const dataSource = { query: jest.fn(async () => []) };
+    const service = new DashboardService(dataSource as never, validationStub);
+
+    await service.getOrderTypeMatrix({ sub: 'admin-1', roles: ['admin'] } as never);
+    await service.getOrderTypeMatrix({ sub: 'admin-1', roles: ['admin'] } as never, 'node');
+    await service.getLeaderTrend('onboarding', { sub: 'admin-1', roles: ['admin'] } as never);
+
+    const sqlText = (dataSource.query.mock.calls as unknown[][]).map((call) => String(call[0])).join('\n');
+    expect(sqlText).toContain("AS voided");
+    expect(sqlText).toContain("COUNT(d.id) - COUNT(d.id) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)");
+    expect(sqlText).toContain("COUNT(*) - COUNT(*) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)");
+    expect(sqlText).not.toContain("completed')::numeric * 100 / COUNT(d.id)");
+    expect(sqlText).not.toContain("completed')::numeric * 100 / COUNT(*)");
+  });
+
+  it('normalizes leader trend fallback rates with voided orders excluded from denominator', async () => {
+    const dataSource = { query: jest.fn(async () => [
+      { month: '2026-01', total: 100, completed: 98, voided: 2 },
+      { month: '2026-02', total: 100, completed: 97, voided: 2 },
+      { month: '2026-03', total: 2, completed: 0, voided: 2 },
+      { month: '2026-04', total: 0, completed: 0, voided: 0 },
+    ]) };
+    const service = new DashboardService(dataSource as never, validationStub);
+
+    const result = await service.getLeaderTrend('onboarding', { sub: 'admin-1', roles: ['admin'] } as never);
+
+    expect(result).toEqual({
+      orderType: 'onboarding',
+      moduleCode: null,
+      buckets: [
+        { month: '2026-01', total: 100, completed: 98, voided: 2, rate: 100 },
+        { month: '2026-02', total: 100, completed: 97, voided: 2, rate: 99 },
+        { month: '2026-03', total: 2, completed: 0, voided: 2, rate: 0 },
+        { month: '2026-04', total: 0, completed: 0, voided: 0, rate: 0 },
+      ],
+    });
   });
 
   it('returns empty dashboard cards when business leader has no departments', async () => {
@@ -80,7 +148,7 @@ describe('DashboardService', () => {
     const service = new DashboardService(dataSource as never, { resolveUserDepartmentIds: resolve } as never);
 
     await expect(service.getDashboardCards({ sub: 'leader-2', roles: ['business_group_leader'] } as never))
-      .resolves.toEqual({ totalThisMonth: 0, processing: 0, completed: 0, ...zeroVoided, myMessages: 6, scope: 'team' });
+      .resolves.toEqual({ totalThisMonth: 0, processing: 0, completed: 0, ...rateFields(0), ...zeroVoided, myMessages: 6, scope: 'team' });
     expect(dataSource.query).toHaveBeenCalledTimes(1);
   });
 
