@@ -2,16 +2,16 @@ import request, { MAX_PAGE_SIZE } from './request';
 import { isMockMode, mockDelay, type PageParams, type PageResult } from './mock';
 import { getDispatchedOrders, type DispatchedOrderItem } from './dispatchedOrders';
 import { getWorkOrders, type WorkOrderItem } from './workOrders';
-import { getUnreadCountByBucket } from './notifications';
-
 export type DashboardOrderType = 'onboarding' | 'renewal' | 'resignation' | 'benefit';
 export type DashboardMatrixDimension = 'orderType' | 'node';
 export type DashboardAudience = 'business' | 'backend';
+export type DashboardScopeMode = 'mine' | 'team';
 
 export interface DashboardCards {
   totalThisMonth: number;
   processing: number;
   completed: number;
+  voided: number;
   myMessages: number;
   scope?: string;
 }
@@ -24,6 +24,7 @@ export interface OrderTypeMatrixRow {
   total: number;
   processing: number;
   completed: number;
+  voided: number;
   completionRate: number;
 }
 
@@ -43,6 +44,7 @@ export interface LeaderTrendResult {
   orderType: DashboardOrderType;
   moduleCode?: string;
   buckets: LeaderTrendBucket[];
+  fallbackReason?: 'endpoint_error';
 }
 
 interface ParentOrderLite {
@@ -127,7 +129,11 @@ function isCurrentMonthValue(iso: string | undefined, month = currentMonthValue(
 }
 
 function isTerminalStatus(status: string | undefined): boolean {
-  return ['completed', 'withdrawn', 'void', 'cancelled', 'canceled'].includes(String(status || '').toLowerCase());
+  return ['completed', 'withdrawn', 'void', 'voided', 'cancelled', 'canceled'].includes(String(status || '').toLowerCase());
+}
+
+function isVoidStatus(status: string | undefined): boolean {
+  return ['void', 'voided', 'cancelled', 'canceled'].includes(String(status || '').toLowerCase());
 }
 
 function isOpenStatus(status: string | undefined): boolean {
@@ -167,6 +173,11 @@ function normalizePercent(value: unknown, fallback = 0): number {
   return Math.round(Math.max(0, Math.min(100, percent)) * 10) / 10;
 }
 
+function calculateCompletionRate(completed: unknown, total: unknown, voided: unknown = 0): number {
+  const denominator = Math.max(0, num(total) - Math.max(0, num(voided)));
+  return denominator === 0 ? 0 : normalizePercent((Math.max(0, num(completed)) / denominator) * 100);
+}
+
 function normalizeOrderType(value: unknown): DashboardOrderType {
   const raw = String(value || '').toLowerCase();
   if (raw.includes('renewal')) return 'renewal';
@@ -189,13 +200,14 @@ function isCompletedStatus(status: string | undefined): boolean {
 
 function buildMatrixRows(parents: ParentOrderLite[], dimension: DashboardMatrixDimension): OrderTypeMatrixRow[] {
   if (dimension === 'node') {
-    const map = new Map<string, { total: number; processing: number; completed: number }>();
+    const map = new Map<string, { total: number; processing: number; completed: number; voided: number }>();
     parents.forEach((parent) => {
       (parent.dispatched_orders || []).forEach((child) => {
         const code = child.module_code || 'unknown';
-        const current = map.get(code) || { total: 0, processing: 0, completed: 0 };
+        const current = map.get(code) || { total: 0, processing: 0, completed: 0, voided: 0 };
         current.total += 1;
-        if (isCompletedStatus(child.status)) current.completed += 1;
+        if (isVoidStatus(child.status)) current.voided += 1;
+        else if (isCompletedStatus(child.status)) current.completed += 1;
         else if (isProcessingStatus(child.status) || child.status === 'pending') current.processing += 1;
         map.set(code, current);
       });
@@ -208,13 +220,16 @@ function buildMatrixRows(parents: ParentOrderLite[], dimension: DashboardMatrixD
       total: item.total,
       processing: item.processing,
       completed: item.completed,
-      completionRate: item.total === 0 ? 0 : normalizePercent((item.completed / item.total) * 100),
+      voided: item.voided,
+      completionRate: calculateCompletionRate(item.completed, item.total, item.voided),
     }));
   }
 
   return ORDER_TYPES.map((orderType) => buildOrderTypeRow(
     orderType,
-    parents.filter((p) => getParentOrderType(p) === orderType).map((item) => item.status),
+    parents
+      .filter((p) => getParentOrderType(p) === orderType)
+      .flatMap((item) => item.dispatched_orders?.length ? item.dispatched_orders.map((child) => child.status) : [item.status]),
     dimension,
   ));
 }
@@ -222,7 +237,8 @@ function buildMatrixRows(parents: ParentOrderLite[], dimension: DashboardMatrixD
 function buildOrderTypeRow(orderType: DashboardOrderType, statuses: Array<string | undefined>, dimension: DashboardMatrixDimension): OrderTypeMatrixRow {
   const total = statuses.length;
   const completed = statuses.filter(isCompletedStatus).length;
-  const processing = statuses.filter((status) => !isCompletedStatus(status) && (isProcessingStatus(status) || Boolean(status))).length;
+  const voided = statuses.filter(isVoidStatus).length;
+  const processing = statuses.filter((status) => !isCompletedStatus(status) && !isVoidStatus(status) && (isProcessingStatus(status) || Boolean(status))).length;
   return {
     orderType,
     dimension,
@@ -230,7 +246,8 @@ function buildOrderTypeRow(orderType: DashboardOrderType, statuses: Array<string
     total,
     processing,
     completed,
-    completionRate: total === 0 ? 0 : normalizePercent((completed / total) * 100),
+    voided,
+    completionRate: calculateCompletionRate(completed, total, voided),
   };
 }
 
@@ -246,7 +263,8 @@ function buildNodeMatrixRows(children: DispatchedOrderItem[], dimension: Dashboa
   return Array.from(map.entries()).map(([moduleCode, item]) => {
     const total = item.statuses.length;
     const completed = item.statuses.filter(isCompletedStatus).length;
-    const processing = item.statuses.filter((status) => !isCompletedStatus(status)).length;
+    const voided = item.statuses.filter(isVoidStatus).length;
+    const processing = item.statuses.filter((status) => !isCompletedStatus(status) && !isVoidStatus(status)).length;
     return {
       orderType: 'onboarding',
       moduleCode,
@@ -255,7 +273,8 @@ function buildNodeMatrixRows(children: DispatchedOrderItem[], dimension: Dashboa
       total,
       processing,
       completed,
-      completionRate: total === 0 ? 0 : normalizePercent((completed / total) * 100),
+      voided,
+      completionRate: calculateCompletionRate(completed, total, voided),
     };
   });
 }
@@ -263,13 +282,13 @@ function buildNodeMatrixRows(children: DispatchedOrderItem[], dimension: Dashboa
 async function buildMatrixRowsFromListApis(dimension: DashboardMatrixDimension): Promise<OrderTypeMatrixResult> {
   const month = currentMonthValue();
   if (dimension === 'node') {
-    const children = await fetchAllPages<DispatchedOrderItem>(getDispatchedOrders);
+    const children = await fetchAllPages<DispatchedOrderItem>(getDispatchedOrders, { silentError: true });
     const monthChildren = children.filter((child) => isCurrentMonthValue(child.dispatched_at || child.created_at || child.completed_at || undefined, month));
     const rows = buildNodeMatrixRows(monthChildren, dimension);
     return { rows, total: rows.length };
   }
 
-  const orders = await fetchAllPages<WorkOrderItem>(getWorkOrders);
+  const orders = await fetchAllPages<WorkOrderItem>(getWorkOrders, { silentError: true });
   const monthOrders = orders.filter((order) => isCurrentMonthValue(order.created_at || order.submitted_at || order.updated_at, month));
   const rows = ORDER_TYPES.map((orderType) => buildOrderTypeRow(
     orderType,
@@ -286,6 +305,7 @@ function normalizeDashboardCards(raw: unknown): DashboardCards {
     totalThisMonth: num(source.totalThisMonth ?? source.total_this_month ?? source.monthTotal ?? source.month_total ?? source.total),
     processing: num(source.processing ?? source.processing_orders ?? source.processingOrders),
     completed: num(source.completed ?? source.completed_orders ?? source.completedOrders),
+    voided: num(source.voided ?? source.void_orders ?? source.voidOrders ?? source.cancelled ?? source.canceled),
     myMessages: num(source.myMessages ?? source.my_messages ?? source.unreadMessages ?? source.unread_messages ?? source.unread ?? source.notificationCount),
     scope: typeof source.scope === 'string' ? source.scope : undefined,
   };
@@ -308,6 +328,7 @@ function normalizeOrderTypeMatrix(raw: unknown, fallbackDimension: DashboardMatr
     const total = num(item.total ?? item.total_count ?? item.count);
     const completed = num(item.completed ?? item.completed_count);
     const processing = num(item.processing ?? item.processing_count);
+    const voided = num(item.voided ?? item.void_count ?? item.voidCount ?? item.cancelled ?? item.canceled);
     const rateValue = item.completionRate ?? item.completion_rate ?? item.rate;
     return {
       orderType,
@@ -317,8 +338,9 @@ function normalizeOrderTypeMatrix(raw: unknown, fallbackDimension: DashboardMatr
       total,
       processing,
       completed,
+      voided,
       completionRate: rateValue === undefined || rateValue === null
-        ? (total === 0 ? 0 : normalizePercent((completed / total) * 100))
+        ? calculateCompletionRate(completed, total, voided)
         : normalizePercent(rateValue),
     };
   });
@@ -342,72 +364,45 @@ function normalizeLeaderTrend(raw: unknown, fallbackOrderType: DashboardOrderTyp
     buckets: list.map((item: any) => {
       const total = num(item.total ?? item.total_count ?? item.submitted ?? item.created);
       const completed = num(item.completed ?? item.completed_count);
+      const voided = num(item.voided ?? item.void_count ?? item.voidCount ?? item.cancelled ?? item.canceled);
       const rateValue = item.rate ?? item.completionRate ?? item.completion_rate;
       return {
         month: String(item.month ?? item.bucket ?? item.label ?? ''),
         total,
         completed,
         rate: rateValue === undefined || rateValue === null
-          ? (total === 0 ? 0 : normalizePercent((completed / total) * 100))
+          ? calculateCompletionRate(completed, total, voided)
           : normalizePercent(rateValue),
       };
     }),
   };
 }
 
-export async function getDashboardCards(audience: DashboardAudience = 'business'): Promise<DashboardCards> {
-  const month = currentMonthValue();
+export async function getDashboardCards(audience: DashboardAudience = 'business', scope?: DashboardScopeMode): Promise<DashboardCards> {
   if (isMockMode) {
+    const month = currentMonthValue();
     const parents = readParents();
     const monthOrders = parents.filter((p) => isCurrentMonthValue(p.created_at, month));
     const children = monthOrders.flatMap((p) => p.dispatched_orders || []);
-    const source = audience === 'backend' ? children : monthOrders;
+    const source = children.length > 0 ? children : monthOrders;
     return mockDelay({
       totalThisMonth: source.length,
       processing: source.filter((item) => isOpenStatus(item.status)).length,
       completed: source.filter((item) => isCompletedStatus(item.status)).length,
+      voided: source.filter((item) => isVoidStatus(item.status)).length,
       myMessages: 0,
-      scope: audience === 'backend' ? '本月办理工单' : '本月工单数据',
+      scope: audience === 'backend' ? '本月办理子工单' : '本月子工单数据',
     });
   }
 
-  try {
-    if (audience === 'backend') {
-      const children = await fetchAllPages<DispatchedOrderItem>(getDispatchedOrders);
-      const monthChildren = children.filter((child) => isCurrentMonthValue(child.dispatched_at || child.created_at || child.completed_at || undefined, month));
-      const unread = await getUnreadCountByBucket().catch(() => null);
-      const backendMessages = unread
-        ? unread.backend.urge + unread.backend.sla_warning + unread.backend.sla_breached + unread.backend.creator_modified + unread.backend.withdraw_void_request
-        : 0;
-      return {
-        totalThisMonth: monthChildren.length,
-        processing: monthChildren.filter((item) => isOpenStatus(item.status)).length,
-        completed: monthChildren.filter((item) => isCompletedStatus(item.status)).length,
-        myMessages: backendMessages,
-        scope: '本月办理工单',
-      };
-    }
-
-    const orders = await fetchAllPages<WorkOrderItem>(getWorkOrders);
-    const monthOrders = orders.filter((order) => isCurrentMonthValue(order.created_at || order.submitted_at || order.updated_at, month));
-    const unread = await getUnreadCountByBucket().catch(() => null);
-    const salespersonMessages = unread
-      ? unread.salesperson.field_changed + unread.salesperson.returned
-      : 0;
-    return {
-      totalThisMonth: monthOrders.length,
-      processing: monthOrders.filter((item) => isOpenStatus(item.status)).length,
-      completed: monthOrders.filter((item) => isCompletedStatus(item.status)).length,
-      myMessages: salespersonMessages,
-      scope: '本月工单数据',
-    };
-  } catch {
-    const result = await request.get('/dashboard/cards');
-    return normalizeDashboardCards(result);
-  }
+  const result = await request.get('/dashboard/cards', {
+    params: scope ? { scope } : {},
+    silentError: true,
+  } as any);
+  return normalizeDashboardCards(result);
 }
 
-export async function getOrderTypeMatrix(params: { dimension?: DashboardMatrixDimension } = {}): Promise<OrderTypeMatrixResult> {
+export async function getOrderTypeMatrix(params: { dimension?: DashboardMatrixDimension; audience?: DashboardAudience; scope?: DashboardScopeMode } = {}): Promise<OrderTypeMatrixResult> {
   const dimension = params.dimension || 'node';
   if (isMockMode) {
     const month = currentMonthValue();
@@ -416,7 +411,7 @@ export async function getOrderTypeMatrix(params: { dimension?: DashboardMatrixDi
   }
 
   try {
-    const result = await request.get('/dashboard/order-type-matrix', { params: { dimension }, silentError: true } as any);
+    const result = await request.get('/dashboard/order-type-matrix', { params: { dimension, ...(params.scope ? { scope: params.scope } : {}) }, silentError: true } as any);
     return normalizeOrderTypeMatrix(result, dimension);
   } catch (err) {
     console.warn('[dashboard] order-type-matrix unavailable, fallback to list aggregation', err);
@@ -424,24 +419,22 @@ export async function getOrderTypeMatrix(params: { dimension?: DashboardMatrixDi
   }
 }
 
-export async function getLeaderTrend(orderType: DashboardOrderType, moduleCode?: string): Promise<LeaderTrendResult> {
+export async function getLeaderTrend(orderType: DashboardOrderType, moduleCode?: string, scope?: DashboardScopeMode): Promise<LeaderTrendResult> {
   if (isMockMode) {
     const parents = readParents().filter((p) => getParentOrderType(p) === orderType);
     const buckets = recentMonths(12).map((m) => {
       const list = parents.filter((p) => isSameMonth(p.created_at, m));
-      if (moduleCode) {
-        const children = list.flatMap((p) => p.dispatched_orders || []).filter((d) => d.module_code === moduleCode);
-        const total = children.length;
-        const completed = children.filter((d) => isCompletedStatus(d.status)).length;
-        return { month: monthLabel(m), total, completed, rate: total === 0 ? 0 : normalizePercent((completed / total) * 100) };
-      }
-      const total = list.length;
-      const completed = list.filter((p) => isCompletedStatus(p.status)).length;
+      const children = list.flatMap((p) => p.dispatched_orders || []).filter((d) => !moduleCode || d.module_code === moduleCode);
+      const fallback = moduleCode ? [] : list;
+      const source = children.length > 0 ? children : fallback;
+      const total = source.length;
+      const completed = source.filter((item) => isCompletedStatus(item.status)).length;
+      const voided = source.filter((item) => isVoidStatus(item.status)).length;
       return {
         month: monthLabel(m),
         total,
         completed,
-        rate: total === 0 ? 0 : normalizePercent((completed / total) * 100),
+        rate: calculateCompletionRate(completed, total, voided),
       };
     });
     return mockDelay({ orderType, moduleCode, buckets });
@@ -449,7 +442,7 @@ export async function getLeaderTrend(orderType: DashboardOrderType, moduleCode?:
 
   try {
     const result = await request.get('/dashboard/leader-trend', {
-      params: { orderType, ...(moduleCode ? { moduleCode } : {}) },
+      params: { orderType, ...(moduleCode ? { moduleCode } : {}), ...(scope ? { scope } : {}) },
       silentError: true,
     } as any);
     return normalizeLeaderTrend(result, orderType, moduleCode);
@@ -458,6 +451,7 @@ export async function getLeaderTrend(orderType: DashboardOrderType, moduleCode?:
     return {
       orderType,
       moduleCode,
+      fallbackReason: 'endpoint_error',
       buckets: recentMonths(12).map((m) => ({
         month: `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}`,
         total: 0,
@@ -578,13 +572,14 @@ function normalizeManagerDashboard(raw: any): DashboardManager {
   const ratios = data.ratios || {};
   const total = num(ratios.total_submitted ?? ratios.totalSubmitted ?? modules.reduce((sum: number, item: any) => sum + num(item.total), 0));
   const completed = modules.reduce((sum: number, item: any) => sum + num(item.completed), 0);
+  const voided = num(ratios.voided ?? ratios.voidedOrders ?? ratios.void_count ?? modules.reduce((sum: number, item: any) => sum + num(item.voided ?? item.void_count), 0));
 
   return {
     total_onboarding: total,
     completed_onboarding: completed,
     total_this_month: total,
     completed_this_month: completed,
-    completion_rate: total === 0 ? 0 : normalizePercent((completed / total) * 100),
+    completion_rate: calculateCompletionRate(completed, total, voided),
     monthly_trend: (Array.isArray(data.trend) ? data.trend : []).map((item: any) => ({
       month: String(item.month ?? item.bucket ?? ''),
       total: num(item.total ?? item.submitted),
@@ -712,7 +707,8 @@ export async function getManagerDashboard(): Promise<DashboardManager> {
     const thisMonth = new Date();
     const total_this_month = parents.filter((p) => isSameMonth(p.created_at, thisMonth)).length;
     const completed_this_month = parents.filter((p) => isSameMonth(p.created_at, thisMonth) && p.status === 'completed').length;
-    const completion_rate = total_onboarding === 0 ? 0 : normalizePercent((completed_onboarding / total_onboarding) * 100);
+    const voided_onboarding = parents.filter((p) => isVoidStatus(p.status)).length;
+    const completion_rate = calculateCompletionRate(completed_onboarding, total_onboarding, voided_onboarding);
     const months = recentMonths(5);
     const monthly_trend = months.map((m) => ({
       month: monthLabel(m),

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageContainer, ProTable } from '@ant-design/pro-components';
 import type { ProColumns } from '@ant-design/pro-components';
-import { BellOutlined, CheckCircleOutlined, FileTextOutlined, RiseOutlined, ClockCircleOutlined } from '@ant-design/icons';
+import { BellOutlined, CheckCircleOutlined, FileTextOutlined, RiseOutlined, ClockCircleOutlined, StopOutlined } from '@ant-design/icons';
 import { Card, Col, Empty, Progress, Row, Select, Space, Spin, Statistic, Tag, Tooltip, Typography } from 'antd';
 import { canonicalRoleCodes, ROLE } from '@/constants/roles';
 import { useUserStore } from '@/stores/userStore';
@@ -13,6 +13,7 @@ import {
   type DashboardAudience,
   type DashboardCards,
   type DashboardOrderType,
+  type DashboardScopeMode,
   type LeaderTrendBucket,
   type OrderTypeMatrixRow,
 } from '@/services/dashboard';
@@ -25,6 +26,7 @@ const EMPTY_CARDS: DashboardCards = {
   totalThisMonth: 0,
   processing: 0,
   completed: 0,
+  voided: 0,
   myMessages: 0,
 };
 
@@ -116,15 +118,45 @@ function clampRate(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value * 10) / 10));
 }
 
-function summarizeMatrixRows(rows: Array<Pick<OrderTypeMatrixRow, 'total' | 'processing' | 'completed'>>): Pick<OrderTypeMatrixRow, 'total' | 'processing' | 'completed' | 'completionRate'> {
-  const total = rows.reduce((sum, row) => sum + (row.total || 0), 0);
-  const processing = rows.reduce((sum, row) => sum + (row.processing || 0), 0);
-  const completed = rows.reduce((sum, row) => sum + (row.completed || 0), 0);
+function calculateCompletionRate(completed: number, total: number, voided: number): number {
+  const denominator = Math.max(0, total - Math.max(0, voided || 0));
+  return denominator > 0 ? clampRate((Math.max(0, completed || 0) / denominator) * 100) : 0;
+}
+
+function normalizeStatsTotal<T extends Pick<OrderTypeMatrixRow, 'total' | 'processing' | 'completed' | 'voided' | 'completionRate'>>(
+  row: T,
+  options: { preserveCompletionRate?: boolean } = {},
+): T {
+  const completed = Math.max(0, row.completed || 0);
+  const voided = Math.max(0, row.voided || 0);
+  const rawTotal = Math.max(0, row.total || 0);
+  const rawProcessing = Math.max(0, row.processing || 0);
+  const processing = Math.max(rawProcessing, rawTotal - completed - voided);
+  const total = processing + completed + voided;
+  return {
+    ...row,
+    total,
+    processing,
+    completed,
+    voided,
+    completionRate: options.preserveCompletionRate
+      ? clampRate(row.completionRate)
+      : calculateCompletionRate(completed, total, voided),
+  };
+}
+
+function summarizeMatrixRows(rows: Array<Pick<OrderTypeMatrixRow, 'total' | 'processing' | 'completed' | 'voided'>>): Pick<OrderTypeMatrixRow, 'total' | 'processing' | 'completed' | 'voided' | 'completionRate'> {
+  const normalizedRows = rows.map((row) => normalizeStatsTotal({ ...row, completionRate: 0 }));
+  const processing = normalizedRows.reduce((sum, row) => sum + (row.processing || 0), 0);
+  const completed = normalizedRows.reduce((sum, row) => sum + (row.completed || 0), 0);
+  const voided = normalizedRows.reduce((sum, row) => sum + (row.voided || 0), 0);
+  const total = processing + completed + voided;
   return {
     total,
     processing,
     completed,
-    completionRate: total > 0 ? clampRate((completed / total) * 100) : 0,
+    voided,
+    completionRate: calculateCompletionRate(completed, total, voided),
   };
 }
 
@@ -141,7 +173,7 @@ function buildMatrixTreeRows(rows: OrderTypeMatrixRow[]): DashboardMatrixTreeRow
   return DASHBOARD_MATRIX_GROUPS.map((group) => {
     const children = group.modules.map<DashboardMatrixTreeRow>((module) => {
       const matched = rowsByModule.get(module.moduleCode);
-      return {
+      return normalizeStatsTotal({
         rowKey: `${group.key}:${module.moduleCode}`,
         orderType: group.orderType,
         moduleCode: module.moduleCode,
@@ -151,8 +183,9 @@ function buildMatrixTreeRows(rows: OrderTypeMatrixRow[]): DashboardMatrixTreeRow
         total: matched?.total || 0,
         processing: matched?.processing || 0,
         completed: matched?.completed || 0,
+        voided: matched?.voided || 0,
         completionRate: clampRate(matched?.completionRate || 0),
-      };
+      }, { preserveCompletionRate: true });
     });
     const summary = summarizeMatrixRows(children);
     return {
@@ -234,9 +267,10 @@ const MiniTrendLine: React.FC<MiniTrendLineProps> = ({ title, color, buckets }) 
 interface LeaderTrendChartProps {
   visible: boolean;
   moduleOptions: ModuleConfigItem[];
+  scope?: DashboardScopeMode;
 }
 
-const LeaderTrendChart: React.FC<LeaderTrendChartProps> = ({ visible, moduleOptions }) => {
+const LeaderTrendChart: React.FC<LeaderTrendChartProps> = ({ visible, moduleOptions, scope }) => {
   const [moduleCode, setModuleCode] = useState<string>();
   const [loading, setLoading] = useState(false);
   const [trendMap, setTrendMap] = useState<Record<DashboardOrderType, LeaderTrendBucket[]>>({
@@ -247,7 +281,7 @@ const LeaderTrendChart: React.FC<LeaderTrendChartProps> = ({ visible, moduleOpti
     if (!visible) return;
     let mounted = true;
     setLoading(true);
-    Promise.all(TREND_ORDER_TYPES.map((item) => getLeaderTrend(item.value, moduleCode)))
+    Promise.all(TREND_ORDER_TYPES.map((item) => getLeaderTrend(item.value, moduleCode, scope)))
       .then((results) => {
         if (!mounted) return;
         setTrendMap((prev) => ({
@@ -262,7 +296,7 @@ const LeaderTrendChart: React.FC<LeaderTrendChartProps> = ({ visible, moduleOpti
         if (mounted) setLoading(false);
       });
     return () => { mounted = false; };
-  }, [moduleCode, visible]);
+  }, [moduleCode, scope, visible]);
 
   if (!visible) return null;
 
@@ -315,7 +349,17 @@ const Dashboard: React.FC = () => {
     const hasBusinessRole = roles.some((role) => BUSINESS_ROLES.includes(role as typeof BUSINESS_ROLES[number]));
     return hasBackendRole && !hasBusinessRole ? 'backend' : 'business';
   }, [roles]);
-
+  const canSwitchDashboardScope = dashboardAudience === 'business' && (
+    roles.includes(ROLE.ADMIN) || roles.includes(ROLE.BUSINESS_GROUP_LEADER) || roles.includes(ROLE.BUSINESS_OWNER)
+  );
+  const effectiveScope: DashboardScopeMode | undefined = canSwitchDashboardScope ? 'mine' : undefined;
+  const normalizedCards = useMemo(() => normalizeStatsTotal({
+    total: cards.totalThisMonth,
+    processing: cards.processing,
+    completed: cards.completed,
+    voided: cards.voided || 0,
+    completionRate: 0,
+  }), [cards.completed, cards.processing, cards.totalThisMonth, cards.voided]);
 
   // 仪表盘总表按实际子工单模块展示：入职主工单提交后会拆成数据录入、社保公积金、入职联系、劳动合同签订等子工单。
   const matrixDimension = 'node';
@@ -362,6 +406,14 @@ const Dashboard: React.FC = () => {
       sorter: (a, b) => a.completed - b.completed,
     },
     {
+      title: '已作废',
+      dataIndex: 'voided',
+      key: 'voided',
+      align: 'right',
+      render: (_, record) => <Text type="secondary">{record.voided || 0}</Text>,
+      sorter: (a, b) => (a.voided || 0) - (b.voided || 0),
+    },
+    {
       title: '完成率',
       dataIndex: 'completionRate',
       key: 'completionRate',
@@ -381,8 +433,8 @@ const Dashboard: React.FC = () => {
     let mounted = true;
     setLoading(true);
     Promise.allSettled([
-      getDashboardCards(dashboardAudience),
-      getOrderTypeMatrix({ dimension: matrixDimension }),
+      getDashboardCards(dashboardAudience, effectiveScope),
+      getOrderTypeMatrix({ dimension: matrixDimension, audience: dashboardAudience, scope: effectiveScope }),
       canViewLeaderTrend ? getModuleConfigs({ isActive: true }) : Promise.resolve([]),
     ])
       .then(([cardResult, matrixResult, moduleResult]) => {
@@ -402,7 +454,7 @@ const Dashboard: React.FC = () => {
         if (mounted) setLoading(false);
       });
     return () => { mounted = false; };
-  }, [dashboardAudience, matrixDimension, canViewLeaderTrend]);
+  }, [dashboardAudience, effectiveScope, matrixDimension, canViewLeaderTrend]);
 
   return (
     <PageContainer header={{ title: '仪表盘' }}>
@@ -411,17 +463,22 @@ const Dashboard: React.FC = () => {
         <Row gutter={[16, 16]}>
           <Col xs={24} sm={12} xl={6}>
             <Card loading={loading} bodyStyle={CARD_BODY_STYLE}>
-              <Statistic title="本月工单总数" value={cards.totalThisMonth} prefix={<FileTextOutlined />} />
+              <Statistic title="本月工单总数" value={normalizedCards.total} prefix={<FileTextOutlined />} />
             </Card>
           </Col>
           <Col xs={24} sm={12} xl={6}>
             <Card loading={loading} bodyStyle={CARD_BODY_STYLE}>
-              <Statistic title="未办结" value={cards.processing} prefix={<ClockCircleOutlined />} valueStyle={{ color: '#1677ff' }} />
+              <Statistic title="未办结" value={normalizedCards.processing} prefix={<ClockCircleOutlined />} valueStyle={{ color: '#1677ff' }} />
             </Card>
           </Col>
           <Col xs={24} sm={12} xl={6}>
             <Card loading={loading} bodyStyle={CARD_BODY_STYLE}>
-              <Statistic title="已完成" value={cards.completed} prefix={<CheckCircleOutlined />} valueStyle={{ color: '#52c41a' }} />
+              <Statistic title="已完成" value={normalizedCards.completed} prefix={<CheckCircleOutlined />} valueStyle={{ color: '#52c41a' }} />
+            </Card>
+          </Col>
+          <Col xs={24} sm={12} xl={6}>
+            <Card loading={loading} bodyStyle={CARD_BODY_STYLE}>
+              <Statistic title="已作废" value={normalizedCards.voided || 0} prefix={<StopOutlined />} valueStyle={{ color: '#8c8c8c' }} />
             </Card>
           </Col>
           {canViewNotifications && (
@@ -483,6 +540,9 @@ const Dashboard: React.FC = () => {
                 <Col xs={8} md={4}>
                   <Statistic title="已完成" value={selectedMatrixRow.completed} valueStyle={{ color: '#52c41a' }} />
                 </Col>
+                <Col xs={8} md={4}>
+                  <Statistic title="已作废" value={selectedMatrixRow.voided || 0} valueStyle={{ color: '#8c8c8c' }} />
+                </Col>
                 <Col xs={24} md={6}>
                   <Text type="secondary">完成率</Text>
                   <Progress percent={clampRate(selectedMatrixRow.completionRate)} size="small" />
@@ -496,7 +556,7 @@ const Dashboard: React.FC = () => {
                       <Card size="small" hoverable onClick={() => setSelectedMatrixRow(child)}>
                         <Space direction="vertical" size={4} style={{ width: '100%' }}>
                           <Text strong>{child.label}</Text>
-                          <Text type="secondary">总数 {child.total} ｜ 未办结 {child.processing} ｜ 已完成 {child.completed}</Text>
+                          <Text type="secondary">总数 {child.total} ｜ 未办结 {child.processing} ｜ 已完成 {child.completed} ｜ 已作废 {child.voided || 0}</Text>
                           <Progress percent={clampRate(child.completionRate)} size="small" />
                         </Space>
                       </Card>
@@ -508,7 +568,7 @@ const Dashboard: React.FC = () => {
           </Card>
         )}
 
-        <LeaderTrendChart visible={canViewLeaderTrend} moduleOptions={moduleOptions} />
+        <LeaderTrendChart visible={canViewLeaderTrend} moduleOptions={moduleOptions} scope={effectiveScope} />
       </Space>
     </PageContainer>
   );
