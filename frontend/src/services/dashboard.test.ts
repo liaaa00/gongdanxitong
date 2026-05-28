@@ -17,7 +17,7 @@ vi.mock('./request', () => ({
   },
 }));
 
-import { getDashboardCards, getOrderTypeMatrix } from './dashboard';
+import { getDashboardCards, getLeaderTrend, getOrderTypeMatrix } from './dashboard';
 
 const nowIso = () => new Date().toISOString();
 
@@ -101,5 +101,48 @@ describe('dashboard services', () => {
       params: expect.objectContaining({ page: 1, pageSize: 100 }),
     });
     expect(requestGet.mock.calls[1][1].params.pageSize).toBeLessThanOrEqual(100);
+  });
+
+  it('requests leader trend endpoint with order type and module code and normalizes bucket rates', async () => {
+    requestGet.mockResolvedValueOnce({
+      orderType: 'onboarding',
+      moduleCode: 'data_entry',
+      buckets: [
+        { month: '2026-04', total: 0, completed: 0 },
+        { month: '2026-05', total: 10, completed: 7, completionRate: 70 },
+      ],
+    });
+
+    await expect(getLeaderTrend('onboarding', 'data_entry')).resolves.toMatchObject({
+      orderType: 'onboarding',
+      moduleCode: 'data_entry',
+      buckets: [
+        { month: '2026-04', total: 0, completed: 0, rate: 0 },
+        { month: '2026-05', total: 10, completed: 7, rate: 70 },
+      ],
+    });
+
+    expect(requestGet).toHaveBeenCalledTimes(1);
+    expect(requestGet).toHaveBeenCalledWith('/dashboard/leader-trend', {
+      params: { orderType: 'onboarding', moduleCode: 'data_entry' },
+      silentError: true,
+    });
+  });
+
+  it('returns silent zero buckets and does not aggregate work or dispatched orders when leader trend endpoint fails', async () => {
+    requestGet.mockRejectedValueOnce(new Error('500'));
+
+    const result = await getLeaderTrend('onboarding', 'data_entry');
+
+    expect(requestGet).toHaveBeenCalledTimes(1);
+    expect(requestGet).toHaveBeenCalledWith('/dashboard/leader-trend', {
+      params: { orderType: 'onboarding', moduleCode: 'data_entry' },
+      silentError: true,
+    });
+    expect(requestGet).not.toHaveBeenCalledWith('/work-orders', expect.anything());
+    expect(requestGet).not.toHaveBeenCalledWith('/dispatched-orders', expect.anything());
+    expect(result).toMatchObject({ orderType: 'onboarding', moduleCode: 'data_entry' });
+    expect(result.buckets).toHaveLength(12);
+    expect(result.buckets.every((bucket) => bucket.total === 0 && bucket.completed === 0 && bucket.rate === 0)).toBe(true);
   });
 });

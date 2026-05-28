@@ -447,22 +447,25 @@ export async function getLeaderTrend(orderType: DashboardOrderType, moduleCode?:
     return mockDelay({ orderType, moduleCode, buckets });
   }
 
-  const orders = await fetchAllPages<WorkOrderItem>(getWorkOrders);
-  const buckets = recentMonths(12).map((m) => {
-    let list = orders.filter((order) => normalizeOrderType(order.order_type) === orderType && isSameMonth(order.created_at || order.submitted_at || order.updated_at, m));
-    if (moduleCode) {
-      list = list.filter((order) => (order.dispatched_orders || []).some((child) => child.module_code === moduleCode));
-    }
-    const total = list.length;
-    const completed = list.filter((order) => isCompletedStatus(order.status)).length;
+  try {
+    const result = await request.get('/dashboard/leader-trend', {
+      params: { orderType, ...(moduleCode ? { moduleCode } : {}) },
+      silentError: true,
+    } as any);
+    return normalizeLeaderTrend(result, orderType, moduleCode);
+  } catch (err) {
+    console.warn('[dashboard] leader-trend unavailable, render zero buckets', err);
     return {
-      month: `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}`,
-      total,
-      completed,
-      rate: total === 0 ? 0 : normalizePercent((completed / total) * 100),
+      orderType,
+      moduleCode,
+      buckets: recentMonths(12).map((m) => ({
+        month: `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}`,
+        total: 0,
+        completed: 0,
+        rate: 0,
+      })),
     };
-  });
-  return { orderType, moduleCode, buckets };
+  }
 }
 
 export interface DashboardSalesperson {
