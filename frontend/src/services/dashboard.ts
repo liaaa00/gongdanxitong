@@ -1,7 +1,6 @@
 import request, { MAX_PAGE_SIZE } from './request';
 import { isMockMode, mockDelay, type PageParams, type PageResult } from './mock';
-import { getDispatchedOrders, type DispatchedOrderItem } from './dispatchedOrders';
-import { getWorkOrders, type WorkOrderItem } from './workOrders';
+import { getDispatchedOrdersSafe, type DispatchedOrderItem } from './dispatchedOrders';
 export type DashboardOrderType = 'onboarding' | 'renewal' | 'resignation' | 'benefit';
 export type DashboardMatrixDimension = 'orderType' | 'node';
 export type DashboardAudience = 'business' | 'backend';
@@ -279,20 +278,19 @@ function buildNodeMatrixRows(children: DispatchedOrderItem[], dimension: Dashboa
   });
 }
 
-async function buildMatrixRowsFromListApis(dimension: DashboardMatrixDimension): Promise<OrderTypeMatrixResult> {
+async function buildMatrixRowsFromListApis(dimension: DashboardMatrixDimension, scope?: DashboardScopeMode): Promise<OrderTypeMatrixResult> {
   const month = currentMonthValue();
+  const children = await fetchAllPages<DispatchedOrderItem>(getDispatchedOrdersSafe, { silentError: true, ...(scope ? { scope } : {}) } as PageParams);
+  const monthChildren = children.filter((child) => isCurrentMonthValue(child.dispatched_at || child.created_at || child.completed_at || undefined, month));
+
   if (dimension === 'node') {
-    const children = await fetchAllPages<DispatchedOrderItem>(getDispatchedOrders, { silentError: true });
-    const monthChildren = children.filter((child) => isCurrentMonthValue(child.dispatched_at || child.created_at || child.completed_at || undefined, month));
     const rows = buildNodeMatrixRows(monthChildren, dimension);
     return { rows, total: rows.length };
   }
 
-  const orders = await fetchAllPages<WorkOrderItem>(getWorkOrders, { silentError: true });
-  const monthOrders = orders.filter((order) => isCurrentMonthValue(order.created_at || order.submitted_at || order.updated_at, month));
   const rows = ORDER_TYPES.map((orderType) => buildOrderTypeRow(
     orderType,
-    monthOrders.filter((order: WorkOrderItem) => normalizeOrderType(order.order_type) === orderType).map((order) => order.status),
+    monthChildren.filter((child) => normalizeOrderType(child.order_type) === orderType).map((child) => child.status),
     dimension,
   ));
   return { rows, total: rows.length };
@@ -415,7 +413,7 @@ export async function getOrderTypeMatrix(params: { dimension?: DashboardMatrixDi
     return normalizeOrderTypeMatrix(result, dimension);
   } catch (err) {
     console.warn('[dashboard] order-type-matrix unavailable, fallback to list aggregation', err);
-    return buildMatrixRowsFromListApis(dimension);
+    return buildMatrixRowsFromListApis(dimension, params.scope);
   }
 }
 

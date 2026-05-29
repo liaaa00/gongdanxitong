@@ -130,7 +130,8 @@ describe('dashboard services', () => {
 
     expect(requestGet).toHaveBeenNthCalledWith(1, '/dashboard/order-type-matrix', { params: { dimension: 'node' }, silentError: true });
     expect(requestGet).toHaveBeenNthCalledWith(2, '/dispatched-orders', {
-      params: expect.objectContaining({ page: 1, pageSize: 100, silentError: true }),
+      params: expect.objectContaining({ page: 1, pageSize: 100 }),
+      silentError: true,
     });
     expect(requestGet.mock.calls[1][1].params.pageSize).toBeLessThanOrEqual(100);
   });
@@ -143,8 +144,9 @@ describe('dashboard services', () => {
     await getOrderTypeMatrix({ dimension: 'orderType' });
 
     expect(requestGet).toHaveBeenNthCalledWith(1, '/dashboard/order-type-matrix', { params: { dimension: 'orderType' }, silentError: true });
-    expect(requestGet).toHaveBeenNthCalledWith(2, '/work-orders', {
-      params: expect.objectContaining({ page: 1, pageSize: 100, silentError: true }),
+    expect(requestGet).toHaveBeenNthCalledWith(2, '/dispatched-orders', {
+      params: expect.objectContaining({ page: 1, pageSize: 100 }),
+      silentError: true,
     });
     expect(requestGet.mock.calls[1][1].params.pageSize).toBeLessThanOrEqual(100);
   });

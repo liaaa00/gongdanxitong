@@ -35,6 +35,7 @@ vi.mock('@/components/DispatchedBatchImportModal', () => ({
 
 vi.mock('@/services/dispatchedOrders', () => ({
   getDispatchedOrders: (...args: unknown[]) => mocks.getDispatchedOrders(...args),
+  getDispatchedOrdersSafe: (...args: unknown[]) => mocks.getDispatchedOrders(...args),
   acceptDispatchedOrder: vi.fn(),
   batchExportDispatchedOrders: vi.fn(),
   batchCompleteDispatchedOrders: vi.fn(),
