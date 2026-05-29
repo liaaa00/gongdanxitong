@@ -5,7 +5,7 @@ import type { ProColumns, ActionType } from '@ant-design/pro-components';
 import { ProTable } from '@ant-design/pro-components';
 import { Tag, Button, Space, App, Badge, Tabs, Modal, Descriptions, Typography, Tooltip } from 'antd';
 import { BellOutlined, EyeOutlined, LinkOutlined } from '@ant-design/icons';
-import { getNotifications, markNotificationRead, getUnreadCountByBucket } from '@/services/notifications';
+import { getNotifications, getUnreadCountByBucket } from '@/services/notifications';
 import type { NotificationItem } from '@/services/notifications';
 import type { PageParams } from '@/services/mock';
 import { useAuth } from '@/hooks/useAuth';
@@ -237,15 +237,7 @@ const NotificationsPage: React.FC = () => {
     return () => clearInterval(timer);
   }, [visibleTabKeys]);
 
-  const handleMarkRead = async (id: string) => {
-    try {
-      await markNotificationRead(id);
-    } catch {
-      // 本轮通知口径以“处理”闭环为主，已读失败不阻断跳转。
-    }
-    refreshCounts();
-    actionRef.current?.reload();
-  };
+  // 通知不再在“处理”跳转时自动已读；红点由办结/撤回/作废终态驱动消失。
 
   const handleRowClick = (record: NotificationItem) => {
     setDetailItem(record);
@@ -255,7 +247,6 @@ const NotificationsPage: React.FC = () => {
   const handleJumpToOrder = (orderNo?: string, orderId?: string, item?: NotificationItem) => {
     const rawType = `${item?.biz_type || ''} ${item?.type || ''}`.toLowerCase();
     const shouldOpenEdit = rawType.includes('returned') || rawType.includes('return') || rawType.includes('withdraw_approved') || rawType.includes('dispatched_returned');
-    if (item) void handleMarkRead(item.id);
     if (item?.entity_type === 'dispatched_order' && item.entity_id) {
       const query = new URLSearchParams();
       query.set('fromNotification', item.id);

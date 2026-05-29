@@ -70,14 +70,15 @@ const RouteGuard: React.FC<{ moduleName: string; children: React.ReactNode }> = 
 
 const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isLoggedIn, user, loading, fetchUser, mustChangePassword } = useUserStore();
+  const location = useLocation();
   useEffect(() => {
-    if (isLoggedIn && !user && !loading) {
-      fetchUser();
+    if (isLoggedIn && !loading) {
+      void fetchUser();
     }
-  }, [isLoggedIn, user, loading, fetchUser]);
+  }, [isLoggedIn, location.pathname, loading, fetchUser]);
 
   if (!isLoggedIn) return <Navigate to="/login" replace />;
-  if (!user) return <Loading />;
+  if (!user || loading) return <Loading />;
 
   // ★ 首登强制改密：拦截所有非改密页路由
   const path = window.location.pathname;
@@ -92,7 +93,7 @@ const RoleRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useUserStore();
   const location = useLocation();
   if (!user) return <Loading />;
-  if (!canAccessPath(location.pathname, user.roles)) return <Navigate to="/403" replace />;
+  if (!canAccessPath(location.pathname, user.roles, user.permissions)) return <Navigate to="/403" replace />;
   return <>{children}</>;
 };
 

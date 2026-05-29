@@ -3,12 +3,12 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { PageContainer } from '@ant-design/pro-components';
 import {
   Card, Tag, Space, Button, Descriptions, App, Alert,
-  Empty,
+  Empty, Modal, Input,
 } from 'antd';
 import DynamicForm from '@/components/DynamicForm';
 import type { FieldConfig } from '@/components/DynamicForm';
 import { useFieldPermissions } from '@/hooks/useFieldPermissions';
-import { getWorkOrder } from '@/services/workOrders';
+import { getWorkOrder, updateWorkOrder, resubmitWorkOrder, voidWorkOrder } from '@/services/workOrders';
 import type { WorkOrderItem } from '@/services/workOrders';
 import { getFields } from '@/services/fields';
 import { getStatusColor, getStatusText } from '@/constants/dictionaries';
@@ -62,6 +62,9 @@ const WorkOrdersDetail: React.FC = () => {
   const [order, setOrder] = useState<WorkOrderItem | null>(null);
   const [fields, setFields] = useState<FieldConfig[]>([]);
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [voidOpen, setVoidOpen] = useState(false);
+  const [voidReason, setVoidReason] = useState('');
 
   useEffect(() => {
     if (!id) return;
@@ -80,7 +83,7 @@ const WorkOrdersDetail: React.FC = () => {
         if (cancelled) return;
         setOrder(orderData);
         setFields(fieldList);
-        if (searchParams.get('edit') === '1') {
+        if (searchParams.get('edit') === '1' && !['returned', 'withdrawn'].includes(orderData.status)) {
           message.info('主工单仅支持查看，请到对应子工单中进行修改、撤回、作废或催办。');
         }
       } catch (err) {
@@ -98,9 +101,46 @@ const WorkOrdersDetail: React.FC = () => {
     return () => { cancelled = true; };
   }, [id, message, searchParams]);
 
-  // 旧的主工单编辑、撤回、作废、催办和审批入口已按会议要求移至子工单。
-
+  const isRepairable = order?.status === 'returned' || order?.status === 'withdrawn';
   const isReturned = order?.status === 'returned';
+
+  const handleResubmit = async (values: Record<string, unknown>) => {
+    if (!id || !order || !isRepairable) return;
+    setSubmitting(true);
+    try {
+      await updateWorkOrder(id, values);
+      const updated = await resubmitWorkOrder(id, values);
+      setOrder(updated);
+      message.success('已修改并重新提交');
+    } catch (err) {
+      console.error('[工单详情] 修改重新提交失败：', err);
+      message.error('修改重新提交失败');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleVoidRequest = async () => {
+    if (!id || !order || !isRepairable) return;
+    const reason = voidReason.trim();
+    if (!reason) {
+      message.warning('请填写作废原因');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const updated = await voidWorkOrder(id, reason);
+      setOrder(updated);
+      setVoidOpen(false);
+      setVoidReason('');
+      message.success('作废申请已提交，待后道审批');
+    } catch (err) {
+      console.error('[工单详情] 作废申请失败：', err);
+      message.error('作废申请失败');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const completionHintFields = useMemo(() => {
     if (!order) return [];
@@ -158,11 +198,17 @@ const WorkOrdersDetail: React.FC = () => {
 
           <Alert
             style={{ marginTop: 16 }}
-            type="info"
+            type={isRepairable ? 'warning' : 'info'}
             showIcon
-            message="主工单仅用于查看汇总信息"
-            description="修改、撤回、作废、催办等操作请进入下方对应子工单处理，避免影响其他正常子工单。"
+            message={isRepairable ? '当前工单为可返修状态' : '主工单仅用于查看汇总信息'}
+            description={isRepairable ? '已撤回/已退回工单允许修改后重新提交，或发起一键作废申请；作废仍需后道审批同意后才会终结。' : '修改、撤回、作废、催办等操作请进入下方对应子工单处理，避免影响其他正常子工单。'}
           />
+          {isRepairable && (
+            <Space style={{ marginTop: 12 }} wrap>
+              <Button type="primary" loading={submitting} onClick={() => document.getElementById('repairable-main-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>修改重新提交</Button>
+              <Button danger loading={submitting} onClick={() => setVoidOpen(true)}>一键作废</Button>
+            </Space>
+          )}
           {completionHintFields.length > 0 && (
             <Alert
               style={{ marginTop: 12 }}
@@ -212,18 +258,35 @@ const WorkOrdersDetail: React.FC = () => {
               </Card>
             );
           })}
-          <Card title="工单数据（只读）" size="small">
+          <Card id="repairable-main-form" title={isRepairable ? '工单数据（可返修）' : '工单数据（只读）'} size="small">
             <DynamicForm
               fields={fields}
               fieldPermissions={permissions}
               orderType="onboarding"
               initialValues={order.extra_data}
-              readOnly
+              readOnly={!isRepairable}
+              onFinish={isRepairable ? handleResubmit : undefined}
+              submitText="修改重新提交"
               highlightedFields={highlightedFields}
               focusField={focusField}
             />
+            {isRepairable && <Alert style={{ marginTop: 12 }} type="info" showIcon message="修改完成后点击表单底部“修改重新提交”按钮，流程会重新激活。" />}
           </Card>
         </Space>
+        <Modal
+          title="一键作废申请"
+          open={voidOpen}
+          confirmLoading={submitting}
+          okButtonProps={{ danger: true }}
+          onOk={handleVoidRequest}
+          onCancel={() => { setVoidOpen(false); setVoidReason(''); }}
+        >
+          <Space direction="vertical" style={{ width: '100%' }}>
+            <Alert type="warning" showIcon message="非草稿工单作废必须提交后道审批，同意后才会流转至已作废。" />
+            <span>作废原因（必填）：</span>
+            <Input.TextArea rows={4} value={voidReason} onChange={(e) => setVoidReason(e.target.value)} maxLength={512} showCount placeholder="请填写作废原因" />
+          </Space>
+        </Modal>
       </Space>
     </PageContainer>
   );

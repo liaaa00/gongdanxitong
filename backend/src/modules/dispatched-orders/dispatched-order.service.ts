@@ -1,7 +1,15 @@
 import { ForbiddenException, HttpStatus, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, In, MoreThan, QueryFailedError, Repository, SelectQueryBuilder } from 'typeorm';
-import { BUSINESS_MEMBER_ROLES, hasAnyRole, hasManagementScopeRole, hasModuleSupervisorRole, isAdminRole } from 'src/common/auth/role-permissions';
+import {
+  BUSINESS_MEMBER_ROLES,
+  DATA_ENTRY_MODULE_ROLES,
+  SOCIAL_INSURANCE_MODULE_ROLES,
+  hasAnyRole,
+  hasManagementScopeRole,
+  hasModuleSupervisorRole,
+  isAdminRole,
+} from 'src/common/auth/role-permissions';
 import { resolveDispatchModuleCode } from 'src/common/constants/dispatch-modules';
 import { businessException } from 'src/common/exceptions/business-exception';
 import { isUuidLike } from 'src/common/utils/uuid-param';
@@ -614,7 +622,7 @@ export class DispatchedOrderService {
 
     if (order.handlerId === user.sub || (await this.canActAsModuleSupervisor(user, order.moduleCode))) {
       await this.assertUrgeNotTooFrequent(order.id, user.sub, 'backend_urge_creator');
-      // 0528 feedback: cancel salesperson-side urge feedback notifications; keep audit log only.
+      await this.notifyCreator(order, 'backend_urge_creator', '后道催办', reason);
       await this.writeLog('dispatched_order', order.id, user.sub, 'backend_urge_creator', this.snapshot(order), { reason, recipient: order.parentOrder.createdBy });
       return;
     }
@@ -665,6 +673,9 @@ export class DispatchedOrderService {
     }
     await this.dispatchedOrderRepository.save(order);
     await this.notifyCreator(order, approved ? 'withdraw_approved' : 'withdraw_rejected', approved ? '子工单撤回已通过，可直接作废' : '子工单撤回已拒绝', comment || (approved ? '撤回申请已通过' : '撤回申请已拒绝'));
+    if (approved) {
+      await this.markTodoNotificationsReadForDispatchedOrder(order, user.sub);
+    }
     await this.writeLog('dispatched_order', id, user.sub, approved ? 'creator_withdraw_approved' : 'creator_withdraw_rejected', before, { approved, comment, previousStatus, status: order.status });
     return this.findOne(id, user);
   }
@@ -680,19 +691,7 @@ export class DispatchedOrderService {
 
     const before = this.snapshot(order);
     const previousStatus = order.status;
-    if ([DispatchedOrderStatus.RETURNED, DispatchedOrderStatus.WITHDRAWN].includes(order.status)) {
-      const directVoidAction = order.status === DispatchedOrderStatus.WITHDRAWN ? 'creator_void_after_withdraw' : 'creator_void_after_return';
-      order.status = DispatchedOrderStatus.VOID;
-      order.voidAt = new Date();
-      order.returnReason = previousStatus === DispatchedOrderStatus.WITHDRAWN
-        ? `撤回后业务员直接作废：${reason}`
-        : `退回后业务员直接作废：${reason}`;
-      order.completedAt = order.completedAt ?? new Date();
-      await this.dispatchedOrderRepository.save(order);
-      await this.writeLog('dispatched_order', order.id, user.sub, directVoidAction, before, { reason, previousStatus, status: order.status, voidAt: order.voidAt });
-      return this.findOne(order.id, user);
-    }
-
+    // returned/withdrawn child orders must also enter VOID_PENDING and wait for backend approval.
     order.status = DispatchedOrderStatus.VOID_PENDING;
     order.returnReason = `业务员作废申请：${reason}`;
     order.completedAt = null;
@@ -719,6 +718,9 @@ export class DispatchedOrderService {
     order.completedAt = approved ? (order.completedAt ?? new Date()) : null;
     await this.dispatchedOrderRepository.save(order);
     await this.notifyCreator(order, approved ? 'void_approved' : 'void_rejected', approved ? '子工单作废已通过' : '子工单作废已拒绝', comment || (approved ? '作废申请已通过' : '作废申请已拒绝'));
+    if (approved) {
+      await this.markTodoNotificationsReadForDispatchedOrder(order, user.sub);
+    }
     await this.writeLog('dispatched_order', id, user.sub, approved ? 'creator_void_approved' : 'creator_void_rejected', before, { approved, comment, previousStatus, status: order.status, voidAt: order.voidAt });
     return this.findOne(id, user);
   }
@@ -1023,6 +1025,9 @@ export class DispatchedOrderService {
       'dispatch_reassign',
       'reassigned_to_you',
       'pool_new',
+      'creator_withdraw_request',
+      'creator_void_request',
+      'creator_urge',
     ];
     const rows = await this.notificationRepository.find({
       where: {
@@ -1120,7 +1125,7 @@ export class DispatchedOrderService {
       if (onlyPool) qb.andWhere('d.handler_id IS NULL');
       return;
     }
-    const modules = await this.getAccessibleModules(user.sub);
+    const modules = await this.getAccessibleModules(user.sub, user.roles);
     const canSeeModuleAll = hasManagementScopeRole(user.roles) || hasModuleSupervisorRole(user.roles) || (await this.hasSupervisorLevel(user.sub));
     qb.andWhere(new Brackets((scope) => {
       if (!onlyPool) {
@@ -1451,7 +1456,7 @@ export class DispatchedOrderService {
   }
 
   private assertParentAllowsDispatchedHandling(order: DispatchedOrder): void {
-    if (order.voidAt || [WorkOrderStatus.VOID, WorkOrderStatus.VOID_PENDING, WorkOrderStatus.WITHDRAW_PENDING, WorkOrderStatus.WITHDRAWN].includes(order.parentOrder.status)) {
+    if (order.voidAt || [WorkOrderStatus.VOID, WorkOrderStatus.VOID_PENDING, WorkOrderStatus.WITHDRAW_PENDING].includes(order.parentOrder.status)) {
       throw businessException(4204, HttpStatus.CONFLICT, '父工单已作废、撤回中或不可办理，子工单不可继续办理');
     }
   }
@@ -1468,7 +1473,7 @@ export class DispatchedOrderService {
   }
 
   private assertCreatorActionAllowed(order: DispatchedOrder, actionLabel: string): void {
-    if (!(actionLabel === '作废' && order.status === DispatchedOrderStatus.WITHDRAWN)) {
+    if (!([DispatchedOrderStatus.RETURNED, DispatchedOrderStatus.WITHDRAWN].includes(order.status) && ['作废', '修改'].includes(actionLabel))) {
       this.assertParentAllowsDispatchedHandling(order);
     }
     if (order.voidAt || order.status === DispatchedOrderStatus.VOID) {
@@ -1477,7 +1482,7 @@ export class DispatchedOrderService {
     if (order.status === DispatchedOrderStatus.COMPLETED) {
       throw businessException(4201, HttpStatus.CONFLICT, `已完成的子工单不允许${actionLabel}`);
     }
-    if (order.status === DispatchedOrderStatus.WITHDRAWN && actionLabel !== '作废') {
+    if (order.status === DispatchedOrderStatus.WITHDRAWN && !['作废', '修改'].includes(actionLabel)) {
       throw businessException(4201, HttpStatus.CONFLICT, `已撤回的子工单不允许${actionLabel}`);
     }
     if ([DispatchedOrderStatus.WITHDRAW_PENDING, DispatchedOrderStatus.VOID_PENDING].includes(order.status)) {
@@ -1502,15 +1507,17 @@ export class DispatchedOrderService {
 
   private async canViewAsSupervisor(user: JwtUserPayload, moduleCode: string): Promise<boolean> {
     if (hasManagementScopeRole(user.roles)) return true;
-    if (hasModuleSupervisorRole(user.roles) && (await this.hasModuleAccess(user.sub, moduleCode))) return true;
-    return (await this.hasSupervisorLevel(user.sub)) && (await this.hasModuleAccess(user.sub, moduleCode));
+    if (this.roleAllowsModule(user.roles, moduleCode)) return true;
+    if (hasModuleSupervisorRole(user.roles) && (await this.hasModuleAccess(user.sub, moduleCode, user.roles))) return true;
+    return (await this.hasSupervisorLevel(user.sub)) && (await this.hasModuleAccess(user.sub, moduleCode, user.roles));
   }
 
   private async canActAsModuleSupervisor(user: JwtUserPayload, moduleCode: string): Promise<boolean> {
     if (hasAnyRole(user.roles, ['business_owner', 'manager', 'biz_manager'])) return false;
     if (await this.hasModuleSupervisorConfig(user.sub, moduleCode)) return true;
-    if (hasModuleSupervisorRole(user.roles) && (await this.hasModuleAccess(user.sub, moduleCode))) return true;
-    return (await this.hasSupervisorLevel(user.sub)) && (await this.hasModuleAccess(user.sub, moduleCode));
+    if (this.roleAllowsModule(user.roles, moduleCode)) return true;
+    if (hasModuleSupervisorRole(user.roles) && (await this.hasModuleAccess(user.sub, moduleCode, user.roles))) return true;
+    return (await this.hasSupervisorLevel(user.sub)) && (await this.hasModuleAccess(user.sub, moduleCode, user.roles));
   }
 
   private async hasModuleSupervisorConfig(userId: string, moduleCode: string): Promise<boolean> {
@@ -1519,18 +1526,20 @@ export class DispatchedOrderService {
     return count > 0;
   }
 
+
   private async hasSupervisorLevel(userId: string): Promise<boolean> {
     const rows = await this.userRoleRepository.find({ where: { userId }, relations: { role: true } });
     return rows.some((row) => [RoleLevel.SUPERVISOR, RoleLevel.MANAGEMENT, RoleLevel.GLOBAL].includes(row.role.level));
   }
 
-  private async hasModuleAccess(userId: string, moduleCode: string): Promise<boolean> {
+  private async hasModuleAccess(userId: string, moduleCode: string, roles: readonly string[] = []): Promise<boolean> {
+    if (this.roleAllowsModule(roles, moduleCode)) return true;
     const count = await this.moduleHandlerRepository.count({ where: { handlerId: userId, moduleCode, isActive: true } });
     if (count > 0) return true;
     return this.hasModuleSupervisorConfig(userId, moduleCode);
   }
 
-  private async getAccessibleModules(userId: string): Promise<string[]> {
+  private async getAccessibleModules(userId: string, roles: readonly string[] = []): Promise<string[]> {
     const handlerRows = await this.moduleHandlerRepository.find({ where: { handlerId: userId, isActive: true } });
     const handlerModules = handlerRows.map((row) => row.moduleCode);
 
@@ -1541,7 +1550,20 @@ export class DispatchedOrderService {
       supervisorModules.push(...supervisorRows.map((row) => row.moduleCode));
     }
 
-    return Array.from(new Set([...handlerModules, ...supervisorModules]));
+    return Array.from(new Set([...handlerModules, ...supervisorModules, ...this.roleAccessibleModules(roles)]));
+  }
+
+  private roleAllowsModule(roles: readonly string[], moduleCode: string): boolean {
+    if (moduleCode === 'data_entry') return hasAnyRole(roles, DATA_ENTRY_MODULE_ROLES);
+    if (moduleCode === 'social_insurance') return hasAnyRole(roles, SOCIAL_INSURANCE_MODULE_ROLES);
+    return false;
+  }
+
+  private roleAccessibleModules(roles: readonly string[]): string[] {
+    const modules: string[] = [];
+    if (hasAnyRole(roles, DATA_ENTRY_MODULE_ROLES)) modules.push('data_entry');
+    if (hasAnyRole(roles, SOCIAL_INSURANCE_MODULE_ROLES)) modules.push('social_insurance');
+    return modules;
   }
 
   private isAdmin(user: JwtUserPayload): boolean {

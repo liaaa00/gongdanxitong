@@ -68,15 +68,17 @@ describe('Notifications Page', () => {
     }, { timeout: 5000 });
   });
 
-  it('renders mark all read button', async () => {
+  it('does not render manual read buttons', async () => {
     render(
       <MemoryRouter>
         <NotificationsPage />
       </MemoryRouter>,
     );
     await waitFor(() => {
-      expect(screen.getByText('全部已读')).toBeTruthy();
+      expect(screen.getByText('消息通知')).toBeTruthy();
     }, { timeout: 5000 });
+    expect(screen.queryByText('全部已读')).toBeNull();
+    expect(screen.queryByText('当前分类已读')).toBeNull();
   });
 
   it('renders tab filters', async () => {
@@ -132,16 +134,17 @@ describe('Notifications Page', () => {
     }, { timeout: 5000 });
   });
 
-  it('marks the current category read with the active bucket', async () => {
+  it('keeps read lifecycle tied to processing instead of category read actions', async () => {
     render(
       <MemoryRouter>
         <NotificationsPage />
       </MemoryRouter>,
     );
     fireEvent.click(await screen.findByText('后道数据修改'));
-    fireEvent.click(await screen.findByText('当前分类已读'));
     await waitFor(() => {
-      expect(markNotificationsReadByQuery).toHaveBeenCalledWith({ bucket: 'field_changed' });
+      expect(getNotifications).toHaveBeenCalledWith(expect.objectContaining({ bucket: 'field_changed' }));
     }, { timeout: 5000 });
+    expect(screen.queryByText('当前分类已读')).toBeNull();
+    expect(markNotificationsReadByQuery).not.toHaveBeenCalled();
   });
 });

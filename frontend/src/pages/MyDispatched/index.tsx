@@ -124,7 +124,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
   const [batchReturnLoading, setBatchReturnLoading] = useState(false);
   const [batchUrgeVisible, setBatchUrgeVisible] = useState(false);
   const [batchUrgeIds, setBatchUrgeIds] = useState<string[]>([]);
-  const [batchUrgeReason, setBatchUrgeReason] = useState('请尽快处理该子工单');
+  const [batchUrgeReason, setBatchUrgeReason] = useState('');
   const [batchUrgeLoading, setBatchUrgeLoading] = useState(false);
   const [batchCleanFn, setBatchCleanFn] = useState<(() => void) | null>(null);
   const [reassignForm] = Form.useForm<{ handlerId: string; reason: string }>();
@@ -203,12 +203,13 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
     }
     setBatchUrgeLoading(true);
     try {
-      const res = await batchUrgeDispatchedOrders(batchUrgeIds, batchUrgeReason.trim() || '请尽快处理该子工单');
+      const reason = batchUrgeReason.trim();
+      const res = await batchUrgeDispatchedOrders(batchUrgeIds, reason || undefined);
       const skipped = res.skipped?.length ?? 0;
       if (skipped > 0) message.warning(`成功催办 ${res.urged} 条，${skipped} 条跳过`);
       else message.success(`已批量催办 ${res.urged} 条子工单`);
       setBatchUrgeVisible(false);
-      setBatchUrgeReason('请尽快处理该子工单');
+      setBatchUrgeReason('');
       setBatchUrgeIds([]);
       batchCleanFn?.();
       actionRef.current?.reload();
@@ -508,7 +509,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
             <Space wrap>
               <span>已选 {selectedRowKeys.length} 项</span>
               <RefButton size="small" onClick={onCleanSelected}>取消</RefButton>
-              {!isDoneMode && (
+              {!isDoneMode && !isBusinessInitiator && (
                 <RefButton
                   size="small"
                   type="primary"
@@ -522,20 +523,20 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
                   }}
                 >批量完成{completable.length > 0 ? `（${completable.length}）` : ''}</RefButton>
               )}
-              {!isDoneMode && (
+              {!isDoneMode && !isBusinessInitiator && (
                 <RefButton
                   size="small"
                   icon={<BellOutlined />}
                   disabled={completable.length === 0}
                   onClick={() => {
                     setBatchUrgeIds(completable.map((r) => r.id));
-                    setBatchUrgeReason('请尽快处理该子工单');
+                    setBatchUrgeReason('');
                     setBatchCleanFn(() => onCleanSelected);
                     setBatchUrgeVisible(true);
                   }}
                 >批量催办{completable.length > 0 ? `（${completable.length}）` : ''}</RefButton>
               )}
-              {!isDoneMode && (
+              {!isDoneMode && !isBusinessInitiator && (
                 <RefButton
                   size="small"
                   danger
@@ -590,7 +591,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
         onOk={handleBatchUrge}
         onCancel={() => {
           setBatchUrgeVisible(false);
-          setBatchUrgeReason('请尽快处理该子工单');
+          setBatchUrgeReason('');
         }}
         width={520}
       >

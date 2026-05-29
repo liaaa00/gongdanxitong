@@ -16,7 +16,7 @@ import { useUserStore } from '@/stores/userStore';
 import { logout as logoutApi } from '@/services/auth';
 import { canAccessPath } from '@/config/routeVisibility';
 import { ROLE, userHasAnyCanonicalRole, type CanonicalRole } from '@/constants/roles';
-import { getNotifications, markNotificationRead, getUnreadCountByBucket, getNotificationBucket } from '@/services/notifications';
+import { getNotifications, getUnreadCountByBucket, getNotificationBucket } from '@/services/notifications';
 import type { NotificationBucketKey, NotificationItem, UnreadCountByBucket } from '@/services/notifications';
 import { getNotificationDisplayContent, getNotificationDisplayTitle } from '@/utils/notificationDisplay';
 
@@ -188,14 +188,14 @@ const RAW_MENU: MenuItem[] = [
   },
 ];
 
-function filterMenuByRoles(items: MenuItem[], userRoles: { code?: string }[] | undefined): MenuItem[] {
+function filterMenuByRoles(items: MenuItem[], userRoles: { code?: string }[] | undefined, permissions?: string[]): MenuItem[] {
   const next: MenuItem[] = [];
   for (const it of items) {
     if (it.menuVisible === false) continue;
-    const filteredChildren = it.children?.length ? filterMenuByRoles(it.children, userRoles) : undefined;
+    const filteredChildren = it.children?.length ? filterMenuByRoles(it.children, userRoles, permissions) : undefined;
     const roleAllowed = !it.roles?.length || userHasAnyCanonicalRole(userRoles, it.roles);
-    const pathAllowed = canAccessPath(it.path, userRoles);
-    const selfAllowed = roleAllowed && pathAllowed;
+    const pathAllowed = canAccessPath(it.path, userRoles, permissions);
+    const selfAllowed = (roleAllowed && pathAllowed) || pathAllowed;
     if (!selfAllowed && (!filteredChildren || filteredChildren.length === 0)) continue;
     next.push({ ...it, children: filteredChildren });
   }
@@ -240,7 +240,7 @@ function RollbackIcon() {
 const BasicLayout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, logout: storeLogout } = useUserStore();
+  const { user, logout: storeLogout, fetchUser, isLoggedIn, loading: userLoading } = useUserStore();
   const { message } = App.useApp();
   const [unreadCount, setUnreadCount] = useState(0);
   const [unreadBuckets, setUnreadBuckets] = useState<UnreadCountByBucket>(EMPTY_UNREAD_BUCKETS);
@@ -249,10 +249,42 @@ const BasicLayout: React.FC = () => {
   const [activeTab, setActiveTab] = useState<string>('all');
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // 按角色过滤菜单（用户没有权限的页面，菜单直接不渲染）
+  const lastAuthRefreshRef = useRef(0);
+
+  const refreshCurrentUser = useCallback(() => {
+    if (!isLoggedIn || userLoading) return;
+    const now = Date.now();
+    if (now - lastAuthRefreshRef.current < 1000) return;
+    lastAuthRefreshRef.current = now;
+    void fetchUser();
+  }, [fetchUser, isLoggedIn, userLoading]);
+
+  const lastPathRef = useRef(location.pathname);
+  useEffect(() => {
+    if (lastPathRef.current === location.pathname && user) return;
+    lastPathRef.current = location.pathname;
+    refreshCurrentUser();
+  }, [location.pathname, refreshCurrentUser, user]);
+
+  useEffect(() => {
+    const handleStorage = (event: StorageEvent) => {
+      if (!event.key || ['token', 'refreshToken', 'mock_session_user_v1'].includes(event.key)) refreshCurrentUser();
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') refreshCurrentUser();
+    };
+    window.addEventListener('storage', handleStorage);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [refreshCurrentUser]);
+
+  // 按最新 /auth/me 返回的角色 + permissions 过滤菜单（权限变更后路由跳转/刷新会即时生效）
   const filteredMenu = useMemo(
-    () => filterMenuByRoles(RAW_MENU, user?.roles),
-    [user?.roles],
+    () => filterMenuByRoles(RAW_MENU, user?.roles, user?.permissions),
+    [user?.permissions, user?.roles],
   );
 
   const rootSubmenuKeys = useMemo(
@@ -353,16 +385,7 @@ const BasicLayout: React.FC = () => {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [canViewNotifications, fetchAll]);
 
-  const handleMarkRead = async (item: NotificationItem) => {
-    try {
-      await markNotificationRead(item.id);
-      setUnreadCount((c) => Math.max(0, c - 1));
-      setAllNotifications((prev) =>
-        prev.map((n) => (n.id === item.id ? { ...n, is_read: true } : n))
-      );
-      fetchAll();
-    } catch { /* ignore */ }
-  };
+  // 通知红点与办结生命周期绑定：顶部铃铛不再提供手动已读入口。
 
   const buildNotificationLink = (item: NotificationItem): string | null => {
     const query = new URLSearchParams();
@@ -445,7 +468,6 @@ const BasicLayout: React.FC = () => {
                       {new Date(item.created_at).toLocaleString('zh-CN')}
                     </div>
                     <Space size={8} style={{ marginTop: 6 }}>
-                      <Button size="small" type="link" disabled={item.is_read} onClick={() => handleMarkRead(item)}>已读</Button>
                       <Button size="small" type="primary" onClick={() => handleNotifProcess(item)}>处理</Button>
                     </Space>
                   </>

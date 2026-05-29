@@ -158,7 +158,7 @@ export class WorkOrderService {
     const workOrder = await this.loadWorkOrder(id);
     this.assertOwner(workOrder, user.sub);
     await this.assertMainOperationMovedToChildren(workOrder, user, '修改');
-    const editableStatuses = [WorkOrderStatus.DRAFT, WorkOrderStatus.PROCESSING, WorkOrderStatus.RETURNED];
+    const editableStatuses = [WorkOrderStatus.DRAFT, WorkOrderStatus.PROCESSING, WorkOrderStatus.RETURNED, WorkOrderStatus.WITHDRAWN];
     if (!editableStatuses.includes(workOrder.status)) {
       throw businessException(4101, HttpStatus.CONFLICT, '工单状态不允许该操作');
     }
@@ -175,7 +175,7 @@ export class WorkOrderService {
 
     const beforeExtraData = { ...workOrder.extraData };
     const before = snapshotWorkOrder(workOrder);
-    const shouldRequireResubmitAfterEdit = [WorkOrderStatus.PROCESSING, WorkOrderStatus.RETURNED].includes(workOrder.status);
+    const shouldRequireResubmitAfterEdit = [WorkOrderStatus.PROCESSING, WorkOrderStatus.RETURNED, WorkOrderStatus.WITHDRAWN].includes(workOrder.status);
     if (payload.customerId) {
       workOrder.customerId = payload.customerId;
     }
@@ -1352,6 +1352,7 @@ export class WorkOrderService {
     repository: Repository<DispatchedOrder> = this.dispatchedOrderRepository,
   ): Promise<void> {
     if (isAdminRole(user.roles)) return;
+    if ([WorkOrderStatus.RETURNED, WorkOrderStatus.WITHDRAWN].includes(workOrder.status)) return;
     const childCount = await repository.count({ where: { parentOrderId: workOrder.id } });
     if (childCount === 0) return;
     throw businessException(4130, HttpStatus.CONFLICT, `该主工单已拆分为子工单，请到对应子工单中${actionLabel}，避免影响其他正常子工单`);
@@ -1400,10 +1401,10 @@ export class WorkOrderService {
     if (status === WorkOrderStatus.VOID_PENDING) {
       throw businessException(4123, HttpStatus.CONFLICT, '作废申请已提交，等待审核');
     }
-    if ([WorkOrderStatus.COMPLETED, WorkOrderStatus.WITHDRAWN, WorkOrderStatus.VOID].includes(status)) {
+    if ([WorkOrderStatus.COMPLETED, WorkOrderStatus.VOID].includes(status)) {
       throw businessException(4123, HttpStatus.CONFLICT, '终态工单不可作废');
     }
-    if (![WorkOrderStatus.PENDING, WorkOrderStatus.PROCESSING, WorkOrderStatus.RETURNED, WorkOrderStatus.WITHDRAW_PENDING].includes(status)) {
+    if (![WorkOrderStatus.PENDING, WorkOrderStatus.PROCESSING, WorkOrderStatus.RETURNED, WorkOrderStatus.WITHDRAWN, WorkOrderStatus.WITHDRAW_PENDING].includes(status)) {
       throw businessException(4123, HttpStatus.CONFLICT, '当前状态不可作废');
     }
   }

@@ -3,8 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import BasicLayout from './BasicLayout';
-import { useUserStore } from '@/stores/userStore';
-import { ROLE } from '@/constants/roles';
+// Role codes are kept as literals in hoisted mocks.
 
 vi.mock('@ant-design/pro-components', () => ({
   ProLayout: ({ children, actionsRender }: { children?: React.ReactNode; actionsRender?: () => React.ReactNode[] }) => (
@@ -61,30 +60,53 @@ vi.mock('@/services/notifications', async () => {
 
 vi.mock('@/services/auth', () => ({
   logout: vi.fn().mockResolvedValue(undefined),
+  getMe: vi.fn().mockResolvedValue({
+    id: 'u-1',
+    username: 'tester',
+    real_name: '测试用户',
+    email: '',
+    phone: '',
+    avatar_url: null,
+    is_active: true,
+    permissions: [],
+    roles: [{ id: 'r-1', code: 'labor_contract_member', name: '合同专员', level: 'member' }],
+  }),
+}));
+
+vi.mock('@/stores/userStore', () => ({
+  useUserStore: () => ({
+    user: {
+      id: 'u-1',
+      username: 'tester',
+      real_name: '测试用户',
+      email: '',
+      phone: '',
+      avatar_url: null,
+      is_active: true,
+      permissions: [],
+      roles: [{ id: 'r-1', code: 'labor_contract_member', name: '合同专员', level: 'member' }],
+    },
+    logout: vi.fn(),
+    fetchUser: vi.fn().mockResolvedValue(undefined),
+    isLoggedIn: true,
+    loading: false,
+  }),
+}));
+
+vi.mock('@/hooks/useAuth', () => ({
+  useAuth: () => ({
+    hasRole: () => false,
+    hasAnyRole: () => true,
+  }),
 }));
 
 describe('BasicLayout notification dropdown', () => {
   beforeEach(() => {
-    useUserStore.setState({
-      user: {
-        id: 'u-1',
-        username: 'tester',
-        real_name: '测试用户',
-        email: '',
-        phone: '',
-        avatar_url: null,
-        is_active: true,
-        permissions: [],
-        roles: [{ id: 'r-1', code: ROLE.LABOR_CONTRACT_MEMBER, name: '合同专员', level: 'member' }],
-      },
-      isLoggedIn: true,
-      token: 'token',
-      refreshToken: null,
-    });
+    vi.clearAllMocks();
   });
 
   afterEach(() => {
-    useUserStore.getState().logout();
+    vi.clearAllMocks();
   });
 
   it('uses localized display content instead of raw backend content in top dropdown', async () => {

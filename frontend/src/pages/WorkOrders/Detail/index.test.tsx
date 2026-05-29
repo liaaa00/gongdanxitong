@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { App } from 'antd';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -8,6 +8,7 @@ const messageInfoMock = vi.fn();
 const messageErrorMock = vi.fn();
 const updateWorkOrderMock = vi.fn();
 const resubmitWorkOrderMock = vi.fn();
+const voidWorkOrderMock = vi.fn();
 const getWorkOrderMock = vi.fn();
 
 vi.mock('@/components/DynamicForm', () => ({
@@ -34,6 +35,7 @@ vi.mock('@/services/workOrders', () => ({
   getWorkOrder: (...args: unknown[]) => getWorkOrderMock(...args),
   updateWorkOrder: (...args: unknown[]) => updateWorkOrderMock(...args),
   resubmitWorkOrder: (...args: unknown[]) => resubmitWorkOrderMock(...args),
+  voidWorkOrder: (...args: unknown[]) => voidWorkOrderMock(...args),
 }));
 
 const baseOrder = {
@@ -73,6 +75,7 @@ describe('WorkOrdersDetail main order readonly mode', () => {
     getWorkOrderMock.mockResolvedValue(baseOrder);
     updateWorkOrderMock.mockResolvedValue({ ...baseOrder, status: 'pending', extra_data: { employee_name: '修改后员工' } });
     resubmitWorkOrderMock.mockResolvedValue({ ...baseOrder, status: 'processing', extra_data: { employee_name: '修改后员工' } });
+    voidWorkOrderMock.mockResolvedValue({ ...baseOrder, status: 'void_pending' });
   });
 
   it('renders main work order as readonly and guides users to operate child orders', async () => {
@@ -96,7 +99,7 @@ describe('WorkOrdersDetail main order readonly mode', () => {
     expect(resubmitWorkOrderMock).not.toHaveBeenCalled();
   });
 
-  it('shows returned-child hint without enabling main order editing', async () => {
+  it('enables repair actions for returned main order', async () => {
     getWorkOrderMock.mockResolvedValueOnce({
       ...baseOrder,
       status: 'returned',
@@ -107,11 +110,30 @@ describe('WorkOrdersDetail main order readonly mode', () => {
 
     renderDetail('/work-orders/wo-1');
 
-    expect(await screen.findByText('工单存在被退回的子工单，请到对应子工单处理')).toBeInTheDocument();
+    expect(await screen.findByText('当前工单为可返修状态')).toBeInTheDocument();
     expect(screen.getByText('劳动合同签约: 合同信息需修正')).toBeInTheDocument();
-    expect(screen.getByTestId('dynamic-form')).toHaveAttribute('data-readonly', 'true');
-    expect(updateWorkOrderMock).not.toHaveBeenCalled();
-    expect(resubmitWorkOrderMock).not.toHaveBeenCalled();
+    expect(screen.getByTestId('dynamic-form')).toHaveAttribute('data-readonly', 'false');
+    expect(screen.getAllByRole('button', { name: /修改重新提交/ }).length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: /一键作废/ })).toBeInTheDocument();
+  });
+
+  it('resubmits repaired withdrawn order and submits void request through approval flow', async () => {
+    getWorkOrderMock.mockResolvedValueOnce({ ...baseOrder, status: 'withdrawn' });
+
+    renderDetail('/work-orders/wo-1');
+
+    expect(await screen.findByText('当前工单为可返修状态')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /一键作废/ }));
+    fireEvent.change(await screen.findByPlaceholderText('请填写作废原因'), { target: { value: '客户取消' } });
+    fireEvent.click(screen.getByRole('button', { name: '确 定' }));
+    await waitFor(() => expect(voidWorkOrderMock).toHaveBeenCalledWith('wo-1', '客户取消'));
+
+    getWorkOrderMock.mockResolvedValueOnce({ ...baseOrder, status: 'withdrawn' });
+    renderDetail('/work-orders/wo-1');
+    expect(await screen.findByText('当前工单为可返修状态')).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('button', { name: '修改重新提交' }).at(-1)!);
+    await waitFor(() => expect(updateWorkOrderMock).toHaveBeenCalledWith('wo-1', { employee_name: '修改后员工' }));
+    expect(resubmitWorkOrderMock).toHaveBeenCalledWith('wo-1', { employee_name: '修改后员工' });
   });
 
   it('shows an error when main order detail fails to load', async () => {

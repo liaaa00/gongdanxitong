@@ -252,10 +252,33 @@ export function getRequiredRolesForPath(pathname: string): readonly CanonicalRol
   return route ? ROUTE_VISIBILITY[route] : [];
 }
 
-export function canAccessPath(pathname: string, userRoles: { code?: string }[] | undefined): boolean {
+function normalizePermissions(permissions?: string[]): Set<string> {
+  return new Set((permissions || []).map((item) => String(item || '').trim()).filter(Boolean));
+}
+
+function hasDynamicPermissionForPath(pathname: string, permissions?: string[]): boolean {
+  const route = resolveVisibilityRoute(pathname);
+  const permissionSet = normalizePermissions(permissions);
+  if (!route || permissionSet.size === 0) return false;
+  if (permissionSet.has('*') || permissionSet.has('all') || permissionSet.has('work_order.*')) return true;
+  if (route === '/my-work/team') {
+    return permissionSet.has('work_order.view_team')
+      || permissionSet.has('work_order.view_all')
+      || permissionSet.has('data_scope.team')
+      || permissionSet.has('data_scope.all');
+  }
+  if (route === '/my-work/history') {
+    return permissionSet.has('work_order.view_history')
+      || permissionSet.has('work_order.view_all')
+      || permissionSet.has('data_scope.all');
+  }
+  return false;
+}
+
+export function canAccessPath(pathname: string, userRoles: { code?: string }[] | undefined, permissions?: string[]): boolean {
   const requiredRoles = getRequiredRolesForPath(pathname);
   if (!requiredRoles.length) return false;
-  return userHasAnyCanonicalRole(userRoles, [...requiredRoles]);
+  return userHasAnyCanonicalRole(userRoles, [...requiredRoles]) || hasDynamicPermissionForPath(pathname, permissions);
 }
 
 export function canonicalRoleList(userRoles: { code?: string }[] | undefined): string[] {

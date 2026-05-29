@@ -29,7 +29,8 @@ export const MODULE_SUPERVISOR_ROLES = [
 
 export const CONTRACT_MODULE_ROLES = ['contract_specialist', 'labor_contract_member', 'contract_team'] as const;
 export const ONBOARDING_RESIGNATION_MODULE_ROLES = ['onboarding_specialist', 'onboarding_resignation_member', 'onboarding_team', 'contract_team'] as const;
-export const DATA_ENTRY_MODULE_ROLES = ['data_entry_leader', 'data_entry_team'] as const;
+export const DATA_ENTRY_MODULE_ROLES = ['data_entry_leader', 'data_entry_team', 'data_entry_supervisor', 'data_entry_specialist'] as const;
+export const SOCIAL_INSURANCE_MODULE_ROLES = ['social_insurance_specialist', 'social_insurance_team', 'social_insurance_supervisor', 'social_security_supervisor'] as const;
 
 export function hasAnyRole(roles: readonly string[], expectedRoles: readonly string[]): boolean {
   return expectedRoles.some((role) => roles.includes(role));

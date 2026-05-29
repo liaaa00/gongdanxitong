@@ -340,6 +340,7 @@ const Dashboard: React.FC = () => {
   const [selectedMatrixRow, setSelectedMatrixRow] = useState<DashboardMatrixTreeRow | null>(null);
   const [moduleOptions, setModuleOptions] = useState<ModuleConfigItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [scopeMode, setScopeMode] = useState<DashboardScopeMode>('mine');
 
   const roles = useMemo(() => canonicalRoleCodes(user?.roles), [user?.roles]);
   const canViewLeaderTrend = roles.includes(ROLE.ADMIN) || roles.includes(ROLE.BUSINESS_OWNER);
@@ -350,9 +351,12 @@ const Dashboard: React.FC = () => {
     return hasBackendRole && !hasBusinessRole ? 'backend' : 'business';
   }, [roles]);
   const canSwitchDashboardScope = dashboardAudience === 'business' && (
-    roles.includes(ROLE.ADMIN) || roles.includes(ROLE.BUSINESS_GROUP_LEADER) || roles.includes(ROLE.BUSINESS_OWNER)
+    roles.includes(ROLE.ADMIN)
+    || roles.includes(ROLE.BUSINESS_GROUP_LEADER)
+    || roles.includes(ROLE.BUSINESS_OWNER)
+    || (user?.permissions || []).some((permission) => ['work_order.view_team', 'work_order.view_all', 'data_scope.team', 'data_scope.all'].includes(permission))
   );
-  const effectiveScope: DashboardScopeMode | undefined = canSwitchDashboardScope ? 'mine' : undefined;
+  const effectiveScope: DashboardScopeMode | undefined = canSwitchDashboardScope ? scopeMode : undefined;
   const normalizedCards = useMemo(() => normalizeStatsTotal({
     total: cards.totalThisMonth,
     processing: cards.processing,
@@ -457,7 +461,24 @@ const Dashboard: React.FC = () => {
   }, [dashboardAudience, effectiveScope, matrixDimension, canViewLeaderTrend]);
 
   return (
-    <PageContainer header={{ title: '仪表盘' }}>
+    <PageContainer header={{
+      title: '仪表盘',
+      extra: canSwitchDashboardScope ? [
+        <Space key="scope-switch" align="center">
+          <Text type="secondary">数据范围</Text>
+          <Select<DashboardScopeMode>
+            size="small"
+            value={scopeMode}
+            style={{ width: 150 }}
+            onChange={setScopeMode}
+            options={[
+              { label: '本人数据', value: 'mine' },
+              { label: '团队数据', value: 'team' },
+            ]}
+          />
+        </Space>,
+      ] : undefined,
+    }}>
       <Space direction="vertical" size="large" style={{ width: '100%' }}>
 
         <Row gutter={[16, 16]}>
