@@ -107,7 +107,7 @@
 | `@nestjs/schedule` | `4.1.2` | Cron 定时任务 |
 | `@nestjs/typeorm` | `10.0.2` | Nest 与 TypeORM 集成 |
 | `ajv` | `8.20.0` | JSON schema/配置校验相关能力 |
-| `axios` | `1.16.0` | HTTP 请求能力，主要由 Nest Axios 模块承载 |
+| `axios` | `1.16.1` | HTTP 请求能力，主要由 Nest Axios 模块承载 |
 | `bcrypt` | `5.1.1` | 密码哈希相关能力 |
 | `bcryptjs` | `3.0.3` | 兼容/历史密码哈希相关能力 |
 | `class-transformer` | `0.5.1` | DTO 转换 |
@@ -116,8 +116,8 @@
 | `multer` | `2.1.1` | 上传文件处理 |
 | `passport` | `0.7.0` | 认证基础库 |
 | `passport-jwt` | `4.0.1` | JWT strategy |
-| `pg` | `8.20.0` | PostgreSQL 驱动 |
-| `typeorm` | `0.3.29` | ORM、实体、迁移、Repository |
+| `pg` | `8.21.0` | PostgreSQL 驱动 |
+| `typeorm` | `0.3.30` | ORM、实体、迁移、Repository |
 
 ### 2.4 后端开发与测试依赖
 
@@ -141,7 +141,7 @@
 | `jest` | `29.7.0` | 后端测试框架 |
 | `prettier` | `3.8.3` | 格式化 |
 | `supertest` | `7.2.2` | HTTP 接口测试 |
-| `ts-jest` | `29.4.9` | Jest TS 转译 |
+| `ts-jest` | `29.4.11` | Jest TS 转译 |
 | `ts-node` | `10.9.2` | seed、迁移、脚本执行 |
 | `tsc-alias` | `1.8.17` | 编译后路径别名修正 |
 | `tsconfig-paths` | `4.2.0` | ts-node 路径别名支持 |
@@ -151,8 +151,8 @@
 | 技术 | 实际版本/配置 | 依据 |
 |---|---|---|
 | PostgreSQL | `postgres:16-alpine` | `docker-compose.yml` |
-| TypeORM | `0.3.29` | `backend/package-lock.json` |
-| PostgreSQL 驱动 | `pg 8.20.0` | `backend/package-lock.json` |
+| TypeORM | `0.3.30` | `backend/package-lock.json` |
+| PostgreSQL 驱动 | `pg 8.21.0` | `backend/package-lock.json` |
 | synchronize | `false` | `backend/src/app.module.ts` |
 | 默认 schema | `public` | `configuration.ts` / `.env.example` |
 | 默认 DB 名 | `ticket_system` | `.env.example` / `docker-compose.yml` |
@@ -272,7 +272,7 @@ AI 调用特征：
 | `antd` | `5.29.3` | 主 UI 组件库 |
 | `@ant-design/icons` | `5.6.1` | 图标 |
 | `@ant-design/pro-components` | `2.8.10` | ProTable、ProForm、配置化表格/表单能力 |
-| `dayjs` | `1.11.20` | 日期时间处理 |
+| `dayjs` | `1.11.21` | 日期时间处理 |
 | `reactflow` | `11.11.4` | 工作流编辑器节点/连线图 |
 | `react-window` | `2.2.7` | 虚拟滚动能力，注意类型版本不一致 |
 | `@types/react-window` | `1.8.8` | react-window 类型，但对应 v1 类型体系 |
@@ -283,10 +283,10 @@ AI 调用特征：
 
 | 包 | 实际版本 | 当前用途 |
 |---|---:|---|
-| `axios` | `1.16.0` | HTTP 请求封装，`frontend/src/services/request.ts` |
+| `axios` | `1.16.1` | HTTP 请求封装，`frontend/src/services/request.ts` |
 | `zustand` | `4.5.7` | 前端轻量状态管理，`frontend/src/stores` |
 | `xlsx` | `0.18.5` | 前端 Excel 相关处理 |
-| `msw` | `2.7.0` | 开发/测试 mock，`VITE_USE_MSW=true` 时启用 |
+| `msw` | `2.14.6` | 开发/测试 mock，`VITE_USE_MSW=true` 时启用 |
 
 前端请求规范：
 
@@ -327,13 +327,13 @@ AI 调用特征：
 
 | 包 | 实际版本 | 当前用途 |
 |---|---:|---|
-| `vitest` | `4.1.5` | 单元测试 |
-| `@vitest/coverage-v8` | `4.1.5` | 覆盖率 |
+| `vitest` | `4.1.7` | 单元测试 |
+| `@vitest/coverage-v8` | `4.1.7` | 覆盖率 |
 | `jsdom` | `29.1.1` | DOM 测试环境 |
 | `@testing-library/react` | `16.3.2` | React 测试 |
 | `@testing-library/jest-dom` | `6.9.1` | DOM matcher |
 | `@testing-library/user-event` | `14.6.1` | 用户交互模拟 |
-| `@playwright/test` | `1.59.1` | E2E 测试 |
+| `@playwright/test` | `1.60.0` | E2E 测试 |
 | `eslint-plugin-jsx-a11y` | `6.10.2` | JSX 可访问性 lint 规则 |
 | `@typescript-eslint/parser` | `8.59.3` | ESLint TS parser |
 | `eslint` | `9.39.4` | 前端锁文件中实际解析版本；注意未在 `frontend/package.json` 直接声明 |
