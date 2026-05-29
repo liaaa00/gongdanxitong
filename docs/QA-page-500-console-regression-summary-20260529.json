@@ -1,0 +1,63 @@
+{
+  "taskId": "6dafa8dc-d3b3-4900-b44e-455e596036f7",
+  "reviewRound": 2,
+  "testedAt": "2026-05-29T15:44:00+08:00",
+  "baseUrl": "http://localhost:5173",
+  "directApi": "http://localhost:3000/api",
+  "scripts": [
+    "tmp/qa-page-500-regression.js",
+    "tmp/qa-click-path-regression.js"
+  ],
+  "evidence": {
+    "pageResult": "tmp/qa-page-500-2026-05-29T07-44-16-929Z/result.json",
+    "clickResult": "tmp/qa-click-path-2026-05-29T07-44-50-398Z/result.json",
+    "report": "docs/QA-page-500-console-regression-20260529.md"
+  },
+  "pageRegression": {
+    "api200Count": 72,
+    "api500Count": 0,
+    "api4xxCount": 0,
+    "requestFailedCount": 0,
+    "pageErrorCount": 0,
+    "unhandledRejectionCount": 0,
+    "pagesWithServerExceptionText": [],
+    "warningKinds": [
+      "React Router Future Flag",
+      "antd Card bodyStyle deprecated",
+      "React findDOMNode deprecated"
+    ],
+    "nonWarningConsoleErrors": []
+  },
+  "clickPathRegression": {
+    "api200Count": 26,
+    "api201Count": 1,
+    "api500Count": 0,
+    "api4xxCount": 0,
+    "requestFailedCount": 0,
+    "consoleErrorCount": 0,
+    "pageErrorCount": 0,
+    "unhandledRejectionCount": 0,
+    "pagesWithServerExceptionText": [],
+    "warningKinds": [
+      "React Router Future Flag"
+    ],
+    "nonWarningConsoleErrors": []
+  },
+  "keyEndpoints": [
+    { "url": "/api/dispatched-orders?current=1&pageSize=20&module_code=contract&sort=dispatched_at&order=descend&page=1", "status": 200 },
+    { "url": "/api/dispatched-orders?page=1&pageSize=20&sort=created_at&statuses=pending,processing", "status": 200 },
+    { "url": "/api/dispatched-orders/40024bce-ad05-4112-9295-3a6fc50fc4fb", "status": 200 },
+    { "url": "/api/dispatched-orders/40024bce-ad05-4112-9295-3a6fc50fc4fb/supplement-logs", "status": 200 },
+    { "url": "/api/dispatched-orders?current=1&pageSize=20&module_code=onboarding_contact&sort=dispatched_at&order=descend&page=1", "status": 200 },
+    { "url": "/api/dispatched-orders?current=1&pageSize=20&module_code=data_entry&sort=dispatched_at&order=descend&page=1", "status": 200 },
+    { "url": "/api/work-orders?current=1&pageSize=20&sort=created_at&order=descend&page=1", "status": 200 }
+  ],
+  "reviewBlockerHandling": {
+    "getTaskInfo": "returned not found for team task id",
+    "checkMerge": "returned not found for team task id",
+    "taskProduceArtifact": "failed: TaskTreeService uninitialized",
+    "interpretation": "integration_worktree_missing/integration_task_state missing is a platform integration view problem, not a failed page regression result; docs artifacts were added so integration-only review has repository-visible evidence."
+  },
+  "blocking": false,
+  "conclusion": "No stable reproduction of page-level 500, operation exception, or main.tsx global unhandledrejection. Remaining console messages are warnings/deprecations and are not directly tied to failed requests."
+}
