@@ -146,12 +146,16 @@ function getDispatchedProgressMeta(child: DispatchedOrderSummary): { label: stri
   if (status === 'void' || child.void_at || child.voidAt) return { label: '已作废', badge: 'default', color: 'default' };
   if (status === 'returned') return { label: '已退回', badge: 'warning', color: 'warning' };
   if (['processing', 'accepted', 'in_progress', 'pending', 'created', 'waiting_dispatch', 'to_dispatch'].includes(status)) {
-    return { label: '待办理/办理中', badge: 'processing', color: 'processing' };
+    return { label: '处理中', badge: 'processing', color: 'processing' };
   }
   return { label: getStatusMeta(status).label, badge: 'default', color: 'default' };
 }
 
-const WorkOrders: React.FC = () => {
+interface WorkOrdersProps {
+  mode?: 'main' | 'initiated';
+}
+
+const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { message } = App.useApp();
@@ -179,7 +183,7 @@ const WorkOrders: React.FC = () => {
     ROLE.SOCIAL_INSURANCE_SPECIALIST,
   ].some((role) => hasRole(role));
   const isBackendOnly = isBackendProcessor && !isAdmin && !isBusinessOwner && !isGroupLeader && !isGroupMember;
-  const isInitiatedPage = location.pathname.includes('/my-work/initiated');
+  const isInitiatedPage = mode === 'initiated' || location.pathname.includes('/my-work/initiated');
   const canDelete = !isInitiatedPage && isAdmin;
   const canCreateWorkOrder = !isInitiatedPage && (isAdmin || allowedActions.includes('work_order.create') || (!allowedActions.length && (isGroupMember || isGroupLeader)));
   const canImportWorkOrder = !isInitiatedPage && (isAdmin || allowedActions.includes('work_order.import') || (!allowedActions.length && (isGroupMember || isGroupLeader)));
@@ -372,8 +376,8 @@ const WorkOrders: React.FC = () => {
       ),
     },
     ];
-    return baseColumns;
-  }, [canDelete, isAdmin, isBusinessOwner, isGroupLeader, navigate]);
+    return isInitiatedPage ? baseColumns.filter((column) => column.key !== 'actions') : baseColumns;
+  }, [canDelete, isAdmin, isBusinessOwner, isGroupLeader, isInitiatedPage, navigate]);
 
   const requestFn = async (params: Record<string, unknown>) => {
     const query: Record<string, unknown> = {

@@ -34,6 +34,17 @@ describe('routeVisibility admin-only configuration routes', () => {
     expect(canAccessPath('/my-field-permissions', businessRoles)).toBe(false);
   });
 
+  it('keeps business owner on main order views and blocks backend child pools', () => {
+    const ownerRoles = roles([ROLE.BUSINESS_OWNER]);
+    expect(canAccessPath('/work-orders', ownerRoles)).toBe(true);
+    expect(canAccessPath('/onboarding/contract', ownerRoles)).toBe(false);
+    expect(canAccessPath('/onboarding/onboarding_contact', ownerRoles)).toBe(false);
+    expect(canAccessPath('/onboarding/social_insurance', ownerRoles)).toBe(false);
+    expect(canAccessPath('/onboarding/resignation_contact', ownerRoles)).toBe(false);
+    expect(canAccessPath('/offboarding/contact-pool', ownerRoles)).toBe(false);
+    expect(canAccessPath('/my-work/pending', ownerRoles)).toBe(false);
+  });
+
   it('does not expose notification route to business owner only role', () => {
     expect(canAccessPath('/notifications', roles([ROLE.BUSINESS_OWNER]))).toBe(false);
     expect(canAccessPath('/notifications', roles([ROLE.BUSINESS_GROUP_MEMBER]))).toBe(true);

@@ -189,8 +189,7 @@ export class DispatchedOrderService {
   async findOne(id: string, user: JwtUserPayload): Promise<DispatchedOrderDetailItem> {
     const order = await this.loadDispatchedOrder(id);
     await this.assertCanRead(order, user);
-    const clearedDirtyCount = await this.clearDirtyMarksForDispatchedOrder(order, user, 'owner_open_detail');
-    return this.toDetailItem(order, clearedDirtyCount);
+    return this.toDetailItem(order, 0);
   }
 
   async accept(
@@ -1601,6 +1600,26 @@ export class DispatchedOrderService {
         completedAt: workOrder.completedAt,
       },
     });
+
+    if (workOrder.orderType === OrderType.RESIGNATION) {
+      await this.notificationRepository.save(this.notificationRepository.create({
+        userId: workOrder.createdBy,
+        bizType: 'resignation_completed',
+        title: '离职工单已办结',
+        content: `离职工单 ${workOrder.orderNo} 已全部办结，请查看归档结果。`,
+        link: `/resignation/${workOrder.id}`,
+        payload: {
+          workOrderId: workOrder.id,
+          orderNo: workOrder.orderNo,
+          entityType: 'work_order',
+          entityId: workOrder.id,
+          orderType: workOrder.orderType,
+          completedAt: workOrder.completedAt,
+        },
+        isRead: false,
+        readAt: null,
+      }));
+    }
   }
 
   private async resolveUserDisplayName(userId: string): Promise<string> {

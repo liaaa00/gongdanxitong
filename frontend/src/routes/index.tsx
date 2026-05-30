@@ -72,10 +72,10 @@ const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   const { isLoggedIn, user, loading, fetchUser, mustChangePassword } = useUserStore();
   const location = useLocation();
   useEffect(() => {
-    if (isLoggedIn && !loading) {
+    if (isLoggedIn && !user && !loading) {
       void fetchUser();
     }
-  }, [isLoggedIn, location.pathname, loading, fetchUser]);
+  }, [isLoggedIn, user, location.pathname, loading, fetchUser]);
 
   if (!isLoggedIn) return <Navigate to="/login" replace />;
   if (!user || loading) return <Loading />;
@@ -124,7 +124,7 @@ const AppRoutes: React.FC = () => (
 
         <Route path="onboarding/:moduleCode" element={<RoleRoute><RouteGuard moduleName="入职模块"><OnboardingModule /></RouteGuard></RoleRoute>} />
 
-        <Route path="my-work/initiated" element={<RoleRoute><RouteGuard moduleName="我发起的"><WorkOrders /></RouteGuard></RoleRoute>} />
+        <Route path="my-work/initiated" element={<RoleRoute><RouteGuard moduleName="我发起的"><WorkOrders mode="initiated" /></RouteGuard></RoleRoute>} />
         <Route path="my-work/returned" element={<RoleRoute><RouteGuard moduleName="我的退回"><MyDispatched mode="pending" /></RouteGuard></RoleRoute>} />
         <Route path="my-work/pending" element={<RoleRoute><RouteGuard moduleName="我的待办"><MyDispatched mode="pending" /></RouteGuard></RoleRoute>} />
         <Route path="my-work/done" element={<RoleRoute><RouteGuard moduleName="我的已办"><MyDispatched mode="done" /></RouteGuard></RoleRoute>} />

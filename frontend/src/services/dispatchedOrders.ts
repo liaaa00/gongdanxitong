@@ -1,4 +1,4 @@
-import request from './request';
+import request, { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from './request';
 import { isMockMode, mockDelay, type PageParams, type PageResult } from './mock';
 import { addMockNotification } from './notifications';
 import { reloadMockWorkOrders } from './workOrders';
@@ -325,6 +325,72 @@ function deleteChildInParent(childId: string): boolean {
   return false;
 }
 
+const DISPATCHED_ORDER_QUERY_KEYS = new Set([
+  'page',
+  'pageSize',
+  'keyword',
+  'module_code',
+  'moduleCode',
+  'moduleName',
+  'nodeType',
+  'pool',
+  'orderType',
+  'order_type',
+  'type',
+  'departmentId',
+  'department_id',
+  'department',
+  'handlerId',
+  'handler_id',
+  'assignee',
+  'assigneeId',
+  'assignee_id',
+  'status',
+  'statuses',
+  'statusIn',
+  'orderNo',
+  'order_no',
+  'customerCode',
+  'customer_code',
+  'customerName',
+  'customer_name',
+  'employeeName',
+  'employee_name',
+  'idCardNo',
+  'employeeIdCard',
+  'employee_id_card',
+  'orderMonth',
+  'order_month',
+  'dispatchedFrom',
+  'dispatchedTo',
+  'completedFrom',
+  'completedTo',
+  'includeReturned',
+  'onlyPool',
+  'onlyUnclaimed',
+  'onlyDirty',
+]);
+
+function normalizePageSize(value: unknown): number {
+  const n = Number(value ?? DEFAULT_PAGE_SIZE);
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_PAGE_SIZE;
+  return Math.min(Math.floor(n), MAX_PAGE_SIZE);
+}
+
+function cleanDispatchedOrdersQuery(params: DispatchedOrdersListParams): Record<string, unknown> {
+  const query: Record<string, unknown> = {};
+  Object.entries(params).forEach(([key, value]) => {
+    if (!DISPATCHED_ORDER_QUERY_KEYS.has(key)) return;
+    if (value === undefined || value === null || value === '') return;
+    if (Array.isArray(value) && value.length === 0) return;
+    query[key] = value;
+  });
+
+  query.page = Number(params.page ?? params.current ?? 1) || 1;
+  query.pageSize = normalizePageSize(params.pageSize);
+  return query;
+}
+
 export type DispatchedOrdersListParams = PageParams & {
   module_code?: string;
   moduleCode?: string;
@@ -394,7 +460,8 @@ export async function getDispatchedOrders(params: DispatchedOrdersListParams): P
     }
     return mockDelay({ list, page: Number(params.page) || 1, pageSize: Number(params.pageSize) || 20, total: list.length, totalPages: 1, success: true });
   }
-  const { silentError, ...query } = params;
+  const { silentError } = params;
+  const query = cleanDispatchedOrdersQuery(params);
   const raw = await request.get('/dispatched-orders', { params: query, silentError } as any);
   return normalizePageResult(raw);
 }
@@ -405,10 +472,21 @@ function emptyDispatchedOrdersPage(params: DispatchedOrdersListParams): PageResu
   return { list: [], page, pageSize, total: 0, totalPages: 0, success: false };
 }
 
+function getHttpStatus(error: unknown): number | undefined {
+  const status = (error as { response?: { status?: unknown } } | undefined)?.response?.status;
+  const n = Number(status);
+  return Number.isFinite(n) ? n : undefined;
+}
+
 export async function getDispatchedOrdersSafe(params: DispatchedOrdersListParams): Promise<PageResult<DispatchedOrderItem>> {
   try {
     return await getDispatchedOrders({ ...params, silentError: true });
   } catch (error) {
+    const status = getHttpStatus(error);
+    if (status === 401 || status === 403) {
+      console.error('[dispatched-orders] list request failed with auth error; rethrowing to expose permission/session issues', error);
+      throw error;
+    }
     console.error('[dispatched-orders] list request failed, showing empty table fallback', error);
     return emptyDispatchedOrdersPage(params);
   }

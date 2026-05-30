@@ -90,9 +90,9 @@ describe('WorkOrders initiated read-only view', () => {
     expect(screen.getByTestId('multi-view-table')).toHaveAttribute('data-has-batch-actions', 'false');
     expect(mocks.latestTableProps.toolBarRender).toBeUndefined();
     expect(mocks.latestTableProps.batchActions).toBeUndefined();
-    expect(getColumn('actions')).toBeDefined();
+    expect(getColumn('actions')).toBeUndefined();
 
-    expect(screen.getByRole('button', { name: /详情/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /详情/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /新建工单/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /批量导入/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /批量导出/ })).not.toBeInTheDocument();
@@ -100,8 +100,7 @@ describe('WorkOrders initiated read-only view', () => {
     expect(screen.queryByRole('button', { name: /取消选择/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^删除$/ })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /详情/ }));
-    expect(mocks.navigate).toHaveBeenCalledWith('/work-orders/wo-1');
+    expect(mocks.navigate).not.toHaveBeenCalled();
 
     await mocks.latestTableProps.request({ current: 1, pageSize: 20, customer_name: '客户A', order_type: 'onboarding' });
 

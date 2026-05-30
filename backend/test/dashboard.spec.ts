@@ -7,6 +7,13 @@ describe('DashboardService', () => {
   const validationStub = { resolveUserDepartmentIds: jest.fn(async () => ['dept-1']) } as never;
   const zeroVoided = { voided: 0, voidCount: 0, void_count: 0 };
   const rateFields = (completionRate: number) => ({ completionRate, completion_rate: completionRate });
+  const dataSourceWithTransaction = (rows: unknown[] = []) => {
+    const query = jest.fn(async () => rows);
+    return {
+      query,
+      transaction: jest.fn(async (callback: (manager: { query: typeof query }) => unknown) => callback({ query })),
+    };
+  };
 
   it('returns dashboard cards for admin with global work order scope', async () => {
     const dataSource = { query: jest.fn()
@@ -120,12 +127,12 @@ describe('DashboardService', () => {
   });
 
   it('normalizes leader trend fallback rates with voided orders excluded from denominator', async () => {
-    const dataSource = { query: jest.fn(async () => [
+    const dataSource = dataSourceWithTransaction([
       { month: '2026-01', total: 100, completed: 98, voided: 2 },
       { month: '2026-02', total: 100, completed: 97, voided: 2 },
       { month: '2026-03', total: 2, completed: 0, voided: 2 },
       { month: '2026-04', total: 0, completed: 0, voided: 0 },
-    ]) };
+    ]);
     const service = new DashboardService(dataSource as never, validationStub);
 
     const result = await service.getLeaderTrend('onboarding', { sub: 'admin-1', roles: ['admin'] } as never);
@@ -224,7 +231,7 @@ describe('DashboardService', () => {
   });
 
   it('filters leader trend by moduleCode or Chinese module name', async () => {
-    const dataSource = { query: jest.fn(async () => [{ month: '2026-05', total: 1, completed: 0, rate: 0 }]) };
+    const dataSource = dataSourceWithTransaction([{ month: '2026-05', total: 1, completed: 0, rate: 0 }]);
     const service = new DashboardService(dataSource as never, validationStub);
 
     const result = await service.getLeaderTrend('onboarding', { sub: 'admin-1', roles: ['admin'] } as never, '入职联系');

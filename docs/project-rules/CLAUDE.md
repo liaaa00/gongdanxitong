@@ -569,7 +569,10 @@ docker compose down
 
 ### 错误模式记录
 
-当前暂无已确认的新错误模式记录。后续一旦被纠正，必须追加在此处。
+- 日期：2026-05-30
+  错误模式：把用户要求的“合并分支 / 合并 worktree 修改”误理解为“清理分支并只保留 main”，存在误删未合并修改的风险。
+  影响范围：Git 分支、`.spectrai-worktrees/` 工作树、历史 AI 会话改动与尚未进入 main 的业务修复。
+  预防规则：遇到多分支 / worktree 处理时，必须先执行只读核对（`git status`、`git branch --all`、`git worktree list`、`git reflog`），先备份再逐分支比对和合并；未经用户明确确认，禁止删除分支、删除 worktree、执行 `git clean`、`reset --hard` 或把 main 认定为唯一权威源。
 
 ---
 

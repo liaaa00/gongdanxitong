@@ -79,7 +79,7 @@ const StagesTimeline: React.FC<StagesTimelineProps> = ({ workOrderId }) => {
               dot: <Tag color={color} style={{ margin: 0 }}>{icon}</Tag>,
               children: (
                 <Card size="small" style={{ marginBottom: 4 }}
-                  bodyStyle={{ padding: '6px 10px' }}>
+                  styles={{ body: { padding: '6px 10px' } } as any}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ fontWeight: 500, fontSize: 13 }}>
                       <Tag color={color} style={{ marginRight: 6 }}>{stage.stage_label}</Tag>

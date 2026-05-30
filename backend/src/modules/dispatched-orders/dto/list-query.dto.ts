@@ -34,6 +34,16 @@ export class ListDispatchedOrderQueryDto extends PaginationQueryDto {
   @IsString()
   pool?: string;
 
+  /**
+   * Dashboard list fallback sends a scope hint (mine/team) when it builds matrix
+   * rows from /dispatched-orders. The list endpoint already applies user scope
+   * from JWT roles, so this field is accepted only to satisfy the global
+   * whitelist validation contract and avoid a 400 during dashboard bootstrap.
+   */
+  @IsOptional()
+  @IsString()
+  scope?: string;
+
   @IsOptional()
   handlerId?: MultiQueryValue;
 

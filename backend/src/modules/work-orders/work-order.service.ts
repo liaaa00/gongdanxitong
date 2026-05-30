@@ -641,7 +641,7 @@ export class WorkOrderService {
     id: string,
     payload: VoidWorkOrderDto,
     user: JwtUserPayload,
-  ): Promise<{ id: string; status: WorkOrderStatus.VOID_PENDING }> {
+  ): Promise<{ id: string; status: WorkOrderStatus.VOID_PENDING | WorkOrderStatus.VOID }> {
     return this.workOrderRepository.manager.transaction(async (manager) => {
       await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`work_order:void:${id}`]);
       const workOrderRepo = manager.getRepository(WorkOrder);
@@ -664,6 +664,43 @@ export class WorkOrderService {
 
       const previousStatus = workOrder.status;
       const before = snapshotWorkOrder(workOrder);
+      const activeChildren = await dispatchedRepo.find({ where: { parentOrderId: workOrder.id } });
+
+      if (workOrder.status === WorkOrderStatus.WITHDRAWN) {
+        const voidAt = new Date();
+        workOrder.status = WorkOrderStatus.VOID;
+        workOrder.completedAt = workOrder.completedAt ?? voidAt;
+        await workOrderRepo.save(workOrder);
+        for (const child of activeChildren) {
+          if (child.status === DispatchedOrderStatus.COMPLETED) continue;
+          child.status = DispatchedOrderStatus.VOID;
+          child.voidAt = child.voidAt ?? voidAt;
+          await dispatchedRepo.save(child);
+        }
+        await operationLogRepo.save(operationLogRepo.create({
+          entityType: 'work_order',
+          entityId: workOrder.id,
+          userId: user.sub,
+          actionType: 'void_direct_after_withdrawn',
+          beforeData: before,
+          afterData: {
+            ...snapshotWorkOrder(workOrder),
+            reason,
+            previous_status: previousStatus,
+            previousStatus,
+            contextFields: {
+              oldStatus: previousStatus,
+              newStatus: workOrder.status,
+              reason,
+              previousStatus,
+              previous_status: previousStatus,
+            },
+          },
+          ipAddress: null,
+        }));
+        return { id: workOrder.id, status: WorkOrderStatus.VOID };
+      }
+
       workOrder.status = WorkOrderStatus.VOID_PENDING;
       await workOrderRepo.save(workOrder);
 
@@ -689,7 +726,6 @@ export class WorkOrderService {
         ipAddress: null,
       }));
 
-      const activeChildren = await dispatchedRepo.find({ where: { parentOrderId: workOrder.id } });
       const recipients = Array.from(new Set(activeChildren
         .filter((child) => child.status !== DispatchedOrderStatus.COMPLETED)
         .map((child) => child.handlerId)
@@ -1404,7 +1440,7 @@ export class WorkOrderService {
     if ([WorkOrderStatus.COMPLETED, WorkOrderStatus.VOID].includes(status)) {
       throw businessException(4123, HttpStatus.CONFLICT, '终态工单不可作废');
     }
-    if (![WorkOrderStatus.PENDING, WorkOrderStatus.PROCESSING, WorkOrderStatus.RETURNED, WorkOrderStatus.WITHDRAWN, WorkOrderStatus.WITHDRAW_PENDING].includes(status)) {
+    if (![WorkOrderStatus.PENDING, WorkOrderStatus.PROCESSING, WorkOrderStatus.RETURNED, WorkOrderStatus.WITHDRAW_PENDING, WorkOrderStatus.WITHDRAWN].includes(status)) {
       throw businessException(4123, HttpStatus.CONFLICT, '当前状态不可作废');
     }
   }

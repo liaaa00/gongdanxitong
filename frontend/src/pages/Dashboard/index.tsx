@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { PageContainer, ProTable } from '@ant-design/pro-components';
 import type { ProColumns } from '@ant-design/pro-components';
 import { BellOutlined, CheckCircleOutlined, FileTextOutlined, RiseOutlined, ClockCircleOutlined, StopOutlined } from '@ant-design/icons';
-import { Card, Col, Empty, Progress, Row, Select, Space, Spin, Statistic, Tag, Tooltip, Typography } from 'antd';
+import { Card, Col, Empty, Progress, Row, Segmented, Select, Space, Spin, Statistic, Tag, Tooltip, Typography } from 'antd';
 import { canonicalRoleCodes, ROLE } from '@/constants/roles';
 import { useUserStore } from '@/stores/userStore';
 import {
@@ -279,9 +279,10 @@ const LeaderTrendChart: React.FC<LeaderTrendChartProps> = ({ visible, moduleOpti
 
   useEffect(() => {
     if (!visible) return;
+    const controller = new AbortController();
     let mounted = true;
     setLoading(true);
-    Promise.all(TREND_ORDER_TYPES.map((item) => getLeaderTrend(item.value, moduleCode, scope)))
+    Promise.all(TREND_ORDER_TYPES.map((item) => getLeaderTrend(item.value, moduleCode, scope, controller.signal)))
       .then((results) => {
         if (!mounted) return;
         setTrendMap((prev) => ({
@@ -295,7 +296,10 @@ const LeaderTrendChart: React.FC<LeaderTrendChartProps> = ({ visible, moduleOpti
       .finally(() => {
         if (mounted) setLoading(false);
       });
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+      controller.abort();
+    };
   }, [moduleCode, scope, visible]);
 
   if (!visible) return null;
@@ -466,10 +470,9 @@ const Dashboard: React.FC = () => {
       extra: canSwitchDashboardScope ? [
         <Space key="scope-switch" align="center">
           <Text type="secondary">数据范围</Text>
-          <Select<DashboardScopeMode>
+          <Segmented<DashboardScopeMode>
             size="small"
             value={scopeMode}
-            style={{ width: 150 }}
             onChange={setScopeMode}
             options={[
               { label: '本人数据', value: 'mine' },
@@ -481,40 +484,30 @@ const Dashboard: React.FC = () => {
     }}>
       <Space direction="vertical" size="large" style={{ width: '100%' }}>
 
-        <Row gutter={[16, 16]}>
-          <Col xs={24} sm={12} xl={6}>
-            <Card loading={loading} bodyStyle={CARD_BODY_STYLE}>
-              <Statistic title="本月工单总数" value={normalizedCards.total} prefix={<FileTextOutlined />} />
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} xl={6}>
-            <Card loading={loading} bodyStyle={CARD_BODY_STYLE}>
-              <Statistic title="未办结" value={normalizedCards.processing} prefix={<ClockCircleOutlined />} valueStyle={{ color: '#1677ff' }} />
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} xl={6}>
-            <Card loading={loading} bodyStyle={CARD_BODY_STYLE}>
-              <Statistic title="已完成" value={normalizedCards.completed} prefix={<CheckCircleOutlined />} valueStyle={{ color: '#52c41a' }} />
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} xl={6}>
-            <Card loading={loading} bodyStyle={CARD_BODY_STYLE}>
-              <Statistic title="已作废" value={normalizedCards.voided || 0} prefix={<StopOutlined />} valueStyle={{ color: '#8c8c8c' }} />
-            </Card>
-          </Col>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 16 }}>
+          <Card loading={loading} bodyStyle={CARD_BODY_STYLE}>
+            <Statistic title="本月工单总数" value={normalizedCards.total} prefix={<FileTextOutlined />} />
+          </Card>
+          <Card loading={loading} bodyStyle={CARD_BODY_STYLE}>
+            <Statistic title="处理中" value={normalizedCards.processing} prefix={<ClockCircleOutlined />} valueStyle={{ color: '#1677ff' }} />
+          </Card>
+          <Card loading={loading} bodyStyle={CARD_BODY_STYLE}>
+            <Statistic title="已完成" value={normalizedCards.completed} prefix={<CheckCircleOutlined />} valueStyle={{ color: '#52c41a' }} />
+          </Card>
+          <Card loading={loading} bodyStyle={CARD_BODY_STYLE}>
+            <Statistic title="已作废" value={normalizedCards.voided || 0} prefix={<StopOutlined />} valueStyle={{ color: '#8c8c8c' }} />
+          </Card>
           {canViewNotifications && (
-            <Col xs={24} sm={12} xl={6}>
-              <Card
-                hoverable
-                loading={loading}
-                bodyStyle={CARD_BODY_STYLE}
-                onClick={() => navigate('/notifications')}
-              >
-                <Statistic title="我的消息" value={cards.myMessages} prefix={<BellOutlined />} valueStyle={{ color: '#faad14' }} />
-              </Card>
-            </Col>
+            <Card
+              hoverable
+              loading={loading}
+              bodyStyle={CARD_BODY_STYLE}
+              onClick={() => navigate('/notifications')}
+            >
+              <Statistic title="我的消息" value={cards.myMessages} prefix={<BellOutlined />} valueStyle={{ color: '#faad14' }} />
+            </Card>
           )}
-        </Row>
+        </div>
 
         <ProTable<DashboardMatrixTreeRow>
           rowKey="rowKey"

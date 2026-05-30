@@ -115,9 +115,9 @@ const AdminUsers: React.FC = () => {
         return pos || '—';
       },
     },
-    { title: '邮箱', dataIndex: 'email', key: 'email', width: 180 },
-    { title: '手机', dataIndex: 'phone', key: 'phone', width: 130 },
-    { title: '角色', dataIndex: 'roles', key: 'roles', width: 280, hideInSearch: true,
+    { title: '邮箱', dataIndex: 'email', key: 'email', width: 160, ellipsis: true },
+    { title: '手机', dataIndex: 'phone', key: 'phone', width: 120 },
+    { title: '角色', dataIndex: 'roles', key: 'roles', width: 260, hideInSearch: true,
       render: (_, record) => {
         const roles = Array.isArray(record.roles) ? record.roles : [];
         if (!roles.length) {
@@ -142,8 +142,7 @@ const AdminUsers: React.FC = () => {
               const roleCode = r.role_code || (r as any).roleCode || (r as any).code || '';
               const roleId = r.role_id || (r as any).roleId || String(idx);
               const color = roleColors[roleName] || roleColors[roleCode] || 'blue';
-              const display = roleCode ? `${roleName} (${roleCode})` : roleName;
-              return <Tag key={roleId} color={color} title={`代码: ${roleCode || roleName}`}>{display}</Tag>;
+              return <Tag key={roleId} color={color} title={roleCode ? `代码: ${roleCode}` : roleName}>{roleName}</Tag>;
             })}
           </Space>
         );
@@ -165,9 +164,9 @@ const AdminUsers: React.FC = () => {
       },
     },
     {
-      title: '操作', key: 'actions', width: 320, hideInSearch: true,
+      title: '操作', key: 'actions', width: 220, fixed: 'right', hideInSearch: true,
       render: (_, r) => (
-        <Space>
+        <Space size={0} wrap style={{ maxWidth: 210, rowGap: 2 }}>
           <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(r)}>编辑</Button>
           <Button type="link" size="small" icon={<LockOutlined />} onClick={() => handleResetPassword(r)}>重置密码</Button>
           <Popconfirm title={r.is_active ? '确定禁用该用户？' : '确定启用该用户？'} onConfirm={() => handleToggleActive(r)}>
@@ -230,7 +229,10 @@ const AdminUsers: React.FC = () => {
         toolBarRender={() => [
           <Button key="add" type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建用户</Button>,
         ]}
-        pagination={{ defaultPageSize: 20 }}
+        scroll={{ x: 1160 }}
+        size="small"
+        tableLayout="fixed"
+        pagination={{ defaultPageSize: 10, showSizeChanger: true }}
         dateFormatter="string"
       />
       <Modal title={editing ? '编辑用户' : '新建用户'} open={open} onOk={onSave}

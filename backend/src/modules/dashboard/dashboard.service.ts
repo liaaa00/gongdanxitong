@@ -16,6 +16,8 @@ import { RoleActionPermissionService } from 'src/modules/role-action-permissions
 import { WorkOrderValidationService } from 'src/modules/work-orders/work-order-validation.service';
 import { DashboardCardsDto } from './dto/dashboard-cards.dto';
 
+const LEADER_TREND_STATEMENT_TIMEOUT_MS = 7_000;
+
 const BACKEND_HANDLER_ROLES = [
   'contract_specialist',
   'labor_contract_member',
@@ -771,8 +773,10 @@ export class DashboardService {
       moduleFilter,
     ];
 
-    return this.dataSource.query(
-      `
+    return this.dataSource.transaction(async (manager) => {
+      await manager.query('SET LOCAL statement_timeout = $1', [LEADER_TREND_STATEMENT_TIMEOUT_MS]);
+      return manager.query(
+        `
       WITH months AS (
         SELECT generate_series(
           date_trunc('month', now() AT TIME ZONE 'Asia/Shanghai') - interval '11 months',
@@ -816,8 +820,9 @@ export class DashboardService {
       GROUP BY m.month_start
       ORDER BY m.month_start
       `,
-      params,
-    ) as Promise<Array<Record<string, unknown>>>;
+        params,
+      ) as Promise<Array<Record<string, unknown>>>;
+    });
   }
 
   private async queryLeaderTrendByBackendScope(
@@ -837,8 +842,10 @@ export class DashboardService {
       moduleCodes,
     ];
 
-    return this.dataSource.query(
-      `
+    return this.dataSource.transaction(async (manager) => {
+      await manager.query('SET LOCAL statement_timeout = $1', [LEADER_TREND_STATEMENT_TIMEOUT_MS]);
+      return manager.query(
+        `
       WITH months AS (
         SELECT generate_series(
           date_trunc('month', now() AT TIME ZONE 'Asia/Shanghai') - interval '11 months',
@@ -880,8 +887,9 @@ export class DashboardService {
       GROUP BY m.month_start
       ORDER BY m.month_start
       `,
-      params,
-    ) as Promise<Array<Record<string, unknown>>>;
+        params,
+      ) as Promise<Array<Record<string, unknown>>>;
+    });
   }
 
   private normalizeLeaderTrendOrderType(orderType: string): string {

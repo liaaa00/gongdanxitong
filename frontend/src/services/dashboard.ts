@@ -1,6 +1,5 @@
-import request, { MAX_PAGE_SIZE } from './request';
-import { isMockMode, mockDelay, type PageParams, type PageResult } from './mock';
-import { getDispatchedOrdersSafe, type DispatchedOrderItem } from './dispatchedOrders';
+import request from './request';
+import { isMockMode, mockDelay } from './mock';
 export type DashboardOrderType = 'onboarding' | 'renewal' | 'resignation' | 'benefit';
 export type DashboardMatrixDimension = 'orderType' | 'node';
 export type DashboardAudience = 'business' | 'backend';
@@ -45,6 +44,8 @@ export interface LeaderTrendResult {
   buckets: LeaderTrendBucket[];
   fallbackReason?: 'endpoint_error';
 }
+
+const LEADER_TREND_TIMEOUT_MS = 8_000;
 
 interface ParentOrderLite {
   id: string;
@@ -139,21 +140,7 @@ function isOpenStatus(status: string | undefined): boolean {
   return !isTerminalStatus(status);
 }
 
-async function fetchAllPages<T>(fetcher: (params: PageParams) => Promise<PageResult<T>>, params: PageParams = {}): Promise<T[]> {
-  const pageSize = MAX_PAGE_SIZE;
-  const out: T[] = [];
-  let page = 1;
-  for (let guard = 0; guard < 50; guard += 1) {
-    const result = await fetcher({ ...params, page, pageSize });
-    const list = Array.isArray(result.list) ? result.list : [];
-    out.push(...list);
-    const total = Number(result.total ?? out.length);
-    const totalPages = Number(result.totalPages ?? (Math.ceil(total / pageSize) || 1));
-    if (list.length === 0 || out.length >= total || page >= totalPages) break;
-    page += 1;
-  }
-  return out;
-}
+// Dashboard production fallback must not call /dispatched-orders during app initialization.
 
 const unwrapPayload = (raw: any): any => raw?.data?.data ?? raw?.data ?? raw?.result ?? raw ?? {};
 
@@ -250,50 +237,8 @@ function buildOrderTypeRow(orderType: DashboardOrderType, statuses: Array<string
   };
 }
 
-function buildNodeMatrixRows(children: DispatchedOrderItem[], dimension: DashboardMatrixDimension): OrderTypeMatrixRow[] {
-  const map = new Map<string, { label: string; statuses: Array<string | undefined> }>();
-  children.forEach((child) => {
-    const moduleCode = child.module_code || child.node_type || 'unknown';
-    const current = map.get(moduleCode) || { label: child.module_name || moduleName(moduleCode), statuses: [] };
-    current.statuses.push(child.status);
-    if (!current.label || current.label === moduleCode) current.label = child.module_name || moduleName(moduleCode);
-    map.set(moduleCode, current);
-  });
-  return Array.from(map.entries()).map(([moduleCode, item]) => {
-    const total = item.statuses.length;
-    const completed = item.statuses.filter(isCompletedStatus).length;
-    const voided = item.statuses.filter(isVoidStatus).length;
-    const processing = item.statuses.filter((status) => !isCompletedStatus(status) && !isVoidStatus(status)).length;
-    return {
-      orderType: 'onboarding',
-      moduleCode,
-      dimension,
-      label: item.label,
-      total,
-      processing,
-      completed,
-      voided,
-      completionRate: calculateCompletionRate(completed, total, voided),
-    };
-  });
-}
-
-async function buildMatrixRowsFromListApis(dimension: DashboardMatrixDimension, scope?: DashboardScopeMode): Promise<OrderTypeMatrixResult> {
-  const month = currentMonthValue();
-  const children = await fetchAllPages<DispatchedOrderItem>(getDispatchedOrdersSafe, { silentError: true, ...(scope ? { scope } : {}) } as PageParams);
-  const monthChildren = children.filter((child) => isCurrentMonthValue(child.dispatched_at || child.created_at || child.completed_at || undefined, month));
-
-  if (dimension === 'node') {
-    const rows = buildNodeMatrixRows(monthChildren, dimension);
-    return { rows, total: rows.length };
-  }
-
-  const rows = ORDER_TYPES.map((orderType) => buildOrderTypeRow(
-    orderType,
-    monthChildren.filter((child) => normalizeOrderType(child.order_type) === orderType).map((child) => child.status),
-    dimension,
-  ));
-  return { rows, total: rows.length };
+function emptyMatrixResult(): OrderTypeMatrixResult {
+  return { rows: [], total: 0 };
 }
 
 function normalizeDashboardCards(raw: unknown): DashboardCards {
@@ -411,13 +356,12 @@ export async function getOrderTypeMatrix(params: { dimension?: DashboardMatrixDi
   try {
     const result = await request.get('/dashboard/order-type-matrix', { params: { dimension, ...(params.scope ? { scope: params.scope } : {}) }, silentError: true } as any);
     return normalizeOrderTypeMatrix(result, dimension);
-  } catch (err) {
-    console.warn('[dashboard] order-type-matrix unavailable, fallback to list aggregation', err);
-    return buildMatrixRowsFromListApis(dimension, params.scope);
+  } catch {
+    return emptyMatrixResult();
   }
 }
 
-export async function getLeaderTrend(orderType: DashboardOrderType, moduleCode?: string, scope?: DashboardScopeMode): Promise<LeaderTrendResult> {
+export async function getLeaderTrend(orderType: DashboardOrderType, moduleCode?: string, scope?: DashboardScopeMode, signal?: AbortSignal): Promise<LeaderTrendResult> {
   if (isMockMode) {
     const parents = readParents().filter((p) => getParentOrderType(p) === orderType);
     const buckets = recentMonths(12).map((m) => {
@@ -442,10 +386,14 @@ export async function getLeaderTrend(orderType: DashboardOrderType, moduleCode?:
     const result = await request.get('/dashboard/leader-trend', {
       params: { orderType, ...(moduleCode ? { moduleCode } : {}), ...(scope ? { scope } : {}) },
       silentError: true,
+      timeout: LEADER_TREND_TIMEOUT_MS,
+      signal,
     } as any);
     return normalizeLeaderTrend(result, orderType, moduleCode);
   } catch (err) {
-    console.warn('[dashboard] leader-trend unavailable, render zero buckets', err);
+    if ((err as { code?: string })?.code !== 'ERR_CANCELED') {
+      console.debug('[dashboard] leader-trend unavailable, render zero buckets');
+    }
     return {
       orderType,
       moduleCode,

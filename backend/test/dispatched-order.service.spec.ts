@@ -140,6 +140,15 @@ describe('DispatchedOrderService', () => {
       .resolves.toEqual(expect.objectContaining({ statuses: ['processing', 'completed'] }));
   });
 
+  it('accepts dashboard fallback scope query through the global validation pipe contract', async () => {
+    const pipe = new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true });
+
+    await expect(pipe.transform(
+      { scope: 'team', page: '1', pageSize: '100' },
+      { type: 'query', metatype: ListDispatchedOrderQueryDto, data: '' },
+    )).resolves.toEqual(expect.objectContaining({ scope: 'team', page: 1, pageSize: 100 }));
+  });
+
   it('applies status/statuses/statusIn single processing filters and returns processing rows', async () => {
     const user: JwtUserPayload = { sub: 'user-1', username: 'processor01', roles: ['data_entry_team'] } as JwtUserPayload;
     const processingOrder = makeDispatchedOrder(DispatchedOrderStatus.PROCESSING);

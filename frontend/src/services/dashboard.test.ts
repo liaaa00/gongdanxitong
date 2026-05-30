@@ -121,34 +121,26 @@ describe('dashboard services', () => {
     expect(result.rows[0]).toMatchObject({ total: 2, completed: 0, voided: 2, completionRate: 0 });
   });
 
-  it('falls back to node aggregation with pageSize within backend max 100 when real matrix endpoint is unavailable', async () => {
-    requestGet
-      .mockRejectedValueOnce(new Error('not found'))
-      .mockResolvedValueOnce({ list: [], page: 1, pageSize: 100, total: 0, totalPages: 0 });
+  it('returns an empty node matrix and does not call dispatched-orders when real matrix endpoint is unavailable', async () => {
+    requestGet.mockRejectedValueOnce(new Error('not found'));
 
-    await getOrderTypeMatrix({ dimension: 'node' });
+    const result = await getOrderTypeMatrix({ dimension: 'node' });
 
+    expect(requestGet).toHaveBeenCalledTimes(1);
     expect(requestGet).toHaveBeenNthCalledWith(1, '/dashboard/order-type-matrix', { params: { dimension: 'node' }, silentError: true });
-    expect(requestGet).toHaveBeenNthCalledWith(2, '/dispatched-orders', {
-      params: expect.objectContaining({ page: 1, pageSize: 100 }),
-      silentError: true,
-    });
-    expect(requestGet.mock.calls[1][1].params.pageSize).toBeLessThanOrEqual(100);
+    expect(requestGet).not.toHaveBeenCalledWith('/dispatched-orders', expect.anything());
+    expect(result).toEqual({ rows: [], total: 0 });
   });
 
-  it('falls back to order aggregation with pageSize within backend max 100 when real matrix endpoint is unavailable', async () => {
-    requestGet
-      .mockRejectedValueOnce(new Error('not found'))
-      .mockResolvedValueOnce({ list: [], page: 1, pageSize: 100, total: 0, totalPages: 0 });
+  it('returns an empty order matrix and does not call dispatched-orders when real matrix endpoint is unavailable', async () => {
+    requestGet.mockRejectedValueOnce(new Error('not found'));
 
-    await getOrderTypeMatrix({ dimension: 'orderType' });
+    const result = await getOrderTypeMatrix({ dimension: 'orderType' });
 
+    expect(requestGet).toHaveBeenCalledTimes(1);
     expect(requestGet).toHaveBeenNthCalledWith(1, '/dashboard/order-type-matrix', { params: { dimension: 'orderType' }, silentError: true });
-    expect(requestGet).toHaveBeenNthCalledWith(2, '/dispatched-orders', {
-      params: expect.objectContaining({ page: 1, pageSize: 100 }),
-      silentError: true,
-    });
-    expect(requestGet.mock.calls[1][1].params.pageSize).toBeLessThanOrEqual(100);
+    expect(requestGet).not.toHaveBeenCalledWith('/dispatched-orders', expect.anything());
+    expect(result).toEqual({ rows: [], total: 0 });
   });
 
   it('prefers leader trend endpoint and normalizes empty buckets to zero trend data', async () => {
@@ -172,6 +164,7 @@ describe('dashboard services', () => {
     expect(requestGet).toHaveBeenCalledWith('/dashboard/leader-trend', {
       params: { orderType: 'onboarding', moduleCode: 'data_entry' },
       silentError: true,
+      timeout: 8_000,
     });
   });
 
@@ -196,6 +189,7 @@ describe('dashboard services', () => {
     expect(requestGet).toHaveBeenCalledWith('/dashboard/leader-trend', {
       params: { orderType: 'onboarding', moduleCode: 'data_entry' },
       silentError: true,
+      timeout: 8_000,
     });
   });
 
@@ -208,11 +202,27 @@ describe('dashboard services', () => {
     expect(requestGet).toHaveBeenCalledWith('/dashboard/leader-trend', {
       params: { orderType: 'onboarding', moduleCode: 'data_entry' },
       silentError: true,
+      timeout: 8_000,
     });
     expect(requestGet).not.toHaveBeenCalledWith('/work-orders', expect.anything());
     expect(requestGet).not.toHaveBeenCalledWith('/dispatched-orders', expect.anything());
     expect(result).toMatchObject({ orderType: 'onboarding', moduleCode: 'data_entry', fallbackReason: 'endpoint_error' });
     expect(result.buckets).toHaveLength(12);
     expect(result.buckets.every((bucket) => bucket.total === 0 && bucket.completed === 0 && bucket.rate === 0)).toBe(true);
+  });
+
+  it('returns an empty matrix on dashboard 400 without triggering dispatched-orders fallback or surfacing a timeout', async () => {
+    const badRequest = Object.assign(new Error('Request failed with status code 400'), {
+      response: { status: 400, data: { message: 'invalid dashboard params' } },
+      config: { silentError: true },
+    });
+    requestGet.mockRejectedValueOnce(badRequest);
+
+    const result = await getOrderTypeMatrix({ dimension: 'node', scope: 'team' });
+
+    expect(requestGet).toHaveBeenCalledTimes(1);
+    expect(requestGet).toHaveBeenNthCalledWith(1, '/dashboard/order-type-matrix', { params: { dimension: 'node', scope: 'team' }, silentError: true });
+    expect(requestGet).not.toHaveBeenCalledWith('/dispatched-orders', expect.anything());
+    expect(result).toEqual({ rows: [], total: 0 });
   });
 });

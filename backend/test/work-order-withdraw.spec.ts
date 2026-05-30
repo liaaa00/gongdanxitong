@@ -345,6 +345,35 @@ describe('WorkOrderService void flow', () => {
     expect(notificationRepo.save).toHaveBeenCalledWith(expect.objectContaining({ userId: 'handler-2', bizType: 'void_request' }));
   });
 
+  it('voids directly after withdraw approval without entering void_pending', async () => {
+    const workOrder = makeWorkOrder(WorkOrderStatus.WITHDRAWN);
+    const processingChild = makeChild({ id: 'do-1', handlerId: 'handler-1', status: DispatchedOrderStatus.PROCESSING });
+    const pendingChild = makeChild({ id: 'do-2', handlerId: 'handler-2', status: DispatchedOrderStatus.PENDING });
+    const completedChild = makeChild({ id: 'do-3', handlerId: 'handler-3', status: DispatchedOrderStatus.COMPLETED });
+    const { service, notificationRepo, dispatchedRepo, operationLogRepo } = createHarness({
+      workOrder,
+      children: [processingChild, pendingChild, completedChild],
+    });
+
+    const result = await service.void('wo-1', { reason: 'withdrawn order should be voided' }, owner);
+
+    expect(result).toEqual({ id: 'wo-1', status: WorkOrderStatus.VOID });
+    expect(workOrder.status).toBe(WorkOrderStatus.VOID);
+    expect(processingChild.status).toBe(DispatchedOrderStatus.VOID);
+    expect(pendingChild.status).toBe(DispatchedOrderStatus.VOID);
+    expect(completedChild.status).toBe(DispatchedOrderStatus.COMPLETED);
+    expect(processingChild.voidAt).toBeInstanceOf(Date);
+    expect(pendingChild.voidAt).toBeInstanceOf(Date);
+    expect(completedChild.voidAt).toBeNull();
+    expect(dispatchedRepo.save).toHaveBeenCalledWith(processingChild);
+    expect(dispatchedRepo.save).toHaveBeenCalledWith(pendingChild);
+    expect(notificationRepo.save).not.toHaveBeenCalledWith(expect.objectContaining({ bizType: 'void_request' }));
+    expect(operationLogRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+      actionType: 'void_direct_after_withdrawn',
+      afterData: expect.objectContaining({ previous_status: WorkOrderStatus.WITHDRAWN, reason: 'withdrawn order should be voided' }),
+    }));
+  });
+
   it('rolls back to previous_status when void is rejected and notifies creator', async () => {
     const workOrder = makeWorkOrder(WorkOrderStatus.VOID_PENDING);
     const voidLog = { afterData: { previous_status: WorkOrderStatus.WITHDRAW_PENDING } } as unknown as OperationLog;

@@ -3,12 +3,13 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { PageContainer } from '@ant-design/pro-components';
 import {
   Card, Descriptions, Tag, Button, Space, App, Modal, Input, Select,
-  Empty, Alert, Form, Checkbox, Timeline, Badge, Tooltip,
+  Empty, Alert, Form, Checkbox, Timeline, Badge, Tooltip, Upload,
 } from 'antd';
 import {
   CheckCircleOutlined, RollbackOutlined, PlusCircleOutlined,
   HistoryOutlined,
   WarningOutlined, EyeOutlined, EditOutlined, BellOutlined, StopOutlined,
+  UploadOutlined,
 } from '@ant-design/icons';
 import DynamicForm from '@/components/DynamicForm';
 import type { FieldConfig } from '@/components/DynamicForm';
@@ -28,6 +29,7 @@ import { getStatusColor, getStatusText } from '@/constants/dictionaries';
 import { useAuth } from '@/hooks/useAuth';
 import { getUsersByTeam } from '@/services/users';
 import type { UserItem } from '@/services/users';
+import { uploadOrderAttachment } from '@/services/upload';
 
 const FIELD_GROUPS: Array<{ title: string; codes: string[] }> = [
   {
@@ -105,6 +107,8 @@ const MyDispatchedDetail: React.FC = () => {
   const [supplementLogs, setSupplementLogs] = useState<SupplementLogItem[]>([]);
   const [dirtyCleared, setDirtyCleared] = useState(false);
   const [confirmReadLoading, setConfirmReadLoading] = useState(false);
+  const [attachmentUploading, setAttachmentUploading] = useState(false);
+  const [uploadedAttachments, setUploadedAttachments] = useState<Array<{ id?: string; name: string; url?: string }>>([]);
 
   const [returnModalOpen, setReturnModalOpen] = useState(false);
   const [returnForm] = Form.useForm();
@@ -184,11 +188,7 @@ const MyDispatchedDetail: React.FC = () => {
     }
   }, [dirtyFields.length, id, message, order?.has_unread_dirty]);
 
-  useEffect(() => {
-    if (!loading && order && (order.has_unread_dirty || dirtyFields.length > 0)) {
-      markDirtyRead('owner_open_detail');
-    }
-  }, [dirtyFields.length, loading, markDirtyRead, order]);
+  // 保留字段变更高亮，避免打开详情后自动清除；由用户点击“确认已阅”后再清理。
 
   const visibleFields = useMemo(() => order?.visible_fields || [], [order?.visible_fields]);
   const visibleDetailFields = useMemo(() => filterByVisibleFields(fields, visibleFields), [fields, visibleFields]);
@@ -227,12 +227,13 @@ const MyDispatchedDetail: React.FC = () => {
   const canComplete = canBackendOperate && !isVoided && order?.status === 'processing';
   const canReturn = canBackendOperate && !isVoided && (order?.status === 'processing' || order?.status === 'pending');
   const canSupplement = canBackendOperate && !isVoided && order?.status === 'processing' && supplementableFields.length > 0;
-  const isTerminalStatus = Boolean(order && ['completed', 'withdraw_pending', 'withdrawn', 'void_pending', 'void'].includes(order.status));
-  const isTerminal = isVoided || isTerminalStatus;
-  const canCreatorOperate = Boolean(order && isCreator && !isVoided && !isTerminalStatus);
+  const isRepairableStatus = Boolean(order && ['returned', 'withdrawn'].includes(order.status));
+  const isTerminalStatus = Boolean(order && ['completed', 'withdraw_pending', 'void_pending', 'void'].includes(order.status));
+  const isTerminal = isVoided || (isTerminalStatus && !isRepairableStatus);
+  const canCreatorOperate = Boolean(order && isCreator && !isVoided && (!isTerminalStatus || isRepairableStatus));
   const canCreatorUpdate = canCreatorOperate;
-  const canCreatorUrge = canCreatorOperate && order?.status !== 'returned';
-  const canCreatorWithdraw = canCreatorOperate && order?.status !== 'returned';
+  const canCreatorUrge = canCreatorOperate && order?.status !== 'returned' && order?.status !== 'withdrawn';
+  const canCreatorWithdraw = canCreatorOperate && order?.status !== 'returned' && order?.status !== 'withdrawn';
   const canCreatorVoid = canCreatorOperate;
   const canApproveWithdraw = canBackendOperate && order?.status === 'withdraw_pending' && (isAdminUser || !isOrderCreator);
   const canApproveVoid = canBackendOperate && order?.status === 'void_pending' && (isAdminUser || !isOrderCreator);
@@ -412,6 +413,32 @@ const MyDispatchedDetail: React.FC = () => {
   };
 
   const dirtySummary = dirtyFields.length > 0 ? dirtyFields : [];
+  const isResignationModule = Boolean(order?.order_type === 'resignation' || order?.module_code?.startsWith('resignation') || order?.module_code === 'data_entry_resign');
+  const canUploadResignationAttachment = Boolean(order && isResignationModule && (canBackendOperate || isCreator));
+
+  const handleResignationAttachmentUpload = async (file: File) => {
+    if (!order) return Upload.LIST_IGNORE;
+    setAttachmentUploading(true);
+    try {
+      const result = await uploadOrderAttachment(file, {
+        work_order_id: order.parent_order_id,
+        dispatched_order_id: order.id,
+        biz_purpose: 'resignation_material',
+        metadata: { module_code: order.module_code, order_no: order.order_no },
+      });
+      setUploadedAttachments((prev) => [...prev, {
+        id: result.id || result.fileId,
+        name: result.original_name || result.originalName || result.filename || result.fileName || file.name,
+        url: result.downloadUrl || result.url,
+      }]);
+      message.success('离职附件已上传');
+    } catch {
+      message.error('离职附件上传失败');
+    } finally {
+      setAttachmentUploading(false);
+    }
+    return Upload.LIST_IGNORE;
+  };
 
   return (
     <PageContainer header={{
@@ -527,6 +554,22 @@ const MyDispatchedDetail: React.FC = () => {
              {/* 转交功能按 P2 要求暂时隐藏，相关代码保留以便后续恢复。 */}
           </Space>
         </Card>
+
+        {canUploadResignationAttachment && (
+          <Card title="离职附件上传">
+            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+              <Alert type="info" showIcon message="支持单条离职工单上传材料附件；批量按姓名+材料类型匹配后续单独实现。" />
+              <Upload beforeUpload={handleResignationAttachmentUpload} showUploadList={false} disabled={attachmentUploading}>
+                <Button icon={<UploadOutlined />} loading={attachmentUploading}>上传离职材料</Button>
+              </Upload>
+              {uploadedAttachments.length > 0 && (
+                <Space wrap>
+                  {uploadedAttachments.map((file) => <Tag color="blue" key={file.id || file.name}>{file.name}</Tag>)}
+                </Space>
+              )}
+            </Space>
+          </Card>
+        )}
 
         {canSupplement && emptySupplementFields.length > 0 && (
           <Alert

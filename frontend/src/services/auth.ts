@@ -1,4 +1,5 @@
-import request from './request';
+import request, { getFriendlyErrorMessage } from './request';
+import { AxiosError } from 'axios';
 import type { LoginRequest, LoginResponse, RoleInfo, UserInfo } from './types';
 import { isMockMode, mockDelay } from './mock';
 import { validateUserCredentials, changeUserPassword } from './users';
@@ -149,8 +150,15 @@ export async function login(data: LoginRequest): Promise<LoginResponse> {
     }
     throw new Error('用户名或密码错误');
   }
-  const res = await request.post('/auth/login', data) as RawLoginResponse;
-  return normalizeLoginResponse(res);
+  try {
+    const res = await request.post('/auth/login', data, { silentError: true } as any) as RawLoginResponse;
+    return normalizeLoginResponse(res);
+  } catch (error) {
+    if (error instanceof AxiosError) {
+      throw new Error((error as AxiosError & { _friendlyMsg?: string })._friendlyMsg || getFriendlyErrorMessage(error));
+    }
+    throw error;
+  }
 }
 
 export async function logout(): Promise<void> {
