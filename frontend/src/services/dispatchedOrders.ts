@@ -745,21 +745,43 @@ export function resolveExportDownloadUrl(result: DispatchedOrderExportResult): s
   return `${base}${url.startsWith('/api') ? url : `/api${url.startsWith('/') ? url : `/${url}`}`}`;
 }
 
-export function downloadDispatchedExport(result: DispatchedOrderExportResult, fallbackName: string): void {
+async function downloadBinaryFile(url: string, fileName: string): Promise<void> {
+  const token = typeof window !== 'undefined' && window.localStorage ? window.localStorage.getItem('token') : null;
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  if (!response.ok) {
+    const message = await response.text().catch(() => '');
+    throw new Error(message || `导出文件下载失败 (${response.status})`);
+  }
+  const blob = await response.blob();
+  const blobUrl = window.URL.createObjectURL(blob);
+  try {
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = fileName;
+    a.click();
+  } finally {
+    window.URL.revokeObjectURL(blobUrl);
+  }
+}
+
+export async function downloadDispatchedExport(result: DispatchedOrderExportResult, fallbackName: string): Promise<void> {
   const url = resolveExportDownloadUrl(result);
   if (!url) {
     const blobUrl = window.URL.createObjectURL(new Blob(['mock export data'], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
-    const a = document.createElement('a');
-    a.href = blobUrl;
-    a.download = fallbackName;
-    a.click();
-    window.URL.revokeObjectURL(blobUrl);
+    try {
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = fallbackName;
+      a.click();
+    } finally {
+      window.URL.revokeObjectURL(blobUrl);
+    }
     return;
   }
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = result.fileName || fallbackName;
-  a.click();
+  await downloadBinaryFile(url, result.fileName || fallbackName);
 }
 
 export async function exportDispatchedOrder(id: string, templateId?: string): Promise<DispatchedOrderExportResult> {

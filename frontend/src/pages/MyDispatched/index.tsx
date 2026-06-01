@@ -258,7 +258,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
     setExporting(true);
     try {
       const result = await batchExportDispatchedOrders(ids);
-      downloadDispatchedExport(result, '批量导出子工单.xlsx');
+      await downloadDispatchedExport(result, '批量导出子工单.xlsx');
       message.success('导出成功');
     } catch { message.error('导出失败'); }
     finally { setExporting(false); }

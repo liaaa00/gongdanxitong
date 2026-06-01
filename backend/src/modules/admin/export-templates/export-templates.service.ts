@@ -7,6 +7,7 @@ import { toPageResult } from 'src/common/types/pagination.types';
 import { DispatchedOrder, ExportTemplate, FieldConfig, OperationLog } from 'src/entities';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { DispatchedOrderExportResult } from 'src/modules/dispatched-orders/dispatched-order.types';
+import { fallbackBusinessLabel } from 'src/modules/notifications/notification-display.util';
 import { UploadService } from 'src/modules/upload/upload.service';
 
 interface ExportColumn {
@@ -240,9 +241,9 @@ export class ExportTemplatesService {
   }
 
   private async resolveDefaultTemplate(moduleCode: string, visibleFields: string[]): Promise<ExportTemplate> {
-    const shared = await this.repository.findOne({ where: { moduleCode, isShared: true }, order: { createdAt: 'ASC' } });
+    const shared = await this.repository.findOne({ where: { moduleCode, isShared: true }, order: { createdAt: 'DESC' } });
     if (shared) return shared;
-    return this.repository.create({ id: '', templateName: `${moduleCode}-default`, moduleCode, fieldList: visibleFields.map((fieldCode, order) => ({ fieldCode, alias: fieldCode, order })), createdBy: '', isShared: false });
+    return this.repository.create({ id: '', templateName: `${moduleCode}-default`, moduleCode, fieldList: visibleFields.map((fieldCode, order) => ({ fieldCode, order })), createdBy: '', isShared: false });
   }
 
   private buildResult(
@@ -262,9 +263,10 @@ export class ExportTemplatesService {
   private resolveColumns(template: ExportTemplate, fieldNameMap: Map<string, string>): ExportColumn[] {
     return template.fieldList
       .map((item, index) => {
-        const fieldCode = this.readString(item.fieldCode) ?? this.readString(item.code) ?? '';
-        const rawTitle = this.readString(item.alias) ?? this.readString(item.title) ?? fieldCode;
-        const title = this.isMojibakePlaceholder(rawTitle) ? fieldNameMap.get(fieldCode) ?? fieldCode : rawTitle;
+        const fieldCode = this.resolveFieldCode(item);
+        const fallbackTitle = this.resolveFieldTitle(fieldCode, fieldNameMap);
+        const rawTitle = this.readString(item.alias) ?? this.readString(item.title) ?? '';
+        const title = this.shouldUseFallbackTitle(rawTitle, fieldCode) ? fallbackTitle : rawTitle;
         return { fieldCode, title, order: this.readNumber(item.order) ?? index };
       })
       .filter((item) => item.fieldCode.length > 0)
@@ -288,19 +290,31 @@ export class ExportTemplatesService {
     fieldNameMap: Map<string, string>,
   ): Array<Record<string, unknown>> {
     return fieldList.map((item) => {
-      const fieldCode = this.readString(item.fieldCode) ?? this.readString(item.code) ?? '';
-      const fallbackName = fieldNameMap.get(fieldCode);
+      const fieldCode = this.resolveFieldCode(item);
+      const fallbackName = this.resolveFieldTitle(fieldCode, fieldNameMap);
+      const rawTitle = this.readString(item.alias) ?? this.readString(item.title) ?? '';
+      const normalizedTitle = this.shouldUseFallbackTitle(rawTitle, fieldCode) ? fallbackName ?? fieldCode : rawTitle;
       return {
         ...item,
-        alias: this.normalizeTitleValue(item.alias, fallbackName),
-        title: this.normalizeTitleValue(item.title, fallbackName),
+        alias: normalizedTitle,
+        title: normalizedTitle,
       };
     });
   }
 
-  private normalizeTitleValue(value: unknown, fallbackName?: string): unknown {
-    const title = this.readString(value);
-    return title && this.isMojibakePlaceholder(title) ? fallbackName ?? title : value;
+  private shouldUseFallbackTitle(value: string, fieldCode: string): boolean {
+    return !value
+      || value === fieldCode
+      || this.isMojibakePlaceholder(value)
+      || !/[\u4e00-\u9fff]/.test(value);
+  }
+
+  private resolveFieldCode(item: Record<string, unknown>): string {
+    return this.readString(item.fieldCode) ?? this.readString(item.code) ?? this.readString(item.field_code) ?? '';
+  }
+
+  private resolveFieldTitle(fieldCode: string, fieldNameMap: Map<string, string>): string {
+    return fieldNameMap.get(fieldCode) ?? fallbackBusinessLabel(fieldCode) ?? fieldCode;
   }
 
   private async loadFieldNameMap(): Promise<Map<string, string>> {

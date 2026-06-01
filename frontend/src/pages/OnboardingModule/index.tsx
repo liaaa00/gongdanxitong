@@ -330,7 +330,7 @@ const OnboardingModule: React.FC = () => {
     setExporting(true);
     try {
       const result = await batchExportDispatchedOrders(ids);
-      downloadDispatchedExport(result, `${moduleLabel}子工单.xlsx`);
+      await downloadDispatchedExport(result, `${moduleLabel}子工单.xlsx`);
       message.success('导出成功');
     } catch {
       message.error('导出失败');
