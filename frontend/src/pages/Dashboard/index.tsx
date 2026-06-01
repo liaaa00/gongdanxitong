@@ -64,6 +64,52 @@ const NOTIFICATION_ROLES = [
 
 const CARD_BODY_STYLE: React.CSSProperties = { minHeight: 112 };
 
+type DashboardRoleView = 'admin' | 'businessOwner' | 'businessLeader' | 'businessMember' | 'backend';
+
+const DASHBOARD_ROLE_META: Record<DashboardRoleView, {
+  title: string;
+  subtitle: string;
+  matrixTitle: string;
+  cardTitles: {
+    total: string;
+    processing: string;
+    completed: string;
+    voided: string;
+    messages: string;
+  };
+}> = {
+  admin: {
+    title: '全局运营看板',
+    subtitle: '面向管理员展示全系统工单、后道办理和消息概览。',
+    matrixTitle: '本月全系统节点总表',
+    cardTitles: { total: '本月全量工单', processing: '全局处理中', completed: '全局已完成', voided: '全局已作废', messages: '待关注消息' },
+  },
+  businessOwner: {
+    title: '业务负责人看板',
+    subtitle: '聚焦团队整体发起量、办理结果和异常消息，不展示后道操作入口。',
+    matrixTitle: '本月业务工单总表',
+    cardTitles: { total: '本月业务工单', processing: '业务跟进中', completed: '已完成反馈', voided: '已作废', messages: '业务反馈消息' },
+  },
+  businessLeader: {
+    title: '业务组长看板',
+    subtitle: '默认关注本人/本组工单进展，便于跟进退回、撤回作废结果和字段变更反馈。',
+    matrixTitle: '本月本组工单总表',
+    cardTitles: { total: '本月工单', processing: '跟进中', completed: '已完成', voided: '已作废', messages: '待查看消息' },
+  },
+  businessMember: {
+    title: '业务员看板',
+    subtitle: '展示本人发起工单的进展和后道反馈，减少与团队管理数据混在一起。',
+    matrixTitle: '本月本人工单总表',
+    cardTitles: { total: '本人本月工单', processing: '处理中', completed: '已完成', voided: '已作废', messages: '我的消息' },
+  },
+  backend: {
+    title: '后道办理看板',
+    subtitle: '聚焦已派发到后道节点的待处理、完成和异常消息。',
+    matrixTitle: '本月办理节点总表',
+    cardTitles: { total: '本月派发节点', processing: '待处理/处理中', completed: '已办结', voided: '已作废', messages: '待处理消息' },
+  },
+};
+
 type DashboardMatrixTreeRow = OrderTypeMatrixRow & {
   rowKey: string;
   routePath: string;
@@ -349,6 +395,17 @@ const Dashboard: React.FC = () => {
   const roles = useMemo(() => canonicalRoleCodes(user?.roles), [user?.roles]);
   const canViewLeaderTrend = roles.includes(ROLE.ADMIN) || roles.includes(ROLE.BUSINESS_OWNER);
   const canViewNotifications = roles.some((role) => NOTIFICATION_ROLES.includes(role as typeof NOTIFICATION_ROLES[number]));
+  const roleView = useMemo<DashboardRoleView>(() => {
+    const hasBackendRole = roles.some((role) => BACKEND_ROLES.includes(role as typeof BACKEND_ROLES[number]));
+    const hasBusinessRole = roles.some((role) => BUSINESS_ROLES.includes(role as typeof BUSINESS_ROLES[number]));
+    if (roles.includes(ROLE.ADMIN)) return 'admin';
+    if (roles.includes(ROLE.BUSINESS_OWNER)) return 'businessOwner';
+    if (roles.includes(ROLE.BUSINESS_GROUP_LEADER)) return 'businessLeader';
+    if (roles.includes(ROLE.BUSINESS_GROUP_MEMBER)) return 'businessMember';
+    if (hasBackendRole && !hasBusinessRole) return 'backend';
+    return hasBackendRole ? 'backend' : 'businessMember';
+  }, [roles]);
+  const roleMeta = DASHBOARD_ROLE_META[roleView];
   const dashboardAudience = useMemo<DashboardAudience>(() => {
     const hasBackendRole = roles.some((role) => BACKEND_ROLES.includes(role as typeof BACKEND_ROLES[number]));
     const hasBusinessRole = roles.some((role) => BUSINESS_ROLES.includes(role as typeof BUSINESS_ROLES[number]));
@@ -371,7 +428,7 @@ const Dashboard: React.FC = () => {
 
   // 仪表盘总表按实际子工单模块展示：入职主工单提交后会拆成数据录入、社保公积金、入职联系、劳动合同签订等子工单。
   const matrixDimension = 'node';
-  const matrixTitle = dashboardAudience === 'backend' ? '本月办理节点总表' : '本月工单总表';
+  const matrixTitle = roleMeta.matrixTitle;
 
   const handleMatrixRowClick = (record: DashboardMatrixTreeRow) => {
     setSelectedMatrixRow(record);
@@ -466,7 +523,8 @@ const Dashboard: React.FC = () => {
 
   return (
     <PageContainer header={{
-      title: '仪表盘',
+      title: roleMeta.title,
+      subTitle: roleMeta.subtitle,
       extra: canSwitchDashboardScope ? [
         <Space key="scope-switch" align="center">
           <Text type="secondary">数据范围</Text>
@@ -483,28 +541,27 @@ const Dashboard: React.FC = () => {
       ] : undefined,
     }}>
       <Space direction="vertical" size="large" style={{ width: '100%' }}>
-
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 16 }}>
-          <Card loading={loading} bodyStyle={CARD_BODY_STYLE}>
-            <Statistic title="本月工单总数" value={normalizedCards.total} prefix={<FileTextOutlined />} />
+          <Card loading={loading} styles={{ body: CARD_BODY_STYLE }}>
+            <Statistic title={roleMeta.cardTitles.total} value={normalizedCards.total} prefix={<FileTextOutlined />} />
           </Card>
-          <Card loading={loading} bodyStyle={CARD_BODY_STYLE}>
-            <Statistic title="处理中" value={normalizedCards.processing} prefix={<ClockCircleOutlined />} valueStyle={{ color: '#1677ff' }} />
+          <Card loading={loading} styles={{ body: CARD_BODY_STYLE }}>
+            <Statistic title={roleMeta.cardTitles.processing} value={normalizedCards.processing} prefix={<ClockCircleOutlined />} valueStyle={{ color: '#1677ff' }} />
           </Card>
-          <Card loading={loading} bodyStyle={CARD_BODY_STYLE}>
-            <Statistic title="已完成" value={normalizedCards.completed} prefix={<CheckCircleOutlined />} valueStyle={{ color: '#52c41a' }} />
+          <Card loading={loading} styles={{ body: CARD_BODY_STYLE }}>
+            <Statistic title={roleMeta.cardTitles.completed} value={normalizedCards.completed} prefix={<CheckCircleOutlined />} valueStyle={{ color: '#52c41a' }} />
           </Card>
-          <Card loading={loading} bodyStyle={CARD_BODY_STYLE}>
-            <Statistic title="已作废" value={normalizedCards.voided || 0} prefix={<StopOutlined />} valueStyle={{ color: '#8c8c8c' }} />
+          <Card loading={loading} styles={{ body: CARD_BODY_STYLE }}>
+            <Statistic title={roleMeta.cardTitles.voided} value={normalizedCards.voided || 0} prefix={<StopOutlined />} valueStyle={{ color: '#8c8c8c' }} />
           </Card>
           {canViewNotifications && (
             <Card
               hoverable
               loading={loading}
-              bodyStyle={CARD_BODY_STYLE}
+              styles={{ body: CARD_BODY_STYLE }}
               onClick={() => navigate('/notifications')}
             >
-              <Statistic title="我的消息" value={cards.myMessages} prefix={<BellOutlined />} valueStyle={{ color: '#faad14' }} />
+              <Statistic title={roleMeta.cardTitles.messages} value={cards.myMessages} prefix={<BellOutlined />} valueStyle={{ color: '#faad14' }} />
             </Card>
           )}
         </div>

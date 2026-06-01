@@ -116,7 +116,7 @@ const NOTIFICATION_ROLES = [
 const RAW_MENU: MenuItem[] = [
   { path: '/dashboard', name: '仪表盘', icon: <DashboardOutlined /> },
   {
-    path: '/work-orders',
+    path: '/work-orders-group',
     name: '入职管理',
     icon: <FileTextOutlined />,
     roles: [...ONBOARDING_ROLES],
@@ -129,7 +129,7 @@ const RAW_MENU: MenuItem[] = [
     ],
   },
   {
-    path: '/renewal',
+    path: '/in-service-group',
     name: '在职管理',
     icon: <FileTextOutlined />,
     roles: [...IN_SERVICE_ROLES],
@@ -141,7 +141,7 @@ const RAW_MENU: MenuItem[] = [
     ],
   },
   {
-    path: '/resignation',
+    path: '/offboarding-group',
     name: '离职管理',
     icon: <FileTextOutlined />,
     roles: [...OFFBOARDING_ROLES],
@@ -154,7 +154,7 @@ const RAW_MENU: MenuItem[] = [
     ],
   },
   {
-    path: '/my-work/pending',
+    path: '/my-work-group',
     name: '我的工单',
     icon: <CheckSquareOutlined />,
     children: [
@@ -170,20 +170,44 @@ const RAW_MENU: MenuItem[] = [
   { path: '/admin', name: '管理后台', icon: <SettingOutlined />,
     roles: [ROLE.ADMIN],
     children: [
-      { path: '/admin/users', name: '用户管理', icon: <TeamOutlined /> },
-      { path: '/admin/roles', name: '角色管理', icon: <SafetyOutlined /> },
-      { path: '/admin/departments', name: '部门管理', icon: <ApartmentOutlined /> },
-      { path: '/admin/customers', name: '客户管理', icon: <IdcardOutlined /> },
-      { path: '/admin/module-config', name: '模块化配置', icon: <BranchesOutlined /> },
-      { path: '/admin/fields', name: '字段配置', icon: <FieldStringOutlined /> },
-      { path: '/admin/field-permissions', name: '字段权限', icon: <LockOutlined /> },
-      { path: '/admin/dispatch-config', name: '派发配置', icon: <UserSwitchOutlined /> },
-      { path: '/admin/workflows', name: '工单流程配置', icon: <NodeIndexOutlined />, key: 'admin-workflows' },
-      { path: '/admin/export-templates', name: '导出模板配置', key: 'admin-export-templates' },
-      { path: '/admin/system-settings', name: '门户配置', icon: <SettingOutlined />, key: 'admin-portal-config' },
-      { path: '/admin/ai-settings', name: '智能字段映射', icon: <ExperimentOutlined /> },
-      { path: '/admin/logs', name: '操作日志', icon: <AuditOutlined /> },
-      { path: '/admin/login-debug', name: '登录诊断', icon: <SafetyCertificateOutlined /> },
+      {
+        path: '/admin/base-group',
+        name: '基础配置',
+        key: 'admin-base',
+        icon: <SettingOutlined />,
+        children: [
+          { path: '/admin/users', name: '用户管理', icon: <TeamOutlined /> },
+          { path: '/admin/roles', name: '角色管理', icon: <SafetyOutlined /> },
+          { path: '/admin/departments', name: '部门管理', icon: <ApartmentOutlined /> },
+          { path: '/admin/customers', name: '客户管理', icon: <IdcardOutlined /> },
+          { path: '/admin/system-settings', name: '门户配置', icon: <SettingOutlined />, key: 'admin-portal-config' },
+        ],
+      },
+      {
+        path: '/admin/workflow-group',
+        name: '工单配置',
+        key: 'admin-workflow',
+        icon: <NodeIndexOutlined />,
+        children: [
+          { path: '/admin/module-config', name: '模块化配置', icon: <BranchesOutlined /> },
+          { path: '/admin/fields', name: '表单字段管理', icon: <FieldStringOutlined /> },
+          { path: '/admin/field-permissions', name: '字段填写权限', icon: <LockOutlined /> },
+          { path: '/admin/dispatch-config', name: '派发配置', icon: <UserSwitchOutlined /> },
+          { path: '/admin/workflows', name: '工单流程配置', key: 'admin-workflows' },
+          { path: '/admin/export-templates', name: '导出模板配置', key: 'admin-export-templates' },
+        ],
+      },
+      {
+        path: '/admin/advanced-group',
+        name: '高级配置',
+        key: 'admin-advanced',
+        icon: <ExperimentOutlined />,
+        children: [
+          { path: '/admin/ai-settings', name: '智能字段映射', icon: <ExperimentOutlined /> },
+          { path: '/admin/logs', name: '操作日志', icon: <AuditOutlined /> },
+          { path: '/admin/login-debug', name: '登录诊断', icon: <SafetyCertificateOutlined /> },
+        ],
+      },
     ],
   },
 ];
@@ -287,10 +311,12 @@ const BasicLayout: React.FC = () => {
     [user?.permissions, user?.roles],
   );
 
-  const rootSubmenuKeys = useMemo(
-    () => filteredMenu.filter((item) => item.children?.length).map((item) => item.path),
-    [filteredMenu],
-  );
+  const rootSubmenuKeys = useMemo(() => {
+    const collect = (items: MenuItem[]): string[] => items.flatMap((item) => (
+      item.children?.length ? [item.path, ...collect(item.children)] : []
+    ));
+    return collect(filteredMenu);
+  }, [filteredMenu]);
 
   const canViewNotifications = useMemo(
     () => userHasAnyCanonicalRole(user?.roles, [...NOTIFICATION_ROLES]),
@@ -327,17 +353,18 @@ const BasicLayout: React.FC = () => {
 
   // ★ 计算当前路径应有的父级菜单 keys
   const computeParentKeys = useCallback((menu: MenuItem[], pathname: string): string[] => {
-    const parents: string[] = [];
-    for (const it of menu) {
-      if (!it.children?.length) continue;
-      for (const c of it.children) {
-        if (pathname === c.path || pathname.startsWith(c.path + '/')) {
-          parents.push(it.path);
-          break;
+    const visit = (items: MenuItem[], ancestors: string[]): string[] | null => {
+      for (const item of items) {
+        const nextAncestors = item.children?.length ? [...ancestors, item.path] : ancestors;
+        if (pathname === item.path || pathname.startsWith(item.path + '/')) return ancestors;
+        if (item.children?.length) {
+          const matched = visit(item.children, nextAncestors);
+          if (matched) return matched;
         }
       }
-    }
-    return parents;
+      return null;
+    };
+    return visit(menu, []) || [];
   }, []);
 
   // ★ 每次路径变化时，只保留当前路由所属父菜单，避免点其他父菜单后旧父菜单还展开。
@@ -489,36 +516,35 @@ const BasicLayout: React.FC = () => {
     navigate('/login', { replace: true });
   };
 
-  const handleMenuClick = (path: string) => {
-    const parents = computeParentKeys(filteredMenu, path);
+  const handleMenuClick = (item: MenuItem) => {
+    if (item.children?.length) {
+      const isOpen = openKeys.includes(item.path);
+      setOpenKeys((prev) => (isOpen ? prev.filter((key) => key !== item.path) : Array.from(new Set([...prev, item.path]))));
+      return;
+    }
+    if (!item.path) return;
+    const parents = computeParentKeys(filteredMenu, item.path);
     if (parents.length > 0) {
       setOpenKeys(parents);
     }
-    navigate(path);
+    navigate(item.path);
   };
 
   return (
     <ProLayout
       title="工单管理系统" logo={null} location={location}
       route={{ children: filteredMenu }}
-      menuProps={{
+  menuProps={{
         openKeys,
         onOpenChange: (keys) => {
           const incoming = keys as string[];
-          const latestOpenKey = incoming.find((key) => !openKeys.includes(key));
-          if (!latestOpenKey) {
-            // 关闭当前父菜单时尊重用户操作；若是点击叶子项触发空数组，保留当前路由父级，避免跳转瞬间折叠。
-            const parents = computeParentKeys(filteredMenu, location.pathname);
-            setOpenKeys(incoming.length === 0 && parents.length > 0 ? parents : incoming);
-            return;
-          }
-          setOpenKeys(rootSubmenuKeys.includes(latestOpenKey) ? [latestOpenKey] : incoming);
+          setOpenKeys(incoming);
         },
       }}
       menuItemRender={(item, dom) => (
         <button
           type="button"
-          onClick={() => item.path && handleMenuClick(item.path)}
+          onClick={() => handleMenuClick(item as MenuItem)}
           style={{ all: 'unset', display: 'block', width: '100%', cursor: 'pointer' }}
         >
           {dom}

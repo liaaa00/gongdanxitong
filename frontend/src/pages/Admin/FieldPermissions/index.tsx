@@ -75,9 +75,9 @@ const fromSelectPermission = (v: PermissionSelectValue): PermissionValue => {
 };
 
 const SOURCE_LABEL: Record<string, string> = {
-  customer_filled: '👤 客户填报',
-  agent_supplemented: '📋 业务员补充',
-  process_judgment: '⚡ 流程判断',
+  customer_filled: '客户填写',
+  agent_supplemented: '业务员填写',
+  process_judgment: '系统判断',
 };
 
 const SCOPE_LABEL: Record<string, string> = {
@@ -110,19 +110,19 @@ const DEFAULT_SCENARIOS = [
 
 // 兼容旧 main 场景显示
 const SCENARIO_LABEL: Record<string, string> = {
-  'main': '🏠 新建工单（旧）',
-  'create:onboarding': '🆕 新建-入职管理',
-  'create:in_service': '🆕 新建-在职管理',
-  'create:resignation': '🆕 新建-离职管理',
-  'dispatched:data_entry': '📋 子工单-数据录入',
-  'dispatched:social_insurance': '📋 子工单-社保公积金办理',
-  'dispatched:onboarding_contact': '📋 子工单-入职联系',
-  'dispatched:contract': '📋 子工单-劳动合同签订',
-  'dispatched:renewal_contract': '📋 子工单-续签合同',
-  'dispatched:benefit': '📋 子工单-待遇申报',
-  'dispatched:resignation_contact': '📋 子工单-离职联系',
-  'dispatched:resignation_cert': '📋 子工单-离职证明',
-  'dispatched:data_entry_resign': '📋 子工单-社保停保',
+  'main': '新建工单（旧）',
+  'create:onboarding': '发起入职工单时',
+  'create:in_service': '发起在职工单时',
+  'create:resignation': '发起离职工单时',
+  'dispatched:data_entry': '办理数据录入时',
+  'dispatched:social_insurance': '办理社保公积金时',
+  'dispatched:onboarding_contact': '办理入职联系时',
+  'dispatched:contract': '办理劳动合同签订时',
+  'dispatched:renewal_contract': '办理续签合同时',
+  'dispatched:benefit': '办理待遇申报时',
+  'dispatched:resignation_contact': '办理离职联系时',
+  'dispatched:resignation_cert': '办理离职证明时',
+  'dispatched:data_entry_resign': '办理社保停保时',
 };
 
 /**
@@ -349,9 +349,9 @@ const AdminFieldPermissions: React.FC = () => {
         );
       },
     },
-    { title: '来源', dataIndex: 'source_category', width: 100,
+    { title: '谁来填写', dataIndex: 'source_category', width: 100,
       render: (v: string) => v ? <Tag>{SOURCE_LABEL[v] || v}</Tag> : '—' },
-    { title: '子工单', dataIndex: 'sub_ticket_scope', width: 100,
+    { title: '显示环节', dataIndex: 'sub_ticket_scope', width: 100,
       render: (v: string) => v ? <Tag>{SCOPE_LABEL[v] || v}</Tag> : '—' },
     ...visibleRoles.map((r) => ({
       title: (
@@ -431,17 +431,18 @@ const AdminFieldPermissions: React.FC = () => {
   }) : [];
 
   return (
-    <PageContainer header={{ title: '字段权限' }} extra={[
+    <PageContainer header={{ title: '字段填写权限' }} extra={[
       <Select
         key="role"
         style={{ width: 240 }}
         value={selectedRoleCode}
         onChange={setSelectedRoleCode}
-        placeholder="选择查看角色"
+        placeholder="选择角色"
         options={roleOptions}
         getPopupContainer={(triggerNode) => triggerNode.parentElement || document.body}
       />,
       <Select key="sc" style={{ width: 240 }} value={scenario} onChange={setScenario}
+        placeholder="选择填写场景"
         getPopupContainer={(triggerNode) => triggerNode.parentElement || document.body}
         options={(data?.scenarios || DEFAULT_SCENARIOS).map((s) => ({
           label: SCENARIO_LABEL[s] || s,
@@ -473,22 +474,14 @@ const AdminFieldPermissions: React.FC = () => {
       <Alert
         style={{ marginBottom: 12 }}
         showIcon
-        type="info"
-        message="本页可调整不同业务场景下各角色可见或可编辑的字段。场景=业务阶段×办理节点，例如“入职·数据录入”表示入职流程中的数据录入节点。可见表示该角色能看到字段；可编辑表示该角色能修改字段。"
-      />
-      <Alert style={{ marginBottom: 12 }} showIcon type={isAdmin ? 'info' : 'warning'}
+        type={isAdmin ? 'info' : 'warning'}
         message={
           <span>
-            <strong>角色字段权限矩阵</strong> — 当前查看：{selectedRoleName}。
-            {isAdmin ? '管理员可直接在表格单元格内切换权限，修改完成后点击右上「保存」批量提交。' : '仅可查看，不可修改。'}
-            <br />
-            按<strong>情境</strong>切换：「🆕 新建-入职/在职/离职」为工单发起视角；「📋 子工单」为派单后处理人视角。
-            <br />
-            <small>
-              <Tag color="green">可编辑</Tag> <Tag color="default">只读</Tag> <Tag color="red">隐藏</Tag> <Tag color="orange">脱敏</Tag>
-            </small>
+            当前查看：{selectedRoleName}。选择上方“填写场景”，再设置该角色对每个字段是 <Tag color="green">可编辑</Tag><Tag>只读</Tag><Tag color="red">隐藏</Tag>。
+            {isAdmin ? ' 修改后点击右上角保存。' : ' 当前账号仅可查看。'}
           </span>
-        } />
+        }
+      />
       <Card
         extra={
           <Space>
@@ -497,12 +490,12 @@ const AdminFieldPermissions: React.FC = () => {
               value={sourceFilter}
               onChange={setSourceFilter}
               allowClear
-              placeholder="来源分类"
+              placeholder="谁来填写"
               getPopupContainer={(triggerNode) => triggerNode.parentElement || document.body}
               options={[
-                { label: '👤 客户填报', value: 'customer_filled' },
-                { label: '📋 业务员补充', value: 'agent_supplemented' },
-                { label: '⚡ 流程判断', value: 'process_judgment' },
+                { label: '客户填写', value: 'customer_filled' },
+                { label: '业务员填写', value: 'agent_supplemented' },
+                { label: '系统判断', value: 'process_judgment' },
               ]}
             />
             <Select
@@ -510,10 +503,10 @@ const AdminFieldPermissions: React.FC = () => {
               value={scopeFilter}
               onChange={setScopeFilter}
               allowClear
-              placeholder="子工单范围"
+              placeholder="显示环节"
               getPopupContainer={(triggerNode) => triggerNode.parentElement || document.body}
               options={[
-                { label: '全局', value: 'all' },
+                { label: '所有环节', value: 'all' },
                 { label: '数据录入', value: 'data_entry' },
                 { label: '入职联系', value: 'onboarding_contact' },
                 { label: '劳动合同签订', value: 'contract' },

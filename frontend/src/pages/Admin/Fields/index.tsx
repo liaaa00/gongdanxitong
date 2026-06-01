@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { PageContainer } from '@ant-design/pro-components';
-import { Table, Button, Space, Modal, Form, Input, InputNumber, Select, Switch, Popconfirm, App, Tag } from 'antd';
+import { Table, Button, Space, Modal, Form, Input, InputNumber, Select, Switch, Popconfirm, App, Tag, Alert } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import { getFields, createField, updateField, deleteField } from '@/services/fields';
 import type { FieldConfigItem } from '@/services/fields';
@@ -23,18 +23,18 @@ const ORDER_OPT = [
 ];
 
 const SOURCE_CATEGORY_OPT = [
-  { label: '全部来源', value: '' },
-  { label: '👤 客户填报', value: 'customer_filled' },
-  { label: '📋 业务员补充', value: 'agent_supplemented' },
-  { label: '⚡ 流程判断', value: 'process_judgment' },
+  { label: '全部填写方', value: '' },
+  { label: '客户填写', value: 'customer_filled' },
+  { label: '业务员填写', value: 'agent_supplemented' },
+  { label: '系统判断', value: 'process_judgment' },
 ];
 
 const SUB_TICKET_SCOPE_OPT = [
-  { label: '全部范围', value: '' },
-  { label: '全局可见', value: 'all' },
-  { label: '数据录入', value: 'data_entry' },
-  { label: '入职联系', value: 'onboarding_contact' },
-  { label: '劳动合同签订', value: 'contract' },
+  { label: '全部环节', value: '' },
+  { label: '所有环节', value: 'all' },
+  { label: '数据录入环节', value: 'data_entry' },
+  { label: '入职联系环节', value: 'onboarding_contact' },
+  { label: '劳动合同签订环节', value: 'contract' },
 ];
 
 const COLLECTION_GROUP_OPT = [
@@ -49,13 +49,13 @@ const COLLECTION_GROUP_OPT = [
 const getSelectPopupContainer = (triggerNode: HTMLElement) => triggerNode.parentElement || document.body;
 
 const SOURCE_TAG: Record<string, { color: string; label: string }> = {
-  customer_filled: { color: 'blue', label: '客户填报' },
-  agent_supplemented: { color: 'orange', label: '业务员补充' },
-  process_judgment: { color: 'red', label: '流程判断' },
+  customer_filled: { color: 'blue', label: '客户填写' },
+  agent_supplemented: { color: 'orange', label: '业务员填写' },
+  process_judgment: { color: 'red', label: '系统判断' },
 };
 
 const SCOPE_TAG: Record<string, { color: string; label: string }> = {
-  all: { color: 'green', label: '全局' },
+  all: { color: 'green', label: '所有环节' },
   data_entry: { color: 'cyan', label: '数据录入' },
   onboarding_contact: { color: 'purple', label: '入职联系' },
   contract: { color: 'gold', label: '劳动合同签订' },
@@ -112,31 +112,32 @@ const AdminFields: React.FC = () => {
   };
 
   return (
-    <PageContainer header={{ title: '字段配置' }} extra={[
-      <Select key="ot" style={{ width: 140 }} value={filterType} onChange={(v) => { setFilterType(v); }} options={ORDER_OPT} placeholder="工单类型" getPopupContainer={getSelectPopupContainer} />,
-      <Select key="sc" style={{ width: 140 }} value={filterSource} onChange={(v) => { setFilterSource(v); }} options={SOURCE_CATEGORY_OPT} placeholder="来源分类" getPopupContainer={getSelectPopupContainer} />,
-      <Select key="ss" style={{ width: 140 }} value={filterScope} onChange={(v) => { setFilterScope(v); }} options={SUB_TICKET_SCOPE_OPT} placeholder="子工单范围" getPopupContainer={getSelectPopupContainer} />,
-      <Select key="cg" style={{ width: 160 }} value={filterGroup} onChange={(v) => { setFilterGroup(v); }} options={COLLECTION_GROUP_OPT} placeholder="采集分组" getPopupContainer={getSelectPopupContainer} />,
+    <PageContainer header={{ title: '表单字段管理' }} extra={[
+      <Select key="ot" style={{ width: 140 }} value={filterType} onChange={(v) => { setFilterType(v); }} options={ORDER_OPT} placeholder="适用工单" getPopupContainer={getSelectPopupContainer} />,
+      <Select key="sc" style={{ width: 140 }} value={filterSource} onChange={(v) => { setFilterSource(v); }} options={SOURCE_CATEGORY_OPT} placeholder="谁来填写" getPopupContainer={getSelectPopupContainer} />,
+      <Select key="ss" style={{ width: 140 }} value={filterScope} onChange={(v) => { setFilterScope(v); }} options={SUB_TICKET_SCOPE_OPT} placeholder="显示环节" getPopupContainer={getSelectPopupContainer} />,
+      <Select key="cg" style={{ width: 160 }} value={filterGroup} onChange={(v) => { setFilterGroup(v); }} options={COLLECTION_GROUP_OPT} placeholder="表单分组" getPopupContainer={getSelectPopupContainer} />,
       <Button key="add" type="primary" icon={<PlusOutlined />}
-        onClick={() => { setEditing(null); form.resetFields(); setOpen(true); }}>新建字段</Button>,
+        onClick={() => { setEditing(null); form.resetFields(); setOpen(true); }}>新增表单字段</Button>,
     ]}>
+      <Alert style={{ marginBottom: 12 }} type="info" showIcon message="这里维护工单表单里会出现哪些字段，例如员工姓名、身份证号、合同开始日期。字段是否给某个角色填写，到“字段填写权限”里设置。" />
       <Table rowKey="id" loading={loading} dataSource={data} pagination={{ pageSize: 20 }}
         columns={[
-          { title: '字段代码', dataIndex: 'field_code', width: 180 },
+          { title: '系统标识', dataIndex: 'field_code', width: 180 },
           { title: '字段名称', dataIndex: 'field_name', width: 160 },
           { title: '类型', dataIndex: 'field_type', width: 90,
             render: (v) => TYPE_OPT.find((t) => t.value === v)?.label || v },
-          { title: '来源分类', dataIndex: 'source_category', width: 110,
+          { title: '谁来填写', dataIndex: 'source_category', width: 110,
             render: (v) => {
               const cfg = SOURCE_TAG[v];
               return cfg ? <Tag color={cfg.color}>{cfg.label}</Tag> : <Tag>通用</Tag>;
             } },
-          { title: '子工单范围', dataIndex: 'sub_ticket_scope', width: 120,
+          { title: '显示环节', dataIndex: 'sub_ticket_scope', width: 120,
             render: (v) => {
               const cfg = SCOPE_TAG[v];
               return cfg ? <Tag color={cfg.color}>{cfg.label}</Tag> : <Tag>通用</Tag>;
             } },
-          { title: '采集分组', dataIndex: 'collection_group', width: 100,
+          { title: '表单分组', dataIndex: 'collection_group', width: 100,
             render: (v) => v ? <Tag>{v}</Tag> : '—' },
           { title: '所属工单', dataIndex: 'order_type', width: 90,
             render: (v) => ORDER_OPT.find((o) => o.value === (v || ''))?.label || '—' },
@@ -158,10 +159,10 @@ const AdminFields: React.FC = () => {
           ) },
         ]}
       />
-      <Modal title={editing ? '编辑字段' : '新建字段'} open={open} width={640}
+      <Modal title={editing ? '编辑表单字段' : '新增表单字段'} open={open} width={640}
         onOk={onSave} onCancel={() => { setOpen(false); setEditing(null); form.resetFields(); }} destroyOnHidden>
         <Form form={form} layout="vertical" initialValues={{ field_type: 'text', is_required: false, is_active: true, display_order: 1 }}>
-          <Form.Item name="field_code" label="字段代码" rules={[{ required: true }]}><Input placeholder="请输入字段英文标识" /></Form.Item>
+          <Form.Item name="field_code" label="系统标识" rules={[{ required: true }]}><Input placeholder="例如 employee_name，保存后尽量不要改" /></Form.Item>
           <Form.Item name="field_name" label="字段名称" rules={[{ required: true }]}><Input placeholder="如 员工姓名" /></Form.Item>
           <Form.Item name="field_type" label="字段类型" rules={[{ required: true }]}>
             <Select options={TYPE_OPT} getPopupContainer={getSelectPopupContainer} />
@@ -169,23 +170,23 @@ const AdminFields: React.FC = () => {
           <Form.Item name="order_type" label="所属工单类型">
             <Select allowClear options={ORDER_OPT.filter((o) => o.value !== '')} placeholder="不限定" getPopupContainer={getSelectPopupContainer} />
           </Form.Item>
-          <Form.Item name="source_category" label="来源分类">
+          <Form.Item name="source_category" label="通常由谁填写">
             <Select allowClear options={[
-              { label: '👤 客户填报', value: 'customer_filled' },
-              { label: '📋 业务员补充', value: 'agent_supplemented' },
-              { label: '⚡ 流程判断', value: 'process_judgment' },
+              { label: '客户填写', value: 'customer_filled' },
+              { label: '业务员填写', value: 'agent_supplemented' },
+              { label: '系统判断', value: 'process_judgment' },
             ]} placeholder="不限定" getPopupContainer={getSelectPopupContainer} />
           </Form.Item>
-          <Form.Item name="sub_ticket_scope" label="子工单可见范围">
+          <Form.Item name="sub_ticket_scope" label="主要显示在哪个环节">
             <Select allowClear options={[
-              { label: '全局可见', value: 'all' },
-              { label: '数据录入子工单', value: 'data_entry' },
-              { label: '社保公积金办理子工单', value: 'social_insurance' },
-              { label: '入职联系子工单', value: 'onboarding_contact' },
-              { label: '劳动合同签订子工单', value: 'contract' },
+              { label: '所有环节', value: 'all' },
+              { label: '数据录入环节', value: 'data_entry' },
+              { label: '社保公积金办理环节', value: 'social_insurance' },
+              { label: '入职联系环节', value: 'onboarding_contact' },
+              { label: '劳动合同签订环节', value: 'contract' },
             ]} placeholder="不限定" getPopupContainer={getSelectPopupContainer} />
           </Form.Item>
-          <Form.Item name="collection_group" label="采集分组">
+          <Form.Item name="collection_group" label="表单分组">
             <Select
               allowClear
               options={COLLECTION_GROUP_OPT.filter((o) => o.value !== '')}
@@ -196,7 +197,7 @@ const AdminFields: React.FC = () => {
           <Form.Item name="is_required" label="是否必填" valuePropName="checked"><Switch /></Form.Item>
           <Form.Item name="display_order" label="显示顺序"><InputNumber min={1} /></Form.Item>
           <Form.Item name="placeholder" label="占位提示"><Input /></Form.Item>
-          <Form.Item name="help_text" label="帮助文案"><Input /></Form.Item>
+          <Form.Item name="help_text" label="字段说明"><Input placeholder="给填写人看的简短说明，可不填" /></Form.Item>
           <Form.Item name="is_active" label="启用" valuePropName="checked"><Switch /></Form.Item>
         </Form>
       </Modal>

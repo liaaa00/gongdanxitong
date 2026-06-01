@@ -171,8 +171,8 @@ const AppRoutes: React.FC = () => (
           <Route path="departments" element={<RouteGuard moduleName="部门管理"><AdminDepartments /></RouteGuard>} />
           <Route path="customers" element={<RouteGuard moduleName="客户管理"><AdminCustomers /></RouteGuard>} />
           <Route path="module-config" element={<RouteGuard moduleName="模块化配置"><AdminModuleConfig /></RouteGuard>} />
-          <Route path="fields" element={<RouteGuard moduleName="字段配置"><AdminFields /></RouteGuard>} />
-          <Route path="field-permissions" element={<RouteGuard moduleName="字段权限"><AdminFieldPermissions /></RouteGuard>} />
+          <Route path="fields" element={<RouteGuard moduleName="表单字段管理"><AdminFields /></RouteGuard>} />
+          <Route path="field-permissions" element={<RouteGuard moduleName="字段填写权限"><AdminFieldPermissions /></RouteGuard>} />
           <Route path="dispatch-config" element={<RouteGuard moduleName="派发配置"><AdminDispatchConfig /></RouteGuard>} />
           <Route path="workflows" element={<RouteGuard moduleName="工单流程配置"><AdminWorkflows /></RouteGuard>} />
           <Route path="workflow-config" element={<RouteGuard moduleName="工单流程配置"><AdminWorkflows /></RouteGuard>} />

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { PageContainer } from '@ant-design/pro-components';
 import type { ProColumns, ActionType } from '@ant-design/pro-components';
 import { ProTable } from '@ant-design/pro-components';
-import { Tag, Button, Space, App, Badge, Tabs, Modal, Descriptions, Typography, Tooltip } from 'antd';
+import { Tag, Button, Space, App, Badge, Tabs, Modal, Descriptions, Typography, Tooltip, Segmented } from 'antd';
 import { BellOutlined, EyeOutlined, LinkOutlined } from '@ant-design/icons';
 import { getNotifications, getUnreadCountByBucket } from '@/services/notifications';
 import type { NotificationItem } from '@/services/notifications';
@@ -38,6 +38,20 @@ type NotificationTabKey =
   | 'backend_sla_breached'
   | 'backend_withdraw_void_request'
   | 'system';
+
+type NotificationGroupKey = 'action' | 'reminder' | 'feedback';
+
+const GROUP_LABEL: Record<NotificationGroupKey, string> = {
+  action: '必须处理',
+  reminder: '提醒类',
+  feedback: '结果反馈',
+};
+
+const GROUP_TAB_KEYS: Record<NotificationGroupKey, NotificationTabKey[]> = {
+  action: ['all', 'salesperson_field_changed', 'salesperson_returned', 'backend_creator_modified', 'backend_withdraw_void_request'],
+  reminder: ['all', 'backend_urge', 'backend_sla_warning', 'backend_sla_breached'],
+  feedback: ['all', 'salesperson_withdraw_void_result', 'system'],
+};
 
 // 业务员修改公共字段后，通知后道处理人查看/办理。
 const CREATOR_CHANGED_TYPES = [
@@ -183,11 +197,17 @@ function canProcess(item: NotificationItem): boolean {
   return Boolean(item.entity_id || item.ref_order_id || item.ref_order_no || item.order_no || item.link);
 }
 
+function isNotificationInGroup(item: NotificationItem, group: NotificationGroupKey): boolean {
+  const bucket = classifyNotification(item);
+  return GROUP_TAB_KEYS[group].includes(bucket);
+}
+
 const NotificationsPage: React.FC = () => {
   const navigate = useNavigate();
   const { message } = App.useApp();
   const { hasRole, hasAnyRole } = useAuth();
   const actionRef = useRef<ActionType>();
+  const [activeGroup, setActiveGroup] = useState<NotificationGroupKey>('action');
   const [activeTab, setActiveTab] = useState<NotificationTabKey>('all');
   const [unreadTotal, setUnreadTotal] = useState(0);
   const [unreadByType, setUnreadByType] = useState<Record<string, number>>({});
@@ -205,9 +225,14 @@ const NotificationsPage: React.FC = () => {
     return BACKEND_TAB_KEYS;
   }, [hasAnyRole, hasRole]);
 
+  const groupedVisibleTabKeys = useMemo<NotificationTabKey[]>(() => {
+    const allowed = new Set(GROUP_TAB_KEYS[activeGroup]);
+    return visibleTabKeys.filter((key) => allowed.has(key));
+  }, [activeGroup, visibleTabKeys]);
+
   useEffect(() => {
-    if (!visibleTabKeys.includes(activeTab)) setActiveTab('all');
-  }, [activeTab, visibleTabKeys]);
+    if (!groupedVisibleTabKeys.includes(activeTab)) setActiveTab('all');
+  }, [activeTab, groupedVisibleTabKeys]);
 
   const refreshCounts = async () => {
     try {
@@ -223,7 +248,7 @@ const NotificationsPage: React.FC = () => {
         backend_withdraw_void_request: counts.backend.withdraw_void_request || 0,
         system: counts.system || 0,
       };
-      next.all = visibleTabKeys.filter((key) => key !== 'all').reduce((sum, key) => sum + (next[key] || 0), 0);
+      next.all = groupedVisibleTabKeys.filter((key) => key !== 'all').reduce((sum, key) => sum + (next[key] || 0), 0);
       setUnreadByType(next);
       setUnreadTotal(next.all || 0);
     } catch {
@@ -235,7 +260,7 @@ const NotificationsPage: React.FC = () => {
     refreshCounts();
     const timer = setInterval(refreshCounts, 20000);
     return () => clearInterval(timer);
-  }, [visibleTabKeys]);
+  }, [groupedVisibleTabKeys]);
 
   // 通知不再在“处理”跳转时自动已读；红点由办结/撤回/作废终态驱动消失。
 
@@ -349,7 +374,7 @@ const NotificationsPage: React.FC = () => {
       ? <Badge count={unreadByType.all || 0} size="small" offset={[6, -2]}>全部消息</Badge>
       : <Badge count={unreadByType[key] || 0} size="small" offset={[6, -2]}><Tag color={BIZ_COLOR[key]} style={{ margin: 0 }}>{BIZ_LABEL[key]}</Tag></Badge>,
   }));
-  const tabItems = allTabItems.filter((item) => visibleTabKeys.includes(item.key));
+  const tabItems = allTabItems.filter((item) => groupedVisibleTabKeys.includes(item.key));
 
   return (
     <PageContainer
@@ -361,9 +386,27 @@ const NotificationsPage: React.FC = () => {
         ],
       }}
     >
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', marginBottom: -16 }}>
-        <Tabs activeKey={activeTab} onChange={(key) => { setActiveTab(key as NotificationTabKey); actionRef.current?.reload(); }} items={tabItems} style={{ flex: 1, minWidth: 0 }} />
-      </div>
+      <Space direction="vertical" size="small" style={{ width: '100%', marginBottom: 12 }}>
+        <Space wrap align="center">
+          <Text type="secondary">消息分组</Text>
+          <Segmented<NotificationGroupKey>
+            value={activeGroup}
+            onChange={(value) => {
+              setActiveGroup(value);
+              setActiveTab('all');
+              actionRef.current?.reload();
+            }}
+            options={([
+              { label: GROUP_LABEL.action, value: 'action' },
+              { label: GROUP_LABEL.reminder, value: 'reminder' },
+              { label: GROUP_LABEL.feedback, value: 'feedback' },
+            ] as Array<{ label: string; value: NotificationGroupKey }>)}
+          />
+        </Space>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', marginBottom: -16 }}>
+          <Tabs activeKey={activeTab} onChange={(key) => { setActiveTab(key as NotificationTabKey); actionRef.current?.reload(); }} items={tabItems} style={{ flex: 1, minWidth: 0 }} />
+        </div>
+      </Space>
       <ProTable<NotificationItem>
         actionRef={actionRef}
         columns={columns}
@@ -376,7 +419,9 @@ const NotificationsPage: React.FC = () => {
             includeDispatch: activeTab === 'all' ? true : undefined,
             unread: true,
           });
-          return { data: result.list || [], success: true, total: result.total ?? (result.list || []).length };
+          const rawList = result.list || [];
+          const list = activeTab === 'all' ? rawList.filter((item) => isNotificationInGroup(item, activeGroup)) : rawList;
+          return { data: list, success: true, total: activeTab === 'all' ? list.length : (result.total ?? rawList.length) };
         }}
         rowKey="id"
         search={false}

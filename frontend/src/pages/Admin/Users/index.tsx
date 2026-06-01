@@ -2,14 +2,18 @@ import { useRef, useState } from 'react';
 import { PageContainer } from '@ant-design/pro-components';
 import type { ProColumns, ActionType } from '@ant-design/pro-components';
 import { ProTable } from '@ant-design/pro-components';
-import { Button, Tag, Space, App, Popconfirm, Modal, Form, Input, Switch, Select, Alert, Collapse } from 'antd';
-import { LockOutlined, StopOutlined, CheckCircleOutlined, PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { Button, Tag, Space, App, Popconfirm, Modal, Form, Input, Switch, Select, Alert, Drawer, Descriptions, Typography } from 'antd';
+import { LockOutlined, StopOutlined, CheckCircleOutlined, PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import { getUsers, resetUserPassword, toggleUserActive, createUser, updateUser, deleteUser, getUserPasswordStatus } from '@/services/users';
 import type { UserItem } from '@/services/users';
 import { getRoles, flattenRoles } from '@/services/roles';
 import type { RoleItem } from '@/services/roles';
 import type { PageParams } from '@/services/mock';
 import { useAuth } from '@/hooks/useAuth';
+import { canonicalRoleCode, ROLE } from '@/constants/roles';
+import { ROUTE_VISIBILITY } from '@/config/routeVisibility';
+
+const { Text, Paragraph } = Typography;
 
 // ★ 动态颜色分配：基于组名称 hash，支持任意数量业务组，不写死具体组名
 const GROUP_COLORS = ['blue', 'cyan', 'green', 'geekblue', 'purple', 'orange', 'lime', 'volcano', 'magenta', 'gold'];
@@ -26,6 +30,92 @@ function getGroupColor(name: string): string {
   return GROUP_COLORS[Math.abs(hash) % GROUP_COLORS.length];
 }
 
+const ROLE_NAME_TO_CODE: Record<string, string> = {
+  系统管理员: ROLE.ADMIN,
+  业务负责人: ROLE.BUSINESS_OWNER,
+  业务组长: ROLE.BUSINESS_GROUP_LEADER,
+  业务员: ROLE.BUSINESS_GROUP_MEMBER,
+  数据录入组长: ROLE.DATA_ENTRY_LEADER,
+  共享团队负责人: ROLE.SHARED_TEAM_OWNER,
+  合同专员: ROLE.LABOR_CONTRACT_MEMBER,
+  入离职联系专员: ROLE.ONBOARDING_RESIGNATION_MEMBER,
+  福保负责人: ROLE.SOCIAL_INSURANCE_SPECIALIST,
+};
+
+const PREVIEW_ROUTE_PATHS = new Set([
+  '/dashboard',
+  '/notifications',
+  '/work-orders',
+  '/my-work/initiated',
+  '/my-work/returned',
+  '/my-work/pending',
+  '/my-work/done',
+  '/my-work/team',
+  '/my-work/history',
+  '/onboarding',
+  '/in-service',
+  '/offboarding',
+  '/admin/users',
+  '/admin/roles',
+  '/admin/fields',
+  '/admin/field-permissions',
+  '/admin/dispatch-config',
+  '/admin/workflows',
+]);
+
+const ROUTE_LABELS: Record<string, string> = {
+  '/dashboard': '首页/仪表盘',
+  '/notifications': '消息通知',
+  '/work-orders': '工单列表',
+  '/work-orders/create': '新建工单入口',
+  '/work-orders/import': '批量导入入口',
+  '/my-work/initiated': '我发起的工单',
+  '/my-work/returned': '退回待处理',
+  '/my-work/pending': '后道待处理',
+  '/my-work/done': '后道已办结',
+  '/my-work/team': '团队工单池',
+  '/my-work/history': '历史工单',
+  '/onboarding': '入职管理',
+  '/in-service': '在职管理',
+  '/offboarding': '离职管理',
+  '/admin/users': '用户管理',
+  '/admin/roles': '角色管理',
+  '/admin/fields': '表单字段管理',
+  '/admin/field-permissions': '字段填写权限',
+  '/admin/dispatch-config': '派发配置',
+  '/admin/workflows': '流程配置',
+};
+
+function getRoleCodes(user: UserItem): string[] {
+  return Array.from(new Set((user.roles || []).map((role) => {
+    const raw = role.role_code || ROLE_NAME_TO_CODE[role.role_name] || role.role_name;
+    return canonicalRoleCode(raw);
+  }).filter(Boolean)));
+}
+
+function getVisibleRouteLabels(user: UserItem): string[] {
+  const roleCodes = getRoleCodes(user);
+  return Object.entries(ROUTE_VISIBILITY)
+    .filter(([path, required]) => PREVIEW_ROUTE_PATHS.has(path) && required.some((role) => roleCodes.includes(role)))
+    .map(([path]) => ROUTE_LABELS[path] || path)
+    .filter((label, index, list) => list.indexOf(label) === index);
+}
+
+function getAbilitySummary(user: UserItem): string[] {
+  const roleCodes = getRoleCodes(user);
+  const abilities: string[] = [];
+  if (roleCodes.includes(ROLE.ADMIN)) abilities.push('系统配置和账号权限管理', '查看全局工单与报表');
+  if (roleCodes.includes(ROLE.BUSINESS_OWNER)) abilities.push('查看业务全局数据和报表，不直接办理后道任务');
+  if (roleCodes.includes(ROLE.BUSINESS_GROUP_LEADER)) abilities.push('查看本组工单，作为业务员时可发起/修改/撤回');
+  if (roleCodes.includes(ROLE.BUSINESS_GROUP_MEMBER)) abilities.push('发起工单、跟踪本人发起工单');
+  if (roleCodes.includes(ROLE.DATA_ENTRY_LEADER)) abilities.push('处理数据录入、社保公积金相关节点');
+  if (roleCodes.includes(ROLE.SHARED_TEAM_OWNER)) abilities.push('处理共享团队授权节点，可查看团队办理情况');
+  if (roleCodes.includes(ROLE.LABOR_CONTRACT_MEMBER)) abilities.push('处理劳动合同签订/续签相关节点');
+  if (roleCodes.includes(ROLE.ONBOARDING_RESIGNATION_MEMBER)) abilities.push('处理入职联系、离职联系和离职证明节点');
+  if (roleCodes.includes(ROLE.SOCIAL_INSURANCE_SPECIALIST)) abilities.push('处理社保公积金和停保相关节点');
+  return Array.from(new Set(abilities));
+}
+
 const AdminUsers: React.FC = () => {
   const { message } = App.useApp();
   const { hasRole } = useAuth();
@@ -33,6 +123,8 @@ const AdminUsers: React.FC = () => {
   const actionRef = useRef<ActionType>();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<UserItem | null>(null);
+  const [previewUser, setPreviewUser] = useState<UserItem | null>(null);
+  const [permissionGuideOpen, setPermissionGuideOpen] = useState(false);
   const [form] = Form.useForm();
   const [roleOptions, setRoleOptions] = useState<{ value: string; label: string }[]>([]);
 
@@ -164,9 +256,10 @@ const AdminUsers: React.FC = () => {
       },
     },
     {
-      title: '操作', key: 'actions', width: 220, fixed: 'right', hideInSearch: true,
+      title: '操作', key: 'actions', width: 260, fixed: 'right', hideInSearch: true,
       render: (_, r) => (
-        <Space size={0} wrap style={{ maxWidth: 210, rowGap: 2 }}>
+        <Space size={0} wrap style={{ maxWidth: 250, rowGap: 2 }}>
+          <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => setPreviewUser(r)}>权限预览</Button>
           <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(r)}>编辑</Button>
           <Button type="link" size="small" icon={<LockOutlined />} onClick={() => handleResetPassword(r)}>重置密码</Button>
           <Popconfirm title={r.is_active ? '确定禁用该用户？' : '确定启用该用户？'} onConfirm={() => handleToggleActive(r)}>
@@ -186,30 +279,12 @@ const AdminUsers: React.FC = () => {
 
   return (
     <PageContainer header={{ title: '用户管理' }}>
-      <Collapse style={{ marginBottom: 16 }}
-        items={[{
-          key: 'perm-desc',
-          label: '权限说明',
-          children: (
-              <div style={{ fontSize: 13, lineHeight: 2, color: '#555' }}>
-                <p><Tag color="gold">系统管理员</Tag><strong>李占博、王梓曦</strong> — 拥有系统最高权限，可管理全部工单和所有系统配置。</p>
-                <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
-                <p><Tag color="purple">业务负责人</Tag><strong>敖蕾、薛锟、余琴霞</strong> — 可查看<em>全部业务工单</em>、全局看板、导出数据，<strong>不可直接操作工单</strong>（不接单/不修改/不退回）。</p>
-                <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
-                <p><Tag color="blue">业务组长</Tag><strong>沈文君、陈宇辰、高璐璐、刘程、余维维</strong> — 可查看<em>本组所有工单</em>；自己作为业务员时<strong>可发起/修改/撤回</strong>工单。</p>
-                <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
-                <p><Tag color="default">业务员</Tag><strong>姚怡萍、闫秋月、程裕、周琦青、吴宇飞、赵天琪、许靖、陶明月、徐嘉胤、张埔微</strong> — <em>只看自己发起的工单</em>，可发起和跟踪本组客户信息。</p>
-                <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
-                <p><Tag color="magenta">共享团队负责人</Tag><strong>江璐</strong> — <em>合同签订 + 入离职联系模块全量</em>，可接单/完成/退回/补充/团队查看/改派。</p>
-                <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
-                <p><Tag color="green">合同专员</Tag><strong>杨纯</strong> — <em>合同新签 / 续签 / 待遇申报</em>，负责劳动合同全生命周期管理。</p>
-                <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
-                <p><Tag color="cyan">入离职联系专员</Tag><strong>毛雅妮</strong> — <em>入职联系 / 离职联系 / 离职证明</em>，负责入职联络、离职面谈与证明开具。</p>
-                <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
-                <p><Tag color="orange">数据录入组长</Tag><strong>安娜祯</strong> — <em>数据录入模块全量</em>，执行员工信息和社保公积金录入 + 审核管理。</p>
-              </div>
-          ),
-        }]}
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginBottom: 16 }}
+        message="权限按角色和菜单可见性统一控制。可在用户行点击“权限预览”核对该用户能看到哪些菜单、具备哪些操作范围。"
+        action={<Button size="small" icon={<QuestionCircleOutlined />} onClick={() => setPermissionGuideOpen(true)}>查看说明</Button>}
       />
       <ProTable<UserItem>
         actionRef={actionRef}
@@ -235,6 +310,70 @@ const AdminUsers: React.FC = () => {
         pagination={{ defaultPageSize: 10, showSizeChanger: true }}
         dateFormatter="string"
       />
+      <Drawer
+        title="角色权限说明"
+        open={permissionGuideOpen}
+        width={640}
+        onClose={() => setPermissionGuideOpen(false)}
+      >
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <Paragraph type="secondary">这里保留规则说明，不再占用用户列表首屏空间；具体某个用户请使用“权限预览”。</Paragraph>
+          <Descriptions column={1} size="small" bordered>
+            <Descriptions.Item label={<Tag color="gold">系统管理员</Tag>}>拥有系统最高权限，可管理全部工单和所有系统配置。</Descriptions.Item>
+            <Descriptions.Item label={<Tag color="purple">业务负责人</Tag>}>查看业务全局数据、看板和报表，不直接接单/退回/办结后道任务。</Descriptions.Item>
+            <Descriptions.Item label={<Tag color="blue">业务组长</Tag>}>查看本组工单；自己作为业务员时可发起、修改、撤回工单。</Descriptions.Item>
+            <Descriptions.Item label={<Tag color="default">业务员</Tag>}>只看自己发起的工单，可发起和跟踪本人客户工单。</Descriptions.Item>
+            <Descriptions.Item label={<Tag color="magenta">共享团队负责人</Tag>}>处理合同签订、入离职联系等共享团队授权节点，可查看团队办理情况。</Descriptions.Item>
+            <Descriptions.Item label={<Tag color="green">合同专员</Tag>}>处理劳动合同签订、续签和待遇申报相关节点。</Descriptions.Item>
+            <Descriptions.Item label={<Tag color="cyan">入离职联系专员</Tag>}>处理入职联系、离职联系和离职证明相关节点。</Descriptions.Item>
+            <Descriptions.Item label={<Tag color="orange">数据录入组长</Tag>}>处理数据录入、社保公积金录入和审核相关节点。</Descriptions.Item>
+          </Descriptions>
+        </Space>
+      </Drawer>
+
+      <Drawer
+        title="权限预览"
+        open={Boolean(previewUser)}
+        width={720}
+        onClose={() => setPreviewUser(null)}
+      >
+        {previewUser && (
+          <Space direction="vertical" size="large" style={{ width: '100%' }}>
+            <Descriptions column={1} size="small" bordered>
+              <Descriptions.Item label="用户">{previewUser.real_name || previewUser.username}</Descriptions.Item>
+              <Descriptions.Item label="账号">{previewUser.username}</Descriptions.Item>
+              <Descriptions.Item label="部门/小组">{previewUser.group_name || previewUser.department_name || '-'}</Descriptions.Item>
+              <Descriptions.Item label="状态">{previewUser.is_active ? <Tag color="green">启用</Tag> : <Tag color="red">禁用</Tag>}</Descriptions.Item>
+              <Descriptions.Item label="角色">
+                <Space wrap>
+                  {(previewUser.roles || []).map((role, index) => <Tag key={role.role_id || index}>{role.role_name || role.role_code || '未知角色'}</Tag>)}
+                </Space>
+              </Descriptions.Item>
+            </Descriptions>
+
+            <div>
+              <Text strong>可见菜单/页面</Text>
+              <div style={{ marginTop: 8 }}>
+                <Space wrap>
+                  {getVisibleRouteLabels(previewUser).map((label) => <Tag key={label} color="blue">{label}</Tag>)}
+                  {getVisibleRouteLabels(previewUser).length === 0 && <Text type="secondary">暂无可见菜单，请检查角色配置。</Text>}
+                </Space>
+              </div>
+            </div>
+
+            <div>
+              <Text strong>主要操作范围</Text>
+              <div style={{ marginTop: 8 }}>
+                <Space direction="vertical" size={4}>
+                  {getAbilitySummary(previewUser).map((ability) => <Text key={ability}>• {ability}</Text>)}
+                  {getAbilitySummary(previewUser).length === 0 && <Text type="secondary">暂无明确操作范围，请检查角色配置。</Text>}
+                </Space>
+              </div>
+            </div>
+          </Space>
+        )}
+      </Drawer>
+
       <Modal title={editing ? '编辑用户' : '新建用户'} open={open} onOk={onSave}
         onCancel={() => { setOpen(false); setEditing(null); form.resetFields(); }} destroyOnHidden>
         <Form form={form} layout="vertical" initialValues={{ is_active: true }}>
