@@ -1,5 +1,7 @@
 # Instructions
 
+> ⚠️ 当前演示口径（2026-06-03）：所有 seed/演示账号默认密码统一为 `123456`；`admin123` 是历史旧口径，会返回 401，不可用于演示。本文下方如出现 `admin123`，仅为历史错误快照/旧脚本背景，不代表当前可用密码。
+
 - Following Playwright test failed.
 - Explain why, be concise, respect Playwright best practices.
 - Provide a snippet of code with the fix, if possible.
