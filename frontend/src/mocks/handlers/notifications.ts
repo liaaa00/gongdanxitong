@@ -38,16 +38,14 @@ export const notificationHandlers = [
       salesperson: {
         field_changed: unread.filter((n) => n.biz_type === 'field_change' || n.type === 'field_changed').length,
         returned: unread.filter((n) => n.type === 'returned').length,
-
         withdraw_void_result: unread.filter((n) => ['withdraw_approved', 'withdraw_rejected', 'void_approved', 'void_rejected'].includes(n.type)).length,
+        system: unread.filter((n) => n.biz_type === 'system').length,
       },
       backend: {
-        todo: unread.filter((n) => n.biz_type === 'task' && n.type !== 'returned').length,
-        urge: unread.filter((n) => n.type === 'urge_received').length,
-        sla_warning: unread.filter((n) => n.type === 'sla_warning').length,
-        sla_breached: unread.filter((n) => n.type === 'sla_breach' || n.type === 'sla_breached').length,
+        todo: unread.filter((n) => (n.biz_type === 'task' && n.type !== 'returned') || n.type === 'urge_received' || n.type === 'sla_warning' || n.type === 'sla_breach' || n.type === 'sla_breached').length,
         creator_modified: unread.filter((n) => n.type === 'creator_modified').length,
         withdraw_void_request: unread.filter((n) => ['withdraw_request', 'void_request'].includes(n.type)).length,
+        system: unread.filter((n) => n.biz_type === 'system').length,
       },
       system: unread.filter((n) => n.biz_type === 'system').length,
     });

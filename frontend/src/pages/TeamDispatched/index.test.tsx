@@ -84,7 +84,6 @@ describe('TeamDispatched readonly child-order view', () => {
     render(<TeamDispatched />);
 
     const actions = getColumn('actions');
-    actions?.render?.(null, { id: 'd-1' });
     const link = actions?.render?.(null, { id: 'd-1' }) as React.ReactElement;
     link.props.onClick();
 

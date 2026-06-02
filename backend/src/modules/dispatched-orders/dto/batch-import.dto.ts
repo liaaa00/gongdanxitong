@@ -64,6 +64,11 @@ export class BatchImportDispatchedOrdersDto {
   @MaxLength(512)
   defaultReturnReason?: string;
 
+  /** Standardized status import action. When provided, row free-text result/status is ignored. */
+  @IsOptional()
+  @IsIn(['complete', 'return'])
+  forceAction?: 'complete' | 'return';
+
   @IsArray()
   @ArrayNotEmpty()
   @ArrayMaxSize(500)

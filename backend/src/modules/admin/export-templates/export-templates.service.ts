@@ -207,7 +207,7 @@ export class ExportTemplatesService {
       .leftJoinAndSelect('d.parentOrder', 'w')
       .leftJoinAndSelect('d.handler', 'h')
       .where('d.id IN (:...ids)', { ids })
-      .orderBy('d.createdAt', 'ASC')
+      .orderBy('d.created_at', 'ASC')
       .getMany();
     if (orders.length === 0) throw new NotFoundException('未匹配到子工单');
     return orders;
@@ -233,8 +233,8 @@ export class ExportTemplatesService {
       .leftJoinAndSelect('d.parentOrder', 'w')
       .leftJoinAndSelect('d.handler', 'h')
       .where('d.id IN (:...ids)', { ids })
-      .andWhere('d.moduleCode = :moduleCode', { moduleCode })
-      .orderBy('d.createdAt', 'ASC')
+      .andWhere('d.module_code = :moduleCode', { moduleCode })
+      .orderBy('d.created_at', 'ASC')
       .getMany();
     if (orders.length === 0) throw new NotFoundException('该模板模块下未匹配到子工单');
     return orders;
@@ -242,8 +242,24 @@ export class ExportTemplatesService {
 
   private async resolveDefaultTemplate(moduleCode: string, visibleFields: string[]): Promise<ExportTemplate> {
     const shared = await this.repository.findOne({ where: { moduleCode, isShared: true }, order: { createdAt: 'DESC' } });
-    if (shared) return shared;
-    return this.repository.create({ id: '', templateName: `${moduleCode}-default`, moduleCode, fieldList: visibleFields.map((fieldCode, order) => ({ fieldCode, order })), createdBy: '', isShared: false });
+    if (shared) {
+      shared.fieldList = this.ensureImportIdentityColumns(shared.fieldList);
+      return shared;
+    }
+    const fieldList = this.ensureImportIdentityColumns(visibleFields.map((fieldCode, order) => ({ fieldCode, order: order + 10 })));
+    return this.repository.create({ id: '', templateName: `${moduleCode}-default`, moduleCode, fieldList, createdBy: '', isShared: false });
+  }
+
+  private ensureImportIdentityColumns(fieldList: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+    const identityColumns: Array<Record<string, unknown>> = [
+      { fieldCode: 'order_no', alias: '工单编号', order: 0 },
+      { fieldCode: 'employee_id_card', alias: '员工证件号', order: 1 },
+    ];
+    const existed = new Set(fieldList.map((item) => this.resolveFieldCode(item)));
+    return [
+      ...identityColumns.filter((item) => !existed.has(String(item.fieldCode))),
+      ...fieldList.map((item, index) => ({ ...item, order: this.readNumber(item.order) ?? index + 10 })),
+    ];
   }
 
   private buildResult(

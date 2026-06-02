@@ -124,8 +124,11 @@ type BooleanLike = boolean | string | undefined;
 
 type SalespersonNotificationBucket = 'field_changed' | 'returned' | 'withdraw_void_result' | 'system';
 type SalespersonUnreadBucket = SalespersonNotificationBucket;
-type BackendNotificationBucket = 'todo' | 'urge' | 'sla_warning' | 'sla_breached' | 'creator_modified' | 'withdraw_void_request' | 'system';
-type BackendUnreadBucket = BackendNotificationBucket;
+// 展示/处理逻辑只保留粗分类；催办、SLA 预警/超时统一归入 todo。
+type BackendNotificationBucket = 'todo' | 'creator_modified' | 'withdraw_void_request' | 'system';
+// 兼容旧版前端/测试读取这些细分计数字段，但业务上不再单独递增。
+type LegacyBackendUnreadBucket = 'urge' | 'sla_warning' | 'sla_breached';
+type BackendUnreadBucket = BackendNotificationBucket | LegacyBackendUnreadBucket;
 type NotificationBucket = SalespersonNotificationBucket | BackendNotificationBucket;
 
 interface NotificationWhereOptions {
@@ -569,12 +572,20 @@ export class NotificationService {
       return;
     }
 
-    if (bucket === 'todo' || bucket === 'creator_modified' || bucket === 'withdraw_void_request') {
-      counts.backend[bucket] += 1;
+    if (bucket === 'todo') {
+      counts.backend.todo += 1;
+      return;
+    }
+    if (bucket === 'creator_modified') {
+      counts.backend.creator_modified += 1;
+      return;
+    }
+    if (bucket === 'withdraw_void_request') {
+      counts.backend.withdraw_void_request += 1;
       return;
     }
 
-    counts.backend[bucket] += 1;
+    counts.system += 1;
   }
 
   private isCanceledUrgeFeedback(bizType: string): boolean {
@@ -594,13 +605,13 @@ export class NotificationService {
       return 'field_changed';
     }
     if (normalized.includes('sla_breached') || normalized.includes('sla_breach') || normalized.includes('breached') || normalized.includes('breach')) {
-      return 'sla_breached';
+      return 'todo';
     }
     if (normalized.includes('sla_warning') || normalized.includes('sla_warn') || normalized.includes('warning') || normalized.includes('timeout')) {
-      return 'sla_warning';
+      return 'todo';
     }
     if (normalized.includes('urge')) {
-      return 'urge';
+      return 'todo';
     }
     if (normalized.includes('withdraw_request') || normalized.includes('void_request')) {
       return 'withdraw_void_request';
@@ -844,7 +855,7 @@ export class NotificationService {
   }
 
   private toBackendCategory(bucket: NotificationBucket): BackendNotificationBucket | null {
-    if (bucket === 'todo' || bucket === 'urge' || bucket === 'sla_warning' || bucket === 'sla_breached' || bucket === 'creator_modified' || bucket === 'withdraw_void_request' || bucket === 'system') {
+    if (bucket === 'todo' || bucket === 'creator_modified' || bucket === 'withdraw_void_request' || bucket === 'system') {
       return bucket;
     }
     return null;

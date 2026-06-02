@@ -1,4 +1,4 @@
-import { firstValueFrom } from 'rxjs';
+﻿import { firstValueFrom } from 'rxjs';
 import { take } from 'rxjs/operators';
 import { Repository } from 'typeorm';
 import { DispatchedOrder, FieldPermissionMode, FieldSupplementLog, FieldSupplementRule, Notification, User, WorkOrder } from 'src/entities';
@@ -306,7 +306,7 @@ describe('NotificationService read response and filters', () => {
     await expect(service.countUnreadByBucket('user-1')).resolves.toEqual({
       total: 11,
       salesperson: { field_changed: 2, returned: 1, withdraw_void_result: 1, system: 1 },
-      backend: { todo: 0, urge: 1, sla_warning: 1, sla_breached: 1, creator_modified: 1, withdraw_void_request: 2, system: 1 },
+      backend: { todo: 3, urge: 0, sla_warning: 0, sla_breached: 0, creator_modified: 1, withdraw_void_request: 2, system: 1 },
       system: 1,
     });
     expect(repo.find).toHaveBeenCalledWith({
@@ -423,3 +423,4 @@ describe('Field-change notification generation', () => {
     }));
   });
 });
+

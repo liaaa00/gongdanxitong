@@ -58,8 +58,8 @@ export interface NotificationItem {
   contextFields?: Record<string, unknown>;
 }
 
-export type SalespersonNotificationBucket = 'field_changed' | 'returned' | 'withdraw_void_result';
-export type BackendNotificationBucket = 'todo' | 'urge' | 'sla_warning' | 'sla_breached' | 'creator_modified' | 'withdraw_void_request';
+export type SalespersonNotificationBucket = 'field_changed' | 'returned' | 'withdraw_void_result' | 'system';
+export type BackendNotificationBucket = 'todo' | 'creator_modified' | 'withdraw_void_request' | 'system';
 export type NotificationBucketKey = SalespersonNotificationBucket | BackendNotificationBucket | 'system';
 
 export interface UnreadCountByBucket {
@@ -71,8 +71,8 @@ export interface UnreadCountByBucket {
 
 const EMPTY_BUCKET_COUNTS: UnreadCountByBucket = {
   total: 0,
-  salesperson: { field_changed: 0, returned: 0, withdraw_void_result: 0 },
-  backend: { todo: 0, urge: 0, sla_warning: 0, sla_breached: 0, creator_modified: 0, withdraw_void_request: 0 },
+  salesperson: { field_changed: 0, returned: 0, withdraw_void_result: 0, system: 0 },
+  backend: { todo: 0, creator_modified: 0, withdraw_void_request: 0, system: 0 },
   system: 0,
 };
 
@@ -92,10 +92,10 @@ function normalizeBizType(value: string | undefined | null): string {
 export function getNotificationBucket(item: Pick<NotificationItem, 'biz_type' | 'type' | 'title' | 'content'>): NotificationBucketKey {
   const raw = `${normalizeBizType(item.biz_type)} ${normalizeBizType(item.type)} ${item.title || ''} ${item.content || ''}`.toLowerCase();
   if (raw.includes('system')) return 'system';
-  if (raw.includes('sla_breached') || raw.includes('sla_breach') || raw.includes('breached') || raw.includes('breach') || raw.includes('已超时') || raw.includes('超期')) return 'sla_breached';
-  if (raw.includes('sla_warning') || raw.includes('sla_warn') || raw.includes('warning') || raw.includes('timeout') || raw.includes('即将超时') || raw.includes('预警')) return 'sla_warning';
-  if (raw.includes('urge_replied') || raw.includes('urge_result')) return 'urge';
-  if (raw.includes('urge_received') || raw.includes('urge') || raw.includes('催办')) return 'urge';
+  if (raw.includes('sla_breached') || raw.includes('sla_breach') || raw.includes('breached') || raw.includes('breach') || raw.includes('已超时') || raw.includes('超期')) return 'todo';
+  if (raw.includes('sla_warning') || raw.includes('sla_warn') || raw.includes('warning') || raw.includes('timeout') || raw.includes('即将超时') || raw.includes('预警')) return 'todo';
+  if (raw.includes('urge_replied') || raw.includes('urge_result')) return 'todo';
+  if (raw.includes('urge_received') || raw.includes('urge') || raw.includes('催办')) return 'todo';
   if (raw.includes('withdraw_request') || raw.includes('void_request') || raw.includes('creator_withdraw') || raw.includes('creator_void') || raw.includes('撤回申请') || raw.includes('作废申请')) return 'withdraw_void_request';
   if (raw.includes('withdraw_approved') || raw.includes('withdraw_rejected') || raw.includes('void_approved') || raw.includes('void_rejected') || raw.includes('withdraw_void_result')) return 'withdraw_void_result';
   if (raw.includes('dispatched_returned') || raw.includes('returned') || raw.includes('return') || raw.includes('退回')) return 'returned';
@@ -130,14 +130,16 @@ function normalizeUnreadCountByBucket(raw: unknown): UnreadCountByBucket {
       field_changed: Number(salesperson.field_changed ?? 0),
       returned: Number(salesperson.returned ?? 0),
       withdraw_void_result: Number(salesperson.withdraw_void_result ?? 0),
+      system: Number(salesperson.system ?? 0),
     },
     backend: {
-      todo: Number(backend.todo ?? 0),
-      urge: Number(backend.urge ?? 0),
-      sla_warning: Number(backend.sla_warning ?? backend.slaWarning ?? 0),
-      sla_breached: Number(backend.sla_breached ?? backend.sla_breach ?? backend.slaBreached ?? backend.sla ?? 0),
+      todo: Number(backend.todo ?? 0)
+        + Number(backend.urge ?? 0)
+        + Number(backend.sla_warning ?? backend.slaWarning ?? 0)
+        + Number(backend.sla_breached ?? backend.sla_breach ?? backend.slaBreached ?? backend.sla ?? 0),
       creator_modified: Number(backend.creator_modified ?? 0),
       withdraw_void_request: Number(backend.withdraw_void_request ?? 0),
+      system: Number(backend.system ?? 0),
     },
     system: Number(source.system ?? 0),
   };

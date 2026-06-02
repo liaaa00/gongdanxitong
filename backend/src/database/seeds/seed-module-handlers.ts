@@ -1,5 +1,5 @@
 import { DataSource } from 'typeorm';
-import { DispatchedOrder, ModuleHandler, User } from 'src/entities';
+import { ModuleHandler, User } from 'src/entities';
 
 const moduleHandlerSeeds: Array<{
   moduleCode: string;
@@ -21,19 +21,22 @@ const moduleHandlerSeeds: Array<{
   { moduleCode: 'resignation_cert', username: 'maoyani', weight: 10, isBackup: false },
   { moduleCode: 'resignation_cert', username: 'jianglu', weight: 1, isBackup: true },
 
-  // 社保公积金办理：由福利保障部傅倩雯负责，不再归共享团队处理。
-  { moduleCode: 'social_insurance', username: 'fuqianwen', weight: 10, isBackup: false },
-
-  // 福利/社保模块统一使用 benefit_apply，不再使用 social_security。
-  { moduleCode: 'benefit_apply', username: 'yangchun', weight: 10, isBackup: false },
-  { moduleCode: 'benefit_apply', username: 'jianglu', weight: 1, isBackup: true },
-
   // 数据录入模块：安娜珍。
   { moduleCode: 'data_entry', username: 'annazhen', weight: 10, isBackup: false },
 ];
 
 const managedModules = Array.from(new Set(moduleHandlerSeeds.map((seed) => seed.moduleCode)));
 const deprecatedModules = ['social_security'];
+
+// 0602 业务最终口径：社保公积金办理（含入职/离职拆分）与待遇申报暂不绑定负责人，
+// 负责人留空，不强行绑定付倩文/杨纯/江璐。任何遗留绑定都需置为 inactive，
+// 保证后端不会把这些模块的可操作人权限分配给共享团队（含江璐）。
+const vacatedModules = [
+  'social_insurance',
+  'onboarding_social_insurance',
+  'resignation_social_insurance',
+  'benefit_apply',
+];
 
 export async function seedModuleHandlers(dataSource: DataSource): Promise<void> {
   const userRepo = dataSource.getRepository(User);
@@ -82,14 +85,12 @@ export async function seedModuleHandlers(dataSource: DataSource): Promise<void> 
     .where('module_code IN (:...moduleCodes)', { moduleCodes: deprecatedModules })
     .execute();
 
-  const welfareOwner = await userRepo.findOne({ where: { username: 'fuqianwen' } });
-  if (welfareOwner) {
-    await dataSource.getRepository(DispatchedOrder)
-      .createQueryBuilder()
-      .update(DispatchedOrder)
-      .set({ handlerId: welfareOwner.id })
-      .where('module_code = :moduleCode', { moduleCode: 'social_insurance' })
-      .andWhere('status IN (:...statuses)', { statuses: ['pending', 'processing', 'returned'] })
-      .execute();
-  }
+  // 0602 最终口径：社保公积金/待遇申报负责人留空。将任何遗留的处理人绑定置为 inactive，
+  // 确保后端权限兜底不会把这些模块的可操作人权限发放给共享团队（含江璐）。
+  await moduleHandlerRepo
+    .createQueryBuilder()
+    .update(ModuleHandler)
+    .set({ isActive: false })
+    .where('module_code IN (:...moduleCodes)', { moduleCodes: vacatedModules })
+    .execute();
 }

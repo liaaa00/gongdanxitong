@@ -119,7 +119,7 @@ export class DispatchedOrderService {
     this.applyCommonFilters(qb, { ...query, __currentUserId: user.sub } as ListDispatchedOrderQueryDto & { __currentUserId: string });
 
     const [rows, total] = await qb
-      .orderBy('d.created_at', 'DESC')
+      .orderBy('d.createdAt', 'DESC')
       .offset((page - 1) * pageSize)
       .limit(pageSize)
       .getManyAndCount();
@@ -349,7 +349,6 @@ export class DispatchedOrderService {
       }));
     }
     await this.notifyCreator(order, 'dispatched_returned', '子工单已退回', reason);
-    await this.markTodoNotificationsReadForDispatchedOrder(order, user.sub);
     await this.writeLog('dispatched_order', id, user.sub, beforeStatus === DispatchedOrderStatus.COMPLETED ? 'return_completed' : 'return', beforeSnapshot, { returnReason: reason, returnedFields: payload.returnedFields ?? [] });
 
     return this.findOne(id, user);
@@ -1058,6 +1057,22 @@ export class DispatchedOrderService {
     throw businessException(4224, HttpStatus.CONFLICT, '匹配到多条子工单，请在导入表中补充工单号');
   }
 
+  private readImportAlias(raw: Record<string, unknown> | undefined, aliases: string[]): string | null {
+    if (!raw) return null;
+    const normalized = new Map<string, unknown>();
+    for (const [key, value] of Object.entries(raw)) {
+      const textKey = String(key || '').trim();
+      normalized.set(textKey, value);
+      normalized.set(textKey.replace(/\s+/g, '').replace(/[：:]/g, '').toLowerCase(), value);
+    }
+    for (const alias of aliases) {
+      const value = normalized.get(alias) ?? normalized.get(alias.replace(/\s+/g, '').replace(/[：:]/g, '').toLowerCase());
+      const text = this.readImportString(value);
+      if (text) return text;
+    }
+    return null;
+  }
+
   private normalizeImportResult(value: unknown): 'complete' | 'return' | null {
     const raw = this.readImportString(value)?.toLowerCase();
     if (!raw) return null;
@@ -1151,10 +1166,6 @@ export class DispatchedOrderService {
       'creator_withdraw_request',
       'creator_void_request',
       'creator_urge',
-      'urge_received',
-      'sla_warning',
-      'sla_breach',
-      'sla_breached',
     ];
     const rows = await this.notificationRepository.find({
       where: {
@@ -1190,26 +1201,6 @@ export class DispatchedOrderService {
     if (value === undefined || value === null) return null;
     const text = String(value).trim();
     return text.length > 0 ? text : null;
-  }
-
-  private readImportAlias(raw: Record<string, unknown> | undefined, aliases: string[]): string | null {
-    if (!raw) return null;
-    const normalized = new Map<string, unknown>();
-    for (const [key, value] of Object.entries(raw)) {
-      const textKey = String(key || '').trim();
-      normalized.set(textKey, value);
-      normalized.set(this.normalizeImportHeader(textKey), value);
-    }
-    for (const alias of aliases) {
-      const value = normalized.get(alias) ?? normalized.get(this.normalizeImportHeader(alias));
-      const text = this.readImportString(value);
-      if (text) return text;
-    }
-    return null;
-  }
-
-  private normalizeImportHeader(value: string): string {
-    return value.replace(/\s+/g, '').replace(/[：:]/g, '').toLowerCase();
   }
 
   private syncWorkOrderListFields(workOrder: WorkOrder): void {
@@ -1598,7 +1589,6 @@ export class DispatchedOrderService {
 
   private async assertCanHandle(order: DispatchedOrder, user: JwtUserPayload): Promise<void> {
     if (this.isAdmin(user) || order.handlerId === user.sub) return;
-    if (!order.handlerId && await this.hasModuleAccess(user.sub, order.moduleCode, user.roles)) return;
     if (await this.canActAsModuleSupervisor(user, order.moduleCode)) return;
     throw businessException(5000, HttpStatus.FORBIDDEN, '无权操作该子工单');
   }
@@ -1606,7 +1596,8 @@ export class DispatchedOrderService {
   private async assertCanBatchImportModule(moduleCode: string, user: JwtUserPayload): Promise<void> {
     if (this.isAdmin(user)) return;
     if (await this.hasModuleAccess(user.sub, moduleCode, user.roles)) return;
-    if (hasAnyRole(user.roles, BUSINESS_MEMBER_ROLES) || hasAnyRole(user.roles, BUSINESS_LEADER_ROLES) || hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES)) {
+    const roleCodes = user.roles ?? [];
+    if (hasAnyRole(roleCodes, BUSINESS_MEMBER_ROLES) || roleCodes.some((role) => ['business_owner', 'business_group_leader', 'business_manager'].includes(role))) {
       throw businessException(5000, HttpStatus.FORBIDDEN, '业务侧账号不可导入办理子工单');
     }
     throw businessException(5000, HttpStatus.FORBIDDEN, '无权导入办理该子工单类型');

@@ -120,7 +120,7 @@ function recentMonths(n: number, endMonth?: string): Date[] {
   return out;
 }
 
-function isSameMonth(iso: string | undefined, d: Date): boolean {
+function isSameMonth(iso: string | null | undefined, d: Date): boolean {
   if (!iso) return false;
   const x = new Date(iso);
   if (Number.isNaN(x.getTime())) return false;

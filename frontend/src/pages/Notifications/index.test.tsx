@@ -1,8 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import NotificationsPage from './index';
-import { getNotifications, markNotificationsReadByQuery } from '@/services/notifications';
+import { getNotifications, markNotificationRead, markNotificationsReadByQuery } from '@/services/notifications';
 
 const { notification } = vi.hoisted(() => ({
   notification: {
@@ -16,9 +16,8 @@ const { notification } = vi.hoisted(() => ({
       { field_code: 'contract_feedback', old_value: '待确认', new_value: '已完成签订' },
     ],
     actorName: '杨纯',
-    entity_type: 'dispatched_order',
-    action: 'update',
     entity_type: 'work_order',
+    action: 'update',
     entity_id: 'wo-1',
     link: '/work-orders/wo-1',
     is_read: false,
@@ -43,8 +42,8 @@ vi.mock('@/services/notifications', () => ({
   deleteNotification: vi.fn().mockResolvedValue(undefined),
   getUnreadCountByBucket: vi.fn().mockResolvedValue({
     total: 2,
-    salesperson: { field_changed: 1, returned: 0, urge_feedback: 0, withdraw_void_result: 0 },
-    backend: { todo: 0, urge: 0, sla_warning: 0, sla_breached: 0, creator_modified: 1, withdraw_void_request: 0 },
+    salesperson: { field_changed: 1, returned: 0, withdraw_void_result: 0, system: 0 },
+    backend: { todo: 0, creator_modified: 1, withdraw_void_request: 0, system: 0 },
     system: 0,
   }),
 }));
@@ -57,64 +56,30 @@ vi.mock('@/hooks/useAuth', () => ({
 }));
 
 describe('Notifications Page', () => {
-  it('renders page title', async () => {
-    render(
-      <MemoryRouter>
-        <NotificationsPage />
-      </MemoryRouter>,
-    );
-    await waitFor(() => {
-      expect(screen.getByText('消息通知')).toBeTruthy();
-    }, { timeout: 5000 });
+  beforeEach(() => {
+    vi.clearAllMocks();
   });
 
-  it('does not render manual read buttons', async () => {
-    render(
-      <MemoryRouter>
-        <NotificationsPage />
-      </MemoryRouter>,
-    );
+  it('renders simplified tabs and read filter', async () => {
+    render(<MemoryRouter><NotificationsPage /></MemoryRouter>);
+
     await waitFor(() => {
       expect(screen.getByText('消息通知')).toBeTruthy();
-    }, { timeout: 5000 });
-    expect(screen.queryByText('全部已读')).toBeNull();
-    expect(screen.queryByText('当前分类已读')).toBeNull();
-  });
-
-  it('renders tab filters', async () => {
-    render(
-      <MemoryRouter>
-        <NotificationsPage />
-      </MemoryRouter>,
-    );
-    await waitFor(() => {
       expect(screen.getByText('全部消息')).toBeTruthy();
-      expect(screen.getByText('后道数据修改')).toBeTruthy();
-      expect(screen.getByText('业务员数据修改')).toBeTruthy();
-    }, { timeout: 5000 });
-  });
-
-  it('renders table container', async () => {
-    const { container } = render(
-      <MemoryRouter>
-        <NotificationsPage />
-      </MemoryRouter>,
-    );
-    await waitFor(() => {
-      expect(container.textContent).toContain('消息通知');
+      expect(screen.getByText('待处理')).toBeTruthy();
+      expect(screen.getByText('字段变更')).toBeTruthy();
+      expect(screen.queryByText('催办')).toBeNull();
+      expect(screen.queryByText('即将超时')).toBeNull();
+      expect(screen.getByText('未读')).toBeTruthy();
+      expect(screen.getByText('已读')).toBeTruthy();
     }, { timeout: 5000 });
   });
 
   it('shows notification list after loading', async () => {
-    const { container } = render(
-      <MemoryRouter>
-        <NotificationsPage />
-      </MemoryRouter>,
-    );
+    const { container } = render(<MemoryRouter><NotificationsPage /></MemoryRouter>);
+
     await waitFor(() => {
       expect(screen.getByText('Test Notification')).toBeTruthy();
-    }, { timeout: 5000 });
-    await waitFor(() => {
       expect(container.textContent).toContain('劳动合同签订反馈');
       expect(container.textContent).toContain('待确认');
       expect(container.textContent).toContain('已完成签订');
@@ -122,28 +87,35 @@ describe('Notifications Page', () => {
     }, { timeout: 5000 });
   });
 
-  it('uses field_changed bucket when opening the backend data modification tab', async () => {
-    render(
-      <MemoryRouter>
-        <NotificationsPage />
-      </MemoryRouter>,
-    );
-    fireEvent.click(await screen.findByText('后道数据修改'));
+  it('uses read/unread filters and defaults to all messages', async () => {
+    render(<MemoryRouter><NotificationsPage /></MemoryRouter>);
+
+    await waitFor(() => expect(getNotifications).toHaveBeenCalledWith(expect.objectContaining({ includeDispatch: true })));
+    expect(getNotifications).not.toHaveBeenCalledWith(expect.objectContaining({ unread: true }));
+
+    const readFilter = screen.getByRole('radiogroup');
+    fireEvent.click(within(readFilter).getByText('未读'));
+    await waitFor(() => expect(getNotifications).toHaveBeenCalledWith(expect.objectContaining({ unread: true, includeDispatch: true })));
+
+    fireEvent.click(within(readFilter).getByText('已读'));
+    await waitFor(() => expect(getNotifications).toHaveBeenCalledWith(expect.objectContaining({ isRead: true, includeDispatch: true })));
+  });
+
+  it('uses field_changed bucket for the simplified field-change tab', async () => {
+    render(<MemoryRouter><NotificationsPage /></MemoryRouter>);
+
+    fireEvent.click(await screen.findByText('字段变更'));
     await waitFor(() => {
       expect(getNotifications).toHaveBeenCalledWith(expect.objectContaining({ bucket: 'field_changed' }));
     }, { timeout: 5000 });
   });
 
-  it('keeps read lifecycle tied to processing instead of category read actions', async () => {
-    render(
-      <MemoryRouter>
-        <NotificationsPage />
-      </MemoryRouter>,
-    );
-    fireEvent.click(await screen.findByText('后道数据修改'));
-    await waitFor(() => {
-      expect(getNotifications).toHaveBeenCalledWith(expect.objectContaining({ bucket: 'field_changed' }));
-    }, { timeout: 5000 });
+  it('has only single-message read action and process action', async () => {
+    render(<MemoryRouter><NotificationsPage /></MemoryRouter>);
+
+    fireEvent.click(await screen.findByRole('button', { name: '已读' }));
+    await waitFor(() => expect(markNotificationRead).toHaveBeenCalledWith('n-1'));
+    expect(screen.queryByText('全部已读')).toBeNull();
     expect(screen.queryByText('当前分类已读')).toBeNull();
     expect(markNotificationsReadByQuery).not.toHaveBeenCalled();
   });

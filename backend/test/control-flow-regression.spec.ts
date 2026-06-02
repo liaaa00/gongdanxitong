@@ -207,4 +207,84 @@ describe('five control-flow regression coverage', () => {
     bracket.whereFactory(scope);
     expect(scope.orWhere).toHaveBeenCalledWith('d.handler_id IS NULL AND d.module_code IN (:...modules)', { modules: [moduleCode] });
   });
+
+  // 0602 C/目标-B：社保公积金办理（含入职/离职拆分）与待遇申报暂留空，不绑定 fuqianwen/yangchun/jianglu。
+  // 江璐(shared_leader + contract_specialist + onboarding_specialist) 的可见模块只能来自其合同/入离职处理人绑定，
+  // 绝不能因为遗留 seed 或角色兜底而看到 data_entry / social_insurance / benefit_apply。
+  it('shared leader 江璐 module scope never includes data_entry / social_insurance / benefit_apply', async () => {
+    const jianglu: JwtUserPayload = {
+      sub: 'jianglu',
+      username: 'jianglu',
+      roles: ['shared_leader', 'contract_specialist', 'onboarding_specialist'],
+    };
+    // 江璐实际生效的处理人绑定：合同 / 续签 / 入职联系 / 离职联系 / 离职证明（备份），不含社保/待遇/数据录入。
+    const jiangluHandlerModules = ['contract', 'renewal_contract', 'onboarding_contact', 'resignation_contact', 'resignation_cert'];
+    const forbiddenModules = ['data_entry', 'social_insurance', 'onboarding_social_insurance', 'resignation_social_insurance', 'benefit_apply'];
+
+    const qb = {
+      leftJoinAndSelect: jest.fn(),
+      andWhere: jest.fn(),
+      orderBy: jest.fn(),
+      offset: jest.fn(),
+      limit: jest.fn(),
+      getManyAndCount: jest.fn(async () => [[], 0]),
+    };
+    Object.values(qb).forEach((fn) => typeof fn === 'function' && (fn as jest.Mock).mockReturnValue(qb));
+    qb.getManyAndCount.mockResolvedValue([[], 0]);
+    const dispatchedRepo = repoMock<DispatchedOrder>({ createQueryBuilder: jest.fn(() => qb) });
+    const moduleHandlerRepo = repoMock<ModuleHandler>({
+      find: jest.fn(async () => jiangluHandlerModules.map((moduleCode) => ({ moduleCode, handlerId: 'jianglu', isActive: true } as ModuleHandler))),
+    });
+    const userRoleRepo = repoMock<UserRole>({ find: jest.fn(async () => [{ role: { level: RoleLevel.SUPERVISOR } } as UserRole]) });
+    const { service } = makeService({ dispatchedRepo, moduleHandlerRepo, userRoleRepo });
+
+    await service.findAll({ page: 1, pageSize: 20 } as never, jianglu);
+
+    const bracket = qb.andWhere.mock.calls[0][0] as { whereFactory: (scope: { where: jest.Mock; orWhere: jest.Mock }) => void };
+    const scope = { where: jest.fn(), orWhere: jest.fn() };
+    bracket.whereFactory(scope);
+
+    // 监督级可见本模块全部子单：scope 必须按 module_code 限定，且模块集合不含任何被禁模块。
+    const moduleScopeCall = scope.orWhere.mock.calls.find(([clause]) => clause === 'd.module_code IN (:...modules)');
+    expect(moduleScopeCall).toBeDefined();
+    const scopedModules = (moduleScopeCall![1] as { modules: string[] }).modules;
+    expect(scopedModules.sort()).toEqual([...jiangluHandlerModules].sort());
+    for (const forbidden of forbiddenModules) {
+      expect(scopedModules).not.toContain(forbidden);
+    }
+  });
+});
+
+describe('seed module handler assignments (0602 final business matrix)', () => {
+  async function readSeed(): Promise<string> {
+    const { readFileSync } = await import('fs');
+    const { join } = await import('path');
+    return readFileSync(join(process.cwd(), 'src/database/seeds/seed-module-handlers.ts'), 'utf8');
+  }
+
+  it('leaves social_insurance and benefit_apply unassigned (no fuqianwen / yangchun / jianglu binding)', async () => {
+    const seed = await readSeed();
+    const activeSeedBlock = seed.slice(0, seed.indexOf('const managedModules'));
+
+    // 社保公积金/待遇申报不得出现在生效的处理人绑定数组中。
+    expect(activeSeedBlock).not.toMatch(/moduleCode:\s*'social_insurance'/);
+    expect(activeSeedBlock).not.toMatch(/moduleCode:\s*'onboarding_social_insurance'/);
+    expect(activeSeedBlock).not.toMatch(/moduleCode:\s*'resignation_social_insurance'/);
+    expect(activeSeedBlock).not.toMatch(/moduleCode:\s*'benefit_apply'/);
+
+    // 不得把社保/待遇强行绑定给 fuqianwen，也不得让 benefit_apply 落到 yangchun/jianglu。
+    expect(seed).not.toMatch(/'social_insurance'[^\n]*fuqianwen/);
+    expect(seed).not.toMatch(/'benefit_apply'[^\n]*(yangchun|jianglu)/);
+
+    // 任何遗留的社保/待遇处理人绑定都必须被置为 inactive（留空口径）。
+    expect(seed).toMatch(/vacatedModules/);
+    expect(seed).toMatch(/isActive:\s*false/);
+  });
+
+  it('keeps contract / onboarding / data_entry assignments intact for the configured owners', async () => {
+    const seed = await readSeed();
+    expect(seed).toMatch(/moduleCode:\s*'contract',\s*username:\s*'yangchun'/);
+    expect(seed).toMatch(/moduleCode:\s*'onboarding_contact',\s*username:\s*'maoyani'/);
+    expect(seed).toMatch(/moduleCode:\s*'data_entry',\s*username:\s*'annazhen'/);
+  });
 });

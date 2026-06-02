@@ -1,4 +1,4 @@
-import { HttpStatus, ValidationPipe } from '@nestjs/common';
+﻿import { HttpStatus, ValidationPipe } from '@nestjs/common';
 import { validateSync } from 'class-validator';
 import { Repository } from 'typeorm';
 import { DispatchedOrder, DispatchedOrderStatus, FieldConfig, ModuleField, ModuleHandler, Notification, OperationLog, OrderType, RoleLevel, User, UserRole, WorkOrder, WorkOrderFieldDirtyMark, WorkOrderStatus } from 'src/entities';
@@ -383,7 +383,6 @@ describe('DispatchedOrderService', () => {
     expect(qb.andWhere).toHaveBeenCalledWith('w.employee_id_card = :employeeIdCard', { employeeIdCard: order.parentOrder.employeeIdCard });
     expect(qb.orderBy).toHaveBeenCalledWith('d.created_at', 'DESC');
   });
-
   it('rejects accept/claim/complete/return when parent work order is void, void_pending, withdraw_pending, withdrawn, or child has voidAt', async () => {
     const makeParent = (status: WorkOrderStatus) => ({
       id: 'wo-1',
@@ -567,3 +566,4 @@ describe('DispatchedOrderService', () => {
     expect(parentOrder.status).toBe(WorkOrderStatus.PROCESSING);
   });
 });
+

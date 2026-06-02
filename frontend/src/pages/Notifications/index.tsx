@@ -5,7 +5,7 @@ import type { ProColumns, ActionType } from '@ant-design/pro-components';
 import { ProTable } from '@ant-design/pro-components';
 import { Tag, Button, Space, App, Badge, Tabs, Modal, Descriptions, Typography, Tooltip, Segmented } from 'antd';
 import { BellOutlined, EyeOutlined, LinkOutlined } from '@ant-design/icons';
-import { getNotifications, getUnreadCountByBucket } from '@/services/notifications';
+import { getNotifications, getUnreadCountByBucket, markNotificationRead } from '@/services/notifications';
 import type { NotificationItem } from '@/services/notifications';
 import type { PageParams } from '@/services/mock';
 import { useAuth } from '@/hooks/useAuth';
@@ -27,97 +27,8 @@ export {
 
 const { Text, Paragraph } = Typography;
 
-type NotificationTabKey =
-  | 'all'
-  | 'salesperson_field_changed'
-  | 'salesperson_returned'
-  | 'salesperson_withdraw_void_result'
-  | 'backend_creator_modified'
-  | 'backend_urge'
-  | 'backend_sla_warning'
-  | 'backend_sla_breached'
-  | 'backend_withdraw_void_request'
-  | 'system';
-
-type NotificationGroupKey = 'action' | 'reminder' | 'feedback';
-
-const GROUP_LABEL: Record<NotificationGroupKey, string> = {
-  action: '必须处理',
-  reminder: '提醒类',
-  feedback: '结果反馈',
-};
-
-const GROUP_TAB_KEYS: Record<NotificationGroupKey, NotificationTabKey[]> = {
-  action: ['all', 'salesperson_field_changed', 'salesperson_returned', 'backend_creator_modified', 'backend_withdraw_void_request'],
-  reminder: ['all', 'backend_urge', 'backend_sla_warning', 'backend_sla_breached'],
-  feedback: ['all', 'salesperson_withdraw_void_result', 'system'],
-};
-
-// 业务员修改公共字段后，通知后道处理人查看/办理。
-const CREATOR_CHANGED_TYPES = [
-  'order.field_changed', 'order_field_changed', 'order.completed_modified', 'order_completed_modified',
-  'creator_modified', 'modified_by_creator', 'field_changed_by_creator', 'initiator_modified',
-];
-// 后道补充/修改字段后，通知业务员查看。
-const BACKEND_CHANGED_TYPES = [
-  'order.supplement_filled', 'order_supplement_filled', 'field_supplement', 'field_supplemented',
-  'backend_supplemented', 'supplement_filled', 'order_field_supplemented',
-];
-const RETURNED_TYPES = ['returned', 'return', 'task_returned', 'sub_order_returned', 'dispatched_returned', 'dispatched_returned_to_salesperson'];
-const URGE_TYPES = ['urge', 'urge_received', 'urge_work_order', 'reminder', 'urge_feedback', 'urge_replied', 'urge_result'];
-const SLA_WARNING_TYPES = ['sla_warning', 'sla_warn', 'timeout_warning'];
-const SLA_BREACHED_TYPES = ['sla_breach', 'sla_breached', 'timeout_breached', 'overdue'];
-const WITHDRAW_REQUEST_TYPES = ['withdraw_request', 'creator_withdraw', 'initiator_withdraw', 'work_order_withdraw'];
-const VOID_REQUEST_TYPES = ['void_request', 'creator_void', 'initiator_void', 'work_order_void'];
-const WITHDRAW_VOID_RESULT_TYPES = ['withdraw_approved', 'withdraw_rejected', 'void_approved', 'void_rejected', 'withdraw_void_result'];
-const SYSTEM_TYPES = ['system', 'system_announcement'];
-
-// Tab → bucket 映射（与后端 toNotificationBucket 口径一致，确保 Badge 和列表数据对齐）
-const TAB_BUCKET_MAP: Record<NotificationTabKey, string | undefined> = {
-  all: undefined,
-  // “业务员数据修改”展示业务员改字段后通知后道的 creator_modified bucket。
-  salesperson_field_changed: 'creator_modified',
-  salesperson_returned: 'returned',
-  salesperson_withdraw_void_result: 'withdraw_void_result',
-  // “后道数据修改”展示后道补充/接单/完成后反馈业务员的 field_changed bucket。
-  backend_creator_modified: 'field_changed',
-  backend_urge: 'urge',
-  backend_sla_warning: 'sla_warning',
-  backend_sla_breached: 'sla_breached',
-  backend_withdraw_void_request: 'withdraw_void_request',
-  system: 'system',
-};
-
-const TAB_TYPE_MAP: Record<NotificationTabKey, string[]> = {
-  all: [],
-  salesperson_field_changed: CREATOR_CHANGED_TYPES,
-  salesperson_returned: RETURNED_TYPES,
-  salesperson_withdraw_void_result: WITHDRAW_VOID_RESULT_TYPES,
-  backend_creator_modified: BACKEND_CHANGED_TYPES,
-  backend_urge: URGE_TYPES,
-  backend_sla_warning: SLA_WARNING_TYPES,
-  backend_sla_breached: SLA_BREACHED_TYPES,
-  backend_withdraw_void_request: [...WITHDRAW_REQUEST_TYPES, ...VOID_REQUEST_TYPES],
-  system: SYSTEM_TYPES,
-};
-
-const SALESPERSON_TAB_KEYS: NotificationTabKey[] = [
-  'all',
-  'backend_creator_modified',
-  'salesperson_returned',
-  'salesperson_withdraw_void_result',
-  'system',
-];
-const BACKEND_TAB_KEYS: NotificationTabKey[] = [
-  'all',
-  'salesperson_field_changed',
-  'backend_urge',
-  'backend_sla_warning',
-  'backend_sla_breached',
-  'backend_withdraw_void_request',
-  'system',
-];
-const ALL_TAB_KEYS: NotificationTabKey[] = Array.from(new Set([...SALESPERSON_TAB_KEYS, ...BACKEND_TAB_KEYS]));
+type NotificationTabKey = 'all' | 'todo' | 'returned' | 'field_changed' | 'withdraw_void' | 'system';
+type ReadFilterKey = 'all' | 'unread' | 'read';
 
 const BACKEND_ROLES = [
   ROLE.DATA_ENTRY_LEADER,
@@ -126,32 +37,36 @@ const BACKEND_ROLES = [
   ROLE.ONBOARDING_RESIGNATION_MEMBER,
   ROLE.SOCIAL_INSURANCE_SPECIALIST,
 ];
-
 const BUSINESS_ROLES = [ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER];
+
+const ALL_TAB_KEYS: NotificationTabKey[] = ['all', 'todo', 'returned', 'field_changed', 'withdraw_void', 'system'];
+const BUSINESS_TAB_KEYS: NotificationTabKey[] = ['all', 'returned', 'field_changed', 'withdraw_void', 'system'];
+const BACKEND_TAB_KEYS: NotificationTabKey[] = ['all', 'todo', 'field_changed', 'withdraw_void', 'system'];
+
+const TAB_BUCKET_MAP: Record<NotificationTabKey, string | undefined> = {
+  all: undefined,
+  todo: 'todo',
+  returned: 'returned',
+  field_changed: 'field_changed',
+  withdraw_void: undefined,
+  system: 'system',
+};
 
 const BIZ_COLOR: Record<NotificationTabKey | string, string> = {
   all: 'default',
-  salesperson_field_changed: 'purple',
-  salesperson_returned: 'orange',
-  salesperson_withdraw_void_result: 'blue',
-  backend_creator_modified: 'purple',
-  backend_urge: 'gold',
-  backend_sla_warning: 'orange',
-  backend_sla_breached: 'red',
-  backend_withdraw_void_request: 'volcano',
+  todo: 'blue',
+  returned: 'orange',
+  field_changed: 'purple',
+  withdraw_void: 'volcano',
   system: 'default',
 };
 
 const BIZ_LABEL: Record<NotificationTabKey | string, string> = {
   all: '全部消息',
-  salesperson_field_changed: '业务员数据修改',
-  salesperson_returned: '退回',
-  salesperson_withdraw_void_result: '撤回/作废结果',
-  backend_creator_modified: '后道数据修改',
-  backend_urge: '催办',
-  backend_sla_warning: '即将超时',
-  backend_sla_breached: '已超时',
-  backend_withdraw_void_request: '撤回/作废申请',
+  todo: '待处理',
+  returned: '退回/待修改',
+  field_changed: '字段变更',
+  withdraw_void: '撤回/作废',
   system: '系统',
 };
 
@@ -162,30 +77,14 @@ function rawNotificationText(item: Pick<NotificationItem, 'biz_type' | 'type' | 
   return `${item.biz_type || ''} ${item.type || ''} ${item.title || ''} ${item.content || ''}`.toLowerCase().replace(/[.:]/g, '_');
 }
 
-function matchesTypes(item: Pick<NotificationItem, 'biz_type' | 'type' | 'title' | 'content'>, types: string[]): boolean {
-  const raw = rawNotificationText(item);
-  return types.some((type) => raw.includes(type.replace(/[.:]/g, '_')));
-}
-
 function classifyNotification(item: Pick<NotificationItem, 'biz_type' | 'type' | 'title' | 'content'>): NotificationTabKey {
   const raw = rawNotificationText(item);
-  if (matchesTypes(item, SYSTEM_TYPES)) return 'system';
-  if (matchesTypes(item, WITHDRAW_VOID_RESULT_TYPES)) return 'salesperson_withdraw_void_result';
-  if (matchesTypes(item, [...WITHDRAW_REQUEST_TYPES, ...VOID_REQUEST_TYPES]) || raw.includes('撤回') || raw.includes('作废')) return 'backend_withdraw_void_request';
-  if (matchesTypes(item, SLA_BREACHED_TYPES) || raw.includes('已超时') || raw.includes('超期')) return 'backend_sla_breached';
-  if (matchesTypes(item, SLA_WARNING_TYPES) || raw.includes('即将超时') || raw.includes('预警')) return 'backend_sla_warning';
-  if (matchesTypes(item, URGE_TYPES) || raw.includes('催办')) return 'backend_urge';
-  if (matchesTypes(item, BACKEND_CHANGED_TYPES) || raw.includes('补充')) return 'backend_creator_modified';
-  if (matchesTypes(item, RETURNED_TYPES) || raw.includes('退回')) return 'salesperson_returned';
-  if (matchesTypes(item, CREATOR_CHANGED_TYPES) || raw.includes('修改')) return 'salesperson_field_changed';
+  if (raw.includes('system')) return 'system';
+  if (raw.includes('withdraw') || raw.includes('void') || raw.includes('撤回') || raw.includes('作废')) return 'withdraw_void';
+  if (raw.includes('returned') || raw.includes('return') || raw.includes('退回')) return 'returned';
+  if (raw.includes('dispatch') || raw.includes('todo') || raw.includes('task') || raw.includes('claim') || raw.includes('待处理')) return 'todo';
+  if (raw.includes('field_changed') || raw.includes('field_change') || raw.includes('supplement') || raw.includes('modified') || raw.includes('修改') || raw.includes('补充')) return 'field_changed';
   return 'system';
-}
-
-function getQueryBizType(tabKey: NotificationTabKey, visibleTabKeys: NotificationTabKey[]): string | undefined {
-  // 「全部消息」不按 biz_type 过滤，让后端返回所有通知（含派发类）。
-  if (tabKey === 'all') return undefined;
-  const types = (TAB_TYPE_MAP[tabKey] || []);
-  return types.length ? Array.from(new Set(types)).join(',') : undefined;
 }
 
 function normalizeJumpLink(link: string, notificationId: string): string {
@@ -197,9 +96,15 @@ function canProcess(item: NotificationItem): boolean {
   return Boolean(item.entity_id || item.ref_order_id || item.ref_order_no || item.order_no || item.link);
 }
 
-function isNotificationInGroup(item: NotificationItem, group: NotificationGroupKey): boolean {
-  const bucket = classifyNotification(item);
-  return GROUP_TAB_KEYS[group].includes(bucket);
+function readFilterParams(filter: ReadFilterKey): Pick<PageParams & { unread?: boolean; isRead?: boolean }, 'unread' | 'isRead'> {
+  if (filter === 'unread') return { unread: true };
+  if (filter === 'read') return { isRead: true };
+  return {};
+}
+
+function isWithdrawVoidBucket(item: NotificationItem): boolean {
+  const raw = rawNotificationText(item);
+  return raw.includes('withdraw') || raw.includes('void') || raw.includes('撤回') || raw.includes('作废');
 }
 
 const NotificationsPage: React.FC = () => {
@@ -207,11 +112,11 @@ const NotificationsPage: React.FC = () => {
   const { message } = App.useApp();
   const { hasRole, hasAnyRole } = useAuth();
   const actionRef = useRef<ActionType>();
-  const [activeGroup, setActiveGroup] = useState<NotificationGroupKey>('action');
   const [activeTab, setActiveTab] = useState<NotificationTabKey>('all');
+  const [readFilter, setReadFilter] = useState<ReadFilterKey>('all');
   const [unreadTotal, setUnreadTotal] = useState(0);
   const [unreadByType, setUnreadByType] = useState<Record<string, number>>({});
-
+  const [readLoadingId, setReadLoadingId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailItem, setDetailItem] = useState<NotificationItem | null>(null);
 
@@ -219,36 +124,27 @@ const NotificationsPage: React.FC = () => {
     if (hasRole(ROLE.ADMIN)) return ALL_TAB_KEYS;
     const isBusiness = hasAnyRole(BUSINESS_ROLES);
     const isBackend = hasAnyRole(BACKEND_ROLES);
-    if (isBusiness && !isBackend) return SALESPERSON_TAB_KEYS;
+    if (isBusiness && !isBackend) return BUSINESS_TAB_KEYS;
     if (isBackend && !isBusiness) return BACKEND_TAB_KEYS;
-    if (isBusiness) return SALESPERSON_TAB_KEYS;
+    if (isBusiness) return BUSINESS_TAB_KEYS;
     return BACKEND_TAB_KEYS;
   }, [hasAnyRole, hasRole]);
 
-  const groupedVisibleTabKeys = useMemo<NotificationTabKey[]>(() => {
-    const allowed = new Set(GROUP_TAB_KEYS[activeGroup]);
-    return visibleTabKeys.filter((key) => allowed.has(key));
-  }, [activeGroup, visibleTabKeys]);
-
   useEffect(() => {
-    if (!groupedVisibleTabKeys.includes(activeTab)) setActiveTab('all');
-  }, [activeTab, groupedVisibleTabKeys]);
+    if (!visibleTabKeys.includes(activeTab)) setActiveTab('all');
+  }, [activeTab, visibleTabKeys]);
 
   const refreshCounts = async () => {
     try {
       const counts = await getUnreadCountByBucket();
       const next: Record<string, number> = {
-        salesperson_field_changed: counts.backend.creator_modified || 0,
-        salesperson_returned: counts.salesperson.returned || 0,
-        salesperson_withdraw_void_result: counts.salesperson.withdraw_void_result || 0,
-        backend_creator_modified: counts.salesperson.field_changed || 0,
-        backend_urge: counts.backend.urge || 0,
-        backend_sla_warning: counts.backend.sla_warning || 0,
-        backend_sla_breached: counts.backend.sla_breached || 0,
-        backend_withdraw_void_request: counts.backend.withdraw_void_request || 0,
+        todo: counts.backend.todo || 0,
+        returned: counts.salesperson.returned || 0,
+        field_changed: (counts.salesperson.field_changed || 0) + (counts.backend.creator_modified || 0),
+        withdraw_void: (counts.salesperson.withdraw_void_result || 0) + (counts.backend.withdraw_void_request || 0),
         system: counts.system || 0,
       };
-      next.all = groupedVisibleTabKeys.filter((key) => key !== 'all').reduce((sum, key) => sum + (next[key] || 0), 0);
+      next.all = counts.total || visibleTabKeys.filter((key) => key !== 'all').reduce((sum, key) => sum + (next[key] || 0), 0);
       setUnreadByType(next);
       setUnreadTotal(next.all || 0);
     } catch {
@@ -260,13 +156,31 @@ const NotificationsPage: React.FC = () => {
     refreshCounts();
     const timer = setInterval(refreshCounts, 20000);
     return () => clearInterval(timer);
-  }, [groupedVisibleTabKeys]);
+  }, [visibleTabKeys]);
 
-  // 通知不再在“处理”跳转时自动已读；红点由办结/撤回/作废终态驱动消失。
+  const reloadList = () => {
+    void refreshCounts();
+    actionRef.current?.reload();
+  };
 
   const handleRowClick = (record: NotificationItem) => {
     setDetailItem(record);
     setDetailOpen(true);
+  };
+
+  const handleMarkRead = async (record: NotificationItem) => {
+    if (record.is_read) return;
+    setReadLoadingId(record.id);
+    try {
+      await markNotificationRead(record.id);
+      message.success('已读已确认，提醒已消除');
+      if (detailItem?.id === record.id) setDetailItem({ ...detailItem, is_read: true });
+      reloadList();
+    } catch {
+      message.error('标记已读失败');
+    } finally {
+      setReadLoadingId(null);
+    }
   };
 
   const handleJumpToOrder = (orderNo?: string, orderId?: string, item?: NotificationItem) => {
@@ -316,7 +230,7 @@ const NotificationsPage: React.FC = () => {
     },
     { title: '标题', dataIndex: 'title', key: 'title', width: 220, ellipsis: true },
     {
-      title: '分类', dataIndex: 'biz_type', key: 'biz_type', width: 130,
+      title: '分类', dataIndex: 'biz_type', key: 'biz_type', width: 120,
       render: (_, r) => {
         const bucket = classifyNotification(r);
         return <Tag color={BIZ_COLOR[bucket]}>{BIZ_LABEL[bucket]}</Tag>;
@@ -327,14 +241,14 @@ const NotificationsPage: React.FC = () => {
       render: (_, r) => <Tag color={PRI_COLOR[r.priority]}>{PRI_LABEL[r.priority] || r.priority || '普通'}</Tag>,
     },
     {
-      title: '内容', dataIndex: 'content', key: 'content', width: 360, ellipsis: true,
+      title: '内容', dataIndex: 'content', key: 'content', width: 380, ellipsis: true,
       render: (_dom: unknown, r: NotificationItem) => {
         const displayContent = getNotificationDisplayContent(r);
         return (
           <Space size={4}>
             {!r.is_read && <Badge status="processing" />}
             <Tooltip title={displayContent}>
-              <Text ellipsis style={{ maxWidth: 320 }}>
+              <Text ellipsis style={{ maxWidth: 340 }}>
                 {displayContent}
                 {r.diff_summary && <Text mark style={{ marginLeft: 6, fontSize: 12 }}>变更</Text>}
               </Text>
@@ -355,32 +269,42 @@ const NotificationsPage: React.FC = () => {
     },
     { title: '时间', dataIndex: 'created_at', key: 'created_at', width: 170, valueType: 'dateTime' },
     {
-      title: '操作', key: 'actions', width: 100, hideInSearch: true, fixed: 'right',
+      title: '操作', key: 'actions', width: 150, hideInSearch: true, fixed: 'right',
       render: (_, r) => (
-        <Button
-          type="link"
-          size="small"
-          icon={<LinkOutlined />}
-          disabled={!canProcess(r)}
-          onClick={(e) => { e.stopPropagation(); handleJumpToOrder(r.order_no || r.ref_order_no, r.ref_order_id, r); }}
-        >处理</Button>
+        <Space size={4} onClick={(e) => e.stopPropagation()}>
+          <Button
+            type="link"
+            size="small"
+            disabled={r.is_read}
+            loading={readLoadingId === r.id}
+            onClick={() => handleMarkRead(r)}
+          >已读</Button>
+          <Button
+            type="link"
+            size="small"
+            icon={<LinkOutlined />}
+            disabled={!canProcess(r)}
+            onClick={() => handleJumpToOrder(r.order_no || r.ref_order_no, r.ref_order_id, r)}
+          >处理</Button>
+        </Space>
       ),
     },
   ];
 
-  const allTabItems: Array<{ key: NotificationTabKey; label: React.ReactNode }> = ALL_TAB_KEYS.map((key) => ({
-    key,
-    label: key === 'all'
-      ? <Badge count={unreadByType.all || 0} size="small" offset={[6, -2]}>全部消息</Badge>
-      : <Badge count={unreadByType[key] || 0} size="small" offset={[6, -2]}><Tag color={BIZ_COLOR[key]} style={{ margin: 0 }}>{BIZ_LABEL[key]}</Tag></Badge>,
-  }));
-  const tabItems = allTabItems.filter((item) => groupedVisibleTabKeys.includes(item.key));
+  const tabItems = ALL_TAB_KEYS
+    .filter((key) => visibleTabKeys.includes(key))
+    .map((key) => ({
+      key,
+      label: key === 'all'
+        ? <Badge count={unreadByType.all || 0} size="small" offset={[6, -2]}>全部消息</Badge>
+        : <Badge count={unreadByType[key] || 0} size="small" offset={[6, -2]}><Tag color={BIZ_COLOR[key]} style={{ margin: 0 }}>{BIZ_LABEL[key]}</Tag></Badge>,
+    }));
 
   return (
     <PageContainer
       header={{
         title: '消息通知',
-        subTitle: '仅保留“处理”入口；进入关联工单处理完成后，责任通知按后端规则自动消失。',
+        subTitle: '保留“已读”和“处理”：已读只消除提醒；处理需进入关联业务完成状态变化后提醒消失，已处理消息仍保留在全部消息。',
         extra: [
           <Badge key="total" count={unreadTotal}><BellOutlined style={{ fontSize: 16 }} /></Badge>,
         ],
@@ -388,19 +312,15 @@ const NotificationsPage: React.FC = () => {
     >
       <Space direction="vertical" size="small" style={{ width: '100%', marginBottom: 12 }}>
         <Space wrap align="center">
-          <Text type="secondary">消息分组</Text>
-          <Segmented<NotificationGroupKey>
-            value={activeGroup}
-            onChange={(value) => {
-              setActiveGroup(value);
-              setActiveTab('all');
-              actionRef.current?.reload();
-            }}
-            options={([
-              { label: GROUP_LABEL.action, value: 'action' },
-              { label: GROUP_LABEL.reminder, value: 'reminder' },
-              { label: GROUP_LABEL.feedback, value: 'feedback' },
-            ] as Array<{ label: string; value: NotificationGroupKey }>)}
+          <Text type="secondary">读状态</Text>
+          <Segmented<ReadFilterKey>
+            value={readFilter}
+            onChange={(value) => { setReadFilter(value); actionRef.current?.reload(); }}
+            options={[
+              { label: '未读', value: 'unread' },
+              { label: '已读', value: 'read' },
+              { label: '全部', value: 'all' },
+            ]}
           />
         </Space>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', marginBottom: -16 }}>
@@ -414,14 +334,13 @@ const NotificationsPage: React.FC = () => {
           const bucket = TAB_BUCKET_MAP[activeTab];
           const result = await getNotifications({
             ...params,
-            // 特定 Tab 用 bucket 过滤（与 countUnreadByBucket 口径一致）
             bucket,
-            includeDispatch: activeTab === 'all' ? true : undefined,
-            unread: true,
+            includeDispatch: true,
+            ...readFilterParams(readFilter),
           });
           const rawList = result.list || [];
-          const list = activeTab === 'all' ? rawList.filter((item) => isNotificationInGroup(item, activeGroup)) : rawList;
-          return { data: list, success: true, total: activeTab === 'all' ? list.length : (result.total ?? rawList.length) };
+          const list = activeTab === 'withdraw_void' ? rawList.filter(isWithdrawVoidBucket) : rawList;
+          return { data: list, success: true, total: activeTab === 'withdraw_void' ? list.length : (result.total ?? rawList.length) };
         }}
         rowKey="id"
         search={false}
@@ -433,7 +352,7 @@ const NotificationsPage: React.FC = () => {
           onClick: () => handleRowClick(record),
           style: { cursor: 'pointer' },
         })}
-        options={{ reload: () => { refreshCounts(); actionRef.current?.reload(); } }}
+        options={{ reload: reloadList }}
       />
 
       <Modal
@@ -441,6 +360,11 @@ const NotificationsPage: React.FC = () => {
         open={detailOpen}
         onCancel={() => setDetailOpen(false)}
         footer={[
+          detailItem && !detailItem.is_read && (
+            <Button key="read" loading={readLoadingId === detailItem.id} onClick={() => handleMarkRead(detailItem)}>
+              已读
+            </Button>
+          ),
           detailItem && (
             <Button key="jump" type="primary" icon={<EyeOutlined />} disabled={!canProcess(detailItem)}
               onClick={() => handleJumpToOrder(detailItem.ref_order_no || detailItem.order_no, detailItem.ref_order_id, detailItem)}>
