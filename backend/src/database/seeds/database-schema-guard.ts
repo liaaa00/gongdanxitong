@@ -33,7 +33,12 @@ export async function ensureWorkflowRuntimeSchema(dataSource: DataSource, logger
   await ensureEnumValues(dataSource, 'dispatched_order_status_enum', REQUIRED_DISPATCHED_ORDER_STATUS_ENUM_VALUES, logger);
   await ensureColumns(dataSource, 'work_order_modules', REQUIRED_WORK_ORDER_MODULE_COLUMNS, logger);
   await ensureColumns(dataSource, 'dispatched_orders', REQUIRED_DISPATCHED_ORDER_COLUMNS, logger);
-  await tryRunDdl(dataSource, 'CREATE INDEX IF NOT EXISTS idx_dispatched_orders_due_at ON dispatched_orders(due_at)', '创建子工单办理时限索引', logger);
+  await tryRunOptionalDdl(
+    dataSource,
+    'CREATE INDEX IF NOT EXISTS idx_dispatched_orders_due_at ON dispatched_orders(due_at)',
+    'idx_dispatched_orders_due_at',
+    logger,
+  );
 }
 
 async function ensureEnumValues(
@@ -92,6 +97,16 @@ async function ensureColumns(
   for (const column of requiredColumns) {
     if (existing.has(column.name)) continue;
     await tryRunDdl(dataSource, column.ddl, `补齐字段 ${tableName}.${column.name}`, logger);
+  }
+}
+
+async function tryRunOptionalDdl(dataSource: DataSource, sql: string, label: string, logger?: Logger): Promise<void> {
+  try {
+    await dataSource.query(sql);
+    logger?.log(`${label} ready`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger?.warn(`${label} skipped: ${message}`);
   }
 }
 

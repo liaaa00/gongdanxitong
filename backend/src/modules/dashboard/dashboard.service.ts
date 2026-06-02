@@ -17,6 +17,7 @@ import { WorkOrderValidationService } from 'src/modules/work-orders/work-order-v
 import { DashboardCardsDto } from './dto/dashboard-cards.dto';
 
 const LEADER_TREND_STATEMENT_TIMEOUT_MS = 7_000;
+const DASHBOARD_MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 const BACKEND_HANDLER_ROLES = [
   'contract_specialist',
@@ -70,34 +71,35 @@ export class DashboardService {
     private readonly roleActionPermissionService?: RoleActionPermissionService,
   ) {}
 
-  async getDashboardCards(user: JwtUserPayload, requestedScope?: 'mine' | 'team'): Promise<DashboardCardsDto> {
+  async getDashboardCards(user: JwtUserPayload, requestedScope?: 'mine' | 'team', month?: string): Promise<DashboardCardsDto> {
+    const selectedMonth = this.resolveDashboardMonth(month);
     const myMessages = await this.countUnreadMessages(user.sub);
 
     if (this.isBackendHandler(user)) {
-      return { ...(await this.queryDispatchedOrderCards(user)), myMessages, scope: 'backend_module' };
+      return { ...(await this.queryDispatchedOrderCards(user, selectedMonth)), myMessages, scope: 'backend_module' };
     }
 
     if (requestedScope === 'mine') {
-      return { ...(await this.queryWorkOrderCards('owner', user.sub)), myMessages, scope: 'mine' };
+      return { ...(await this.queryWorkOrderCards('owner', user.sub, selectedMonth)), myMessages, scope: 'mine' };
     }
 
     if (requestedScope === 'team' && (hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES) || hasAnyRole(user.roles, BUSINESS_LEADER_ROLES))) {
       const departmentIds = await this.workOrderValidationService.resolveUserDepartmentIds(user.sub);
       if (departmentIds.length === 0) return { ...this.emptyCards(), myMessages, scope: 'team' };
-      return { ...(await this.queryWorkOrderCards('department', departmentIds)), myMessages, scope: 'team' };
+      return { ...(await this.queryWorkOrderCards('department', departmentIds, selectedMonth)), myMessages, scope: 'team' };
     }
 
     if (await this.canViewAllWorkOrders(user)) {
-      return { ...(await this.queryWorkOrderCards(null, null)), myMessages, scope: 'global' };
+      return { ...(await this.queryWorkOrderCards(null, null, selectedMonth)), myMessages, scope: 'global' };
     }
 
     if (hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES) || hasAnyRole(user.roles, BUSINESS_LEADER_ROLES)) {
       const departmentIds = await this.workOrderValidationService.resolveUserDepartmentIds(user.sub);
       if (departmentIds.length === 0) return { ...this.emptyCards(), myMessages, scope: 'team' };
-      return { ...(await this.queryWorkOrderCards('department', departmentIds)), myMessages, scope: 'team' };
+      return { ...(await this.queryWorkOrderCards('department', departmentIds, selectedMonth)), myMessages, scope: 'team' };
     }
 
-    return { ...(await this.queryWorkOrderCards('owner', user.sub)), myMessages, scope: 'mine' };
+    return { ...(await this.queryWorkOrderCards('owner', user.sub, selectedMonth)), myMessages, scope: 'mine' };
   }
 
   async getSalespersonMetrics(userId: string): Promise<unknown> {
@@ -340,13 +342,13 @@ export class DashboardService {
     return Number(rows[0]?.count ?? 0);
   }
 
-  private async queryWorkOrderCards(scope: 'owner' | 'department' | null, value: string | string[] | null): Promise<Omit<DashboardCardsDto, 'myMessages'>> {
+  private async queryWorkOrderCards(scope: 'owner' | 'department' | null, value: string | string[] | null, month: string): Promise<Omit<DashboardCardsDto, 'myMessages'>> {
     const rows = await this.dataSource.query(
       `
       WITH bounds AS (
         SELECT
-          date_trunc('month', now() AT TIME ZONE 'Asia/Shanghai') AS cur_start,
-          date_trunc('month', now() AT TIME ZONE 'Asia/Shanghai') + interval '1 month' AS cur_end
+          $4::timestamp AS cur_start,
+          ($4::timestamp + interval '1 month') AS cur_end
       ), scoped_wo AS (
         SELECT wo.*
           FROM work_orders wo
@@ -369,18 +371,18 @@ export class DashboardService {
         COUNT(*) FILTER (WHERE status = 'void' OR void_at IS NOT NULL)::int AS voided
       FROM scoped
       `,
-      [scope, scope === 'owner' ? value : null, scope === 'department' ? value : []],
+      [scope, scope === 'owner' ? value : null, scope === 'department' ? value : [], this.toMonthStart(month)],
     ) as DashboardCardsRow[];
     return this.toCardsWithoutMessages(rows[0]);
   }
 
-  private async queryDispatchedOrderCards(user: JwtUserPayload): Promise<Omit<DashboardCardsDto, 'myMessages'>> {
+  private async queryDispatchedOrderCards(user: JwtUserPayload, month: string): Promise<Omit<DashboardCardsDto, 'myMessages'>> {
     const rows = await this.dataSource.query(
       `
       WITH bounds AS (
         SELECT
-          date_trunc('month', now() AT TIME ZONE 'Asia/Shanghai') AS cur_start,
-          date_trunc('month', now() AT TIME ZONE 'Asia/Shanghai') + interval '1 month' AS cur_end
+          $2::timestamp AS cur_start,
+          ($2::timestamp + interval '1 month') AS cur_end
       ), accessible_modules AS (
         SELECT module_code FROM module_handlers WHERE handler_id = $1::uuid AND is_active = true
         UNION
@@ -408,7 +410,7 @@ export class DashboardService {
         COUNT(*) FILTER (WHERE status = 'void' OR void_at IS NOT NULL)::int AS voided
       FROM scoped
       `,
-      [user.sub],
+      [user.sub, this.toMonthStart(month)],
     ) as DashboardCardsRow[];
     return this.toCardsWithoutMessages(rows[0]);
   }
@@ -434,6 +436,22 @@ export class DashboardService {
     const denominator = total - voided;
     if (denominator <= 0) return 0;
     return Number(((completed / denominator) * 100).toFixed(1));
+  }
+
+  private resolveDashboardMonth(month?: string): string {
+    if (month && DASHBOARD_MONTH_PATTERN.test(month)) return month;
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Shanghai',
+      year: 'numeric',
+      month: '2-digit',
+    }).formatToParts(new Date());
+    const year = parts.find((part) => part.type === 'year')?.value;
+    const monthPart = parts.find((part) => part.type === 'month')?.value;
+    return `${year}-${monthPart}`;
+  }
+
+  private toMonthStart(month: string): string {
+    return `${month}-01 00:00:00`;
   }
 
   private async resolveDepartmentScope(
@@ -549,9 +567,10 @@ export class DashboardService {
     return { modules: [], topCustomers: [], ratios: { totalSubmitted: 0, returnRatio: null, withdrawRatio: null, avgCloseHours: null }, trend: [] };
   }
 
-  async getOrderTypeMatrix(user: JwtUserPayload, dimension: 'orderType' | 'node' = 'orderType', requestedScope?: 'mine' | 'team'): Promise<unknown> {
+  async getOrderTypeMatrix(user: JwtUserPayload, dimension: 'orderType' | 'node' = 'orderType', requestedScope?: 'mine' | 'team', month?: string): Promise<unknown> {
+    const selectedMonth = this.resolveDashboardMonth(month);
     if (dimension === 'node' && this.isBackendHandler(user) && !this.isGlobalBusinessOverview(user)) {
-      return { rows: await this.queryBackendNodeMatrixRows(user) };
+      return { rows: await this.queryBackendNodeMatrixRows(user, selectedMonth) };
     }
 
     const scope = await this.resolveDashboardScope(user, requestedScope);
@@ -564,21 +583,22 @@ export class DashboardService {
       hasScopeFilter,
       scope.departmentIds ?? [],
       scope.ownerId ?? null,
+      this.toMonthStart(selectedMonth),
     ];
 
     if (dimension === 'node') {
       if (this.isBackendHandler(user) && !this.isGlobalBusinessOverview(user)) {
-        return { rows: await this.queryBackendNodeMatrixRows(user) };
+        return { rows: await this.queryBackendNodeMatrixRows(user, selectedMonth) };
       }
-      return { rows: await this.queryNodeMatrixRows(params) };
+      return { rows: await this.queryNodeMatrixRows(params, selectedMonth) };
     }
 
     const rows = await this.dataSource.query(
       `
       WITH bounds AS (
         SELECT
-          date_trunc('month', now() AT TIME ZONE 'Asia/Shanghai') AS cur_start,
-          date_trunc('month', now() AT TIME ZONE 'Asia/Shanghai') + interval '1 month' AS cur_end
+          $4::timestamp AS cur_start,
+          ($4::timestamp + interval '1 month') AS cur_end
       ),
       order_types AS (
         SELECT * FROM (VALUES
@@ -629,13 +649,13 @@ export class DashboardService {
     return { rows };
   }
 
-  private async queryBackendNodeMatrixRows(user: JwtUserPayload): Promise<Array<Record<string, unknown>>> {
+  private async queryBackendNodeMatrixRows(user: JwtUserPayload, month: string): Promise<Array<Record<string, unknown>>> {
     const rows = await this.dataSource.query(
       `
       WITH bounds AS (
         SELECT
-          date_trunc('month', now() AT TIME ZONE 'Asia/Shanghai') AS cur_start,
-          date_trunc('month', now() AT TIME ZONE 'Asia/Shanghai') + interval '1 month' AS cur_end
+          $2::timestamp AS cur_start,
+          ($2::timestamp + interval '1 month') AS cur_end
       ), accessible_modules AS (
         SELECT module_code FROM module_handlers WHERE handler_id = $1::uuid AND is_active = true
         UNION
@@ -674,7 +694,7 @@ export class DashboardService {
       GROUP BY d.module_code
       ORDER BY d.module_code
       `,
-      [user.sub],
+      [user.sub, this.toMonthStart(month)],
     ) as Array<Record<string, unknown> & { moduleCode: string }>;
 
     return rows.map((row) => ({
@@ -683,13 +703,13 @@ export class DashboardService {
     }));
   }
 
-  private async queryNodeMatrixRows(params: unknown[]): Promise<Array<Record<string, unknown>>> {
+  private async queryNodeMatrixRows(params: unknown[], month: string): Promise<Array<Record<string, unknown>>> {
     const rows = await this.dataSource.query(
       `
       WITH bounds AS (
         SELECT
-          date_trunc('month', now() AT TIME ZONE 'Asia/Shanghai') AS cur_start,
-          date_trunc('month', now() AT TIME ZONE 'Asia/Shanghai') + interval '1 month' AS cur_end
+          $4::timestamp AS cur_start,
+          ($4::timestamp + interval '1 month') AS cur_end
       ),
       scoped_wo AS (
         SELECT wo.*
@@ -725,7 +745,7 @@ export class DashboardService {
       GROUP BY d.module_code
       ORDER BY d.module_code
       `,
-      params,
+      [...params.slice(0, 3), this.toMonthStart(month)],
     ) as Array<Record<string, unknown> & { moduleCode: string }>;
 
     return rows.map((row) => ({
@@ -734,28 +754,29 @@ export class DashboardService {
     }));
   }
 
-  async getLeaderTrend(orderType: string, user: JwtUserPayload, moduleCode?: string, requestedScope?: 'mine' | 'team'): Promise<unknown> {
+  async getLeaderTrend(orderType: string, user: JwtUserPayload, moduleCode?: string, requestedScope?: 'mine' | 'team', month?: string): Promise<unknown> {
     const normalizedOrderType = this.normalizeLeaderTrendOrderType(orderType);
     const moduleFilter = resolveDispatchModuleCode(moduleCode) ?? null;
+    const selectedMonth = this.resolveDashboardMonth(month);
 
     try {
       const scope = await this.resolveDashboardScope(user, requestedScope);
       if (!scope.empty) {
-        const rows = await this.queryLeaderTrendByDashboardScope(normalizedOrderType, scope, moduleFilter);
+        const rows = await this.queryLeaderTrendByDashboardScope(normalizedOrderType, scope, moduleFilter, selectedMonth);
         return { orderType: normalizedOrderType, moduleCode: moduleFilter, buckets: this.normalizeLeaderTrendBuckets(rows) };
       }
 
       if (this.isBackendHandler(user)) {
         const backendScope = await this.resolveBackendDashboardScope(user);
-        const rows = await this.queryLeaderTrendByBackendScope(normalizedOrderType, user, backendScope, moduleFilter);
+        const rows = await this.queryLeaderTrendByBackendScope(normalizedOrderType, user, backendScope, moduleFilter, selectedMonth);
         return { orderType: normalizedOrderType, moduleCode: moduleFilter, buckets: this.normalizeLeaderTrendBuckets(rows) };
       }
 
-      return this.emptyLeaderTrend(normalizedOrderType, moduleFilter);
+      return this.emptyLeaderTrend(normalizedOrderType, moduleFilter, selectedMonth);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(`leader-trend fallback: ${message}`);
-      return this.emptyLeaderTrend(normalizedOrderType, moduleFilter);
+      return this.emptyLeaderTrend(normalizedOrderType, moduleFilter, selectedMonth);
     }
   }
 
@@ -763,6 +784,7 @@ export class DashboardService {
     orderType: string,
     scope: { departmentIds: string[] | null; ownerId: string | null; empty: boolean },
     moduleFilter: string | null,
+    month: string,
   ): Promise<Array<Record<string, unknown>>> {
     const hasScopeFilter = scope.departmentIds !== null || scope.ownerId !== null;
     const params: unknown[] = [
@@ -771,16 +793,19 @@ export class DashboardService {
       scope.departmentIds ?? [],
       scope.ownerId ?? null,
       moduleFilter,
+      this.toMonthStart(month),
     ];
 
     return this.dataSource.transaction(async (manager) => {
       await manager.query('SET LOCAL statement_timeout = $1', [LEADER_TREND_STATEMENT_TIMEOUT_MS]);
       return manager.query(
         `
-      WITH months AS (
+      WITH selected_month AS (
+        SELECT $6::timestamp AS month_start
+      ), months AS (
         SELECT generate_series(
-          date_trunc('month', now() AT TIME ZONE 'Asia/Shanghai') - interval '11 months',
-          date_trunc('month', now() AT TIME ZONE 'Asia/Shanghai'),
+          (SELECT month_start FROM selected_month) - interval '11 months',
+          (SELECT month_start FROM selected_month),
           interval '1 month'
         ) AS month_start
       ),
@@ -830,6 +855,7 @@ export class DashboardService {
     user: JwtUserPayload,
     scope: BackendDashboardScope,
     moduleFilter: string | null,
+    month: string,
   ): Promise<Array<Record<string, unknown>>> {
     const moduleCodes = moduleFilter
       ? (scope.modules.includes(moduleFilter) ? [moduleFilter] : [])
@@ -840,16 +866,19 @@ export class DashboardService {
       user.sub,
       moduleFilter,
       moduleCodes,
+      this.toMonthStart(month),
     ];
 
     return this.dataSource.transaction(async (manager) => {
       await manager.query('SET LOCAL statement_timeout = $1', [LEADER_TREND_STATEMENT_TIMEOUT_MS]);
       return manager.query(
         `
-      WITH months AS (
+      WITH selected_month AS (
+        SELECT $6::timestamp AS month_start
+      ), months AS (
         SELECT generate_series(
-          date_trunc('month', now() AT TIME ZONE 'Asia/Shanghai') - interval '11 months',
-          date_trunc('month', now() AT TIME ZONE 'Asia/Shanghai'),
+          (SELECT month_start FROM selected_month) - interval '11 months',
+          (SELECT month_start FROM selected_month),
           interval '1 month'
         ) AS month_start
       ),
@@ -918,13 +947,14 @@ export class DashboardService {
     });
   }
 
-  private emptyLeaderTrend(orderType: string, moduleCode: string | null): Record<string, unknown> {
-    return { orderType, moduleCode, buckets: this.emptyLeaderTrendBuckets() };
+  private emptyLeaderTrend(orderType: string, moduleCode: string | null, month?: string): Record<string, unknown> {
+    return { orderType, moduleCode, buckets: this.emptyLeaderTrendBuckets(month) };
   }
 
-  private emptyLeaderTrendBuckets(): Array<Record<string, unknown>> {
-    const now = new Date();
-    const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  private emptyLeaderTrendBuckets(month?: string): Array<Record<string, unknown>> {
+    const selectedMonth = this.resolveDashboardMonth(month);
+    const [year, monthNumber] = selectedMonth.split('-').map(Number);
+    const currentMonth = new Date(year, monthNumber - 1, 1);
     return Array.from({ length: 12 }, (_, index) => {
       const bucket = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 11 + index, 1);
       return {

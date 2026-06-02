@@ -242,7 +242,17 @@ async function ensureDispatchSlaColumns(dataSource: DataSource): Promise<void> {
   if (!existingColumns.has('dispatched_orders.sla_reminder_before_hours')) {
     await dataSource.query('ALTER TABLE dispatched_orders ADD COLUMN sla_reminder_before_hours integer NULL');
   }
-  await dataSource.query('CREATE INDEX IF NOT EXISTS idx_dispatched_orders_due_at ON dispatched_orders(due_at)');
+  await ensureOptionalIndex(dataSource, 'CREATE INDEX IF NOT EXISTS idx_dispatched_orders_due_at ON dispatched_orders(due_at)', 'idx_dispatched_orders_due_at');
+}
+
+async function ensureOptionalIndex(dataSource: DataSource, sql: string, label: string): Promise<void> {
+  try {
+    await dataSource.query(sql);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // eslint-disable-next-line no-console
+    console.warn(`${label} skipped: ${message}`);
+  }
 }
 
 async function backfillDispatchedOrderDueAt(dataSource: DataSource): Promise<void> {

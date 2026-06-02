@@ -45,7 +45,7 @@ describe('dashboard services', () => {
     });
     expect(requestGet).toHaveBeenCalledTimes(1);
     expect(requestGet).toHaveBeenCalledWith('/dashboard/cards', {
-      params: {},
+      params: { month: expect.stringMatching(/^\d{4}-\d{2}$/) },
       silentError: true,
     });
     expect(requestGet).not.toHaveBeenCalledWith('/work-orders', expect.anything());
@@ -58,7 +58,7 @@ describe('dashboard services', () => {
     await getDashboardCards('business', 'team');
 
     expect(requestGet).toHaveBeenCalledWith('/dashboard/cards', {
-      params: { scope: 'team' },
+      params: { month: expect.stringMatching(/^\d{4}-\d{2}$/), scope: 'team' },
       silentError: true,
     });
   });
@@ -77,7 +77,7 @@ describe('dashboard services', () => {
     });
 
     expect(requestGet).toHaveBeenCalledTimes(1);
-    expect(requestGet).toHaveBeenCalledWith('/dashboard/order-type-matrix', { params: { dimension: 'orderType', scope: 'team' }, silentError: true });
+    expect(requestGet).toHaveBeenCalledWith('/dashboard/order-type-matrix', { params: { dimension: 'orderType', month: expect.stringMatching(/^\d{4}-\d{2}$/), scope: 'team' }, silentError: true });
     expect(requestGet.mock.calls[0][1].params).not.toHaveProperty('audience');
   });
 
@@ -127,7 +127,7 @@ describe('dashboard services', () => {
     const result = await getOrderTypeMatrix({ dimension: 'node' });
 
     expect(requestGet).toHaveBeenCalledTimes(1);
-    expect(requestGet).toHaveBeenNthCalledWith(1, '/dashboard/order-type-matrix', { params: { dimension: 'node' }, silentError: true });
+    expect(requestGet).toHaveBeenNthCalledWith(1, '/dashboard/order-type-matrix', { params: { dimension: 'node', month: expect.stringMatching(/^\d{4}-\d{2}$/) }, silentError: true });
     expect(requestGet).not.toHaveBeenCalledWith('/dispatched-orders', expect.anything());
     expect(result).toEqual({ rows: [], total: 0 });
   });
@@ -138,7 +138,7 @@ describe('dashboard services', () => {
     const result = await getOrderTypeMatrix({ dimension: 'orderType' });
 
     expect(requestGet).toHaveBeenCalledTimes(1);
-    expect(requestGet).toHaveBeenNthCalledWith(1, '/dashboard/order-type-matrix', { params: { dimension: 'orderType' }, silentError: true });
+    expect(requestGet).toHaveBeenNthCalledWith(1, '/dashboard/order-type-matrix', { params: { dimension: 'orderType', month: expect.stringMatching(/^\d{4}-\d{2}$/) }, silentError: true });
     expect(requestGet).not.toHaveBeenCalledWith('/dispatched-orders', expect.anything());
     expect(result).toEqual({ rows: [], total: 0 });
   });
@@ -162,7 +162,7 @@ describe('dashboard services', () => {
       ],
     });
     expect(requestGet).toHaveBeenCalledWith('/dashboard/leader-trend', {
-      params: { orderType: 'onboarding', moduleCode: 'data_entry' },
+      params: { orderType: 'onboarding', month: expect.stringMatching(/^\d{4}-\d{2}$/), moduleCode: 'data_entry' },
       silentError: true,
       timeout: 8_000,
     });
@@ -187,7 +187,7 @@ describe('dashboard services', () => {
       ],
     });
     expect(requestGet).toHaveBeenCalledWith('/dashboard/leader-trend', {
-      params: { orderType: 'onboarding', moduleCode: 'data_entry' },
+      params: { orderType: 'onboarding', month: expect.stringMatching(/^\d{4}-\d{2}$/), moduleCode: 'data_entry' },
       silentError: true,
       timeout: 8_000,
     });
@@ -200,7 +200,7 @@ describe('dashboard services', () => {
 
     expect(requestGet).toHaveBeenCalledTimes(1);
     expect(requestGet).toHaveBeenCalledWith('/dashboard/leader-trend', {
-      params: { orderType: 'onboarding', moduleCode: 'data_entry' },
+      params: { orderType: 'onboarding', month: expect.stringMatching(/^\d{4}-\d{2}$/), moduleCode: 'data_entry' },
       silentError: true,
       timeout: 8_000,
     });
@@ -221,7 +221,7 @@ describe('dashboard services', () => {
     const result = await getOrderTypeMatrix({ dimension: 'node', scope: 'team' });
 
     expect(requestGet).toHaveBeenCalledTimes(1);
-    expect(requestGet).toHaveBeenNthCalledWith(1, '/dashboard/order-type-matrix', { params: { dimension: 'node', scope: 'team' }, silentError: true });
+    expect(requestGet).toHaveBeenNthCalledWith(1, '/dashboard/order-type-matrix', { params: { dimension: 'node', month: expect.stringMatching(/^\d{4}-\d{2}$/), scope: 'team' }, silentError: true });
     expect(requestGet).not.toHaveBeenCalledWith('/dispatched-orders', expect.anything());
     expect(result).toEqual({ rows: [], total: 0 });
   });

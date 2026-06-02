@@ -103,11 +103,11 @@ function monthLabel(d: Date): string {
   return `${d.getMonth() + 1}月`;
 }
 
-function recentMonths(n: number): Date[] {
+function recentMonths(n: number, endMonth?: string): Date[] {
   const out: Date[] = [];
-  const now = new Date();
+  const end = monthValueToDate(normalizeDashboardMonth(endMonth));
   for (let i = n - 1; i >= 0; i -= 1) {
-    out.push(new Date(now.getFullYear(), now.getMonth() - i, 1));
+    out.push(new Date(end.getFullYear(), end.getMonth() - i, 1));
   }
   return out;
 }
@@ -121,6 +121,14 @@ function isSameMonth(iso: string | undefined, d: Date): boolean {
 
 function currentMonthValue(d = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function normalizeDashboardMonth(month?: string): string {
+  return month && /^\d{4}-(0[1-9]|1[0-2])$/.test(month) ? month : currentMonthValue();
+}
+
+function monthValueToDate(month: string): Date {
+  return new Date(`${month}-01T00:00:00`);
 }
 
 function isCurrentMonthValue(iso: string | undefined, month = currentMonthValue()): boolean {
@@ -321,11 +329,11 @@ function normalizeLeaderTrend(raw: unknown, fallbackOrderType: DashboardOrderTyp
   };
 }
 
-export async function getDashboardCards(audience: DashboardAudience = 'business', scope?: DashboardScopeMode): Promise<DashboardCards> {
+export async function getDashboardCards(audience: DashboardAudience = 'business', scope?: DashboardScopeMode, month?: string): Promise<DashboardCards> {
+  const selectedMonth = normalizeDashboardMonth(month);
   if (isMockMode) {
-    const month = currentMonthValue();
     const parents = readParents();
-    const monthOrders = parents.filter((p) => isCurrentMonthValue(p.created_at, month));
+    const monthOrders = parents.filter((p) => isCurrentMonthValue(p.created_at, selectedMonth));
     const children = monthOrders.flatMap((p) => p.dispatched_orders || []);
     const source = children.length > 0 ? children : monthOrders;
     return mockDelay({
@@ -339,32 +347,33 @@ export async function getDashboardCards(audience: DashboardAudience = 'business'
   }
 
   const result = await request.get('/dashboard/cards', {
-    params: scope ? { scope } : {},
+    params: { month: selectedMonth, ...(scope ? { scope } : {}) },
     silentError: true,
   } as any);
   return normalizeDashboardCards(result);
 }
 
-export async function getOrderTypeMatrix(params: { dimension?: DashboardMatrixDimension; audience?: DashboardAudience; scope?: DashboardScopeMode } = {}): Promise<OrderTypeMatrixResult> {
+export async function getOrderTypeMatrix(params: { dimension?: DashboardMatrixDimension; audience?: DashboardAudience; scope?: DashboardScopeMode; month?: string } = {}): Promise<OrderTypeMatrixResult> {
   const dimension = params.dimension || 'node';
+  const selectedMonth = normalizeDashboardMonth(params.month);
   if (isMockMode) {
-    const month = currentMonthValue();
-    const rows = buildMatrixRows(readParents().filter((p) => isCurrentMonthValue(p.created_at, month)), dimension);
+    const rows = buildMatrixRows(readParents().filter((p) => isCurrentMonthValue(p.created_at, selectedMonth)), dimension);
     return mockDelay({ rows, total: rows.length });
   }
 
   try {
-    const result = await request.get('/dashboard/order-type-matrix', { params: { dimension, ...(params.scope ? { scope: params.scope } : {}) }, silentError: true } as any);
+    const result = await request.get('/dashboard/order-type-matrix', { params: { dimension, month: selectedMonth, ...(params.scope ? { scope: params.scope } : {}) }, silentError: true } as any);
     return normalizeOrderTypeMatrix(result, dimension);
   } catch {
     return emptyMatrixResult();
   }
 }
 
-export async function getLeaderTrend(orderType: DashboardOrderType, moduleCode?: string, scope?: DashboardScopeMode, signal?: AbortSignal): Promise<LeaderTrendResult> {
+export async function getLeaderTrend(orderType: DashboardOrderType, moduleCode?: string, scope?: DashboardScopeMode, signal?: AbortSignal, month?: string): Promise<LeaderTrendResult> {
+  const selectedMonth = normalizeDashboardMonth(month);
   if (isMockMode) {
     const parents = readParents().filter((p) => getParentOrderType(p) === orderType);
-    const buckets = recentMonths(12).map((m) => {
+    const buckets = recentMonths(12, selectedMonth).map((m) => {
       const list = parents.filter((p) => isSameMonth(p.created_at, m));
       const children = list.flatMap((p) => p.dispatched_orders || []).filter((d) => !moduleCode || d.module_code === moduleCode);
       const fallback = moduleCode ? [] : list;
@@ -384,7 +393,7 @@ export async function getLeaderTrend(orderType: DashboardOrderType, moduleCode?:
 
   try {
     const result = await request.get('/dashboard/leader-trend', {
-      params: { orderType, ...(moduleCode ? { moduleCode } : {}), ...(scope ? { scope } : {}) },
+      params: { orderType, month: selectedMonth, ...(moduleCode ? { moduleCode } : {}), ...(scope ? { scope } : {}) },
       silentError: true,
       timeout: LEADER_TREND_TIMEOUT_MS,
       signal,
@@ -398,7 +407,7 @@ export async function getLeaderTrend(orderType: DashboardOrderType, moduleCode?:
       orderType,
       moduleCode,
       fallbackReason: 'endpoint_error',
-      buckets: recentMonths(12).map((m) => ({
+      buckets: recentMonths(12, selectedMonth).map((m) => ({
         month: `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}`,
         total: 0,
         completed: 0,

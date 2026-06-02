@@ -25,7 +25,7 @@ describe('DashboardService', () => {
 
     expect(result).toEqual({ totalThisMonth: 45, processing: 12, completed: 30, ...rateFields(66.7), ...zeroVoided, myMessages: 8, scope: 'global' });
     expect(dataSource.query).toHaveBeenNthCalledWith(1, expect.stringContaining('notifications'), ['admin-1']);
-    expect(dataSource.query).toHaveBeenNthCalledWith(2, expect.stringContaining('FROM dispatched_orders'), [null, null, []]);
+    expect(dataSource.query).toHaveBeenNthCalledWith(2, expect.stringContaining('FROM dispatched_orders'), [null, null, [], expect.any(String)]);
     expect(dataSource.query.mock.calls[1][0]).toContain("status::text NOT IN ('completed','void') AND void_at IS NULL");
     expect(dataSource.query.mock.calls[1][0]).toContain('AS voided');
   });
@@ -39,7 +39,7 @@ describe('DashboardService', () => {
     const result = await service.getDashboardCards({ sub: 'sales-1', roles: ['salesperson'] } as never);
 
     expect(result).toEqual({ totalThisMonth: 5, processing: 3, completed: 1, ...rateFields(20), ...zeroVoided, myMessages: 2, scope: 'mine' });
-    expect(dataSource.query).toHaveBeenNthCalledWith(2, expect.stringContaining('wo.created_by = $2::uuid'), ['owner', 'sales-1', []]);
+    expect(dataSource.query).toHaveBeenNthCalledWith(2, expect.stringContaining('wo.created_by = $2::uuid'), ['owner', 'sales-1', [], expect.any(String)]);
   });
 
   it('returns dashboard cards for business leader with department scope', async () => {
@@ -53,7 +53,7 @@ describe('DashboardService', () => {
 
     expect(resolve).toHaveBeenCalledWith('leader-1');
     expect(result).toEqual({ totalThisMonth: 9, processing: 4, completed: 5, ...rateFields(55.6), ...zeroVoided, myMessages: 1, scope: 'team' });
-    expect(dataSource.query).toHaveBeenNthCalledWith(2, expect.stringContaining('wo.department_id = ANY($3::uuid[])'), ['department', null, ['dept-a', 'dept-b']]);
+    expect(dataSource.query).toHaveBeenNthCalledWith(2, expect.stringContaining('wo.department_id = ANY($3::uuid[])'), ['department', null, ['dept-a', 'dept-b'], expect.any(String)]);
   });
 
   it('returns dashboard cards for business manager with global work order scope', async () => {
@@ -65,7 +65,7 @@ describe('DashboardService', () => {
     const result = await service.getDashboardCards({ sub: 'manager-1', roles: ['business_owner'] } as never);
 
     expect(result).toEqual({ totalThisMonth: 30, processing: 8, completed: 20, ...rateFields(66.7), ...zeroVoided, myMessages: 3, scope: 'global' });
-    expect(dataSource.query).toHaveBeenNthCalledWith(2, expect.stringContaining('FROM dispatched_orders'), [null, null, []]);
+    expect(dataSource.query).toHaveBeenNthCalledWith(2, expect.stringContaining('FROM dispatched_orders'), [null, null, [], expect.any(String)]);
   });
 
   it('returns dashboard cards for backend handler with dispatched order scope', async () => {
@@ -77,7 +77,7 @@ describe('DashboardService', () => {
     const result = await service.getDashboardCards({ sub: 'handler-1', roles: ['contract_specialist'] } as never);
 
     expect(result).toEqual({ totalThisMonth: 7, processing: 2, completed: 5, ...rateFields(71.4), ...zeroVoided, myMessages: 4, scope: 'backend_module' });
-    expect(dataSource.query).toHaveBeenNthCalledWith(2, expect.stringContaining('FROM dispatched_orders'), ['handler-1']);
+    expect(dataSource.query).toHaveBeenNthCalledWith(2, expect.stringContaining('FROM dispatched_orders'), ['handler-1', expect.any(String)]);
     expect(dataSource.query.mock.calls[1][0]).toContain("status::text NOT IN ('completed','void') AND void_at IS NULL");
     expect(dataSource.query.mock.calls[1][0]).toContain('AS voided');
   });
@@ -226,7 +226,7 @@ describe('DashboardService', () => {
 
     const result = await service.getOrderTypeMatrix({ sub: 'admin-1', roles: ['admin'] } as never, 'node');
 
-    expect(dataSource.query).toHaveBeenCalledWith(expect.stringContaining('FROM dispatched_orders d'), [false, [], null]);
+    expect(dataSource.query).toHaveBeenCalledWith(expect.stringContaining('FROM dispatched_orders d'), [false, [], null, expect.any(String)]);
     expect(result).toEqual({ rows: [expect.objectContaining({ moduleCode: 'onboarding_contact', label: '入职联系' })] });
   });
 
@@ -236,7 +236,7 @@ describe('DashboardService', () => {
 
     const result = await service.getLeaderTrend('onboarding', { sub: 'admin-1', roles: ['admin'] } as never, '入职联系');
 
-    expect(dataSource.query).toHaveBeenCalledWith(expect.stringContaining('d.module_code = $5::text'), ['onboarding', false, [], null, 'onboarding_contact']);
+    expect(dataSource.query).toHaveBeenCalledWith(expect.stringContaining('d.module_code = $5::text'), ['onboarding', false, [], null, 'onboarding_contact', expect.any(String)]);
     expect(result).toEqual({ orderType: 'onboarding', moduleCode: 'onboarding_contact', buckets: [{ month: '2026-05', total: 1, completed: 0, voided: 0, rate: 0 }] });
   });
 

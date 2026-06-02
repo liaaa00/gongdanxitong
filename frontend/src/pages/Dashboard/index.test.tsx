@@ -75,9 +75,9 @@ describe('Dashboard display behavior', () => {
     );
 
     await waitFor(() => {
-      expect(mockedGetDashboardCards).toHaveBeenCalledWith('business', 'mine');
-      expect(mockedGetOrderTypeMatrix).toHaveBeenCalledWith({ dimension: 'node', audience: 'business', scope: 'mine' });
-      expect(mockedGetLeaderTrend).toHaveBeenCalled();
+      expect(mockedGetDashboardCards).toHaveBeenCalledWith('business', 'mine', expect.stringMatching(/^\d{4}-\d{2}$/));
+      expect(mockedGetOrderTypeMatrix).toHaveBeenCalledWith({ dimension: 'node', audience: 'business', scope: 'mine', month: expect.stringMatching(/^\d{4}-\d{2}$/) });
+      expect(mockedGetLeaderTrend).toHaveBeenCalledWith(expect.any(String), undefined, 'mine', expect.any(AbortSignal), expect.stringMatching(/^\d{4}-\d{2}$/));
     });
 
     expect(container.textContent).not.toContain('工单总表暂时不可用，已展示 0 值或空态，请稍后刷新重试。');

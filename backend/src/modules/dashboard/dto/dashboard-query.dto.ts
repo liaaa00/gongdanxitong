@@ -1,6 +1,13 @@
-import { IsIn, IsOptional, IsString } from 'class-validator';
+import { IsIn, IsOptional, IsString, Matches } from 'class-validator';
 
-export class DashboardScopeQueryDto {
+export class DashboardMonthQueryDto {
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{4}-(0[1-9]|1[0-2])$/)
+  month?: string;
+}
+
+export class DashboardScopeQueryDto extends DashboardMonthQueryDto {
   @IsOptional()
   @IsIn(['mine', 'team'])
   scope?: 'mine' | 'team';

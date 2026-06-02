@@ -55,6 +55,22 @@ describe('database schema guard', () => {
     expect(ddl).toEqual(['CREATE INDEX IF NOT EXISTS idx_dispatched_orders_due_at ON dispatched_orders(due_at)']);
   });
 
+  it('does not fail startup when only optional index creation is blocked by table owner', async () => {
+    const dataSource = {
+      query: jest.fn(async (sql: string) => {
+        if (/^\s*CREATE INDEX/i.test(sql)) throw new Error('must be owner of table dispatched_orders');
+        if (/work_order_status_enum/.test(sql)) return REQUIRED_WORK_ORDER_STATUS_ENUM_VALUES.map((enumlabel) => ({ enumlabel }));
+        if (/dispatched_order_status_enum/.test(sql)) return REQUIRED_DISPATCHED_ORDER_STATUS_ENUM_VALUES.map((enumlabel) => ({ enumlabel }));
+        if (/work_order_modules/.test(sql)) return [{ column_name: 'sla_hours' }, { column_name: 'sla_reminder_before_hours' }];
+        if (/dispatched_orders/.test(sql)) return [{ column_name: 'due_at' }, { column_name: 'sla_hours' }, { column_name: 'sla_reminder_before_hours' }, { column_name: 'void_at' }];
+        return [];
+      }),
+    } as unknown as DataSource & { query: jest.Mock };
+
+    await expect(ensureWorkflowRuntimeSchema(dataSource)).resolves.toBeUndefined();
+    expect(dataSource.query).toHaveBeenCalledWith('CREATE INDEX IF NOT EXISTS idx_dispatched_orders_due_at ON dispatched_orders(due_at)');
+  });
+
   it('reports a business-friendly error when the database user cannot repair schema', async () => {
     const dataSource = {
       query: jest.fn(async (sql: string) => {

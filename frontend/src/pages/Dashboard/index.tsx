@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import dayjs, { type Dayjs } from 'dayjs';
 import { PageContainer, ProTable } from '@ant-design/pro-components';
 import type { ProColumns } from '@ant-design/pro-components';
 import { BellOutlined, CheckCircleOutlined, FileTextOutlined, RiseOutlined, ClockCircleOutlined, StopOutlined } from '@ant-design/icons';
-import { Card, Col, Empty, Progress, Row, Segmented, Select, Space, Spin, Statistic, Tag, Tooltip, Typography } from 'antd';
+import { Card, Col, DatePicker, Empty, Progress, Row, Segmented, Select, Space, Spin, Statistic, Tag, Tooltip, Typography } from 'antd';
 import { canonicalRoleCodes, ROLE } from '@/constants/roles';
 import { useUserStore } from '@/stores/userStore';
 import {
@@ -314,9 +315,10 @@ interface LeaderTrendChartProps {
   visible: boolean;
   moduleOptions: ModuleConfigItem[];
   scope?: DashboardScopeMode;
+  month: string;
 }
 
-const LeaderTrendChart: React.FC<LeaderTrendChartProps> = ({ visible, moduleOptions, scope }) => {
+const LeaderTrendChart: React.FC<LeaderTrendChartProps> = ({ visible, moduleOptions, scope, month }) => {
   const [moduleCode, setModuleCode] = useState<string>();
   const [loading, setLoading] = useState(false);
   const [trendMap, setTrendMap] = useState<Record<DashboardOrderType, LeaderTrendBucket[]>>({
@@ -328,7 +330,7 @@ const LeaderTrendChart: React.FC<LeaderTrendChartProps> = ({ visible, moduleOpti
     const controller = new AbortController();
     let mounted = true;
     setLoading(true);
-    Promise.all(TREND_ORDER_TYPES.map((item) => getLeaderTrend(item.value, moduleCode, scope, controller.signal)))
+    Promise.all(TREND_ORDER_TYPES.map((item) => getLeaderTrend(item.value, moduleCode, scope, controller.signal, month)))
       .then((results) => {
         if (!mounted) return;
         setTrendMap((prev) => ({
@@ -346,7 +348,7 @@ const LeaderTrendChart: React.FC<LeaderTrendChartProps> = ({ visible, moduleOpti
       mounted = false;
       controller.abort();
     };
-  }, [moduleCode, scope, visible]);
+  }, [moduleCode, month, scope, visible]);
 
   if (!visible) return null;
 
@@ -391,7 +393,10 @@ const Dashboard: React.FC = () => {
   const [moduleOptions, setModuleOptions] = useState<ModuleConfigItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [scopeMode, setScopeMode] = useState<DashboardScopeMode>('mine');
+  const [selectedMonth, setSelectedMonth] = useState<Dayjs>(() => dayjs().startOf('month'));
 
+  const selectedMonthValue = selectedMonth.format('YYYY-MM');
+  const selectedMonthLabel = selectedMonth.format('YYYY年M月');
   const roles = useMemo(() => canonicalRoleCodes(user?.roles), [user?.roles]);
   const canViewLeaderTrend = roles.includes(ROLE.ADMIN) || roles.includes(ROLE.BUSINESS_OWNER);
   const canViewNotifications = roles.some((role) => NOTIFICATION_ROLES.includes(role as typeof NOTIFICATION_ROLES[number]));
@@ -498,8 +503,8 @@ const Dashboard: React.FC = () => {
     let mounted = true;
     setLoading(true);
     Promise.allSettled([
-      getDashboardCards(dashboardAudience, effectiveScope),
-      getOrderTypeMatrix({ dimension: matrixDimension, audience: dashboardAudience, scope: effectiveScope }),
+      getDashboardCards(dashboardAudience, effectiveScope, selectedMonthValue),
+      getOrderTypeMatrix({ dimension: matrixDimension, audience: dashboardAudience, scope: effectiveScope, month: selectedMonthValue }),
       canViewLeaderTrend ? getModuleConfigs({ isActive: true }) : Promise.resolve([]),
     ])
       .then(([cardResult, matrixResult, moduleResult]) => {
@@ -519,14 +524,15 @@ const Dashboard: React.FC = () => {
         if (mounted) setLoading(false);
       });
     return () => { mounted = false; };
-  }, [dashboardAudience, effectiveScope, matrixDimension, canViewLeaderTrend]);
+  }, [dashboardAudience, effectiveScope, matrixDimension, canViewLeaderTrend, selectedMonthValue]);
 
   return (
     <PageContainer header={{
       title: roleMeta.title,
       subTitle: roleMeta.subtitle,
-      extra: canSwitchDashboardScope ? [
-        <Space key="scope-switch" align="center">
+      extra: [
+        canSwitchDashboardScope ? (
+          <Space key="scope-switch" align="center">
           <Text type="secondary">数据范围</Text>
           <Segmented<DashboardScopeMode>
             size="small"
@@ -537,10 +543,27 @@ const Dashboard: React.FC = () => {
               { label: '团队数据', value: 'team' },
             ]}
           />
+          </Space>
+        ) : null,
+        <Space key="month-switch" align="center">
+          <Text type="secondary">统计月份</Text>
+          <DatePicker
+            picker="month"
+            size="small"
+            value={selectedMonth}
+            allowClear={false}
+            onChange={(value) => setSelectedMonth(value || dayjs().startOf('month'))}
+          />
         </Space>,
-      ] : undefined,
+      ],
     }}>
       <Space direction="vertical" size="large" style={{ width: '100%' }}>
+        <Card size="small" style={{ width: '100%' }}>
+          <Space direction="horizontal" align="center" style={{ width: '100%', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+            <Text strong>{selectedMonthLabel}仪表盘</Text>
+            <Text type="secondary">默认显示当前自然月，可切换历史月份查看</Text>
+          </Space>
+        </Card>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 16 }}>
           <Card loading={loading} styles={{ body: CARD_BODY_STYLE }}>
             <Statistic title={roleMeta.cardTitles.total} value={normalizedCards.total} prefix={<FileTextOutlined />} />
@@ -639,7 +662,7 @@ const Dashboard: React.FC = () => {
           </Card>
         )}
 
-        <LeaderTrendChart visible={canViewLeaderTrend} moduleOptions={moduleOptions} scope={effectiveScope} />
+        <LeaderTrendChart visible={canViewLeaderTrend} moduleOptions={moduleOptions} scope={effectiveScope} month={selectedMonthValue} />
       </Space>
     </PageContainer>
   );
