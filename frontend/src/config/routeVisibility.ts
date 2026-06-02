@@ -53,13 +53,11 @@ const OFFBOARDING_ROLES = [
 
 const INITIATED_WORK_ROLES = [
   ROLE.ADMIN,
-  ROLE.BUSINESS_GROUP_LEADER,
   ROLE.BUSINESS_GROUP_MEMBER,
 ] as const satisfies readonly CanonicalRole[];
 
 const RETURNED_WORK_ROLES = [
   ROLE.ADMIN,
-  ROLE.BUSINESS_GROUP_LEADER,
   ROLE.BUSINESS_GROUP_MEMBER,
 ] as const satisfies readonly CanonicalRole[];
 

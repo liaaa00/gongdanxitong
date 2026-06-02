@@ -165,14 +165,14 @@ describe('BasicLayout menu visibility', () => {
     expect(text).not.toContain('入职管理');
   });
 
-  it('allows business group leader salesperson views plus team switch', () => {
+  it('keeps business group leader on team and history work only', () => {
     mockUserState.user = mockUserState.makeUser(['business_group_leader']);
 
     renderLayout();
 
     const text = menuText();
-    expect(text).toContain('我发起的');
-    expect(text).toContain('我的退回');
+    expect(text).not.toContain('我发起的');
+    expect(text).not.toContain('我的退回');
     expect(text).toContain('历史工单');
     expect(text).toContain('团队工单');
     expect(text).not.toContain('我的待办');

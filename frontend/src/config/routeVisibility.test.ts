@@ -65,10 +65,10 @@ describe('routeVisibility admin-only configuration routes', () => {
     expect(canAccessPath('/onboarding/contract', memberRoles)).toBe(false);
   });
 
-  it('allows business group leader salesperson views plus team switch', () => {
+  it('keeps business group leader on team and history work only', () => {
     const leaderRoles = roles([ROLE.BUSINESS_GROUP_LEADER]);
-    expect(canAccessPath('/my-work/initiated', leaderRoles)).toBe(true);
-    expect(canAccessPath('/my-work/returned', leaderRoles)).toBe(true);
+    expect(canAccessPath('/my-work/initiated', leaderRoles)).toBe(false);
+    expect(canAccessPath('/my-work/returned', leaderRoles)).toBe(false);
     expect(canAccessPath('/my-work/history', leaderRoles)).toBe(true);
     expect(canAccessPath('/my-work/team', leaderRoles)).toBe(true);
     expect(canAccessPath('/my-dispatched/child-1', leaderRoles)).toBe(true);
