@@ -6,8 +6,8 @@ import { useUserStore } from '@/stores/userStore';
 const SESSION_KEY = 'mock_session_user_v1';
 
 const seedUsers = [
-  { username: 'lizhanbo', password: 'admin123', role: 'admin' },
-  { username: 'wangzixi', password: 'admin123', role: 'admin' },
+  { username: 'lizhanbo', password: '123456', role: 'admin' },
+  { username: 'wangzixi', password: '123456', role: 'admin' },
   { username: 'aolei', password: '123456', role: 'business_owner' },
   { username: 'jianglu', password: '123456', role: 'shared_team_owner' },
   { username: 'yangchun', password: '123456', role: 'labor_contract_member' },
@@ -21,8 +21,8 @@ describe('auth mock login regression', () => {
     useUserStore.setState({ user: null, token: null, refreshToken: null, isLoggedIn: false, loading: false });
   });
 
-  it('allows lizhanbo/admin123 to login and returns admin role with wildcard permissions', async () => {
-    const res = await login({ username: 'lizhanbo', password: 'admin123' });
+  it('allows lizhanbo/123456 to login and returns admin role with wildcard permissions', async () => {
+    const res = await login({ username: 'lizhanbo', password: '123456' });
 
     expect(res.user.username).toBe('lizhanbo');
     expect(res.roles.map((r) => r.code)).toContain('admin');
@@ -30,8 +30,8 @@ describe('auth mock login regression', () => {
     expect(JSON.parse(localStorage.getItem(SESSION_KEY) || '{}').username).toBe('lizhanbo');
   });
 
-  it('allows wangzixi/admin123 to login and returns admin role', async () => {
-    const res = await login({ username: 'wangzixi', password: 'admin123' });
+  it('allows wangzixi/123456 to login and returns admin role', async () => {
+    const res = await login({ username: 'wangzixi', password: '123456' });
 
     expect(res.user.username).toBe('wangzixi');
     expect(res.roles.map((r) => r.code)).toContain('admin');

@@ -113,8 +113,8 @@ export function validateUserCredentials(username: string, password: string): Use
 }
 
 const DEFAULT_SEED_PASSWORDS: Record<string, string> = {
-  lizhanbo: 'admin123',
-  wangzixi: 'admin123',
+  lizhanbo: '123456',
+  wangzixi: '123456',
   aolei: '123456',
   xuekun: '123456',
   yuqinxia: '123456',
@@ -142,18 +142,23 @@ const DEFAULT_SEED_PASSWORDS: Record<string, string> = {
 
 function ensureSeedPasswords() {
   const existing = loadPasswords();
-  const existingUsernames = new Set(existing.map(p => p.username));
+  const existingMap = new Map(existing.map(p => [p.username, p]));
+  let changed = false;
 
-  const missingPasswords: PasswordEntry[] = [];
   for (const [username, password_hash] of Object.entries(DEFAULT_SEED_PASSWORDS)) {
-    if (!existingUsernames.has(username)) {
-      missingPasswords.push({ username, password_hash });
+    const entry = existingMap.get(username);
+    if (!entry) {
+      existing.push({ username, password_hash });
+      changed = true;
+    } else if (entry.password_hash === 'admin123') {
+      // Migrate the obsolete demo default only; do not overwrite custom passwords users changed in mock mode.
+      entry.password_hash = password_hash;
+      changed = true;
     }
   }
 
-  if (missingPasswords.length > 0) {
-    const updated = [...existing, ...missingPasswords];
-    savePasswords(updated);
+  if (changed) {
+    savePasswords(existing);
   }
 }
 
@@ -375,8 +380,8 @@ export async function resetUserPassword(id: string, newPassword?: string): Promi
     setUserPassword(user.username, defaultPwd);
     return mockDelay(undefined);
   }
-  // 后端需要 newPassword 参数，默认重置为 admin123
-  const resetPassword = newPassword || 'admin123';
+  // 后端需要 newPassword 参数，默认重置为当前种子默认密码 123456
+  const resetPassword = newPassword || '123456';
   return request.post(`/admin/users/${id}/reset-password`, { newPassword: resetPassword }) as Promise<void>;
 }
 

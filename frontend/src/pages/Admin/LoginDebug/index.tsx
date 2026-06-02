@@ -174,7 +174,8 @@ const LoginDebugPage: React.FC = () => {
           type="info"
           message={
             <Typography.Paragraph style={{ margin: 0 }}>
-              管理员账号：lizhanbo/admin123、wangzixi/admin123<br />
+              所有种子账号默认密码均为 123456（admin123 为旧口径，当前后端会返回 401）<br />
+              管理员账号：lizhanbo/123456、wangzixi/123456<br />
               业务负责人账号：aolei/123456、xuekun/123456、yuqinxia/123456<br />
               共享团队账号：jianglu/123456、yangchun/123456、maoyani/123456<br />
               数据录入账号：annazhen/123456<br />

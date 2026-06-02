@@ -55,7 +55,7 @@ docker compose exec backend pnpm seed:run
 # 4. 访问
 # 前端：http://localhost
 # API：http://localhost/api
-# 默认账号：admin / admin123（首登强制改密）
+# 演示账号：lizhanbo / 123456（管理员）；所有 seed 账号默认密码均为 123456，admin123 为旧口径不可用
 ```
 
 详见 `docs/部署手册.md`。

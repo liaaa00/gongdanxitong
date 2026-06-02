@@ -167,7 +167,7 @@
 POST /api/auth/login
 Content-Type: application/json
 
-{ "username": "admin", "password": "admin123" }
+{ "username": "lizhanbo", "password": "123456" }
 ```
 ```json
 {

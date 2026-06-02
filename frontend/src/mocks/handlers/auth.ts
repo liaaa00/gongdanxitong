@@ -17,7 +17,7 @@ export const authHandlers = [
   http.post('/api/auth/login', async ({ request }) => {
     const body = (await request.json()) as { username?: string; password?: string };
     const adminUsers = ['admin', 'lizhanbo', 'wangzixi'];
-    if (adminUsers.includes(body.username ?? '') && ['admin123', 'Admin123456!'].includes(body.password ?? '')) {
+    if (adminUsers.includes(body.username ?? '') && ['123456', 'Admin123456!'].includes(body.password ?? '')) {
       return ok({
         accessToken: 'mock-access-token',
         refreshToken: 'mock-refresh-token',

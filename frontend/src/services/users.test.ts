@@ -9,11 +9,11 @@ describe('用户认证测试', () => {
   });
 
   it('应该能够验证管理员用户的密码', async () => {
-    const lizhanbo = validateUserCredentials('lizhanbo', 'admin123');
+    const lizhanbo = validateUserCredentials('lizhanbo', '123456');
     expect(lizhanbo).not.toBeNull();
     expect(lizhanbo?.username).toBe('lizhanbo');
 
-    const wangzixi = validateUserCredentials('wangzixi', 'admin123');
+    const wangzixi = validateUserCredentials('wangzixi', '123456');
     expect(wangzixi).not.toBeNull();
     expect(wangzixi?.username).toBe('wangzixi');
   });
@@ -56,10 +56,28 @@ describe('用户认证测试', () => {
     expect(result).toBeNull();
   });
 
+  it('应该把旧缓存中的管理员 admin123 迁移为当前默认密码 123456', () => {
+    window.localStorage.setItem('mock_admin_passwords_v1', JSON.stringify([
+      { username: 'lizhanbo', password_hash: 'admin123' },
+    ]));
+
+    expect(validateUserCredentials('lizhanbo', '123456')).not.toBeNull();
+    expect(validateUserCredentials('lizhanbo', 'admin123')).toBeNull();
+  });
+
+  it('不应该覆盖 mock 环境中用户手动修改过的种子密码', () => {
+    window.localStorage.setItem('mock_admin_passwords_v1', JSON.stringify([
+      { username: 'lizhanbo', password_hash: 'customPass123' },
+    ]));
+
+    expect(validateUserCredentials('lizhanbo', 'customPass123')).not.toBeNull();
+    expect(validateUserCredentials('lizhanbo', '123456')).toBeNull();
+  });
+
   it('所有种子用户都应该有密码', () => {
     const seedCredentials: Record<string, string> = {
-      lizhanbo: 'admin123',
-      wangzixi: 'admin123',
+      lizhanbo: '123456',
+      wangzixi: '123456',
       aolei: '123456',
       xuekun: '123456',
       yuqinxia: '123456',

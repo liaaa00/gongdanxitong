@@ -138,7 +138,7 @@ export function fixAuthIssue() {
 
     // 为没有密码的用户创建默认密码
     usersWithoutPassword.forEach((u: any) => {
-      const defaultPassword = u.username === 'admin' ? 'admin123' : '123456';
+      const defaultPassword = '123456';
       passwords.push({
         username: u.username,
         password_hash: defaultPassword,
@@ -149,7 +149,7 @@ export function fixAuthIssue() {
     // 保存更新后的密码列表
     window.localStorage.setItem(passwordsKey, JSON.stringify(passwords));
     console.log('\n✅ 修复完成！所有用户现在都可以登录了');
-    console.log('ℹ️  默认密码: admin 用户为 admin123，其他用户为 123456');
+    console.log('ℹ️  默认密码: 所有种子用户均为 123456');
   } catch (e) {
     console.log('❌ 修复失败:', e);
   }
