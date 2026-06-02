@@ -151,7 +151,8 @@ function ensureSeedPasswords() {
       existing.push({ username, password_hash });
       changed = true;
     } else if (entry.password_hash === 'admin123') {
-      // Migrate the obsolete demo default only; do not overwrite custom passwords users changed in mock mode.
+      // admin123 is an obsolete demo default: it returns 401 and must not be used for demos.
+      // Migrate that old default only; do not overwrite custom passwords users changed in mock mode.
       entry.password_hash = password_hash;
       changed = true;
     }

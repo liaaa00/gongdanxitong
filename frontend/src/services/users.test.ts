@@ -56,7 +56,7 @@ describe('用户认证测试', () => {
     expect(result).toBeNull();
   });
 
-  it('应该把旧缓存中的管理员 admin123 迁移为当前默认密码 123456', () => {
+  it('应该把旧口径 admin123（会 401、不可用于演示）迁移为当前默认密码 123456', () => {
     window.localStorage.setItem('mock_admin_passwords_v1', JSON.stringify([
       { username: 'lizhanbo', password_hash: 'admin123' },
     ]));

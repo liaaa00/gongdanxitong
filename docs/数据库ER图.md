@@ -1,5 +1,7 @@
 # 数据库 ER 图（PostgreSQL 16）
 
+> ⚠️ 当前演示口径（2026-06-03）：所有 seed/演示账号默认密码统一为 `123456`；`admin123` 是历史旧口径，会返回 401，不可用于演示。本文下方如出现 `admin123`，仅为历史记录/旧脚本背景，不代表当前可用密码。
+
 > 版本：v1.2（`notification_templates` 扩展 `default_channels` / `variables` 两列，并接收 4 条新 `biz_type`）
 > 数据库：PostgreSQL 16，使用 JSONB 存非结构化数据，所有主键 `bigserial`，时间列一律 `timestamptz`（以 UTC 存储，应用层按 `Asia/Shanghai` 展示）。
 > 扩展性约束：本期实现入职工单，表结构必须兼容「续签 / 离职 / 待遇申报 / 月度批量业务」。凡是不确定的扩展方向，用枚举字符串 + JSONB 承接，不写死为"入职"。

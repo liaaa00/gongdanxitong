@@ -187,7 +187,7 @@ Write-Host "Backend PID: $backendPid" -ForegroundColor Green
 Write-Host "Frontend PID: $frontendPid" -ForegroundColor Green
 Write-Host "Server local URL: http://localhost:$frontendPort" -ForegroundColor Yellow
 if ($localIP) { Write-Host "Coworker URL: http://${localIP}:$frontendPort" -ForegroundColor Yellow }
-Write-Host 'Demo login: lizhanbo / 123456 (all seed users use 123456; admin123 is obsolete and will fail).' -ForegroundColor Yellow
+Write-Host 'Demo login: lizhanbo / 123456 (all seed users use 123456; admin123 is obsolete, returns 401, and must not be used for demos).' -ForegroundColor Yellow
 Write-Host 'Frontend API mode: browser calls relative /api; Vite proxy sends to server 127.0.0.1:3000.' -ForegroundColor Cyan
 Write-Host 'Database: server PostgreSQL 127.0.0.1:5432 / ticket_system.' -ForegroundColor Cyan
 if (-not $NoPause) { Write-Host "`nPress Enter to close this launcher window. Services keep running." -ForegroundColor Gray; Read-Host }
