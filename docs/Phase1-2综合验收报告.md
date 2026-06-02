@@ -38,11 +38,11 @@
 |---|---|---|---|
 | A1 | `cd backend && npm.cmd run start:dev` | 通过 | Nest 成功启动，`P2-BE-REWORK-008` 已复测关闭。 |
 | A2 | `GET http://localhost:3000/api/health` | 通过 | 131ms，返回 `{code:0,data:{status:'ok'},message:'ok',traceId}`。 |
-| A3 | `POST /api/auth/login`，账号 `admin/admin123` | 通过 | 155ms，返回 `accessToken`、`refreshToken`、`traceId=req_9cb13680-...`。 |
+| A3 | `POST /api/auth/login`，账号 `admin/admin123` | 通过 | 155ms，返回 `accessToken`、`refreshToken`、`traceId=req_9cb13680-...`。 | (legacy admin123 record; current admin123 returns 401 and must not be used for demos)
 | A4 | `GET /api/auth/me` 携 JWT | 通过 | 10ms，返回当前用户及 roles；未返回 passwordHash。 |
 | A5 | `POST /api/auth/refresh` | 通过 | 3ms，返回新 `accessToken`。 |
 | A6 | `POST /api/auth/change-password` | 通过 | 111ms，改为 `Admin123456!` 成功；随后旧密码登录返回 401，新密码登录成功。 |
-| A7 | 恢复 admin 密码 | 通过 | 使用临时密码登录后改回 `admin123`，最终 `admin/admin123` 登录成功。 |
+| A7 | 恢复 admin 密码 | 通过 | 使用临时密码登录后改回 `admin123`，最终 `admin/admin123` 登录成功。 | (legacy admin123 record; current admin123 returns 401 and must not be used for demos)
 | A8 | `npm.cmd run test:e2e -- auth.e2e-spec.ts` | 通过 | 11/11 passed，Test Suites 1 passed，耗时 4.539s。 |
 
 Auth 结论：Phase 1 Auth 真复测通过，统一响应结构包含 `code/data/message/traceId`；登录、me、refresh、change-password、logout 的 e2e 用例全部通过。
@@ -59,7 +59,7 @@ Auth 结论：Phase 1 Auth 真复测通过，统一响应结构包含 `code/data
 |---|---|---|---:|---|
 | 1 | `cd backend && npm.cmd run start:dev` | 通过 | - | Nest 成功启动，AdminModule/DispatchModule/HealthModule 路由均注册；stderr 仅 Node 24 `DEP0190` warning。 |
 | 2 | `GET /api/health` | 通过 | 131ms | `{code:0,data:{status:'ok'},traceId:'req_8d47bbeb-...'}` |
-| 3 | `POST /api/auth/login` admin/admin123 | 通过 | 110ms | 返回 `accessToken`、`refreshToken`、`traceId=req_a45b31ad-...`。 |
+| 3 | `POST /api/auth/login` admin/admin123 | 通过 | 110ms | 返回 `accessToken`、`refreshToken`、`traceId=req_a45b31ad-...`。 | (legacy admin123 record; current admin123 returns 401 and must not be used for demos)
 | 4 | `GET /api/auth/me` | 通过 | 8ms | 返回当前用户，含 roles；响应统一结构含 traceId。 |
 
 ### 3.2 Admin 列表/查询接口跳通

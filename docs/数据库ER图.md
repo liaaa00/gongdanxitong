@@ -537,7 +537,7 @@ erDiagram
   - 54 个入职字段的 `field_configs`（需求 §7）
   - 4 条默认派发规则（需求 §3.4）
   - 字段权限矩阵（需求 §8，逐场景逐角色写入）
-  - 默认 admin 账号（用户名 `admin`，初始密码 `admin123`，首次登录强制改密）
+  - 默认 admin 账号（用户名 `admin`，初始密码 `admin123`，首次登录强制改密） (legacy admin123 record; current admin123 returns 401 and must not be used for demos)
 
 ---
 

@@ -76,7 +76,7 @@ SELECT biz_type, is_read, COUNT(*) AS count FROM notifications ...;
 # 登录
 $login = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:3000/api/auth/login" `
   -ContentType "application/json" `
-  -Body '{"username":"admin","password":"admin123"}'
+  -Body '{"username":"admin","password":"admin123"}' (legacy admin123 record; current admin123 returns 401 and must not be used for demos)
 $token = $login.data.accessToken
 $headers = @{ Authorization = "Bearer $token" }
 

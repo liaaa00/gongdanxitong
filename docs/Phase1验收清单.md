@@ -38,7 +38,7 @@
    - PostgreSQL 健康检查通过。
    - 后端 health endpoint 返回 200。
    - 前端首页返回 200/3xx。
-   - `/api/auth/login` 使用 `admin/admin123` 可返回 JWT。
+   - `/api/auth/login` 使用 `admin/admin123` 可返回 JWT。 (legacy admin123 record; current admin123 returns 401 and must not be used for demos)
 
 ### 2.3 Seed 数据验证
 
@@ -96,7 +96,7 @@ Phase 1 不验收子工单列表、接单、完成、退回和导出。
 
 ### 4.3 管理员验收
 
-1. 使用 `admin/admin123` 登录。
+1. 使用 `admin/admin123` 登录。 (legacy admin123 record; current admin123 returns 401 and must not be used for demos)
 2. 如系统提示首登强制改密，按页面引导完成并记录。
 3. 确认能访问管理后台占位入口或后续管理菜单。
 4. 确认当前用户信息显示正确。

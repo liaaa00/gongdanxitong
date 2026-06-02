@@ -19,7 +19,7 @@ Phase 5 撤回审批基础接口已可调用：`POST /api/withdraw-requests`、`
 | 3 | `POST /api/withdraw-requests/modify` | 创建修改审批 | 在同一工单已存在待处理撤回时返回 HTTP 409，`code=4302`，message=`该工单已存在待处理撤回/修改申请` | 通过（并发/重复保护符合预期） |
 | 4 | `GET /api/operation-logs?entity_type=work_order` | 查询主工单 timeline | HTTP 200，`code=0`，返回 work_order create/submit 等日志 | 通过 |
 
-> 备注：本轮使用 `sales01/admin123` 作为业务员账号；创建撤回后，修改申请按后端规则被同工单 pending 申请拦截，符合重复审批防护预期。
+> 备注：本轮使用 `sales01/admin123` 作为业务员账号；创建撤回后，修改申请按后端规则被同工单 pending 申请拦截，符合重复审批防护预期。 (legacy admin123 record; current admin123 returns 401 and must not be used for demos)
 
 ## 三、导出模板 apply-preview / apply
 

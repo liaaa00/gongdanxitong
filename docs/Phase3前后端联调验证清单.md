@@ -26,7 +26,7 @@
 
 | 编号 | 步骤 | 预期 |
 |---|---|---|
-| MSW-001 | 使用 `admin/admin123` 登录 | 登录成功，响应含 `accessToken`、`refreshToken`、用户 roles/permissions |
+| MSW-001 | 使用 `admin/admin123` 登录 | 登录成功，响应含 `accessToken`、`refreshToken`、用户 roles/permissions | (legacy admin123 record; current admin123 returns 401 and must not be used for demos)
 | MSW-002 | 调用 `/api/auth/me` | 返回 admin 用户，路由守卫可进入后台页面 |
 | MSW-003 | 新建入职主工单，两个派发字段均为“是” | 创建草稿成功；提交后返回 4 个子工单：data_entry、social_security、onboarding_contact、contract |
 | MSW-004 | 新建入职主工单，`need_onboarding_contact=是`、`need_company_contract=否` | 提交后返回 3 个子工单：data_entry、social_security、onboarding_contact |

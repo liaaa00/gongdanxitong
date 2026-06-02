@@ -116,7 +116,7 @@ create_draft → submit → update → update → salesperson_modify_resubmit
 | P1-REG-04 | 仪表盘卡片 `/dashboard/cards` 404 | FAIL | **PASS** ✅ | admin 200，biz_member 200 |
 | P1-REG-05 | 主工单列表仍显示"表格/看板/网格/常用筛选视图/列配置" | FAIL | **仍 FAIL** ⚠️ | `MultiViewTable` 组件仍渲染 ViewSwitcher + FilterViews + ColumnsConfigDrawer（见源码 index.tsx:130-142） |
 | P1-REG-06 | 撤回入口 `/work-orders/:id/withdraw` 404 | FAIL | **PASS** ✅ | POST withdraw → 201 |
-| P2-REG-07 | Playwright E2E 旧密码 admin123 | FAIL | **未复测** | 本轮未执行 Playwright；需更新密码为 123456 后由后续测试覆盖 |
+| P2-REG-07 | Playwright E2E 旧密码 admin123 | FAIL | **未复测** | 本轮未执行 Playwright；需更新密码为 123456 后由后续测试覆盖 | (legacy admin123 record; current admin123 returns 401 and must not be used for demos)
 
 > **总结**：7 项中 5 项已修复（PASS），1 项仍待处理（P3.4），1 项未复测（E2E 密码）。
 
@@ -218,7 +218,7 @@ create_draft → submit → update → update → salesperson_modify_resubmit
 ## 8. 建议
 
 1. **P3.4（看板/网格/列配置）**：由前端在 `MultiViewTable` 组件中增加 prop 控制视图切换入口的显隐，或在 WorkOrders 页面层面屏蔽 ViewSwitcher/ColumnsConfigDrawer 渲染。此为当前唯一遗留 FAIL。
-2. **Playwright E2E**：更新测试脚本密码 `admin123` → `123456`（或从环境变量读取），随后重新执行。
+2. **Playwright E2E**：更新测试脚本密码 `admin123` → `123456`（或从环境变量读取），随后重新执行。 (legacy admin123 record; current admin123 returns 401 and must not be used for demos)
 3. **终态工单数据**：后续验收前通过 seed 或手工创建少量 completed/withdrawn 工单，覆盖 R6 闭环。
 4. **前端 UI 烟测**：建议用浏览器抽样确认 `/admin/workflows` 页面可正常加载（API 已通）、仪表盘页面无 "请求的资源不存在" 提示。
 

@@ -128,7 +128,7 @@
 | 1 | **数据库** | migrations 可重放 / seed 幂等 | 4 个 migration 均有 down；seed 使用 ON CONFLICT upsert | **L** | 验收环境首跑即 OK；保留 `pg_dump` 快照 |
 | 2 | 数据库 | 慢查询索引 | dispatched_orders / notifications 复合索引已在 InitSchema 规划；看板 SQL 在 `Phase6看板与通知设计.md` §11 有基线 | **L** | 上线后按 `pg_stat_statements` 跟踪 |
 | 3 | 数据库 | 备份恢复 | `docs/运营手册.md` §7 已给 `pg_dump -Fc` 日级 + 周全备 + 每月恢复演练脚本骨架 | **M** | 上线前必须执行一次恢复演练 |
-| 4 | **安全** | JWT 机制 | passport-jwt；traceId middleware；统一响应；admin/admin123 首登改密 | **M** | 部署文档已强调 `JWT_SECRET ≥ 32 字符`；**上线前必须改 admin 初始密码** |
+| 4 | **安全** | JWT 机制 | passport-jwt；traceId middleware；统一响应；admin/admin123 首登改密 | **M** | 部署文档已强调 `JWT_SECRET ≥ 32 字符`；**上线前必须改 admin 初始密码** | (legacy admin123 record; current admin123 returns 401 and must not be used for demos)
 | 5 | 安全 | 字段级权限 | FieldPermissionInterceptor + `@FieldPermissionScenario` 装饰器已落地 | **M** | 未跑越权专项回归；建议 QA 补一轮 "hidden 字段真的不返回 / masked 真的脱敏" 断言 |
 | 6 | 安全 | 上传附件 | 后端 MAX_UPLOAD_SIZE_MB / MAX_IMPORT_SIZE_MB 限制；ClamAV/内容检查未加 | **H** | 生产上线前接入病毒扫描或在 Nginx 层做 mime 白名单 |
 | 7 | 安全 | Excel 恶意公式 | exceljs 读取默认不执行公式，但未做 `=CMD\|/c`、HYPERLINK 检测 | **H** | 写入导出时注释掉用户输入中的 `=`、`+`、`-`、`@` 前缀；规则见 OWASP CSV injection |
@@ -169,7 +169,7 @@
 
 **前置条件（部署时清单）**：
 1. 修改 `.env` 的 `JWT_SECRET` 为 32 位以上随机字符串（`openssl rand -hex 32`）
-2. 首登后**立即把 admin/admin123 密码改掉**
+2. 首登后**立即把 admin/admin123 密码改掉** (legacy admin123 record; current admin123 returns 401 and must not be used for demos)
 3. `docker compose up` 或 Windows 原生路径启动，跑一遍 `/api/health` + 登录 + 建一张工单
 4. 跑一次 `pg_dump` 备份恢复演练
 5. 限制生产入口只对内网或白名单 IP 开放

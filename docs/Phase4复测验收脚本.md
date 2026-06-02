@@ -11,7 +11,7 @@
 1. PostgreSQL 已启动，migration + seed 已完成。
 2. backend 已启动并通过：
    - `GET /api/health`
-   - `POST /api/auth/login admin/admin123`
+   - `POST /api/auth/login admin/admin123` (legacy admin123 record; current admin123 returns 401 and must not be used for demos)
 3. 测试 fixtures 已存在：`tests/phase4-fixtures/`。
 4. 运行脚本前建议重置测试库，避免历史导入数据干扰：
 
@@ -25,7 +25,7 @@ powershell -ExecutionPolicy Bypass -File tests/reset-windows-native.ps1
 powershell -ExecutionPolicy Bypass -File tests/phase4-smoke.ps1 `
   -BaseUrl "http://127.0.0.1:3000/api" `
   -Username "admin" `
-  -Password "admin123" `
+  -Password "admin123" ` (legacy admin123 record; current admin123 returns 401 and must not be used for demos)
   -Fixture "tests/phase4-fixtures/standard.xlsx" `
   -OrderType "onboarding" `
   -CustomerCode "CUST_NB001"

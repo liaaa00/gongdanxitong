@@ -88,7 +88,7 @@ cd D:\AI\SpeceAppDate\工单系统
 powershell -ExecutionPolicy Bypass -File tests\phase4-smoke.ps1 `
   -BaseUrl http://127.0.0.1:3000/api `
   -Username admin `
-  -Password admin123 `
+  -Password admin123 ` (legacy admin123 record; current admin123 returns 401 and must not be used for demos)
   -Fixture tests/phase4-fixtures/standard.xlsx
 ```
 

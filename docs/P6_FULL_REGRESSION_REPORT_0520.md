@@ -35,7 +35,7 @@
 | 前端全量 Vitest | `cd frontend && npm run test` | PASS：17 files / 62 tests passed |
 | 后端构建 | `cd backend && npm run build` | PASS |
 | 前端构建 | `cd frontend && npm run build` | PASS：tsc + vite build 成功 |
-| 前端 Playwright E2E | `cd frontend && npm run e2e` | FAIL：6 tests 中 2 passed / 4 failed，失败原因是 e2e 脚本使用旧密码 `admin123`，当前 seed 密码为 `123456` |
+| 前端 Playwright E2E | `cd frontend && npm run e2e` | FAIL：6 tests 中 2 passed / 4 failed，失败原因是 e2e 脚本使用旧密码 `admin123`，当前 seed 密码为 `123456` | (legacy admin123 record; current admin123 returns 401 and must not be used for demos)
 
 > 阶段 1 结论：代码级自动化与构建通过；Playwright 旧脚本与当前测试账号密码不一致，需要更新脚本或测试环境账号。
 
@@ -211,7 +211,7 @@
 ### P2-REG-07：Playwright E2E 测试脚本使用旧密码
 
 - 影响：阶段4 项目内 E2E 套件 4/6 失败
-- 实际：脚本使用 `admin/admin123`，当前 seed 默认密码为 `123456`
+- 实际：脚本使用 `admin/admin123`，当前 seed 默认密码为 `123456` (legacy admin123 record; current admin123 returns 401 and must not be used for demos)
 - 建议：统一测试账号密码或通过环境变量配置 E2E 凭据
 - 建议责任人：frontend/qa
 

@@ -73,7 +73,7 @@
 
 - 优先级：P0
 - 前置条件：后端服务已启动；admin seed 存在。
-- 操作步骤：POST `/api/auth/login`，请求体 `{ "username": "admin", "password": "admin123" }`。
+- 操作步骤：POST `/api/auth/login`，请求体 `{ "username": "admin", "password": "admin123" }`。 (legacy admin123 record; current admin123 returns 401 and must not be used for demos)
 - 预期结果：返回 200/201；响应符合 `{code,data,message,traceId}`；`data.accessToken` 存在；不返回 `password_hash`。
 
 ### TC-AUTH-002 错误密码登录失败
@@ -136,7 +136,7 @@
 
 - 优先级：P1
 - 前置条件：已登录获得 access token。
-- 操作步骤：POST `/api/auth/change-password` 修改密码；用新密码登录；测试结束恢复 `admin123`。
+- 操作步骤：POST `/api/auth/change-password` 修改密码；用新密码登录；测试结束恢复 `admin123`。 (legacy admin123 record; current admin123 returns 401 and must not be used for demos)
 - 预期结果：修改成功；旧密码失效；新密码可登录；最终恢复默认密码。
 
 ### TC-AUTH-011 修改密码时旧密码错误应失败
@@ -203,7 +203,7 @@
 
 - 优先级：P0
 - 前置条件：后端和前端均已启动；admin 账号可用。
-- 操作步骤：在登录页输入 `admin/admin123` 并提交。
+- 操作步骤：在登录页输入 `admin/admin123` 并提交。 (legacy admin123 record; current admin123 returns 401 and must not be used for demos)
 - 预期结果：登录成功；跳转 `/dashboard` 或默认首页；本地保存 token。
 
 ### TC-FE-003 登录失败应显示错误提示
@@ -305,5 +305,5 @@
 
 - 优先级：P0
 - 前置条件：Docker Compose 已启动；seed 已完成。
-- 操作步骤：请求 `/api/auth/login`，账号 `admin/admin123`。
+- 操作步骤：请求 `/api/auth/login`，账号 `admin/admin123`。 (legacy admin123 record; current admin123 returns 401 and must not be used for demos)
 - 预期结果：返回 JWT；响应中不包含 `password_hash`；统一响应结构包含 `traceId`。

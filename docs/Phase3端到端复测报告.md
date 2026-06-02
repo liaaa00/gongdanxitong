@@ -23,8 +23,8 @@
 
 ## 2. 测试账号与数据
 
-- 需求指定 `salesperson/salesperson123`，但 seed 中实际可用业务员账号为 `sales01/admin123`；本次使用 `sales01` 执行业务员流程。
-- 后道账号：`dataentry01/admin123`、`social01/admin123`、`onboard01/admin123`、`contract01/admin123`、`dataentrysup01/admin123`。
+- 需求指定 `salesperson/salesperson123`，但 seed 中实际可用业务员账号为 `sales01/admin123`；本次使用 `sales01` 执行业务员流程。 (legacy admin123 record; current admin123 returns 401 and must not be used for demos)
+- 后道账号：`dataentry01/admin123`、`social01/admin123`、`onboard01/admin123`、`contract01/admin123`、`dataentrysup01/admin123`。 (legacy admin123 record; current admin123 returns 401 and must not be used for demos)
 - 客户使用 seed 数据：`CUST_NB001 / 宁波某制造集团`。
 - 工单样例：`order_type=onboarding`，`need_onboarding_contact=是`，`need_company_contract=是`，并补齐 field_configs 要求的必填字段。
 
@@ -32,7 +32,7 @@
 
 | 步骤 | 请求摘要 | 期望 | 实际结果 | 结论 | TraceId / 证据 |
 |---|---|---|---|---|---|
-| 1 | `POST /api/auth/login`，`sales01/admin123` | 返回 token | HTTP 201，返回 `code=0`、`accessToken`、`refreshToken`、`traceId` | 通过 | 见结果 JSON `login sales01` |
+| 1 | `POST /api/auth/login`，`sales01/admin123` | 返回 token | HTTP 201，返回 `code=0`、`accessToken`、`refreshToken`、`traceId` | 通过 | 见结果 JSON `login sales01` | (legacy admin123 record; current admin123 returns 401 and must not be used for demos)
 | 2 | `POST /api/work-orders` 创建 onboarding 草稿 | 创建成功，`orderNo=ON+YYYYMMDD+序号`，`status=draft` | HTTP 201，`orderNo=ON20260511002`，`status=draft` | 通过 | `req_*`，原始结果 `step2 create onboarding draft` |
 | 3 | `POST /api/work-orders/:id/submit` | 触发 4 个子工单，模块为 `data_entry/social_security/onboarding_contact/contract`，每条有 `handler_id` | HTTP 201，4 个模块均生成；但 submit 顶层 `dispatchedOrders` 只返回 `id/moduleCode/status`，不返回 `handlerId`。后续 `GET /work-orders/:id` 和 `GET /dispatched-orders/:id` 可看到 handlerId。 | 部分通过；响应契约不满足“submit 返回每条 handler_id”的验收期望 | `req_9c96acb2-e2d7-4a26-8a62-7932ae318a0a`；记录为 `P3-E2E-001` |
 | 4 | `GET /api/work-orders/:id` | 返回主单详情和子单状态；业务员视角字段过滤正常 | HTTP 200，返回主单、`extraData`、`dispatchedOrders`；业务员视角可见完整字段，符合“业务员主工单可见全部字段”矩阵 | 通过 | `step4 salesperson get work order detail` |
@@ -81,6 +81,6 @@
 
 ## 6. 其他注意事项
 
-1. seed 账号与任务描述不一致：任务描述中的 `salesperson/salesperson123` 不存在，本次使用 `sales01/admin123`；建议文档统一。
+1. seed 账号与任务描述不一致：任务描述中的 `salesperson/salesperson123` 不存在，本次使用 `sales01/admin123`；建议文档统一。 (legacy admin123 record; current admin123 returns 401 and must not be used for demos)
 2. 控制台直接 `Get-Content` 中文可能显示乱码，但 Node 结果文件中的中文 code point 验证正确，属于 PowerShell 控制台编码显示问题，不影响接口数据。
 3. 现有报告中的 `tests/phase3-e2e-results.json` 为最终原始证据；早期根目录 `phase3-e2e-results.json` 为上一轮编码问题产物，不作为本次最终结论依据。
