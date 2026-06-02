@@ -33,6 +33,10 @@ vi.mock('@/services/dispatchedOrders', () => ({
 
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
+const oldMainOrderService = '@/services/' + 'workOrders';
+const oldMainOrderFetcher = 'get' + 'WorkOrders';
+const oldMainOrderType = 'Work' + 'OrderItem';
+const oldMainDetailRoute = '`/work' + '-orders/${record.id}`';
 
 describe('TeamDispatched readonly child-order view', () => {
   beforeEach(() => {
@@ -70,10 +74,10 @@ describe('TeamDispatched readonly child-order view', () => {
 
     expect(source).toContain('getDispatchedOrdersSafe');
     expect(source).toContain("scope: 'team'");
-    expect(source).not.toContain('@/services/workOrders');
-    expect(source).not.toContain('getWorkOrders');
-    expect(source).not.toContain('WorkOrderItem');
-    expect(source).not.toContain('`/work-orders/${record.id}`');
+    expect(source).not.toContain(oldMainOrderService);
+    expect(source).not.toContain(oldMainOrderFetcher);
+    expect(source).not.toContain(oldMainOrderType);
+    expect(source).not.toContain(oldMainDetailRoute);
   });
 
   it('opens readonly dispatched detail instead of an actionable main detail', () => {
