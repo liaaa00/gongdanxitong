@@ -58,7 +58,7 @@ describe('Dashboard display behavior', () => {
       token: 'token',
       refreshToken: null,
     });
-    mockedGetDashboardCards.mockResolvedValue({ totalThisMonth: 0, processing: 0, completed: 0, voided: 0, myMessages: 0 });
+    mockedGetDashboardCards.mockResolvedValue({ totalPending: 0, monthPending: 0, totalThisMonth: 0, processing: 0, completed: 0, voided: 0, myMessages: 0 });
     mockedGetOrderTypeMatrix.mockRejectedValue(new Error('matrix unavailable'));
     mockedGetLeaderTrend.mockResolvedValue({
       orderType: 'onboarding',
@@ -75,17 +75,64 @@ describe('Dashboard display behavior', () => {
     );
 
     await waitFor(() => {
-      expect(mockedGetDashboardCards).toHaveBeenCalledWith('business', 'mine', expect.stringMatching(/^\d{4}-\d{2}$/));
-      expect(mockedGetOrderTypeMatrix).toHaveBeenCalledWith({ dimension: 'node', audience: 'business', scope: 'mine', month: expect.stringMatching(/^\d{4}-\d{2}$/) });
-      expect(mockedGetLeaderTrend).toHaveBeenCalledWith(expect.any(String), undefined, 'mine', expect.any(AbortSignal), expect.stringMatching(/^\d{4}-\d{2}$/));
+      expect(mockedGetDashboardCards).toHaveBeenCalledWith('business', undefined, expect.stringMatching(/^\d{4}-\d{2}$/));
+      expect(mockedGetOrderTypeMatrix).toHaveBeenCalledWith({ dimension: 'node', audience: 'business', scope: undefined, month: expect.stringMatching(/^\d{4}-\d{2}$/) });
+      expect(mockedGetLeaderTrend).toHaveBeenCalledWith(expect.any(String), undefined, undefined, expect.any(AbortSignal), expect.stringMatching(/^\d{4}-\d{2}$/));
     });
 
     expect(container.textContent).not.toContain('工单总表暂时不可用，已展示 0 值或空态，请稍后刷新重试。');
     expect(container.textContent).not.toContain('负责人月办结完成率趋势暂时不可用，已展示空态数据，请稍后刷新重试。');
   });
 
+  it('renders total pending separately from selected-month pending with visible metric explanation', async () => {
+    mockedGetDashboardCards.mockResolvedValue({ totalPending: 12, monthPending: 3, totalThisMonth: 9, processing: 3, completed: 4, voided: 2, myMessages: 0 });
+
+    const { container, getByText } = render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(mockedGetDashboardCards).toHaveBeenCalledWith('business', undefined, expect.stringMatching(/^\d{4}-\d{2}$/));
+      expect(getByText('总待处理')).toBeTruthy();
+      expect(getByText('单月待处理')).toBeTruthy();
+      expect(container.textContent).toContain('总待处理=当前可见范围内全部未办结子工单');
+    });
+
+    expect(container.textContent).toContain('12');
+    expect(container.textContent).toContain('3');
+  });
+
+  it('keeps business group leader scope switch available and defaults to mine', async () => {
+    useUserStore.setState({
+      user: {
+        id: 'leader-1',
+        username: 'leader',
+        real_name: '业务组长',
+        email: '',
+        phone: '',
+        avatar_url: null,
+        is_active: true,
+        permissions: [],
+        roles: [{ id: 'r-leader', code: ROLE.BUSINESS_GROUP_LEADER, name: '业务组长', level: 'supervisor' }],
+      },
+    });
+
+    render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(mockedGetDashboardCards).toHaveBeenCalledWith('business', 'mine', expect.stringMatching(/^\d{4}-\d{2}$/));
+      expect(mockedGetOrderTypeMatrix).toHaveBeenCalledWith({ dimension: 'node', audience: 'business', scope: 'mine', month: expect.stringMatching(/^\d{4}-\d{2}$/) });
+    });
+  });
+
   it('keeps backend/service matrix completion rate so voided orders are excluded from displayed denominator', async () => {
-    mockedGetDashboardCards.mockResolvedValue({ totalThisMonth: 100, processing: 0, completed: 98, voided: 2, myMessages: 0 });
+    mockedGetDashboardCards.mockResolvedValue({ totalPending: 0, monthPending: 0, totalThisMonth: 100, processing: 0, completed: 98, voided: 2, myMessages: 0 });
     mockedGetOrderTypeMatrix.mockResolvedValue({
       rows: [
         {

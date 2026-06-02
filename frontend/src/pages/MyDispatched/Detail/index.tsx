@@ -144,7 +144,7 @@ const MyDispatchedDetail: React.FC = () => {
 
   const { actionLoading, handleAccept, handleComplete, handleReturn,
     handleSupplement, handleReassign,
-    handleCreatorUpdate, handleUrge, handleWithdraw, handleVoid,
+    handleCreatorUpdate, handleUrge, handleResubmit, handleWithdraw, handleVoid,
     handleApproveWithdraw, handleApproveVoid }
     = useDispatchedActions({ orderId: effectiveOrderId, order, onOrderUpdated: setOrder });
 
@@ -215,26 +215,39 @@ const MyDispatchedDetail: React.FC = () => {
     [supplementableFields, order],
   );
 
-  const orderWithParent = (order || {}) as unknown as { parentOrder?: { createdBy?: string }; parent_order?: { created_by?: string } };
-  const parentCreatedBy = String(orderWithParent.parentOrder?.createdBy ?? orderWithParent.parent_order?.created_by ?? '');
+  const orderWithParent = (order || {}) as unknown as { parentOrder?: { createdBy?: string; created_by?: string }; parent_order?: { created_by?: string; createdBy?: string } };
+  const parentCreatedBy = String(
+    orderWithParent.parentOrder?.createdBy
+    ?? orderWithParent.parentOrder?.created_by
+    ?? orderWithParent.parent_order?.created_by
+    ?? orderWithParent.parent_order?.createdBy
+    ?? order?.created_by
+    ?? order?.createdBy
+    ?? '',
+  );
+  const searchParams = new URLSearchParams(location.search);
+  const isReadOnlyView = searchParams.get('readonly') === '1' || searchParams.get('from') === 'team';
   const isAdminUser = hasRole('admin');
-  const canBackendOperate = isAdminUser || hasRole('data_entry_leader') || hasRole('shared_team_owner')
+  const canBackendOperateByRole = isAdminUser || hasRole('data_entry_leader') || hasRole('shared_team_owner')
     || hasRole('labor_contract_member') || hasRole('onboarding_resignation_member') || hasRole('social_insurance_specialist');
+  const canBackendOperate = canBackendOperateByRole && !isReadOnlyView;
   const isOrderCreator = Boolean(user?.id && parentCreatedBy === user.id);
   const isCreator = isAdminUser || isOrderCreator;
-  const isVoided = Boolean(order?.void_at || order?.voidAt);
+  const isVoided = Boolean(order?.void_at || order?.voidAt || order?.status === 'void');
+  const isResubmittableStatus = Boolean(order && (['returned', 'withdrawn', 'void'].includes(order.status) || isVoided));
   const canAccept = canBackendOperate && !isVoided && order?.status === 'pending';
   const canComplete = canBackendOperate && !isVoided && order?.status === 'processing';
   const canReturn = canBackendOperate && !isVoided && (order?.status === 'processing' || order?.status === 'pending');
   const canSupplement = canBackendOperate && !isVoided && order?.status === 'processing' && supplementableFields.length > 0;
-  const isRepairableStatus = Boolean(order && ['returned', 'withdrawn'].includes(order.status));
+  const isRepairableStatus = isResubmittableStatus;
   const isTerminalStatus = Boolean(order && ['completed', 'withdraw_pending', 'void_pending', 'void'].includes(order.status));
   const isTerminal = isVoided || (isTerminalStatus && !isRepairableStatus);
-  const canCreatorOperate = Boolean(order && isCreator && !isVoided && (!isTerminalStatus || isRepairableStatus));
-  const canCreatorUpdate = canCreatorOperate;
-  const canCreatorUrge = canCreatorOperate && order?.status !== 'returned' && order?.status !== 'withdrawn';
-  const canCreatorWithdraw = canCreatorOperate && order?.status !== 'returned' && order?.status !== 'withdrawn';
-  const canCreatorVoid = canCreatorOperate;
+  const canCreatorOperate = Boolean(order && isCreator && !isReadOnlyView && (!isTerminalStatus || isRepairableStatus));
+  const canCreatorUpdate = canCreatorOperate && isResubmittableStatus;
+  const canCreatorResubmit = canCreatorOperate && isResubmittableStatus;
+  const canCreatorUrge = canCreatorOperate && !isResubmittableStatus;
+  const canCreatorWithdraw = canCreatorOperate && !isResubmittableStatus;
+  const canCreatorVoid = canCreatorOperate && !isVoided;
   const canApproveWithdraw = canBackendOperate && order?.status === 'withdraw_pending' && (isAdminUser || !isOrderCreator);
   const canApproveVoid = canBackendOperate && order?.status === 'void_pending' && (isAdminUser || !isOrderCreator);
   const canReturnCompleted = canBackendOperate && !isVoided && order?.status === 'completed' && (
@@ -318,6 +331,16 @@ const MyDispatchedDetail: React.FC = () => {
       setVoidOpen(false);
       voidForm.resetFields();
     }
+  };
+
+  const handleCreatorResubmitClick = () => {
+    modal.confirm({
+      title: '确认重新提交该子工单？',
+      content: '重新提交按子工单维度执行，修改字段不会自动重新提交；确认后该子工单将重新进入对应后道待处理流程。',
+      okText: '重新提交',
+      cancelText: '取消',
+      onOk: () => handleResubmit(),
+    });
   };
 
   const openApproval = (type: 'withdraw' | 'void', approved: boolean) => {
@@ -414,7 +437,7 @@ const MyDispatchedDetail: React.FC = () => {
 
   const dirtySummary = dirtyFields.length > 0 ? dirtyFields : [];
   const isResignationModule = Boolean(order?.order_type === 'resignation' || order?.module_code?.startsWith('resignation') || order?.module_code === 'data_entry_resign');
-  const canUploadResignationAttachment = Boolean(order && isResignationModule && (canBackendOperate || isCreator));
+  const canUploadResignationAttachment = Boolean(order && !isReadOnlyView && isResignationModule && (canBackendOperate || isCreator));
 
   const handleResignationAttachmentUpload = async (file: File) => {
     if (!order) return Upload.LIST_IGNORE;
@@ -443,10 +466,18 @@ const MyDispatchedDetail: React.FC = () => {
   return (
     <PageContainer header={{
       title: '子工单详情',
-      extra: [<Button key="back" onClick={() => navigate(getDispatchedListPath(order))}>返回列表</Button>],
+      extra: [<Button key="back" onClick={() => navigate(isReadOnlyView ? '/my-work/team' : getDispatchedListPath(order))}>返回列表</Button>],
       ghost: false,
     }}>
       <Space direction="vertical" size="large" style={{ width: '100%' }}>
+        {isReadOnlyView && (
+          <Alert
+            type="info"
+            showIcon
+            message="团队工单只读详情"
+            description="当前从团队工单进入，仅允许查看，不展示接单、完成、退回、修改、作废、重新提交等操作按钮。"
+          />
+        )}
         {hasUnreadDirty && (
           <Alert
             type="warning"
@@ -506,6 +537,9 @@ const MyDispatchedDetail: React.FC = () => {
           <Space style={{ marginTop: 16 }} wrap>
             {canCreatorUpdate && (
               <Button icon={<EditOutlined />} onClick={openCreatorEdit}>修改</Button>
+            )}
+            {canCreatorResubmit && (
+              <Button type="primary" icon={<CheckCircleOutlined />} loading={actionLoading} onClick={handleCreatorResubmitClick}>重新提交</Button>
             )}
             {canCreatorWithdraw && (
               <Button icon={<RollbackOutlined />} onClick={() => { withdrawForm.resetFields(); setWithdrawOpen(true); }}>撤回</Button>
@@ -680,8 +714,8 @@ const MyDispatchedDetail: React.FC = () => {
             type="info"
             showIcon
             style={{ marginBottom: 12 }}
-            message="修改会同步到主工单，并通知包含相关字段的办理人员。"
-            description="请只修改当前子工单确需调整的字段；单个子工单作废/撤回请使用对应按钮。"
+            message="修改仅保存当前子工单字段，不会自动重新提交。"
+            description="如需让已退回/已撤回/已作废子工单重新进入办理流，请保存修改后再点击“重新提交”。"
           />
           <Form form={creatorEditForm} layout="vertical">
             {visibleDetailFields.map((field) => (

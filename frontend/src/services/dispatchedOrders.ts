@@ -28,6 +28,11 @@ export interface DispatchedOrderItem {
   employee_id_card?: string;
   customer_name: string;
   customer_code?: string;
+  created_by?: string;
+  created_by_name?: string;
+  createdBy?: string;
+  createdByName?: string;
+  parent_order_status?: string;
   order_type?: string;
   visible_fields: string[];
   return_reason: string | null;
@@ -159,6 +164,11 @@ function normalizeDispatchedOrderItem(raw: unknown): DispatchedOrderItem {
   const moduleCode = String(row.module_code ?? row.moduleCode ?? '');
   const meta = MODULE_META[moduleCode] || { name: moduleCode, visible_fields: [], supplementable_fields: [] };
   const extraData = (row.extra_data ?? row.extraData ?? row.parent_extra_data ?? row.parentExtraData ?? parent.extra_data ?? parent.extraData) as Record<string, unknown> | undefined;
+  const creator = (row.creator ?? row.createdByUser ?? row.created_by_user ?? parent.creator ?? parent.createdByUser ?? parent.created_by_user) as Record<string, unknown> | undefined;
+  const createdByRaw = row.created_by ?? row.createdBy ?? parent.created_by ?? parent.createdBy ?? '';
+  const createdByNameRaw = row.created_by_name ?? row.createdByName ?? row.creator_name ?? row.creatorName
+    ?? parent.created_by_name ?? parent.createdByName ?? parent.creator_name ?? parent.creatorName
+    ?? creator?.real_name ?? creator?.realName ?? creator?.username ?? createdByRaw;
   const visibleFields = normalizeStringArray(row.visible_fields ?? row.visibleFields);
   const supplementableFields = normalizeStringArray(row.supplementable_fields ?? row.supplementableFields);
   const mergedVisibleFields = moduleCode === 'onboarding_contact'
@@ -183,6 +193,11 @@ function normalizeDispatchedOrderItem(raw: unknown): DispatchedOrderItem {
     employee_id_card: String(row.employee_id_card ?? row.employeeIdCard ?? parent.employee_id_card ?? parent.employeeIdCard ?? extraData?.id_card_no ?? extraData?.employee_id_card ?? ''),
     customer_name: String(row.customer_name ?? row.customerName ?? parent.customer_name ?? parent.customerName ?? extraData?.customer_name ?? ''),
     customer_code: String(row.customer_code ?? row.customerCode ?? parent.customer_code ?? parent.customerCode ?? extraData?.customer_code ?? ''),
+    created_by: String(createdByRaw || ''),
+    created_by_name: String(createdByNameRaw || ''),
+    createdBy: String(createdByRaw || ''),
+    createdByName: String(createdByNameRaw || ''),
+    parent_order_status: String(row.parent_order_status ?? row.parentOrderStatus ?? parent.status ?? ''),
     order_type: String(row.order_type ?? row.orderType ?? parent.order_type ?? parent.orderType ?? ''),
     visible_fields: mergedVisibleFields.length > 0 ? mergedVisibleFields : meta.visible_fields,
     return_reason: (row.return_reason ?? row.returnReason ?? null) as string | null,
@@ -274,6 +289,8 @@ function flattenDispatched(): DispatchedOrderItem[] {
         employee_id_card: String(p.extra_data?.id_card_no ?? p.extra_data?.employee_id_card ?? p.employee_id_card ?? ''),
         customer_name: String(p.extra_data?.customer_name ?? p.customer_name ?? ''),
         customer_code: String(p.extra_data?.customer_code ?? p.customer_code ?? ''),
+        created_by: String((p as unknown as Record<string, unknown>).created_by ?? (p as unknown as Record<string, unknown>).createdBy ?? ''),
+        created_by_name: String((p as unknown as Record<string, unknown>).created_by_name ?? (p as unknown as Record<string, unknown>).createdByName ?? (p as unknown as Record<string, unknown>).created_by ?? (p as unknown as Record<string, unknown>).createdBy ?? ''),
         order_type: String((p as unknown as Record<string, unknown>).order_type ?? (p as unknown as Record<string, unknown>).orderType ?? 'onboarding'),
         visible_fields: meta.visible_fields,
         return_reason: d.return_reason ?? null,
@@ -619,7 +636,6 @@ export async function creatorUpdateDispatchedOrderFields(id: string, fields: Rec
       if (fields.id_card_no !== undefined || fields.employee_id_card !== undefined) {
         parent.employee_id_card = String(fields.id_card_no ?? fields.employee_id_card ?? '');
       }
-      if (child.status === 'returned') child.status = 'processing';
       break;
     }
     writeParentOrders(parents);
@@ -630,6 +646,8 @@ export async function creatorUpdateDispatchedOrderFields(id: string, fields: Rec
   const raw = await request.post(`/dispatched-orders/${id}/creator-update`, { fields, reason });
   return normalizeDispatchedOrderItem(raw);
 }
+
+// 子工单重新提交以文件后方的 payload 版本为准，避免“修改字段”自动改变状态。
 
 export async function urgeDispatchedOrder(id: string, reason?: string): Promise<DispatchedOrderItem> {
   if (isMockMode) {
@@ -707,6 +725,36 @@ export async function approveVoidDispatchedOrder(id: string, approved: boolean, 
   }
   const raw = await request.post(`/dispatched-orders/${id}/void/approve`, { approved, comment });
   return normalizeDispatchedOrderItem(raw);
+}
+
+export async function resubmitDispatchedOrder(id: string, payload?: { fields?: Record<string, unknown>; reason?: string; moduleCode?: string | null }): Promise<DispatchedOrderItem> {
+  if (isMockMode) {
+    const updated = updateChildInParent(id, (c) => {
+      c.status = 'processing';
+      c.return_reason = null;
+      c.returned_fields = [];
+      c.completed_at = null;
+      c.void_at = null;
+    });
+    reloadMockWorkOrders();
+    return mockDelay(updated ? { ...updated, void_at: null, voidAt: null } : ({} as DispatchedOrderItem));
+  }
+  const body = {
+    fields: payload?.fields,
+    reason: payload?.reason,
+    moduleCode: payload?.moduleCode,
+    module_code: payload?.moduleCode,
+  };
+  try {
+    const raw = await request.post(`/dispatched-orders/${id}/resubmit`, body);
+    return normalizeDispatchedOrderItem(raw);
+  } catch {
+    if (payload?.moduleCode) {
+      const raw = await request.post(`/dispatched-orders/${id}/void/restore`, { moduleCode: payload.moduleCode, module_code: payload.moduleCode });
+      return normalizeDispatchedOrderItem(raw);
+    }
+    throw new Error('resubmit failed');
+  }
 }
 
 export async function reassignDispatchedOrder(id: string, handlerId: string, reason?: string): Promise<DispatchedOrderItem> {
@@ -904,6 +952,7 @@ export async function batchImportDispatchedOrders(payload: {
   rows: DispatchedBatchImportRow[];
   defaultRemark?: string;
   defaultReturnReason?: string;
+  forceAction?: 'complete' | 'return';
 }): Promise<DispatchedBatchImportResult> {
   if (isMockMode) {
     return mockDelay({

@@ -27,6 +27,8 @@ describe('dashboard services', () => {
 
   it('uses dashboard cards endpoint directly and does not aggregate work or dispatched orders on the frontend', async () => {
     requestGet.mockResolvedValueOnce({
+      totalPending: 8,
+      monthPending: 2,
       totalThisMonth: 6,
       processing: 2,
       completed: 3,
@@ -36,6 +38,8 @@ describe('dashboard services', () => {
     });
 
     await expect(getDashboardCards('business')).resolves.toMatchObject({
+      totalPending: 8,
+      monthPending: 2,
       totalThisMonth: 6,
       processing: 2,
       completed: 3,
@@ -53,13 +57,24 @@ describe('dashboard services', () => {
   });
 
   it('passes only backend-supported scope to dashboard cards endpoint', async () => {
-    requestGet.mockResolvedValueOnce({ totalThisMonth: 1, processing: 1, completed: 0, voided: 0, myMessages: 0 });
+    requestGet.mockResolvedValueOnce({ totalPending: 1, monthPending: 1, totalThisMonth: 1, processing: 1, completed: 0, voided: 0, myMessages: 0 });
 
     await getDashboardCards('business', 'team');
 
     expect(requestGet).toHaveBeenCalledWith('/dashboard/cards', {
       params: { month: expect.stringMatching(/^\d{4}-\d{2}$/), scope: 'team' },
       silentError: true,
+    });
+  });
+
+  it('falls back to legacy processing as both pending metrics when backend has not been upgraded', async () => {
+    requestGet.mockResolvedValueOnce({ totalThisMonth: 4, processing: 3, completed: 1, voided: 0, myMessages: 0 });
+
+    await expect(getDashboardCards('business')).resolves.toMatchObject({
+      totalPending: 3,
+      monthPending: 3,
+      processing: 3,
+      totalThisMonth: 4,
     });
   });
 

@@ -22,13 +22,15 @@ const ALL_ROLES = [
 
 const BUSINESS_ORDER_ROLES = [
   ROLE.ADMIN,
-  ROLE.BUSINESS_OWNER,
-  ROLE.BUSINESS_GROUP_LEADER,
+] as const satisfies readonly CanonicalRole[];
+
+const WORK_ORDER_CREATE_ROLES = [
+  ROLE.ADMIN,
   ROLE.BUSINESS_GROUP_MEMBER,
 ] as const satisfies readonly CanonicalRole[];
 
 const ONBOARDING_ROLES = [
-  ...BUSINESS_ORDER_ROLES,
+  ROLE.ADMIN,
   ROLE.DATA_ENTRY_LEADER,
   ROLE.SHARED_TEAM_OWNER,
   ROLE.LABOR_CONTRACT_MEMBER,
@@ -37,24 +39,20 @@ const ONBOARDING_ROLES = [
 ] as const satisfies readonly CanonicalRole[];
 
 const IN_SERVICE_ROLES = [
-  ...BUSINESS_ORDER_ROLES,
-  ROLE.DATA_ENTRY_LEADER,
+  ROLE.ADMIN,
   ROLE.SHARED_TEAM_OWNER,
   ROLE.LABOR_CONTRACT_MEMBER,
-  ROLE.SOCIAL_INSURANCE_SPECIALIST,
 ] as const satisfies readonly CanonicalRole[];
 
 const OFFBOARDING_ROLES = [
-  ...BUSINESS_ORDER_ROLES,
-  ROLE.DATA_ENTRY_LEADER,
+  ROLE.ADMIN,
   ROLE.SHARED_TEAM_OWNER,
   ROLE.ONBOARDING_RESIGNATION_MEMBER,
-  ROLE.SOCIAL_INSURANCE_SPECIALIST,
+  ROLE.DATA_ENTRY_LEADER,
 ] as const satisfies readonly CanonicalRole[];
 
 const INITIATED_WORK_ROLES = [
   ROLE.ADMIN,
-  ROLE.BUSINESS_OWNER,
   ROLE.BUSINESS_GROUP_LEADER,
   ROLE.BUSINESS_GROUP_MEMBER,
 ] as const satisfies readonly CanonicalRole[];
@@ -98,14 +96,13 @@ const TEAM_WORK_ROLES = [
   ROLE.ADMIN,
   ROLE.BUSINESS_OWNER,
   ROLE.BUSINESS_GROUP_LEADER,
-  ROLE.DATA_ENTRY_LEADER,
-  ROLE.SHARED_TEAM_OWNER,
 ] as const satisfies readonly CanonicalRole[];
 
 const HISTORY_WORK_ROLES = [
   ROLE.ADMIN,
   ROLE.BUSINESS_OWNER,
   ROLE.BUSINESS_GROUP_LEADER,
+  ROLE.BUSINESS_GROUP_MEMBER,
   ROLE.DATA_ENTRY_LEADER,
   ROLE.SHARED_TEAM_OWNER,
   ROLE.LABOR_CONTRACT_MEMBER,
@@ -115,6 +112,8 @@ const HISTORY_WORK_ROLES = [
 
 const DISPATCHED_DETAIL_ROLES = [
   ...INITIATED_WORK_ROLES,
+  ROLE.BUSINESS_OWNER,
+  ROLE.BUSINESS_GROUP_LEADER,
   ROLE.DATA_ENTRY_LEADER,
   ROLE.SHARED_TEAM_OWNER,
   ROLE.LABOR_CONTRACT_MEMBER,
@@ -130,9 +129,9 @@ export const ROUTE_VISIBILITY = {
   // 主工单列表/创建入口：菜单中只保留 /work-orders，创建页由列表 toolBar 进入。
   '/work-orders': BUSINESS_ORDER_ROLES,
   // 新建/导入是否真正允许，由“角色管理 → 分配权限”和后端业务权限统一控制。
-  '/work-orders/create': ALL_ROLES,
-  '/work-orders/import': ALL_ROLES,
-  '/work-orders/:id': ALL_ROLES,
+  '/work-orders/create': WORK_ORDER_CREATE_ROLES,
+  '/work-orders/import': WORK_ORDER_CREATE_ROLES,
+  '/work-orders/:id': WORK_ORDER_CREATE_ROLES,
 
   '/my-field-permissions': [ROLE.ADMIN],
 
@@ -150,26 +149,26 @@ export const ROUTE_VISIBILITY = {
 
   // 入职管理：业务侧看主列表；后道只看授权子模块。
   '/onboarding': ONBOARDING_ROLES,
-  '/onboarding/onboarding_contact': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.ONBOARDING_RESIGNATION_MEMBER],
-  '/onboarding/contract': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.LABOR_CONTRACT_MEMBER],
-  '/onboarding/data_entry': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.DATA_ENTRY_LEADER, ROLE.SHARED_TEAM_OWNER],
-  '/onboarding/social_insurance': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SOCIAL_INSURANCE_SPECIALIST],
-  '/onboarding/renewal_contract': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.LABOR_CONTRACT_MEMBER],
-  '/onboarding/benefit_apply': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.DATA_ENTRY_LEADER, ROLE.SHARED_TEAM_OWNER, ROLE.SOCIAL_INSURANCE_SPECIALIST],
-  '/onboarding/resignation_contact': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.ONBOARDING_RESIGNATION_MEMBER],
-  '/onboarding/resignation_cert': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.ONBOARDING_RESIGNATION_MEMBER],
-  '/onboarding/data_entry_resign': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.DATA_ENTRY_LEADER, ROLE.SHARED_TEAM_OWNER, ROLE.SOCIAL_INSURANCE_SPECIALIST],
+  '/onboarding/onboarding_contact': [ROLE.ADMIN, ROLE.ONBOARDING_RESIGNATION_MEMBER, ROLE.SHARED_TEAM_OWNER],
+  '/onboarding/contract': [ROLE.ADMIN, ROLE.LABOR_CONTRACT_MEMBER, ROLE.SHARED_TEAM_OWNER],
+  '/onboarding/data_entry': [ROLE.ADMIN, ROLE.DATA_ENTRY_LEADER],
+  '/onboarding/social_insurance': [ROLE.ADMIN, ROLE.SOCIAL_INSURANCE_SPECIALIST],
+  '/onboarding/renewal_contract': [ROLE.ADMIN, ROLE.LABOR_CONTRACT_MEMBER, ROLE.SHARED_TEAM_OWNER],
+  '/onboarding/benefit_apply': [ROLE.ADMIN],
+  '/onboarding/resignation_contact': [ROLE.ADMIN, ROLE.ONBOARDING_RESIGNATION_MEMBER, ROLE.SHARED_TEAM_OWNER],
+  '/onboarding/resignation_cert': [ROLE.ADMIN, ROLE.ONBOARDING_RESIGNATION_MEMBER, ROLE.SHARED_TEAM_OWNER],
+  '/onboarding/data_entry_resign': [ROLE.ADMIN, ROLE.DATA_ENTRY_LEADER],
 
   // 在职管理：续签 + 待遇申报，按 P2.1 角色矩阵收紧。
   '/in-service': IN_SERVICE_ROLES,
-  '/in-service/contract-renewal': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.LABOR_CONTRACT_MEMBER],
-  '/in-service/benefit-claim': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.DATA_ENTRY_LEADER, ROLE.SHARED_TEAM_OWNER, ROLE.SOCIAL_INSURANCE_SPECIALIST],
+  '/in-service/contract-renewal': [ROLE.ADMIN, ROLE.LABOR_CONTRACT_MEMBER, ROLE.SHARED_TEAM_OWNER],
+  '/in-service/benefit-claim': [ROLE.ADMIN],
 
-  // 离职管理：离职办理 + 离职证明 + 社保停保。
+  // 离职管理：离职联系/证明由入离职岗负责，离职数据录入由数据录入岗负责。
   '/offboarding': OFFBOARDING_ROLES,
-  '/offboarding/contact-pool': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.ONBOARDING_RESIGNATION_MEMBER],
-  '/offboarding/proof-pool': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.ONBOARDING_RESIGNATION_MEMBER],
-  '/offboarding/social-suspend-pool': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.DATA_ENTRY_LEADER, ROLE.SHARED_TEAM_OWNER, ROLE.SOCIAL_INSURANCE_SPECIALIST],
+  '/offboarding/contact-pool': [ROLE.ADMIN, ROLE.ONBOARDING_RESIGNATION_MEMBER, ROLE.SHARED_TEAM_OWNER],
+  '/offboarding/proof-pool': [ROLE.ADMIN, ROLE.ONBOARDING_RESIGNATION_MEMBER, ROLE.SHARED_TEAM_OWNER],
+  '/offboarding/social-suspend-pool': [ROLE.ADMIN, ROLE.DATA_ENTRY_LEADER],
 
   '/dashboards/leader': [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.DATA_ENTRY_LEADER, ROLE.SHARED_TEAM_OWNER],
 
@@ -207,14 +206,14 @@ const LEGACY_ROUTE_ALIASES: Record<string, VisibilityRoute> = {
   '/my-dispatched': '/my-work/pending',
   '/team-dispatched': '/my-work/team',
   '/export-templates': '/export-templates',
-  '/renewal': '/in-service/contract-renewal',
+  '/renewal': '/work-orders',
   '/renewal/new': '/work-orders/create',
   '/renewal/:id': '/in-service/contract-renewal',
-  '/resignation': '/offboarding',
+  '/resignation': '/work-orders',
   '/resignation/new': '/work-orders/create',
   '/resignation/:id': '/offboarding',
   '/resignation/:id/cert': '/offboarding/proof-pool',
-  '/benefit': '/in-service/benefit-claim',
+  '/benefit': '/work-orders',
   '/benefit/new': '/work-orders/create',
   '/benefit/:id': '/in-service/benefit-claim',
   '/onboarding/contact-pool': '/onboarding/onboarding_contact',

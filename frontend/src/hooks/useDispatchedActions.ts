@@ -3,7 +3,7 @@ import { App } from 'antd';
 import {
   acceptDispatchedOrder, completeDispatchedOrder, returnDispatchedOrder,
   supplementField, exportDispatchedOrder, downloadDispatchedExport, reassignDispatchedOrder, getDispatchedOrder,
-  creatorUpdateDispatchedOrderFields, urgeDispatchedOrder, withdrawDispatchedOrder, voidDispatchedOrder,
+  creatorUpdateDispatchedOrderFields, resubmitDispatchedOrder, urgeDispatchedOrder, withdrawDispatchedOrder, voidDispatchedOrder,
   approveWithdrawDispatchedOrder, approveVoidDispatchedOrder,
 } from '@/services/dispatchedOrders';
 import type { DispatchedOrderItem } from '@/services/dispatchedOrders';
@@ -112,6 +112,21 @@ export function useDispatchedActions({ orderId, order, onOrderUpdated }: UseDisp
     return null;
   }, [orderId, onOrderUpdated]);
 
+  const handleResubmit = useCallback(async () => {
+    setActionLoading(true);
+    try {
+      const updated = await resubmitDispatchedOrder(orderId, { moduleCode: order?.module_code, reason: '发起人重新提交子工单' });
+      onOrderUpdated(updated);
+      message.success('已重新提交该子工单');
+      return updated;
+    } catch {
+      message.error('重新提交失败');
+    } finally {
+      setActionLoading(false);
+    }
+    return null;
+  }, [order?.module_code, orderId, onOrderUpdated]);
+
   const handleWithdraw = useCallback(async (reason: string) => {
     setActionLoading(true);
     try {
@@ -170,6 +185,7 @@ export function useDispatchedActions({ orderId, order, onOrderUpdated }: UseDisp
     handleReassign,
     handleCreatorUpdate,
     handleUrge,
+    handleResubmit,
     handleWithdraw,
     handleVoid,
     handleApproveWithdraw,

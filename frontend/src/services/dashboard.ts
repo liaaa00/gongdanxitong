@@ -6,7 +6,13 @@ export type DashboardAudience = 'business' | 'backend';
 export type DashboardScopeMode = 'mine' | 'team';
 
 export interface DashboardCards {
+  /** Total accessible open child work orders across all history; not limited by selected month. */
+  totalPending: number;
+  /** Accessible open child work orders dispatched/created in the selected month. */
+  monthPending: number;
+  /** Accessible child work orders dispatched/created in the selected month. */
   totalThisMonth: number;
+  /** @Deprecated use monthPending for selected-month open count. */
   processing: number;
   completed: number;
   voided: number;
@@ -56,6 +62,7 @@ interface ParentOrderLite {
   order_type?: string;
   orderType?: string;
   created_at?: string;
+  submitted_at?: string | null;
   dispatched_orders?: Array<{
     module_code: string;
     module_name?: string;
@@ -64,6 +71,7 @@ interface ParentOrderLite {
     handler_name?: string | null;
     completed_at?: string | null;
     dispatched_at?: string | null;
+    created_at?: string | null;
   }>;
 }
 
@@ -131,7 +139,7 @@ function monthValueToDate(month: string): Date {
   return new Date(`${month}-01T00:00:00`);
 }
 
-function isCurrentMonthValue(iso: string | undefined, month = currentMonthValue()): boolean {
+function isCurrentMonthValue(iso: string | null | undefined, month = currentMonthValue()): boolean {
   if (!iso) return false;
   return String(iso).slice(0, 7) === month || isSameMonth(iso, new Date(`${month}-01T00:00:00`));
 }
@@ -252,9 +260,13 @@ function emptyMatrixResult(): OrderTypeMatrixResult {
 function normalizeDashboardCards(raw: unknown): DashboardCards {
   const data = unwrapPayload(raw);
   const source = data.cards || data;
+  const monthPending = num(source.monthPending ?? source.month_pending ?? source.processing ?? source.processing_orders ?? source.processingOrders);
+  const totalPending = num(source.totalPending ?? source.total_pending ?? source.allPending ?? source.all_pending ?? monthPending);
   return {
+    totalPending,
+    monthPending,
     totalThisMonth: num(source.totalThisMonth ?? source.total_this_month ?? source.monthTotal ?? source.month_total ?? source.total),
-    processing: num(source.processing ?? source.processing_orders ?? source.processingOrders),
+    processing: monthPending,
     completed: num(source.completed ?? source.completed_orders ?? source.completedOrders),
     voided: num(source.voided ?? source.void_orders ?? source.voidOrders ?? source.cancelled ?? source.canceled),
     myMessages: num(source.myMessages ?? source.my_messages ?? source.unreadMessages ?? source.unread_messages ?? source.unread ?? source.notificationCount),
@@ -333,12 +345,18 @@ export async function getDashboardCards(audience: DashboardAudience = 'business'
   const selectedMonth = normalizeDashboardMonth(month);
   if (isMockMode) {
     const parents = readParents();
-    const monthOrders = parents.filter((p) => isCurrentMonthValue(p.created_at, selectedMonth));
-    const children = monthOrders.flatMap((p) => p.dispatched_orders || []);
-    const source = children.length > 0 ? children : monthOrders;
+    const allChildren = parents.flatMap((p) => p.dispatched_orders || []);
+    const allSource = allChildren.length > 0 ? allChildren : parents;
+    const monthChildren = allChildren.filter((item) => isCurrentMonthValue(item.dispatched_at ?? item.created_at, selectedMonth));
+    const monthOrders = parents.filter((p) => isCurrentMonthValue(p.submitted_at ?? p.created_at, selectedMonth));
+    const source = allChildren.length > 0 ? monthChildren : monthOrders;
+    const monthPending = source.filter((item) => isOpenStatus(item.status)).length;
+    const totalPending = allSource.filter((item) => isOpenStatus(item.status)).length;
     return mockDelay({
+      totalPending,
+      monthPending,
       totalThisMonth: source.length,
-      processing: source.filter((item) => isOpenStatus(item.status)).length,
+      processing: monthPending,
       completed: source.filter((item) => isCompletedStatus(item.status)).length,
       voided: source.filter((item) => isVoidStatus(item.status)).length,
       myMessages: 0,

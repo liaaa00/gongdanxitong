@@ -2,22 +2,13 @@ import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageContainer, ProTable } from '@ant-design/pro-components';
 import type { ProColumns } from '@ant-design/pro-components';
-import { Badge, Space, Tag, Tooltip } from 'antd';
+import { Space, Tag } from 'antd';
 import { EyeOutlined } from '@ant-design/icons';
-import { getWorkOrders } from '@/services/workOrders';
-import type { DispatchedOrderSummary, WorkOrderItem } from '@/services/workOrders';
+import { getDispatchedOrdersSafe } from '@/services/dispatchedOrders';
+import type { DispatchedOrderItem } from '@/services/dispatchedOrders';
 import type { PageParams } from '@/services/mock';
-
-const STATUS_OPTIONS = [
-  { value: 'processing', label: '未办结', color: 'blue' },
-  { value: 'completed', label: '已完成', color: 'success' },
-  { value: 'returned', label: '已退回', color: 'warning' },
-  { value: 'withdrawn', label: '已撤回', color: 'default' },
-  { value: 'void', label: '已作废', color: 'default' },
-  { value: 'withdraw_pending', label: '撤回审批中', color: 'gold' },
-  { value: 'void_pending', label: '作废审批中', color: 'gold' },
-];
-const STATUS_MAP = Object.fromEntries(STATUS_OPTIONS.map((item) => [item.value, item]));
+import { getModuleLabel } from '@/constants/modules';
+import { getStatusColor, getStatusText } from '@/constants/dictionaries';
 
 const ORDER_TYPE_OPTIONS = [
   { value: 'onboarding', label: '入职' },
@@ -26,45 +17,6 @@ const ORDER_TYPE_OPTIONS = [
   { value: 'benefit', label: '待遇申报' },
 ];
 const ORDER_TYPE_MAP = Object.fromEntries(ORDER_TYPE_OPTIONS.map((item) => [item.value, item.label]));
-
-const MODULE_LABEL: Record<string, string> = {
-  contract: '劳动合同签订',
-  contract_signing: '劳动合同签订',
-  onboarding_contact: '入职联系',
-  data_entry: '数据录入',
-  social_insurance: '社保公积金办理',
-  renewal_contract: '续签合同',
-  resignation_contact: '离职联系',
-  resignation_cert: '离职证明',
-  data_entry_resign: '社保停保',
-  benefit: '待遇申报',
-  benefit_apply: '待遇申报',
-};
-
-function normalizeStatus(status?: string | null) {
-  const normalized = String(status || '').toLowerCase();
-  if (['draft', 'pending', 'processing', 'accepted', 'in_progress'].includes(normalized)) return 'processing';
-  if (normalized === 'cancelled') return 'void';
-  return normalized;
-}
-
-function getStatusMeta(status?: string | null) {
-  const normalized = normalizeStatus(status);
-  return STATUS_MAP[normalized] || { label: '状态未知', color: 'default' };
-}
-
-function getSubOrderProgressMeta(child: DispatchedOrderSummary): { label: string; badge: 'success' | 'warning' | 'processing' | 'error' | 'default'; color: string } {
-  const status = normalizeStatus(child.status);
-  if (child.is_overdue) return { label: '已超时', badge: 'error', color: 'red' };
-  if (status === 'completed') return { label: '已完成', badge: 'success', color: 'success' };
-  if (status === 'withdraw_pending') return { label: '撤回审批中', badge: 'warning', color: 'gold' };
-  if (status === 'withdrawn') return { label: '已撤回', badge: 'default', color: 'default' };
-  if (status === 'void_pending') return { label: '作废审批中', badge: 'warning', color: 'gold' };
-  if (status === 'void' || child.void_at || child.voidAt) return { label: '已作废', badge: 'default', color: 'default' };
-  if (status === 'returned') return { label: '已退回', badge: 'warning', color: 'warning' };
-  if (status === 'processing') return { label: '待办理/办理中', badge: 'processing', color: 'processing' };
-  return { label: getStatusMeta(status).label, badge: 'default', color: 'default' };
-}
 
 function normalizeQuery(params: PageParams & Record<string, unknown>): PageParams {
   const readString = (...values: unknown[]) => {
@@ -83,31 +35,27 @@ function normalizeQuery(params: PageParams & Record<string, unknown>): PageParam
     customerName: readString(params.customerName, params.customer_name),
     employeeName: readString(params.employeeName, params.employee_name),
     idCardNo: readString(params.idCardNo, params.employee_id_card, params.employeeIdCard),
-    createdByName: readString(params.createdByName, params.created_by),
+    createdByName: readString(params.createdByName, params.created_by, params.created_by_name),
     orderType: readString(params.orderType, params.order_type),
     status: readString(params.status),
+    scope: 'team',
   };
 }
 
 const TeamDispatched: React.FC = () => {
   const navigate = useNavigate();
 
-  const columns: ProColumns<WorkOrderItem>[] = useMemo(() => [
+  const columns: ProColumns<DispatchedOrderItem>[] = useMemo(() => [
     {
-      title: '主工单编号',
+      title: '子工单编号',
       dataIndex: 'order_no',
       key: 'order_no',
       width: 160,
       copyable: true,
       search: { transform: (value) => ({ orderNo: value }) },
     },
-    { title: '客户代码', dataIndex: 'customer_code', key: 'customer_code', width: 120, search: { transform: (value) => ({ customerCode: value }) }, renderText: (_, record) => String(record.customer_code || record.extra_data?.customer_code || '-') },
-    { title: '客户', dataIndex: 'customer_name', key: 'customer_name', width: 180, ellipsis: true, search: { transform: (value) => ({ customerName: value }) } },
-    { title: '员工', dataIndex: 'employee_name', key: 'employee_name', width: 110, search: { transform: (value) => ({ employeeName: value }) } },
-    { title: '证件号', dataIndex: 'employee_id_card', key: 'employee_id_card', width: 180, ellipsis: true, search: { transform: (value) => ({ idCardNo: value }) } },
-    { title: '发起人', dataIndex: 'created_by', key: 'created_by', width: 120, search: { transform: (value) => ({ createdByName: value }) }, renderText: (value) => value || '-' },
     {
-      title: '订单类型',
+      title: '工单类型',
       dataIndex: 'order_type',
       key: 'order_type',
       width: 110,
@@ -117,89 +65,80 @@ const TeamDispatched: React.FC = () => {
       renderText: (value) => ORDER_TYPE_MAP[String(value || '')] || String(value || '-'),
     },
     {
-      title: '主状态',
+      title: '子工单模块',
+      dataIndex: 'module_code',
+      key: 'module_code',
+      width: 170,
+      render: (_, record) => <Tag color="blue">{getModuleLabel(record.module_code)}</Tag>,
+    },
+    { title: '客户代码', dataIndex: 'customer_code', key: 'customer_code', width: 120, search: { transform: (value) => ({ customerCode: value }) }, renderText: (value) => value || '-' },
+    { title: '客户名称', dataIndex: 'customer_name', key: 'customer_name', width: 170, ellipsis: true, search: { transform: (value) => ({ customerName: value }) } },
+    { title: '员工姓名', dataIndex: 'employee_name', key: 'employee_name', width: 110, search: { transform: (value) => ({ employeeName: value }) } },
+    { title: '证件号', dataIndex: 'employee_id_card', key: 'employee_id_card', width: 180, ellipsis: true, search: { transform: (value) => ({ idCardNo: value }) } },
+    {
+      title: '发起人',
+      dataIndex: 'created_by_name',
+      key: 'created_by_name',
+      width: 120,
+      search: { transform: (value) => ({ createdByName: value }) },
+      renderText: (value, record) => value || record.created_by || '-',
+    },
+    {
+      title: '状态',
       dataIndex: 'status',
       key: 'status',
       width: 120,
       valueType: 'select',
-      fieldProps: { options: STATUS_OPTIONS.map(({ value, label }) => ({ value, label })) },
-      render: (_, record) => {
-        const status = getStatusMeta(record.status);
-        return <Tag color={status.color}>{status.label}</Tag>;
+      fieldProps: {
+        options: [
+          { value: 'pending', label: '待处理' },
+          { value: 'processing', label: '处理中' },
+          { value: 'completed', label: '已完成' },
+          { value: 'returned', label: '已退回' },
+          { value: 'withdrawn', label: '已撤回' },
+          { value: 'void', label: '已作废' },
+          { value: 'withdraw_pending', label: '撤回审批中' },
+          { value: 'void_pending', label: '作废审批中' },
+        ],
       },
+      render: (_, record) => <Tag color={getStatusColor(record.void_at ? 'void' : record.status)}>{getStatusText(record.void_at ? 'void' : record.status)}</Tag>,
     },
-    {
-      title: '子工单进度',
-      key: 'dispatched_status',
-      width: 300,
-      hideInSearch: true,
-      render: (_, record) => {
-        const children = record.dispatched_orders || [];
-        if (children.length === 0) return <Tag color="default">暂无子工单</Tag>;
-        return (
-          <Space size={[4, 4]} wrap>
-            {children.map((child) => {
-              const moduleKey = String(child.module_code || child.module_name || '');
-              const moduleLabel = MODULE_LABEL[moduleKey] || child.module_name || '未知子工单';
-              const meta = getSubOrderProgressMeta(child);
-              const details = [
-                `${moduleLabel}：${meta.label}`,
-                child.handler_name ? `实际操作人/负责人：${child.handler_name}` : '实际操作人/负责人：未配置',
-                child.dispatched_at ? `派发：${child.dispatched_at}` : undefined,
-                child.completed_at ? `完成：${child.completed_at}` : undefined,
-                child.due_at ? `时限：${child.due_at}` : undefined,
-              ].filter(Boolean).join('；');
-              return (
-                <Tooltip key={child.id} title={details}>
-                  <Tag color={meta.color} style={{ marginInlineEnd: 0 }}>
-                    <Badge status={meta.badge} text={`${moduleLabel} · ${meta.label}`} />
-                  </Tag>
-                </Tooltip>
-              );
-            })}
-          </Space>
-        );
-      },
-    },
-    {
-      title: '创建时间',
-      dataIndex: 'created_at',
-      key: 'created_at',
-      width: 170,
-      valueType: 'dateTime',
-      sorter: true,
-      defaultSortOrder: 'descend',
-      hideInSearch: true,
-    },
+    { title: '派发时间', dataIndex: 'dispatched_at', key: 'dispatched_at', width: 170, valueType: 'dateTime', hideInSearch: true },
+    { title: '完成时间', dataIndex: 'completed_at', key: 'completed_at', width: 170, valueType: 'dateTime', hideInSearch: true },
     {
       title: '操作',
       key: 'actions',
-      width: 100,
+      width: 120,
       hideInSearch: true,
       render: (_, record) => (
-        <a onClick={() => navigate(`/work-orders/${record.id}`)}>
-          <Space size={4}><EyeOutlined />详情</Space>
+        <a onClick={() => navigate(`/my-dispatched/${record.id}?readonly=1&from=team`)}>
+          <Space size={4}><EyeOutlined />只读详情</Space>
         </a>
       ),
     },
   ], [navigate]);
 
   return (
-    <PageContainer header={{ title: '团队工单' }}>
-      <ProTable<WorkOrderItem>
+    <PageContainer
+      header={{
+        title: '团队工单',
+        subTitle: '团队工单按子工单逐条展示，可查看详情但不可执行接单、完成、退回等操作。',
+      }}
+    >
+      <ProTable<DispatchedOrderItem>
         columns={columns}
         request={async (params: PageParams & Record<string, unknown>) => {
-          const result = await getWorkOrders(normalizeQuery(params));
+          const result = await getDispatchedOrdersSafe(normalizeQuery(params));
           return { data: result.list, success: true, total: result.total };
         }}
         rowKey="id"
         search={{ labelWidth: 'auto' }}
-        headerTitle="授权团队范围内主工单"
+        headerTitle="授权团队范围内子工单"
         pagination={{ defaultPageSize: 20, showSizeChanger: true }}
         dateFormatter="string"
         options={false}
         toolBarRender={false}
-        scroll={{ x: 1500 }}
+        scroll={{ x: 1650 }}
       />
     </PageContainer>
   );

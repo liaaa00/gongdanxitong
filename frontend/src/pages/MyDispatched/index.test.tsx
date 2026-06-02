@@ -49,10 +49,6 @@ vi.mock('@/services/users', () => ({
   getUsersByTeam: vi.fn().mockResolvedValue([]),
 }));
 
-vi.mock('@/services/workOrders', () => ({
-  getWorkOrders: vi.fn().mockResolvedValue({ list: [], total: 0 }),
-}));
-
 describe('MyDispatched processing status filter', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -95,5 +91,59 @@ describe('MyDispatched processing status filter', () => {
     })));
     const params = mocks.getDispatchedOrders.mock.calls.at(-1)?.[0] as Record<string, unknown>;
     expect(params.status).toBeUndefined();
+  });
+
+  it('opens pending my-work detail in readonly mode and hides batch operation toolbar', () => {
+    render(<MyDispatched mode="pending" />);
+
+    expect(mocks.latestProTableProps.toolBarRender).toBe(false);
+    const columns = mocks.latestProTableProps.columns as Array<Record<string, any>>;
+    const actionColumn = columns.find((column) => column.key === 'actions');
+    const actionCell = actionColumn?.render?.(null, { id: 'd-pending', status: 'pending' }) as React.ReactElement;
+    const detailButton = Array.isArray(actionCell.props.children) ? actionCell.props.children[0] : actionCell.props.children;
+    detailButton.props.onClick();
+
+    expect(mocks.navigate).toHaveBeenCalledWith('/my-dispatched/d-pending?readonly=1&from=my-work');
+  });
+
+  it('shows initiated work as child-order rows without forcing returned status', async () => {
+    render(<MyDispatched mode="initiated" />);
+
+    expect(mocks.latestProTableProps.headerTitle).toBe('我发起的子工单');
+    expect(mocks.latestProTableProps.toolBarRender).toBe(false);
+
+    await mocks.latestProTableProps.request({ current: 1, pageSize: 20, employee_name: '张三' });
+
+    await waitFor(() => expect(mocks.getDispatchedOrders).toHaveBeenCalledWith(expect.objectContaining({
+      page: 1,
+      pageSize: 20,
+      employeeName: '张三',
+      includeReturned: true,
+    })));
+    const params = mocks.getDispatchedOrders.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(params.status).toBeUndefined();
+    expect(params.statuses).toBeUndefined();
+  });
+
+  it('shows returned work as child-order rows only', async () => {
+    mocks.getDispatchedOrders.mockResolvedValue({
+      list: [
+        { id: 'd-returned', status: 'returned' },
+        { id: 'd-processing', status: 'processing' },
+      ],
+      total: 2,
+    });
+    render(<MyDispatched mode="returned" />);
+
+    expect(mocks.latestProTableProps.headerTitle).toBe('退回待处理子工单');
+    expect(mocks.latestProTableProps.toolBarRender).toBe(false);
+
+    const result = await mocks.latestProTableProps.request({ current: 1, pageSize: 20 });
+
+    await waitFor(() => expect(mocks.getDispatchedOrders).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'returned',
+      includeReturned: true,
+    })));
+    expect(result.data).toEqual([{ id: 'd-returned', status: 'returned' }]);
   });
 });

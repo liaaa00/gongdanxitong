@@ -24,6 +24,8 @@ import type { ModuleConfigItem } from '@/services/moduleConfigs';
 const { Text } = Typography;
 
 const EMPTY_CARDS: DashboardCards = {
+  totalPending: 0,
+  monthPending: 0,
   totalThisMonth: 0,
   processing: 0,
   completed: 0,
@@ -72,8 +74,9 @@ const DASHBOARD_ROLE_META: Record<DashboardRoleView, {
   subtitle: string;
   matrixTitle: string;
   cardTitles: {
-    total: string;
-    processing: string;
+    totalPending: string;
+    monthPending: string;
+    monthTotal: string;
     completed: string;
     voided: string;
     messages: string;
@@ -83,31 +86,31 @@ const DASHBOARD_ROLE_META: Record<DashboardRoleView, {
     title: '全局运营看板',
     subtitle: '面向管理员展示全系统工单、后道办理和消息概览。',
     matrixTitle: '本月全系统节点总表',
-    cardTitles: { total: '本月全量工单', processing: '全局处理中', completed: '全局已完成', voided: '全局已作废', messages: '待关注消息' },
+    cardTitles: { totalPending: '总待处理', monthPending: '单月待处理', monthTotal: '本月全量工单', completed: '本月已完成', voided: '本月已作废', messages: '待关注消息' },
   },
   businessOwner: {
     title: '业务负责人看板',
     subtitle: '聚焦团队整体发起量、办理结果和异常消息，不展示后道操作入口。',
     matrixTitle: '本月业务工单总表',
-    cardTitles: { total: '本月业务工单', processing: '业务跟进中', completed: '已完成反馈', voided: '已作废', messages: '业务反馈消息' },
+    cardTitles: { totalPending: '总待处理', monthPending: '单月待处理', monthTotal: '本月业务工单', completed: '本月已完成反馈', voided: '本月已作废', messages: '业务反馈消息' },
   },
   businessLeader: {
     title: '业务组长看板',
     subtitle: '默认关注本人/本组工单进展，便于跟进退回、撤回作废结果和字段变更反馈。',
     matrixTitle: '本月本组工单总表',
-    cardTitles: { total: '本月工单', processing: '跟进中', completed: '已完成', voided: '已作废', messages: '待查看消息' },
+    cardTitles: { totalPending: '总待处理', monthPending: '单月待处理', monthTotal: '本月工单', completed: '本月已完成', voided: '本月已作废', messages: '待查看消息' },
   },
   businessMember: {
     title: '业务员看板',
     subtitle: '展示本人发起工单的进展和后道反馈，减少与团队管理数据混在一起。',
     matrixTitle: '本月本人工单总表',
-    cardTitles: { total: '本人本月工单', processing: '处理中', completed: '已完成', voided: '已作废', messages: '我的消息' },
+    cardTitles: { totalPending: '总待处理', monthPending: '单月待处理', monthTotal: '本人本月工单', completed: '本月已完成', voided: '本月已作废', messages: '我的消息' },
   },
   backend: {
     title: '后道办理看板',
     subtitle: '聚焦已派发到后道节点的待处理、完成和异常消息。',
     matrixTitle: '本月办理节点总表',
-    cardTitles: { total: '本月派发节点', processing: '待处理/处理中', completed: '已办结', voided: '已作废', messages: '待处理消息' },
+    cardTitles: { totalPending: '总待处理', monthPending: '单月待处理', monthTotal: '本月派发节点', completed: '本月已办结', voided: '本月已作废', messages: '待处理消息' },
   },
 };
 
@@ -416,20 +419,15 @@ const Dashboard: React.FC = () => {
     const hasBusinessRole = roles.some((role) => BUSINESS_ROLES.includes(role as typeof BUSINESS_ROLES[number]));
     return hasBackendRole && !hasBusinessRole ? 'backend' : 'business';
   }, [roles]);
-  const canSwitchDashboardScope = dashboardAudience === 'business' && (
-    roles.includes(ROLE.ADMIN)
-    || roles.includes(ROLE.BUSINESS_GROUP_LEADER)
-    || roles.includes(ROLE.BUSINESS_OWNER)
-    || (user?.permissions || []).some((permission) => ['work_order.view_team', 'work_order.view_all', 'data_scope.team', 'data_scope.all'].includes(permission))
-  );
+  const canSwitchDashboardScope = dashboardAudience === 'business' && roles.includes(ROLE.BUSINESS_GROUP_LEADER);
   const effectiveScope: DashboardScopeMode | undefined = canSwitchDashboardScope ? scopeMode : undefined;
-  const normalizedCards = useMemo(() => normalizeStatsTotal({
-    total: cards.totalThisMonth,
-    processing: cards.processing,
-    completed: cards.completed,
-    voided: cards.voided || 0,
-    completionRate: 0,
-  }), [cards.completed, cards.processing, cards.totalThisMonth, cards.voided]);
+  const dashboardCardValues = useMemo(() => ({
+    totalPending: Math.max(0, cards.totalPending ?? cards.processing ?? 0),
+    monthPending: Math.max(0, cards.monthPending ?? cards.processing ?? 0),
+    monthTotal: Math.max(0, cards.totalThisMonth ?? 0),
+    completed: Math.max(0, cards.completed ?? 0),
+    voided: Math.max(0, cards.voided ?? 0),
+  }), [cards.completed, cards.monthPending, cards.processing, cards.totalPending, cards.totalThisMonth, cards.voided]);
 
   // 仪表盘总表按实际子工单模块展示：入职主工单提交后会拆成数据录入、社保公积金、入职联系、劳动合同签订等子工单。
   const matrixDimension = 'node';
@@ -561,21 +559,24 @@ const Dashboard: React.FC = () => {
         <Card size="small" style={{ width: '100%' }}>
           <Space direction="horizontal" align="center" style={{ width: '100%', justifyContent: 'space-between', flexWrap: 'wrap' }}>
             <Text strong>{selectedMonthLabel}仪表盘</Text>
-            <Text type="secondary">默认显示当前自然月，可切换历史月份查看</Text>
+            <Text type="secondary">总待处理=当前可见范围内全部未办结子工单，不受月份影响；单月待处理/已完成/作废/总量按所选月份统计。</Text>
           </Space>
         </Card>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 16 }}>
           <Card loading={loading} styles={{ body: CARD_BODY_STYLE }}>
-            <Statistic title={roleMeta.cardTitles.total} value={normalizedCards.total} prefix={<FileTextOutlined />} />
+            <Statistic title={roleMeta.cardTitles.totalPending} value={dashboardCardValues.totalPending} prefix={<ClockCircleOutlined />} valueStyle={{ color: '#fa8c16' }} />
           </Card>
           <Card loading={loading} styles={{ body: CARD_BODY_STYLE }}>
-            <Statistic title={roleMeta.cardTitles.processing} value={normalizedCards.processing} prefix={<ClockCircleOutlined />} valueStyle={{ color: '#1677ff' }} />
+            <Statistic title={roleMeta.cardTitles.monthPending} value={dashboardCardValues.monthPending} prefix={<ClockCircleOutlined />} valueStyle={{ color: '#1677ff' }} />
           </Card>
           <Card loading={loading} styles={{ body: CARD_BODY_STYLE }}>
-            <Statistic title={roleMeta.cardTitles.completed} value={normalizedCards.completed} prefix={<CheckCircleOutlined />} valueStyle={{ color: '#52c41a' }} />
+            <Statistic title={roleMeta.cardTitles.monthTotal} value={dashboardCardValues.monthTotal} prefix={<FileTextOutlined />} />
           </Card>
           <Card loading={loading} styles={{ body: CARD_BODY_STYLE }}>
-            <Statistic title={roleMeta.cardTitles.voided} value={normalizedCards.voided || 0} prefix={<StopOutlined />} valueStyle={{ color: '#8c8c8c' }} />
+            <Statistic title={roleMeta.cardTitles.completed} value={dashboardCardValues.completed} prefix={<CheckCircleOutlined />} valueStyle={{ color: '#52c41a' }} />
+          </Card>
+          <Card loading={loading} styles={{ body: CARD_BODY_STYLE }}>
+            <Statistic title={roleMeta.cardTitles.voided} value={dashboardCardValues.voided} prefix={<StopOutlined />} valueStyle={{ color: '#8c8c8c' }} />
           </Card>
           {canViewNotifications && (
             <Card

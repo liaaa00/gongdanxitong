@@ -20,87 +20,17 @@ import { getNotifications, getUnreadCountByBucket, getNotificationBucket } from 
 import type { NotificationBucketKey, NotificationItem, UnreadCountByBucket } from '@/services/notifications';
 import { getNotificationDisplayContent, getNotificationDisplayTitle } from '@/utils/notificationDisplay';
 
-// 菜单项类型：roles 字段未声明 = 所有登录用户可见；声明 = 仅这些规范角色可见
+// 菜单项只描述展示结构；可见性统一由 routeVisibility.ts 判定。
 type MenuItem = {
   path: string;
   name: string;
   icon?: React.ReactNode;
   key?: string;
-  roles?: string[];
   menuVisible?: boolean;
   children?: MenuItem[];
 };
 
-const BUSINESS_ORDER_ROLES = [
-  ROLE.ADMIN,
-  ROLE.BUSINESS_OWNER,
-  ROLE.BUSINESS_GROUP_LEADER,
-  ROLE.BUSINESS_GROUP_MEMBER,
-] as const satisfies readonly CanonicalRole[];
-
-const ONBOARDING_ROLES = [
-  ...BUSINESS_ORDER_ROLES,
-  ROLE.DATA_ENTRY_LEADER,
-  ROLE.SHARED_TEAM_OWNER,
-  ROLE.LABOR_CONTRACT_MEMBER,
-  ROLE.ONBOARDING_RESIGNATION_MEMBER,
-  ROLE.SOCIAL_INSURANCE_SPECIALIST,
-] as const satisfies readonly CanonicalRole[];
-
-const IN_SERVICE_ROLES = [
-  ...BUSINESS_ORDER_ROLES,
-  ROLE.DATA_ENTRY_LEADER,
-  ROLE.SHARED_TEAM_OWNER,
-  ROLE.LABOR_CONTRACT_MEMBER,
-  ROLE.SOCIAL_INSURANCE_SPECIALIST,
-] as const satisfies readonly CanonicalRole[];
-
-const OFFBOARDING_ROLES = [
-  ...BUSINESS_ORDER_ROLES,
-  ROLE.DATA_ENTRY_LEADER,
-  ROLE.SHARED_TEAM_OWNER,
-  ROLE.ONBOARDING_RESIGNATION_MEMBER,
-  ROLE.SOCIAL_INSURANCE_SPECIALIST,
-] as const satisfies readonly CanonicalRole[];
-
-const INITIATED_WORK_ROLES = [
-  ROLE.ADMIN,
-  ROLE.BUSINESS_OWNER,
-  ROLE.BUSINESS_GROUP_LEADER,
-  ROLE.BUSINESS_GROUP_MEMBER,
-] as const satisfies readonly CanonicalRole[];
-
-const RETURNED_WORK_ROLES = [
-  ROLE.ADMIN,
-  ROLE.BUSINESS_GROUP_LEADER,
-  ROLE.BUSINESS_GROUP_MEMBER,
-] as const satisfies readonly CanonicalRole[];
-
-const PENDING_WORK_ROLES = [
-  ROLE.ADMIN,
-  ROLE.DATA_ENTRY_LEADER,
-  ROLE.SHARED_TEAM_OWNER,
-  ROLE.LABOR_CONTRACT_MEMBER,
-  ROLE.ONBOARDING_RESIGNATION_MEMBER,
-  ROLE.SOCIAL_INSURANCE_SPECIALIST,
-] as const satisfies readonly CanonicalRole[];
-
-const DONE_WORK_ROLES = [
-  ROLE.ADMIN,
-  ROLE.DATA_ENTRY_LEADER,
-  ROLE.SHARED_TEAM_OWNER,
-  ROLE.LABOR_CONTRACT_MEMBER,
-  ROLE.ONBOARDING_RESIGNATION_MEMBER,
-  ROLE.SOCIAL_INSURANCE_SPECIALIST,
-] as const satisfies readonly CanonicalRole[];
-
-const TEAM_WORK_ROLES = [
-  ROLE.ADMIN,
-  ROLE.BUSINESS_OWNER,
-  ROLE.BUSINESS_GROUP_LEADER,
-  ROLE.DATA_ENTRY_LEADER,
-  ROLE.SHARED_TEAM_OWNER,
-] as const satisfies readonly CanonicalRole[];
+// 菜单权限角色矩阵集中维护在 routeVisibility.ts。
 
 const NOTIFICATION_ROLES = [
   ROLE.ADMIN,
@@ -111,7 +41,7 @@ const NOTIFICATION_ROLES = [
   ROLE.LABOR_CONTRACT_MEMBER,
   ROLE.ONBOARDING_RESIGNATION_MEMBER,
   ROLE.SOCIAL_INSURANCE_SPECIALIST,
-] as const satisfies readonly CanonicalRole[];
+] as const;
 
 const RAW_MENU: MenuItem[] = [
   { path: '/dashboard', name: '仪表盘', icon: <DashboardOutlined /> },
@@ -119,38 +49,36 @@ const RAW_MENU: MenuItem[] = [
     path: '/work-orders-group',
     name: '入职管理',
     icon: <FileTextOutlined />,
-    roles: [...ONBOARDING_ROLES],
+    // 子菜单由 routeVisibility.ts 决定是否显示。
     children: [
-      { path: '/work-orders', name: '主工单列表', key: 'work-orders-main', roles: [...BUSINESS_ORDER_ROLES] },
-      { path: '/onboarding/contract', name: '合同签订子工单', roles: [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.LABOR_CONTRACT_MEMBER] },
-      { path: '/onboarding/onboarding_contact', name: '入职联系子工单', roles: [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.ONBOARDING_RESIGNATION_MEMBER] },
-      { path: '/onboarding/data_entry', name: '数据录入子工单', roles: [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.DATA_ENTRY_LEADER, ROLE.SHARED_TEAM_OWNER] },
-      { path: '/onboarding/social_insurance', name: '社保公积金办理子工单', roles: [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SOCIAL_INSURANCE_SPECIALIST] },
+      { path: '/work-orders', name: '主工单列表', key: 'work-orders-main' },
+      { path: '/onboarding/contract', name: '劳动合同签订子工单' },
+      { path: '/onboarding/onboarding_contact', name: '入职联系子工单' },
+      { path: '/onboarding/data_entry', name: '入职数据录入子工单' },
+      { path: '/onboarding/social_insurance', name: '入职社保公积金办理子工单' },
     ],
   },
   {
     path: '/in-service-group',
     name: '在职管理',
     icon: <FileTextOutlined />,
-    roles: [...IN_SERVICE_ROLES],
     children: [
-      { path: '/renewal', name: '续签主工单列表', key: 'renewal-list', roles: [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.LABOR_CONTRACT_MEMBER] },
-      { path: '/onboarding/renewal_contract', name: '续签合同子工单', key: 'renewal-contract-sub-list', roles: [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.LABOR_CONTRACT_MEMBER] },
-      { path: '/benefit', name: '待遇申报主工单列表', key: 'benefit-list', roles: [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.DATA_ENTRY_LEADER, ROLE.SHARED_TEAM_OWNER, ROLE.SOCIAL_INSURANCE_SPECIALIST] },
-      { path: '/onboarding/benefit_apply', name: '待遇申报子工单', key: 'benefit-apply-sub-list', roles: [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.DATA_ENTRY_LEADER, ROLE.SHARED_TEAM_OWNER, ROLE.SOCIAL_INSURANCE_SPECIALIST] },
+      { path: '/renewal', name: '续签主工单列表', key: 'renewal-list' },
+      { path: '/onboarding/renewal_contract', name: '劳动合同续签子工单', key: 'renewal-contract-sub-list' },
+      { path: '/benefit', name: '待遇申报主工单列表', key: 'benefit-list' },
+      { path: '/onboarding/benefit_apply', name: '待遇申报子工单', key: 'benefit-apply-sub-list' },
     ],
   },
   {
     path: '/offboarding-group',
     name: '离职管理',
     icon: <FileTextOutlined />,
-    roles: [...OFFBOARDING_ROLES],
     children: [
-      { path: '/resignation', name: '离职主工单列表', key: 'resignation-list', roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.ONBOARDING_RESIGNATION_MEMBER] },
-      { path: '/onboarding/resignation_contact', name: '离职联系子工单', key: 'resignation-contact-sub-list', roles: [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.ONBOARDING_RESIGNATION_MEMBER] },
-      { path: '/onboarding/resignation_cert', name: '离职证明子工单', key: 'resignation-cert-sub-list', roles: [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.ONBOARDING_RESIGNATION_MEMBER] },
-      { path: '/onboarding/data_entry_resign', name: '社保停保子工单', key: 'data-entry-resign-sub-list', roles: [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.DATA_ENTRY_LEADER, ROLE.SHARED_TEAM_OWNER, ROLE.SOCIAL_INSURANCE_SPECIALIST] },
-      { path: '/resignation/:id/cert', name: '离职证明', key: 'resignation-cert', menuVisible: false, roles: [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SHARED_TEAM_OWNER, ROLE.ONBOARDING_RESIGNATION_MEMBER] },
+      { path: '/resignation', name: '离职主工单列表', key: 'resignation-list' },
+      { path: '/onboarding/resignation_contact', name: '离职材料收集子工单', key: 'resignation-contact-sub-list' },
+      { path: '/onboarding/resignation_cert', name: '离职证明子工单', key: 'resignation-cert-sub-list' },
+      { path: '/onboarding/data_entry_resign', name: '离职数据录入子工单', key: 'data-entry-resign-sub-list' },
+      { path: '/resignation/:id/cert', name: '离职证明', key: 'resignation-cert', menuVisible: false },
     ],
   },
   {
@@ -158,17 +86,16 @@ const RAW_MENU: MenuItem[] = [
     name: '我的工单',
     icon: <CheckSquareOutlined />,
     children: [
-      { path: '/my-work/initiated', name: '我发起的', key: 'my-work-initiated', roles: [...INITIATED_WORK_ROLES] },
-      { path: '/my-work/returned', name: '我的退回', key: 'my-work-returned', roles: [...RETURNED_WORK_ROLES] },
-      { path: '/my-work/pending', name: '我的待办', key: 'my-work-pending', roles: [...PENDING_WORK_ROLES] },
-      { path: '/my-work/done', name: '我的已办', key: 'my-work-done', roles: [...DONE_WORK_ROLES] },
-      { path: '/my-work/team', name: '团队工单', key: 'my-work-team', icon: <BarChartOutlined />, roles: [...TEAM_WORK_ROLES] },
-      { path: '/my-work/history', name: '历史工单', key: 'my-work-history', roles: [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.DATA_ENTRY_LEADER, ROLE.SHARED_TEAM_OWNER, ROLE.LABOR_CONTRACT_MEMBER, ROLE.ONBOARDING_RESIGNATION_MEMBER, ROLE.SOCIAL_INSURANCE_SPECIALIST] },
+      { path: '/my-work/initiated', name: '我发起的', key: 'my-work-initiated' },
+      { path: '/my-work/returned', name: '我的退回', key: 'my-work-returned' },
+      { path: '/my-work/pending', name: '我的待办', key: 'my-work-pending' },
+      { path: '/my-work/done', name: '我的已办', key: 'my-work-done' },
+      { path: '/my-work/team', name: '团队工单', key: 'my-work-team', icon: <BarChartOutlined /> },
+      { path: '/my-work/history', name: '历史工单', key: 'my-work-history' },
     ],
   },
-  { path: '/notifications', name: '消息通知', icon: <BellOutlined />, roles: [...NOTIFICATION_ROLES] },
+  { path: '/notifications', name: '消息通知', icon: <BellOutlined /> },
   { path: '/admin', name: '管理后台', icon: <SettingOutlined />,
-    roles: [ROLE.ADMIN],
     children: [
       {
         path: '/admin/base-group',
@@ -217,9 +144,8 @@ function filterMenuByRoles(items: MenuItem[], userRoles: { code?: string }[] | u
   for (const it of items) {
     if (it.menuVisible === false) continue;
     const filteredChildren = it.children?.length ? filterMenuByRoles(it.children, userRoles, permissions) : undefined;
-    const roleAllowed = !it.roles?.length || userHasAnyCanonicalRole(userRoles, it.roles);
-    const pathAllowed = canAccessPath(it.path, userRoles, permissions);
-    const selfAllowed = (roleAllowed && pathAllowed) || pathAllowed;
+    // 菜单可见性的唯一入口是 routeVisibility.ts；RAW_MENU 中仅保留展示结构。
+    const selfAllowed = canAccessPath(it.path, userRoles, permissions);
     if (!selfAllowed && (!filteredChildren || filteredChildren.length === 0)) continue;
     next.push({ ...it, children: filteredChildren });
   }
@@ -231,8 +157,8 @@ const OPEN_KEYS_STORAGE = 'menu_open_keys_v1';
 const POLL_INTERVAL = 30000;
 const EMPTY_UNREAD_BUCKETS: UnreadCountByBucket = {
   total: 0,
-  salesperson: { field_changed: 0, returned: 0, withdraw_void_result: 0 },
-  backend: { todo: 0, urge: 0, sla_warning: 0, sla_breached: 0, creator_modified: 0, withdraw_void_request: 0 },
+  salesperson: { field_changed: 0, returned: 0, withdraw_void_result: 0, system: 0 },
+  backend: { todo: 0, creator_modified: 0, withdraw_void_request: 0, system: 0 },
   system: 0,
 };
 
@@ -244,10 +170,7 @@ const SALESPERSON_NOTIFICATION_TABS: Array<{ key: NotificationBucketKey; label: 
 ];
 
 const BACKEND_NOTIFICATION_TABS: Array<{ key: NotificationBucketKey; label: string; icon?: React.ReactNode }> = [
-  { key: 'todo', label: '待办', icon: <CheckSquareOutlined style={{ color: '#1677ff' }} /> },
-  { key: 'urge', label: '催办', icon: <SoundOutlined style={{ color: '#1677ff' }} /> },
-  { key: 'sla_warning', label: '即将超时', icon: <AlertOutlined style={{ color: '#faad14' }} /> },
-  { key: 'sla_breached', label: '已超时', icon: <AlertOutlined style={{ color: '#ff4d4f' }} /> },
+  { key: 'todo', label: '待处理', icon: <CheckSquareOutlined style={{ color: '#1677ff' }} /> },
   { key: 'creator_modified', label: '业务员数据修改', icon: <InfoCircleOutlined style={{ color: '#faad14' }} /> },
   { key: 'withdraw_void_request', label: '撤回/作废申请', icon: <AlertOutlined style={{ color: '#fa541c' }} /> },
   { key: 'system', label: '系统', icon: <InfoCircleOutlined style={{ color: '#999' }} /> },

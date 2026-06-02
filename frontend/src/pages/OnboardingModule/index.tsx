@@ -219,8 +219,12 @@ const OnboardingModule: React.FC = () => {
   }, []);
 
   const isSocialModule = currentModule === 'social_insurance';
-  const canBackendOperate = hasRole('admin') || hasRole('data_entry_leader') || hasRole('shared_team_owner')
-    || hasRole('labor_contract_member') || hasRole('onboarding_resignation_member') || hasRole('social_insurance_specialist');
+  const canOperateCurrentModule = hasRole('admin')
+    || (['contract', 'renewal_contract'].includes(currentModule) && (hasRole('labor_contract_member') || hasRole('shared_team_owner')))
+    || (['onboarding_contact', 'resignation_contact', 'resignation_cert'].includes(currentModule) && (hasRole('onboarding_resignation_member') || hasRole('shared_team_owner')))
+    || (currentModule === 'data_entry' && hasRole('data_entry_leader'))
+    || (currentModule === 'social_insurance' && hasRole('social_insurance_specialist'));
+  const canBackendOperate = canOperateCurrentModule;
   const canBatchComplete = canBackendOperate;
   const canBatchUrge = hasRole('admin') || hasRole('business_group_member') || hasRole('business_group_leader') || hasRole('business_owner');
   const canSelectRows = canBackendOperate || canBatchUrge;

@@ -25,8 +25,7 @@ import type { DispatchedBatchImportMode } from '@/components/DispatchedBatchImpo
 import type { PageParams } from '@/services/mock';
 import { getUsersByTeam } from '@/services/users';
 import type { UserItem } from '@/services/users';
-import { getWorkOrders } from '@/services/workOrders';
-import type { WorkOrderItem } from '@/services/workOrders';
+// 我的工单列表统一按子工单维度展示，不再混入主工单表。
 import { useAuth } from '@/hooks/useAuth';
 import { getModuleLabel } from '@/constants/modules';
 import { getStatusColor, getStatusText } from '@/constants/dictionaries';
@@ -44,7 +43,7 @@ RefButton.displayName = 'RefButton';
 
 const getSelectPopupContainer = (triggerNode: HTMLElement) => triggerNode.parentElement || document.body;
 
-type MyDispatchedMode = 'pending' | 'done';
+type MyDispatchedMode = 'pending' | 'done' | 'initiated' | 'returned';
 
 interface MyDispatchedProps {
   mode?: MyDispatchedMode;
@@ -61,6 +60,16 @@ const WORK_TYPE_OPTIONS = [
   { label: '离职联系子工单', value: 'resignation_contact' },
   { label: '离职证明子工单', value: 'resignation_cert' },
   { label: '待遇申报子工单', value: 'benefit_apply' },
+];
+
+const DISPATCHED_STATUS_OPTIONS = [
+  DISPATCHED_PROCESSING_STATUS_OPTION,
+  { label: '已完成', value: 'completed' },
+  { label: '已退回', value: 'returned' },
+  { label: '已撤回', value: 'withdrawn' },
+  { label: '已作废', value: 'void' },
+  { label: '撤回审批中', value: 'withdraw_pending' },
+  { label: '作废审批中', value: 'void_pending' },
 ];
 
 function currentMonthCompletedRange(): { completedFrom: string; completedTo: string } {
@@ -97,15 +106,23 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
   const { message } = App.useApp();
   const { hasAnyRole } = useAuth();
   const actionRef = useRef<ActionType>();
-  const isReturnedRoute = location.pathname.includes('/my-work/returned');
-  const routeMode: MyDispatchedMode = location.pathname.includes('/my-work/done') ? 'done' : 'pending';
+  const routeMode: MyDispatchedMode = location.pathname.includes('/my-work/done')
+    ? 'done'
+    : location.pathname.includes('/my-work/initiated')
+      ? 'initiated'
+      : location.pathname.includes('/my-work/returned')
+        ? 'returned'
+        : 'pending';
   const currentMode = mode || routeMode;
   const isDoneMode = currentMode === 'done';
-  const isBusinessInitiator = hasAnyRole([ROLE.BUSINESS_GROUP_MEMBER, ROLE.BUSINESS_GROUP_LEADER]);
-  const showReturnedMainOrders = (isReturnedRoute || currentMode === 'pending') && isBusinessInitiator;
-  const headerTitle = isDoneMode ? '我的已办' : (isReturnedRoute ? '我的退回' : '我的待办');
-  const childTableTitle = isDoneMode ? '当月已办子工单' : (isBusinessInitiator ? '退回待处理子工单' : '待办子工单');
-  const emptyText = isDoneMode ? '本月暂无已办子工单' : (isBusinessInitiator ? '暂无退回待处理子工单' : '暂无待办子工单');
+  const isInitiatedMode = currentMode === 'initiated';
+  const isReturnedMode = currentMode === 'returned';
+  const isCreatorListMode = isInitiatedMode || isReturnedMode;
+  const isReadonlyMyWorkMode = !isCreatorListMode;
+  // 发起人视图由路由 mode 控制，数据范围由后端 scope 兜底。
+  const headerTitle = isDoneMode ? '我的已办' : isInitiatedMode ? '我发起的' : isReturnedMode ? '我的退回' : '我的待办';
+  const childTableTitle = isDoneMode ? '当月已办子工单' : isInitiatedMode ? '我发起的子工单' : isReturnedMode ? '退回待处理子工单' : '待办子工单';
+  const emptyText = isDoneMode ? '本月暂无已办子工单' : isInitiatedMode ? '暂无我发起的子工单' : isReturnedMode ? '暂无退回待处理子工单' : '暂无待办子工单';
   const [exporting, setExporting] = useState(false);
   const [batchImportMode, setBatchImportMode] = useState<DispatchedBatchImportMode | null>(null);
   const [slaWarningCount, setSlaWarningCount] = useState(0);
@@ -127,6 +144,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
   const [batchUrgeReason, setBatchUrgeReason] = useState('');
   const [batchUrgeLoading, setBatchUrgeLoading] = useState(false);
   const [batchCleanFn, setBatchCleanFn] = useState<(() => void) | null>(null);
+  const [visibleImportModuleCodes, setVisibleImportModuleCodes] = useState<string[]>([]);
   const [reassignForm] = Form.useForm<{ handlerId: string; reason: string }>();
 
   const handleAccept = async (id: string) => {
@@ -250,6 +268,23 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
     }
   };
 
+  const batchImportModuleOptions = useMemo(() => {
+    const visibleSet = new Set(visibleImportModuleCodes);
+    const roleFallback = WORK_TYPE_OPTIONS.filter((option) => {
+      if (visibleSet.size > 0) return visibleSet.has(option.value);
+      if (hasAnyRole([ROLE.LABOR_CONTRACT_MEMBER])) return ['contract', 'renewal_contract'].includes(option.value);
+      if (hasAnyRole([ROLE.ONBOARDING_RESIGNATION_MEMBER])) return ['onboarding_contact', 'resignation_contact', 'resignation_cert'].includes(option.value);
+      if (hasAnyRole([ROLE.DATA_ENTRY_LEADER])) return option.value === 'data_entry';
+      if (hasAnyRole([ROLE.SOCIAL_INSURANCE_SPECIALIST])) return option.value === 'social_insurance';
+      if (hasAnyRole([ROLE.SHARED_TEAM_OWNER])) return ['contract', 'renewal_contract', 'onboarding_contact', 'resignation_contact', 'resignation_cert'].includes(option.value);
+      if (hasAnyRole([ROLE.ADMIN])) return true;
+      return false;
+    });
+    return roleFallback;
+  }, [hasAnyRole, visibleImportModuleCodes]);
+
+  const defaultBatchImportModule = batchImportModuleOptions[0]?.value;
+
   const handleBatchExport = async (ids: string[]) => {
     if (ids.length === 0) {
       message.warning('请先选择要导出的子工单');
@@ -269,10 +304,12 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
       title: '操作', key: 'actions', width: 130, fixed: 'left', hideInSearch: true,
       render: (_, record) => (
         <Space wrap size={[4, 4]}>
-          <RefButton type="link" size="small" icon={<EyeOutlined />} onClick={() => navigate('/my-dispatched/' + record.id)}>详情</RefButton>
-          {record.status === 'pending' && (
-            <RefButton type="primary" size="small" icon={<CheckCircleOutlined />} onClick={() => handleAccept(record.id)}>接单</RefButton>
-          )}
+          <RefButton
+            type="link"
+            size="small"
+            icon={<EyeOutlined />}
+            onClick={() => navigate(isReadonlyMyWorkMode ? `/my-dispatched/${record.id}?readonly=1&from=my-work` : `/my-dispatched/${record.id}`)}
+          >详情</RefButton>
         </Space>
       ),
     },
@@ -301,10 +338,12 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
       fieldProps: {
         options: isDoneMode
           ? [{ label: '已完成', value: 'completed' }]
-          : isBusinessInitiator
+          : isReturnedMode
             ? [{ label: '已退回', value: 'returned' }]
-            : [DISPATCHED_PROCESSING_STATUS_OPTION],
-        placeholder: isDoneMode ? '已完成' : (isBusinessInitiator ? '已退回' : '待办理/办理中'),
+            : isInitiatedMode
+              ? DISPATCHED_STATUS_OPTIONS
+              : [DISPATCHED_PROCESSING_STATUS_OPTION],
+        placeholder: isDoneMode ? '已完成' : isReturnedMode ? '已退回' : isInitiatedMode ? '请选择状态' : '待办理/办理中',
       },
       render: (_, record) => <Tag color={getStatusColor(record.status)}>{getStatusText(record.status)}</Tag>,
     },
@@ -332,31 +371,9 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
     { title: '派发时间', dataIndex: 'dispatchedRange', key: 'dispatchedRange', valueType: 'dateTimeRange', hideInTable: true },
     { title: '完成时间', dataIndex: 'completedRange', key: 'completedRange', valueType: 'dateTimeRange', hideInTable: true },
 
-  ], [navigate, isDoneMode, isBusinessInitiator]);
+  ], [navigate, isDoneMode, isInitiatedMode, isReturnedMode, isCreatorListMode, isReadonlyMyWorkMode]);
 
-  const returnedWorkOrderColumns: ProColumns<WorkOrderItem>[] = useMemo(() => [
-    { title: '工单编号', dataIndex: 'order_no', key: 'order_no', width: 150, copyable: true },
-    { title: '工单类型', dataIndex: 'order_type', key: 'order_type', width: 100 },
-    { title: '员工', dataIndex: 'employee_name', key: 'employee_name', width: 100 },
-    { title: '客户', dataIndex: 'customer_name', key: 'customer_name', width: 140, ellipsis: true },
-    {
-      title: '状态', dataIndex: 'status', key: 'status', width: 100,
-      render: (_, record) => <Tag color={getStatusColor(record.status)}>{getStatusText(record.status)}</Tag>,
-    },
-    { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 150, valueType: 'dateTime' },
-    {
-      title: '操作', key: 'actions', width: 100, hideInSearch: true,
-      render: (_, record) => (
-        <RefButton type="link" size="small" icon={<EyeOutlined />} onClick={() => navigate('/work-orders/' + record.id)}>处理</RefButton>
-      ),
-    },
-  ], [navigate]);
-
-  const requestReturnedMainOrders = async (params: PageParams) => {
-    const result = await getWorkOrders({ ...params, status: 'returned' });
-    return { data: result.list, success: true, total: result.total };
-  };
-
+  // 我的退回仅展示退回子工单，避免主工单表 + 子工单表重复筛选/重复数据。
   const updateSlaCounts = (list: DispatchedOrderItem[]) => {
     let warning = 0;
     let breached = 0;
@@ -428,14 +445,24 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
         handlerId: 'current',
         status: 'completed',
       });
+      setVisibleImportModuleCodes([]);
       clearSlaCounts();
       return { data: result.list, success: true, total: result.total };
     }
 
-    // 业务发起人待办模式：显示退回的子工单
-    if (isBusinessInitiator) {
+    // 我发起的：后端按当前用户创建人 scope 兜底；前端保持逐子工单一行并允许状态筛选。
+    if (isInitiatedMode) {
+      const result = await getDispatchedOrdersSafe({ ...query, includeReturned: true });
+      setVisibleImportModuleCodes([]);
+      clearSlaCounts();
+      return { data: result.list, success: true, total: result.total };
+    }
+
+    // 我的退回：仅展示退回子工单，避免主工单表和子工单表重复展示。
+    if (isReturnedMode) {
       const result = await getDispatchedOrdersSafe({ ...query, includeReturned: true, status: 'returned' });
       const list = result.list.filter((d) => d.status === 'returned');
+      setVisibleImportModuleCodes([]);
       clearSlaCounts();
       return { data: list, success: true, total: result.total };
     }
@@ -445,6 +472,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
     if (query.statuses) {
       const result = await getDispatchedOrdersSafe({ ...query, statuses: String(query.statuses) });
       const list = result.list.filter((d) => ACTIVE_DISPATCHED_STATUSES.has(d.status));
+      setVisibleImportModuleCodes(Array.from(new Set(list.map((item) => item.module_code).filter(Boolean))));
       updateSlaCounts(list);
       return { data: list, success: true, total: result.total };
     }
@@ -453,6 +481,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
     if (query.status) {
       const result = await getDispatchedOrdersSafe({ ...query, status: String(query.status) });
       const list = result.list.filter((d) => ACTIVE_DISPATCHED_STATUSES.has(d.status));
+      setVisibleImportModuleCodes(Array.from(new Set(list.map((item) => item.module_code).filter(Boolean))));
       updateSlaCounts(list);
       return { data: list, success: true, total: result.total };
     }
@@ -461,6 +490,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
     // 不能分别请求两个状态再在前端拼接，否则每个状态都会各自分页，导致总数、页码和当前页数据不一致。
     const result = await getDispatchedOrdersSafe({ ...query, statuses: DISPATCHED_PROCESSING_STATUS_FILTER_VALUE });
     const list = result.list.filter((d) => ACTIVE_DISPATCHED_STATUSES.has(d.status));
+    setVisibleImportModuleCodes(Array.from(new Set(list.map((item) => item.module_code).filter(Boolean))));
     updateSlaCounts(list);
     return { data: list, success: true, total: result.total };
   };
@@ -473,88 +503,26 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
         slaBreachedCount > 0 ? <Badge key="sla-breached" count={slaBreachedCount}><Tag color="red" icon={<ClockCircleOutlined />}>已超时</Tag></Badge> : null,
       ].filter(Boolean) : undefined,
     }}>
-      {showReturnedMainOrders && (
-        <ProTable<WorkOrderItem>
-          columns={returnedWorkOrderColumns}
-          rowKey="id"
-          request={requestReturnedMainOrders}
-          search={{ labelWidth: 'auto' }}
-          headerTitle="退回待处理主工单"
-          options={false}
-          toolBarRender={false}
-          pagination={{ defaultPageSize: 20, showSizeChanger: true }}
-          dateFormatter="string"
-          locale={{ emptyText: '暂无退回待处理主工单' }}
-          style={{ marginBottom: 16 }}
-        />
-      )}
+      {/* 我的退回统一只显示退回子工单，主工单重复区已移除。 */}
       <ProTable<DispatchedOrderItem>
         actionRef={actionRef} columns={columns} rowKey="id"
         request={requestDispatchedOrders}
         search={{ labelWidth: 'auto', defaultCollapsed: false }} headerTitle={childTableTitle}
         options={false}
-        toolBarRender={!isDoneMode && !isBusinessInitiator ? () => [
-          <RefButton key="import-status" icon={<UploadOutlined />} onClick={() => setBatchImportMode('status')}>导入办理结果</RefButton>,
-          <RefButton key="import-fields" icon={<UploadOutlined />} onClick={() => setBatchImportMode('fields')}>导入银行卡修改</RefButton>,
-        ] : false}
+        toolBarRender={false}
         pagination={{ defaultPageSize: 20, showSizeChanger: true }}
         scroll={{ x: 1500 }}
         dateFormatter="string"
         locale={{ emptyText }}
         rowSelection={{ preserveSelectedRowKeys: true }}
-        tableAlertRender={({ selectedRowKeys, selectedRows, onCleanSelected }) => {
-          const selected = selectedRows as DispatchedOrderItem[];
-          const completable = selected.filter((r) => ACTIVE_DISPATCHED_STATUSES.has(r.status));
-          return (
-            <Space wrap>
-              <span>已选 {selectedRowKeys.length} 项</span>
-              <RefButton size="small" onClick={onCleanSelected}>取消</RefButton>
-              {!isDoneMode && !isBusinessInitiator && (
-                <RefButton
-                  size="small"
-                  type="primary"
-                  icon={<CheckCircleOutlined />}
-                  disabled={completable.length === 0}
-                  onClick={() => {
-                    setBatchCompleteIds(completable.map((r) => r.id));
-                    setBatchCompleteRemark('');
-                    setBatchCleanFn(() => onCleanSelected);
-                    setBatchCompleteVisible(true);
-                  }}
-                >批量完成{completable.length > 0 ? `（${completable.length}）` : ''}</RefButton>
-              )}
-              {!isDoneMode && !isBusinessInitiator && (
-                <RefButton
-                  size="small"
-                  icon={<BellOutlined />}
-                  disabled={completable.length === 0}
-                  onClick={() => {
-                    setBatchUrgeIds(completable.map((r) => r.id));
-                    setBatchUrgeReason('');
-                    setBatchCleanFn(() => onCleanSelected);
-                    setBatchUrgeVisible(true);
-                  }}
-                >批量催办{completable.length > 0 ? `（${completable.length}）` : ''}</RefButton>
-              )}
-              {!isDoneMode && !isBusinessInitiator && (
-                <RefButton
-                  size="small"
-                  danger
-                  icon={<RollbackOutlined />}
-                  disabled={completable.length === 0}
-                  onClick={() => {
-                    setBatchReturnIds(completable.map((r) => r.id));
-                    setBatchReturnReason('');
-                    setBatchCleanFn(() => onCleanSelected);
-                    setBatchReturnVisible(true);
-                  }}
-                >批量退回{completable.length > 0 ? `（${completable.length}）` : ''}</RefButton>
-              )}
-              <RefButton size="small" type="primary" icon={<ExportOutlined />} loading={exporting}
-                onClick={() => handleBatchExport((selectedRowKeys as React.Key[]).map(String))}>按固定模板导出</RefButton>
-            </Space>
-          );
-        }}
+        tableAlertRender={({ selectedRowKeys, onCleanSelected }) => (
+          <Space wrap>
+            <span>已选 {selectedRowKeys.length} 项</span>
+            <RefButton size="small" onClick={onCleanSelected}>取消</RefButton>
+            <RefButton size="small" type="primary" icon={<ExportOutlined />} loading={exporting}
+              onClick={() => handleBatchExport((selectedRowKeys as React.Key[]).map(String))}>按固定模板导出</RefButton>
+          </Space>
+        )}
       />
             <Modal
         title="批量完成子工单"
@@ -676,8 +644,8 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
       <DispatchedBatchImportModal
         open={batchImportMode !== null}
         mode={batchImportMode || 'status'}
-        moduleOptions={WORK_TYPE_OPTIONS}
-        defaultModuleCode="onboarding_contact"
+        moduleOptions={batchImportModuleOptions}
+        defaultModuleCode={defaultBatchImportModule}
         onClose={() => setBatchImportMode(null)}
         onImported={() => actionRef.current?.reload()}
       />
