@@ -135,6 +135,7 @@ describe('BasicLayout menu visibility', () => {
 
   it('keeps business owner menu to dashboard, team work and history only', () => {
     mockUserState.user = mockUserState.makeUser(['business_owner']);
+    mockUserState.user.permissions = ['*', 'work_order.*', 'data_scope.all'];
 
     renderLayout();
 
@@ -167,6 +168,7 @@ describe('BasicLayout menu visibility', () => {
 
   it('keeps business group leader on team and history work only', () => {
     mockUserState.user = mockUserState.makeUser(['business_group_leader']);
+    mockUserState.user.permissions = ['*', 'work_order.*', 'data_scope.all'];
 
     renderLayout();
 
@@ -181,6 +183,7 @@ describe('BasicLayout menu visibility', () => {
 
   it('keeps shared team owner on Yang Chun plus Mao Yani modules only', () => {
     mockUserState.user = mockUserState.makeUser(['shared_team_owner']);
+    mockUserState.user.permissions = ['*', 'work_order.*', 'data_scope.all'];
 
     renderLayout();
 

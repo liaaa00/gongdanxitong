@@ -253,10 +253,31 @@ function normalizePermissions(permissions?: string[]): Set<string> {
   return new Set((permissions || []).map((item) => String(item || '').trim()).filter(Boolean));
 }
 
-function hasDynamicPermissionForPath(pathname: string, permissions?: string[]): boolean {
+const RESTRICTED_DYNAMIC_PERMISSION_ROUTES: Partial<Record<CanonicalRole, readonly VisibilityRoute[]>> = {
+  [ROLE.BUSINESS_OWNER]: ['/dashboard', '/my-work/team', '/my-work/history', '/my-dispatched/:id'],
+  [ROLE.BUSINESS_GROUP_LEADER]: ['/dashboard', '/my-work/team', '/my-work/history', '/my-dispatched/:id'],
+  [ROLE.SHARED_TEAM_OWNER]: [
+    '/dashboard', '/notifications', '/my-work/pending', '/my-work/done', '/my-work/history', '/dispatched-orders', '/my-dispatched/:id',
+    '/onboarding', '/onboarding/onboarding_contact', '/onboarding/contract', '/onboarding/renewal_contract',
+    '/onboarding/resignation_contact', '/onboarding/resignation_cert',
+    '/in-service', '/in-service/contract-renewal',
+    '/offboarding', '/offboarding/contact-pool', '/offboarding/proof-pool',
+  ],
+};
+
+function allowsDynamicPermissionWithinRoleScope(route: VisibilityRoute, userRoles: { code?: string }[] | undefined): boolean {
+  const roleCodes = new Set(canonicalRoleCodes(userRoles));
+  if (roleCodes.has(ROLE.ADMIN)) return true;
+  const restrictedRole = [ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.SHARED_TEAM_OWNER]
+    .find((role) => roleCodes.has(role));
+  if (!restrictedRole) return true;
+  return (RESTRICTED_DYNAMIC_PERMISSION_ROUTES[restrictedRole] || []).includes(route);
+}
+
+function hasDynamicPermissionForPath(pathname: string, permissions?: string[], userRoles?: { code?: string }[]): boolean {
   const route = resolveVisibilityRoute(pathname);
   const permissionSet = normalizePermissions(permissions);
-  if (!route || permissionSet.size === 0) return false;
+  if (!route || permissionSet.size === 0 || !allowsDynamicPermissionWithinRoleScope(route, userRoles)) return false;
   if (permissionSet.has('*') || permissionSet.has('all') || permissionSet.has('work_order.*')) return true;
   if (route === '/my-work/team') {
     return permissionSet.has('work_order.view_team')
@@ -275,7 +296,7 @@ function hasDynamicPermissionForPath(pathname: string, permissions?: string[]): 
 export function canAccessPath(pathname: string, userRoles: { code?: string }[] | undefined, permissions?: string[]): boolean {
   const requiredRoles = getRequiredRolesForPath(pathname);
   if (!requiredRoles.length) return false;
-  return userHasAnyCanonicalRole(userRoles, [...requiredRoles]) || hasDynamicPermissionForPath(pathname, permissions);
+  return userHasAnyCanonicalRole(userRoles, [...requiredRoles]) || hasDynamicPermissionForPath(pathname, permissions, userRoles);
 }
 
 export function canonicalRoleList(userRoles: { code?: string }[] | undefined): string[] {

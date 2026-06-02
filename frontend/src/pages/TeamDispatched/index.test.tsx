@@ -1,5 +1,8 @@
 import { render, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import TeamDispatched from './index';
 
 const mocks = vi.hoisted(() => ({
@@ -27,6 +30,9 @@ vi.mock('react-router-dom', async () => {
 vi.mock('@/services/dispatchedOrders', () => ({
   getDispatchedOrdersSafe: (...args: unknown[]) => mocks.getDispatchedOrdersSafe(...args),
 }));
+
+
+const currentDir = dirname(fileURLToPath(import.meta.url));
 
 describe('TeamDispatched readonly child-order view', () => {
   beforeEach(() => {
@@ -57,6 +63,17 @@ describe('TeamDispatched readonly child-order view', () => {
       customerName: '客户A',
       scope: 'team',
     })));
+  });
+
+  it('does not depend on the main work-order API or main detail route', () => {
+    const source = readFileSync(join(currentDir, 'index.tsx'), 'utf8');
+
+    expect(source).toContain('getDispatchedOrdersSafe');
+    expect(source).toContain("scope: 'team'");
+    expect(source).not.toContain('@/services/workOrders');
+    expect(source).not.toContain('getWorkOrders');
+    expect(source).not.toContain('WorkOrderItem');
+    expect(source).not.toContain('`/work-orders/${record.id}`');
   });
 
   it('opens readonly dispatched detail instead of an actionable main detail', () => {

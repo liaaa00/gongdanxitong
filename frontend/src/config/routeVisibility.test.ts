@@ -106,6 +106,33 @@ describe('routeVisibility admin-only configuration routes', () => {
     expect(canAccessPath('/onboarding/social_insurance', dataEntryRoles)).toBe(false);
   });
 
+  it('does not let broad dynamic permissions reopen restricted owner and shared-owner routes', () => {
+    const ownerRoles = roles([ROLE.BUSINESS_OWNER]);
+    const leaderRoles = roles([ROLE.BUSINESS_GROUP_LEADER]);
+    const sharedOwnerRoles = roles([ROLE.SHARED_TEAM_OWNER]);
+    const broadPermissions = ['*', 'work_order.*', 'data_scope.all'];
+
+    expect(canAccessPath('/my-work/team', ownerRoles, broadPermissions)).toBe(true);
+    expect(canAccessPath('/my-work/history', ownerRoles, broadPermissions)).toBe(true);
+    expect(canAccessPath('/work-orders', ownerRoles, broadPermissions)).toBe(false);
+    expect(canAccessPath('/my-work/initiated', ownerRoles, broadPermissions)).toBe(false);
+    expect(canAccessPath('/onboarding/contract', ownerRoles, broadPermissions)).toBe(false);
+    expect(canAccessPath('/offboarding/contact-pool', ownerRoles, broadPermissions)).toBe(false);
+
+    expect(canAccessPath('/my-work/team', leaderRoles, broadPermissions)).toBe(true);
+    expect(canAccessPath('/work-orders', leaderRoles, broadPermissions)).toBe(false);
+    expect(canAccessPath('/my-work/initiated', leaderRoles, broadPermissions)).toBe(false);
+    expect(canAccessPath('/my-work/pending', leaderRoles, broadPermissions)).toBe(false);
+
+    expect(canAccessPath('/onboarding/contract', sharedOwnerRoles, broadPermissions)).toBe(true);
+    expect(canAccessPath('/onboarding/onboarding_contact', sharedOwnerRoles, broadPermissions)).toBe(true);
+    expect(canAccessPath('/onboarding/data_entry', sharedOwnerRoles, broadPermissions)).toBe(false);
+    expect(canAccessPath('/onboarding/data_entry_resign', sharedOwnerRoles, broadPermissions)).toBe(false);
+    expect(canAccessPath('/in-service/benefit-claim', sharedOwnerRoles, broadPermissions)).toBe(false);
+    expect(canAccessPath('/onboarding/social_insurance', sharedOwnerRoles, broadPermissions)).toBe(false);
+    expect(canAccessPath('/offboarding/social-suspend-pool', sharedOwnerRoles, broadPermissions)).toBe(false);
+  });
+
   it('does not expose notification route to business owner only role', () => {
     expect(canAccessPath('/notifications', roles([ROLE.BUSINESS_OWNER]))).toBe(false);
     expect(canAccessPath('/notifications', roles([ROLE.BUSINESS_GROUP_MEMBER]))).toBe(true);
