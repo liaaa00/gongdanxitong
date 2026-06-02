@@ -322,6 +322,68 @@ describe('DispatchedOrderService', () => {
     }));
   });
 
+  it('requires standardized batch import action and rejects business-side imports before row processing', async () => {
+    const { service } = makeService();
+    const businessUser = { sub: 'biz-1', username: 'sales', roles: ['business_group_member'] } as JwtUserPayload;
+
+    await expect(service.batchImport({
+      moduleCode: 'contract',
+      mode: 'status',
+      rows: [{ orderNo: 'ON20260511001', result: '完成' }],
+    }, businessUser)).rejects.toMatchObject({ status: HttpStatus.BAD_REQUEST });
+
+    await expect(service.batchImport({
+      moduleCode: 'contract',
+      mode: 'status',
+      forceAction: 'complete',
+      rows: [{ orderNo: 'ON20260511001' }],
+    }, businessUser)).rejects.toMatchObject({ status: HttpStatus.FORBIDDEN });
+  });
+
+  it('matches exported template rows using database column names and identity aliases', async () => {
+    const order = makeDispatchedOrder(DispatchedOrderStatus.PENDING);
+    const qb = {
+      leftJoinAndSelect: jest.fn(),
+      where: jest.fn(),
+      andWhere: jest.fn(),
+      orderBy: jest.fn(),
+      getMany: jest.fn(async () => [order]),
+      update: jest.fn(),
+      set: jest.fn(),
+      execute: jest.fn(),
+    };
+    qb.leftJoinAndSelect.mockReturnValue(qb);
+    qb.where.mockReturnValue(qb);
+    qb.andWhere.mockReturnValue(qb);
+    qb.orderBy.mockReturnValue(qb);
+    const dispatchedOrderRepo = repoMock<DispatchedOrder>({ createQueryBuilder: jest.fn(() => qb), save: jest.fn(async (input) => input) });
+    const service = new DispatchedOrderService(
+      dispatchedOrderRepo,
+      repoMock<WorkOrder>(),
+      repoMock<ModuleHandler>({ count: jest.fn(async () => 1) }),
+      repoMock<UserRole>(),
+      repoMock<FieldConfig>(),
+      repoMock<Notification>(),
+      repoMock<OperationLog>(),
+      {} as FieldPermissionService,
+      { getLogs: jest.fn() } as unknown as FieldSupplementService,
+      { exportSingleDispatchedOrder: jest.fn() } as never,
+    );
+
+    await service.batchImport({
+      moduleCode: '数据录入',
+      mode: 'status',
+      forceAction: 'complete',
+      rows: [{ raw: { 工单编号: order.parentOrder.orderNo, 员工证件号: order.parentOrder.employeeIdCard } }],
+      defaultRemark: 'done',
+    }, { sub: 'user-1', username: 'processor01', roles: ['data_entry_team'] } as JwtUserPayload);
+
+    expect(qb.where).toHaveBeenCalledWith('d.module_code = :moduleCode', { moduleCode: 'data_entry' });
+    expect(qb.andWhere).toHaveBeenCalledWith('w.order_no = :orderNo', { orderNo: order.parentOrder.orderNo });
+    expect(qb.andWhere).toHaveBeenCalledWith('w.employee_id_card = :employeeIdCard', { employeeIdCard: order.parentOrder.employeeIdCard });
+    expect(qb.orderBy).toHaveBeenCalledWith('d.created_at', 'DESC');
+  });
+
   it('rejects accept/claim/complete/return when parent work order is void, void_pending, withdraw_pending, withdrawn, or child has voidAt', async () => {
     const makeParent = (status: WorkOrderStatus) => ({
       id: 'wo-1',

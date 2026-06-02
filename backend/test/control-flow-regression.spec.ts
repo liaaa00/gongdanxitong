@@ -122,25 +122,43 @@ describe('five control-flow regression coverage', () => {
   const creator: JwtUserPayload = { sub: 'creator-1', username: 'creator', roles: ['biz_member'] };
   const handler: JwtUserPayload = { sub: 'handler-1', username: 'handler', roles: ['data_entry_team'] };
 
-  it.each([DispatchedOrderStatus.RETURNED, DispatchedOrderStatus.WITHDRAWN])(
-    'creator void from %s must stay approval-bound and never direct void',
-    async (status) => {
-      const order = makeChild({ status, parentOrder: makeParent({ status: status === DispatchedOrderStatus.RETURNED ? WorkOrderStatus.RETURNED : WorkOrderStatus.WITHDRAWN }) });
-      const dispatchedRepo = repoMock<DispatchedOrder>({ findOne: jest.fn(async () => order) });
-      const notificationRepo = repoMock<Notification>();
-      const operationLogRepo = repoMock<OperationLog>({ count: jest.fn(async () => 0) });
-      const { service } = makeService({ dispatchedRepo, notificationRepo, operationLogRepo });
+  // 0602 E-5/目标-6：处理中/待处理/已退回作废仍走 VOID_PENDING 后道审批；已撤回作废改为直接终态（见下一用例）。
+  it('creator void from RETURNED must stay approval-bound and never direct void', async () => {
+    const order = makeChild({ status: DispatchedOrderStatus.RETURNED, parentOrder: makeParent({ status: WorkOrderStatus.RETURNED }) });
+    const dispatchedRepo = repoMock<DispatchedOrder>({ findOne: jest.fn(async () => order) });
+    const notificationRepo = repoMock<Notification>();
+    const operationLogRepo = repoMock<OperationLog>({ count: jest.fn(async () => 0) });
+    const { service } = makeService({ dispatchedRepo, notificationRepo, operationLogRepo });
 
-      await service.voidByCreator('00000000-0000-4000-8000-000000000001', { reason: 'cancel' }, creator);
+    await service.voidByCreator('00000000-0000-4000-8000-000000000001', { reason: 'cancel' }, creator);
 
-      expect(order.status).toBe(DispatchedOrderStatus.VOID_PENDING);
-      expect(order.voidAt).toBeNull();
-      expect(operationLogRepo.save).toHaveBeenCalledWith(expect.objectContaining({ actionType: 'creator_void_request' }));
-      expect(notificationRepo.save).toHaveBeenCalledWith(expect.arrayContaining([
-        expect.objectContaining({ bizType: 'creator_void_request' }),
-      ]));
-    },
-  );
+    expect(order.status).toBe(DispatchedOrderStatus.VOID_PENDING);
+    expect(order.voidAt).toBeNull();
+    expect(operationLogRepo.save).toHaveBeenCalledWith(expect.objectContaining({ actionType: 'creator_void_request' }));
+    expect(notificationRepo.save).toHaveBeenCalledWith(expect.arrayContaining([
+      expect.objectContaining({ bizType: 'creator_void_request' }),
+    ]));
+  });
+
+  // 0602 E-5：已撤回子单作废 → 直接进入 VOID 终态，无需后道二次审批（合并撤销作废语义）。
+  it('creator void from WITHDRAWN goes straight to VOID terminal without downstream approval', async () => {
+    const order = makeChild({ status: DispatchedOrderStatus.WITHDRAWN, parentOrder: makeParent({ status: WorkOrderStatus.WITHDRAWN }) });
+    const dispatchedRepo = repoMock<DispatchedOrder>({ findOne: jest.fn(async () => order) });
+    const notificationRepo = repoMock<Notification>();
+    const operationLogRepo = repoMock<OperationLog>({ count: jest.fn(async () => 0) });
+    const { service } = makeService({ dispatchedRepo, notificationRepo, operationLogRepo });
+
+    await service.voidByCreator('00000000-0000-4000-8000-000000000001', { reason: 'cancel' }, creator);
+
+    expect(order.status).toBe(DispatchedOrderStatus.VOID);
+    expect(order.voidAt).toBeInstanceOf(Date);
+    expect(operationLogRepo.save).toHaveBeenCalledWith(expect.objectContaining({ actionType: 'creator_void_direct' }));
+    // 通知发起人作废完成（void_approved），不生成后道审批待办（creator_void_request）。
+    expect(notificationRepo.save).toHaveBeenCalledWith(expect.objectContaining({ bizType: 'void_approved' }));
+    expect(notificationRepo.save).not.toHaveBeenCalledWith(expect.arrayContaining([
+      expect.objectContaining({ bizType: 'creator_void_request' }),
+    ]));
+  });
 
   it('backend batch urge notifies related creators and skips terminal sub orders', async () => {
     const pending = makeChild({ id: 'do-pending', status: DispatchedOrderStatus.PENDING, parentOrder: makeParent({ id: 'wo-1', createdBy: 'creator-1' }) });

@@ -246,6 +246,18 @@ export class DispatchedOrderController {
     return this.dispatchedOrderService.restoreVoidByCreator(assertUuidParam(id, '子工单不存在'), payload, user);
   }
 
+  // 0602 E-1/E-2/E-3：子工单级“重新提交”。发起人在【已退回/已撤回/已作废】子单详情页重提，
+  // 合并撤销作废语义；重提后子单重新流转到对应后道（pending），父工单回到处理中。
+  @Post(':id/resubmit')
+  @FieldPermissionScenario('dispatched:auto')
+  resubmitDispatched(
+    @Param('id') id: string,
+    @Body() payload: { extraData?: Record<string, unknown>; reason?: string; moduleCode?: string; module_code?: string; workOrderUpdatedAt?: string },
+    @CurrentUser() user: JwtUserPayload,
+  ) {
+    return this.dispatchedOrderService.resubmitDispatched(assertUuidParam(id, '子工单不存在'), payload, user);
+  }
+
   @Post(':id/supplement')
   supplement(
     @Param('id') id: string,

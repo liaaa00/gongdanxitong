@@ -2,6 +2,8 @@ import { ForbiddenException, HttpStatus, Injectable, NotFoundException, Optional
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, In, MoreThan, QueryFailedError, Repository, SelectQueryBuilder } from 'typeorm';
 import {
+  BUSINESS_LEADER_ROLES,
+  BUSINESS_MANAGER_ROLES,
   BUSINESS_MEMBER_ROLES,
   DATA_ENTRY_MODULE_ROLES,
   SOCIAL_INSURANCE_MODULE_ROLES,
@@ -117,7 +119,7 @@ export class DispatchedOrderService {
     this.applyCommonFilters(qb, { ...query, __currentUserId: user.sub } as ListDispatchedOrderQueryDto & { __currentUserId: string });
 
     const [rows, total] = await qb
-      .orderBy('d.createdAt', 'DESC')
+      .orderBy('d.created_at', 'DESC')
       .offset((page - 1) * pageSize)
       .limit(pageSize)
       .getManyAndCount();
@@ -347,6 +349,7 @@ export class DispatchedOrderService {
       }));
     }
     await this.notifyCreator(order, 'dispatched_returned', '子工单已退回', reason);
+    await this.markTodoNotificationsReadForDispatchedOrder(order, user.sub);
     await this.writeLog('dispatched_order', id, user.sub, beforeStatus === DispatchedOrderStatus.COMPLETED ? 'return_completed' : 'return', beforeSnapshot, { returnReason: reason, returnedFields: payload.returnedFields ?? [] });
 
     return this.findOne(id, user);
@@ -452,14 +455,19 @@ export class DispatchedOrderService {
     const details: Array<{ rowNumber: number; success: boolean; id?: string; orderNo?: string; employeeIdCard?: string; action?: string; message: string }> = [];
     let successRows = 0;
 
+    if (payload.mode === 'status' && !payload.forceAction) {
+      throw businessException(4224, HttpStatus.BAD_REQUEST, '导入办理必须选择标准动作：批办理完成或批办理退回');
+    }
+    await this.assertCanBatchImportModule(moduleCode, user);
+
     for (let index = 0; index < payload.rows.length; index += 1) {
       const row = payload.rows[index];
       const rowNumber = index + 2;
       try {
         const order = await this.resolveImportTarget(moduleCode, row);
         if (payload.mode === 'status') {
-          const action = this.normalizeImportResult(row.result ?? row.status ?? row.raw?.['办理结果'] ?? row.raw?.['状态']);
-          if (!action) throw businessException(4224, HttpStatus.BAD_REQUEST, '办理结果必须填写为“完成”或“退回”');
+          const action = payload.forceAction ?? this.normalizeImportResult(row.result ?? row.status ?? row.raw?.['办理结果'] ?? row.raw?.['状态']);
+          if (!action) throw businessException(4224, HttpStatus.BAD_REQUEST, '导入办理必须选择标准动作：批办理完成或批办理退回');
           if (action === 'complete') {
             const remark = this.readImportString(row.remark ?? row.raw?.['办理备注'] ?? row.raw?.['备注'] ?? payload.defaultRemark) ?? '批量导入办理完成';
             await this.completeOrderByBatchImport(order, remark, user);
@@ -480,8 +488,8 @@ export class DispatchedOrderService {
         details.push({
           rowNumber,
           success: false,
-          orderNo: this.readImportString(row.orderNo ?? row.raw?.['工单编号'] ?? row.raw?.['工单号']) ?? undefined,
-          employeeIdCard: this.readImportString(row.employeeIdCard ?? row.idCardNo ?? row.raw?.['员工证件号'] ?? row.raw?.['证件号'] ?? row.raw?.['身份证号']) ?? undefined,
+          orderNo: (this.readImportString(row.orderNo) ?? this.readImportAlias(row.raw, ['工单编号', '工单号', '主工单号', '子工单号', 'order_no', 'orderNo'])) ?? undefined,
+          employeeIdCard: (this.readImportString(row.employeeIdCard ?? row.idCardNo) ?? this.readImportAlias(row.raw, ['员工证件号', '证件号', '身份证号', '身份证号码', 'employee_id_card', 'employeeIdCard', 'id_card_no', 'idCardNo'])) ?? undefined,
           message: err instanceof Error ? err.message : String(err),
         });
       }
@@ -549,31 +557,19 @@ export class DispatchedOrderService {
       return this.findOne(id, user);
     }
 
-    const wasReturned = order.status === DispatchedOrderStatus.RETURNED;
+    // 0602 E-4：修改仅保存内容，不自动重新提交；子工单状态保持不变，
+    // 由发起人在详情页显式点击“重新提交”才触发流转（见 resubmitDispatched）。
     order.parentOrder.extraData = nextExtraData;
     this.syncWorkOrderListFields(order.parentOrder);
-    if (wasReturned) {
-      order.status = DispatchedOrderStatus.PROCESSING;
-      order.returnReason = null;
-      order.completedAt = null;
-      order.parentOrder.status = WorkOrderStatus.PROCESSING;
-      order.parentOrder.completedAt = null;
-    }
     await this.workOrderRepository.save(order.parentOrder);
-    if (wasReturned) {
-      await this.dispatchedOrderRepository.save(order);
-    }
-    await this.writeLog('dispatched_order', id, user.sub, wasReturned ? 'creator_update_resubmit' : 'creator_update_fields', this.snapshot(order), {
+    await this.writeLog('dispatched_order', id, user.sub, 'creator_update_fields', this.snapshot(order), {
       fields: entries.map(([fieldCode]) => fieldCode),
       reason: payload.reason?.trim() || null,
       diff,
-      resubmitted: wasReturned,
+      resubmitted: false,
       status: order.status,
     });
-    await this.markAndNotifyAffectedDispatchedOrders(order, diff, user.sub, wasReturned ? 'dispatch_resubmit' : 'order.field_changed');
-    if (wasReturned) {
-      await this.notifyUsers(order, await this.resolveDispatchedRecipients(order), 'dispatch_resubmit', '退回子工单已重新提交', payload.reason?.trim() || '业务员已修改退回数据并重新提交，请继续办理');
-    }
+    await this.markAndNotifyAffectedDispatchedOrders(order, diff, user.sub, 'order.field_changed');
 
     return this.findOne(id, user);
   }
@@ -690,7 +686,27 @@ export class DispatchedOrderService {
 
     const before = this.snapshot(order);
     const previousStatus = order.status;
-    // returned/withdrawn child orders must also enter VOID_PENDING and wait for backend approval.
+
+    // 0602 E-5/目标-6：撤回成功后发起人作废，子单直接进入 VOID 终态，无需后道二次审批。
+    // 其余状态（处理中/待处理/已退回）仍走 VOID_PENDING 审批流，避免越权直接作废在办子单。
+    if (order.status === DispatchedOrderStatus.WITHDRAWN) {
+      order.status = DispatchedOrderStatus.VOID;
+      order.voidAt = new Date();
+      order.returnReason = `业务员撤回后直接作废：${reason}`;
+      order.completedAt = order.completedAt ?? new Date();
+      await this.dispatchedOrderRepository.save(order);
+      await this.notifyCreator(order, 'void_approved', '子工单已作废', reason);
+      await this.markTodoNotificationsReadForDispatchedOrder(order, user.sub);
+      await this.writeLog('dispatched_order', order.id, user.sub, 'creator_void_direct', before, {
+        reason,
+        previousStatus,
+        status: order.status,
+        voidAt: order.voidAt,
+        approvalSkipped: true,
+      });
+      return this.findOne(order.id, user);
+    }
+
     order.status = DispatchedOrderStatus.VOID_PENDING;
     order.returnReason = `业务员作废申请：${reason}`;
     order.completedAt = null;
@@ -748,6 +764,114 @@ export class DispatchedOrderService {
     await this.writeLog('dispatched_order', id, user.sub, 'creator_restore_void', before, { status: order.status, voidAt: order.voidAt, parentStatus: order.parentOrder.status });
     // 0528 feedback: restoring a void child order must not create a new notification.
     return this.findOne(id, user);
+  }
+
+  /**
+   * 0602 E-1/E-2/E-3：子工单级“重新提交”。发起人可在【已退回 / 已撤回 / 已作废】子单详情页重提，
+   * 合并了原“撤销作废”语义（撤销作废 = 已作废子单的一次重提）。
+   * 行为：子单重新流转到原模块对应后道（保留原 handler；为空则按模块默认主办重新指派），
+   * 状态回到待处理(pending)，父工单若处于终态则回到处理中(processing)，并通知后道。
+   * 入参可携带修改后的 extraData（与 E-4 配合：修改仅存内容，重提才真正流转）。
+   * 兜底：非发起人调用被拒；状态不允许时返回明确冲突错误码。
+   */
+  async resubmitDispatched(
+    id: string,
+    payload: { extraData?: Record<string, unknown>; reason?: string; moduleCode?: string; module_code?: string; workOrderUpdatedAt?: string },
+    user: JwtUserPayload,
+  ): Promise<DispatchedOrderDetailItem> {
+    const order = await this.loadDispatchedOrderForCreatorAction(id, payload.moduleCode ?? payload.module_code);
+    this.assertCanCreatorOperate(order, user, '重新提交');
+
+    const RESUBMITTABLE = [
+      DispatchedOrderStatus.RETURNED,
+      DispatchedOrderStatus.WITHDRAWN,
+      DispatchedOrderStatus.VOID,
+    ];
+    if (!RESUBMITTABLE.includes(order.status)) {
+      throw businessException(4201, HttpStatus.CONFLICT, '仅已退回、已撤回或已作废的子工单可重新提交');
+    }
+    if ([WorkOrderStatus.VOID_PENDING, WorkOrderStatus.WITHDRAW_PENDING].includes(order.parentOrder.status)) {
+      throw businessException(4204, HttpStatus.CONFLICT, '父工单审批中，暂不可重新提交');
+    }
+
+    // 乐观锁：与 creatorUpdateFields 一致，避免并发覆盖。
+    if (
+      payload.workOrderUpdatedAt
+      && order.parentOrder.updatedAt.toISOString() !== new Date(payload.workOrderUpdatedAt).toISOString()
+    ) {
+      throw businessException(4201, HttpStatus.CONFLICT, '工单已被更新，请刷新后重试', {
+        workOrderUpdatedAt: order.parentOrder.updatedAt.toISOString(),
+      });
+    }
+
+    const before = this.snapshot(order);
+    const previousStatus = order.status;
+
+    // 可选：携带修改后的字段（仅限当前子单可见字段），合并保存到父工单 extraData。
+    let parentTouched = false;
+    const fields = payload.extraData && typeof payload.extraData === 'object' ? payload.extraData : {};
+    const entries = Object.entries(fields).filter(([key]) => key.trim().length > 0);
+    if (entries.length > 0) {
+      const visibleSet = order.visibleFields ? new Set(order.visibleFields) : null;
+      const rejected = entries.filter(([fieldCode]) => visibleSet && !visibleSet.has(fieldCode)).map(([fieldCode]) => fieldCode);
+      if (rejected.length > 0) {
+        throw businessException(5001, HttpStatus.FORBIDDEN, `字段不属于当前子工单，不能在此修改：${rejected.join('、')}`);
+      }
+      const nextExtraData = { ...(order.parentOrder.extraData ?? {}) };
+      for (const [fieldCode, newValue] of entries) {
+        nextExtraData[fieldCode] = newValue;
+      }
+      order.parentOrder.extraData = nextExtraData;
+      this.syncWorkOrderListFields(order.parentOrder);
+      parentTouched = true;
+    }
+
+    // 重新指派：保留原 handler；为空（曾进过待认领池/被作废清空）则按模块默认主办重新指派。
+    if (!order.handlerId) {
+      order.handlerId = await this.resolveDefaultModuleHandler(order.moduleCode);
+    }
+
+    order.status = DispatchedOrderStatus.PENDING;
+    order.voidAt = null;
+    order.completedAt = null;
+    order.acceptedAt = null;
+    order.returnReason = null;
+    order.dispatchedAt = new Date();
+
+    // 父工单若处于终态/撤回/作废，重提后回到处理中，使整单可继续流转。
+    if ([WorkOrderStatus.VOID, WorkOrderStatus.WITHDRAWN, WorkOrderStatus.COMPLETED, WorkOrderStatus.RETURNED].includes(order.parentOrder.status)) {
+      order.parentOrder.status = WorkOrderStatus.PROCESSING;
+      order.parentOrder.completedAt = null;
+      parentTouched = true;
+    }
+    if (parentTouched) {
+      await this.workOrderRepository.save(order.parentOrder);
+    }
+    await this.dispatchedOrderRepository.save(order);
+
+    await this.writeLog('dispatched_order', order.id, user.sub, 'creator_resubmit', before, {
+      previousStatus,
+      status: order.status,
+      handlerId: order.handlerId,
+      fields: entries.map(([fieldCode]) => fieldCode),
+      reason: payload.reason?.trim() || null,
+      parentStatus: order.parentOrder.status,
+    });
+
+    // 通知后道：重提子单已重新流转，请继续办理。
+    const recipients = await this.resolveDispatchedRecipients(order);
+    await this.notifyUsers(order, recipients, 'dispatch_resubmit', '子工单已重新提交', payload.reason?.trim() || '业务员已重新提交该子工单，请继续办理');
+
+    return this.findOne(order.id, user);
+  }
+
+  /** 按模块默认主办（isBackup:false，权重高者优先）解析处理人；无主办时返回 null（进入待认领池）。 */
+  private async resolveDefaultModuleHandler(moduleCode: string): Promise<string | null> {
+    const handlers = await this.moduleHandlerRepository.find({
+      where: { moduleCode, isActive: true, isBackup: false },
+      order: { weight: 'DESC', handlerId: 'ASC' },
+    });
+    return handlers[0]?.handlerId ?? null;
   }
 
   async getSupplementLogs(id: string, user: JwtUserPayload): Promise<Array<{ fieldCode: string; oldValue: string | null; newValue: string | null; supplementedById: string; supplementedAt: Date }>> {
@@ -908,8 +1032,8 @@ export class DispatchedOrderService {
   }
 
   private async resolveImportTarget(moduleCode: string, row: BatchImportDispatchedOrderRowDto): Promise<DispatchedOrder> {
-    const orderNo = this.readImportString(row.orderNo ?? row.raw?.['工单编号'] ?? row.raw?.['工单号'] ?? row.raw?.['主工单号'] ?? row.raw?.['order_no']);
-    const employeeIdCard = this.readImportString(row.employeeIdCard ?? row.idCardNo ?? row.raw?.['员工证件号'] ?? row.raw?.['证件号'] ?? row.raw?.['身份证号'] ?? row.raw?.['employee_id_card']);
+    const orderNo = this.readImportString(row.orderNo) ?? this.readImportAlias(row.raw, ['工单编号', '工单号', '主工单号', '子工单号', 'order_no', 'orderNo']);
+    const employeeIdCard = this.readImportString(row.employeeIdCard ?? row.idCardNo) ?? this.readImportAlias(row.raw, ['员工证件号', '证件号', '身份证号', '身份证号码', 'employee_id_card', 'employeeIdCard', 'id_card_no', 'idCardNo']);
     if (!orderNo && !employeeIdCard) {
       throw businessException(4224, HttpStatus.BAD_REQUEST, '必须提供工单号或员工证件号用于匹配子工单');
     }
@@ -918,10 +1042,10 @@ export class DispatchedOrderService {
       .createQueryBuilder('d')
       .leftJoinAndSelect('d.parentOrder', 'w')
       .leftJoinAndSelect('d.handler', 'h')
-      .where('d.moduleCode = :moduleCode', { moduleCode });
-    if (orderNo) qb.andWhere('w.orderNo = :orderNo', { orderNo });
-    if (employeeIdCard) qb.andWhere('w.employeeIdCard = :employeeIdCard', { employeeIdCard });
-    const matches = await qb.orderBy('d.createdAt', 'DESC').getMany();
+      .where('d.module_code = :moduleCode', { moduleCode });
+    if (orderNo) qb.andWhere('w.order_no = :orderNo', { orderNo });
+    if (employeeIdCard) qb.andWhere('w.employee_id_card = :employeeIdCard', { employeeIdCard });
+    const matches = await qb.orderBy('d.created_at', 'DESC').getMany();
     if (matches.length === 0) {
       const identity = [orderNo ? `工单号：${orderNo}` : '', employeeIdCard ? `身份证号：${employeeIdCard}` : ''].filter(Boolean).join('，');
       throw businessException(4040, HttpStatus.NOT_FOUND, `未匹配到${moduleCode}子工单（${identity || '缺少匹配条件'}），请检查导入表后重新导入`);
@@ -1027,6 +1151,10 @@ export class DispatchedOrderService {
       'creator_withdraw_request',
       'creator_void_request',
       'creator_urge',
+      'urge_received',
+      'sla_warning',
+      'sla_breach',
+      'sla_breached',
     ];
     const rows = await this.notificationRepository.find({
       where: {
@@ -1062,6 +1190,26 @@ export class DispatchedOrderService {
     if (value === undefined || value === null) return null;
     const text = String(value).trim();
     return text.length > 0 ? text : null;
+  }
+
+  private readImportAlias(raw: Record<string, unknown> | undefined, aliases: string[]): string | null {
+    if (!raw) return null;
+    const normalized = new Map<string, unknown>();
+    for (const [key, value] of Object.entries(raw)) {
+      const textKey = String(key || '').trim();
+      normalized.set(textKey, value);
+      normalized.set(this.normalizeImportHeader(textKey), value);
+    }
+    for (const alias of aliases) {
+      const value = normalized.get(alias) ?? normalized.get(this.normalizeImportHeader(alias));
+      const text = this.readImportString(value);
+      if (text) return text;
+    }
+    return null;
+  }
+
+  private normalizeImportHeader(value: string): string {
+    return value.replace(/\s+/g, '').replace(/[：:]/g, '').toLowerCase();
   }
 
   private syncWorkOrderListFields(workOrder: WorkOrder): void {
@@ -1450,13 +1598,23 @@ export class DispatchedOrderService {
 
   private async assertCanHandle(order: DispatchedOrder, user: JwtUserPayload): Promise<void> {
     if (this.isAdmin(user) || order.handlerId === user.sub) return;
+    if (!order.handlerId && await this.hasModuleAccess(user.sub, order.moduleCode, user.roles)) return;
     if (await this.canActAsModuleSupervisor(user, order.moduleCode)) return;
     throw businessException(5000, HttpStatus.FORBIDDEN, '无权操作该子工单');
   }
 
+  private async assertCanBatchImportModule(moduleCode: string, user: JwtUserPayload): Promise<void> {
+    if (this.isAdmin(user)) return;
+    if (await this.hasModuleAccess(user.sub, moduleCode, user.roles)) return;
+    if (hasAnyRole(user.roles, BUSINESS_MEMBER_ROLES) || hasAnyRole(user.roles, BUSINESS_LEADER_ROLES) || hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES)) {
+      throw businessException(5000, HttpStatus.FORBIDDEN, '业务侧账号不可导入办理子工单');
+    }
+    throw businessException(5000, HttpStatus.FORBIDDEN, '无权导入办理该子工单类型');
+  }
+
   private assertParentAllowsDispatchedHandling(order: DispatchedOrder): void {
-    if (order.voidAt || [WorkOrderStatus.VOID, WorkOrderStatus.VOID_PENDING, WorkOrderStatus.WITHDRAW_PENDING].includes(order.parentOrder.status)) {
-      throw businessException(4204, HttpStatus.CONFLICT, '父工单已作废、撤回中或不可办理，子工单不可继续办理');
+    if (order.voidAt || [WorkOrderStatus.VOID, WorkOrderStatus.VOID_PENDING, WorkOrderStatus.WITHDRAW_PENDING, WorkOrderStatus.WITHDRAWN].includes(order.parentOrder.status)) {
+      throw businessException(4204, HttpStatus.CONFLICT, '父工单已作废、已撤回、撤回中或不可办理，子工单不可继续办理');
     }
   }
 
