@@ -449,4 +449,121 @@ describe('DispatchedOrderService', () => {
     await expect(service.complete('do-1', { remark: 'done' }, user)).rejects.toMatchObject({ status: HttpStatus.CONFLICT });
     expect(dispatchedOrderRepo.createQueryBuilder).not.toHaveBeenCalled();
   });
+
+  it('returnOrder rejects with 409 and writes nothing to parent/child when parent work order is withdrawn', async () => {
+    const parentOrder = {
+      id: 'wo-1',
+      orderNo: 'ON20260511001',
+      orderType: OrderType.ONBOARDING,
+      status: WorkOrderStatus.WITHDRAWN,
+      createdBy: 'u1',
+      departmentId: 'd1',
+      customerId: 'c1',
+      employeeName: 'employee',
+      employeeIdCard: '330102199001010011',
+      extraData: {},
+      submittedAt: null,
+      completedAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as unknown as WorkOrder;
+    const order = {
+      id: 'do-1',
+      parentOrderId: 'wo-1',
+      parentOrder,
+      moduleCode: 'data_entry',
+      status: DispatchedOrderStatus.PROCESSING,
+      handlerId: 'handler-1',
+      visibleFields: ['employee_name'],
+      returnReason: null,
+      dispatchedAt: new Date(),
+      acceptedAt: new Date(),
+      completedAt: null,
+      voidAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as unknown as DispatchedOrder;
+    const dispatchedOrderRepo = repoMock<DispatchedOrder>({ findOne: jest.fn(async () => order) });
+    const workOrderRepo = repoMock<WorkOrder>();
+    const service = new DispatchedOrderService(
+      dispatchedOrderRepo,
+      workOrderRepo,
+      repoMock<ModuleHandler>(),
+      repoMock<UserRole>(),
+      repoMock<FieldConfig>(),
+      repoMock<Notification>(),
+      repoMock<OperationLog>(),
+      {} as FieldPermissionService,
+      { getLogs: jest.fn() } as unknown as FieldSupplementService,
+      { exportSingleDispatchedOrder: jest.fn() } as never,
+    );
+    const user = { sub: 'handler-1', username: 'handler', roles: ['data_entry_team'] } as JwtUserPayload;
+
+    await expect(service.returnOrder('do-1', { returnReason: 'bad' }, user)).rejects.toMatchObject({ status: HttpStatus.CONFLICT });
+
+    // 父单兜底必须在任何写入前拦截：子单与父单都不得被持久化。
+    expect(dispatchedOrderRepo.save).not.toHaveBeenCalled();
+    expect(workOrderRepo.save).not.toHaveBeenCalled();
+    // 状态保持原值，绝不能被改写成 RETURNED。
+    expect(order.status).toBe(DispatchedOrderStatus.PROCESSING);
+    expect(parentOrder.status).toBe(WorkOrderStatus.WITHDRAWN);
+  });
+
+  it('returnOrder rejects with 409 and writes nothing when the child order itself is withdrawn', async () => {
+    const parentOrder = {
+      id: 'wo-1',
+      orderNo: 'ON20260511001',
+      orderType: OrderType.ONBOARDING,
+      status: WorkOrderStatus.PROCESSING,
+      createdBy: 'u1',
+      departmentId: 'd1',
+      customerId: 'c1',
+      employeeName: 'employee',
+      employeeIdCard: '330102199001010011',
+      extraData: {},
+      submittedAt: null,
+      completedAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as unknown as WorkOrder;
+    const order = {
+      id: 'do-1',
+      parentOrderId: 'wo-1',
+      parentOrder,
+      moduleCode: 'data_entry',
+      status: DispatchedOrderStatus.WITHDRAWN,
+      handlerId: 'handler-1',
+      visibleFields: ['employee_name'],
+      returnReason: '业务员撤回已通过，可直接作废',
+      dispatchedAt: new Date(),
+      acceptedAt: new Date(),
+      completedAt: new Date(),
+      voidAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as unknown as DispatchedOrder;
+    const dispatchedOrderRepo = repoMock<DispatchedOrder>({ findOne: jest.fn(async () => order) });
+    const workOrderRepo = repoMock<WorkOrder>();
+    const service = new DispatchedOrderService(
+      dispatchedOrderRepo,
+      workOrderRepo,
+      repoMock<ModuleHandler>(),
+      repoMock<UserRole>(),
+      repoMock<FieldConfig>(),
+      repoMock<Notification>(),
+      repoMock<OperationLog>(),
+      {} as FieldPermissionService,
+      { getLogs: jest.fn() } as unknown as FieldSupplementService,
+      { exportSingleDispatchedOrder: jest.fn() } as never,
+    );
+    const user = { sub: 'handler-1', username: 'handler', roles: ['data_entry_team'] } as JwtUserPayload;
+
+    await expect(service.returnOrder('do-1', { returnReason: 'bad' }, user)).rejects.toMatchObject({ status: HttpStatus.CONFLICT });
+
+    expect(dispatchedOrderRepo.save).not.toHaveBeenCalled();
+    expect(workOrderRepo.save).not.toHaveBeenCalled();
+    // 已撤回子单的状态保持不变，不得被改写成 RETURNED。
+    expect(order.status).toBe(DispatchedOrderStatus.WITHDRAWN);
+    expect(parentOrder.status).toBe(WorkOrderStatus.PROCESSING);
+  });
 });
