@@ -140,6 +140,46 @@ describe('DispatchedOrderService', () => {
       .resolves.toEqual(expect.objectContaining({ statuses: ['processing', 'completed'] }));
   });
 
+  it('accepts Ant Design dispatched-order list query params through the global validation pipe', async () => {
+    const pipe = new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true });
+
+    await expect(pipe.transform({
+      current: '1',
+      page: '1',
+      pageSize: '20',
+      module_code: 'data_entry',
+      sort: 'dispatched_at',
+      order: 'descend',
+    }, { type: 'query', metatype: ListDispatchedOrderQueryDto, data: '' }))
+      .resolves.toEqual(expect.objectContaining({
+        current: 1,
+        page: 1,
+        pageSize: 20,
+        module_code: 'data_entry',
+        sort: 'dispatched_at',
+        order: 'descend',
+      }));
+  });
+
+  it.each(['data_entry', 'social_insurance', 'onboarding_contact', 'contract'])('lists %s module with frontend query params without throwing', async (moduleCode) => {
+    const { service, queryBuilder } = makeService({}, []);
+    const user: JwtUserPayload = { sub: 'admin-1', username: 'admin', roles: ['admin'] } as JwtUserPayload;
+
+    await expect(service.findAll({
+      current: 1,
+      page: 1,
+      pageSize: 20,
+      module_code: moduleCode,
+      sort: 'dispatched_at',
+      order: 'descend',
+    } as never, user)).resolves.toEqual({ items: [], total: 0, page: 1, pageSize: 20 });
+
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith(expect.stringContaining('d.module_code = :moduleCode'), { moduleCode });
+    expect(queryBuilder.orderBy).toHaveBeenCalledWith('d.dispatchedAt', 'DESC');
+    expect(queryBuilder.offset).toHaveBeenCalledWith(0);
+    expect(queryBuilder.limit).toHaveBeenCalledWith(20);
+  });
+
   it('applies status/statuses/statusIn single processing filters and returns processing rows', async () => {
     const user: JwtUserPayload = { sub: 'user-1', username: 'processor01', roles: ['data_entry_team'] } as JwtUserPayload;
     const processingOrder = makeDispatchedOrder(DispatchedOrderStatus.PROCESSING);

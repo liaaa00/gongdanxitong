@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   getDispatchedOrders: vi.fn(),
   reload: vi.fn(),
   navigate: vi.fn(),
+  moduleCode: 'data_entry',
 }));
 
 vi.mock('@ant-design/pro-components', () => ({
@@ -33,7 +34,7 @@ vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
   return {
     ...actual,
-    useParams: () => ({ moduleCode: 'data_entry' }),
+    useParams: () => ({ moduleCode: mocks.moduleCode }),
     useNavigate: () => mocks.navigate,
   };
 });
@@ -47,7 +48,7 @@ vi.mock('@/components/DispatchedBatchImportModal', () => ({
 }));
 
 vi.mock('@/services/dispatchedOrders', () => ({
-  getDispatchedOrders: (...args: unknown[]) => mocks.getDispatchedOrders(...args),
+  getDispatchedOrdersSafe: (...args: unknown[]) => mocks.getDispatchedOrders(...args),
   batchCompleteDispatchedOrders: vi.fn(),
   batchExportDispatchedOrders: vi.fn(),
   batchUrgeDispatchedOrders: vi.fn(),
@@ -58,6 +59,7 @@ describe('OnboardingModule header table filters', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.latestProTableProps = undefined;
+    mocks.moduleCode = 'data_entry';
     mocks.getDispatchedOrders.mockResolvedValue({ list: [], total: 0 });
   });
 
@@ -113,5 +115,25 @@ describe('OnboardingModule header table filters', () => {
     const params = mocks.getDispatchedOrders.mock.calls.at(-1)?.[0] as Record<string, unknown>;
     expect(params.module_code).toBe('data_entry');
     expect(params.statuses).toBeUndefined();
+  });
+
+  it.each(['data_entry', 'social_insurance', 'onboarding_contact', 'contract'])('resolves an empty table fallback for %s module list failures', async (moduleCode) => {
+    mocks.moduleCode = moduleCode;
+    mocks.getDispatchedOrders.mockResolvedValueOnce({ list: [], total: 0, success: false });
+    render(<OnboardingModule />);
+
+    await expect(mocks.latestProTableProps.request({ current: 1, pageSize: 20, sort: 'dispatched_at', order: 'descend' }, {}, {})).resolves.toMatchObject({
+      data: [],
+      success: true,
+      total: 0,
+    });
+
+    expect(mocks.getDispatchedOrders).toHaveBeenCalledWith(expect.objectContaining({
+      current: 1,
+      pageSize: 20,
+      module_code: moduleCode,
+      sort: 'dispatched_at',
+      order: 'descend',
+    }));
   });
 });

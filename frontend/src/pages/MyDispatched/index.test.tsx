@@ -34,7 +34,7 @@ vi.mock('@/components/DispatchedBatchImportModal', () => ({
 }));
 
 vi.mock('@/services/dispatchedOrders', () => ({
-  getDispatchedOrders: (...args: unknown[]) => mocks.getDispatchedOrders(...args),
+  getDispatchedOrdersSafe: (...args: unknown[]) => mocks.getDispatchedOrders(...args),
   acceptDispatchedOrder: vi.fn(),
   batchExportDispatchedOrders: vi.fn(),
   batchCompleteDispatchedOrders: vi.fn(),
@@ -94,5 +94,24 @@ describe('MyDispatched processing status filter', () => {
     })));
     const params = mocks.getDispatchedOrders.mock.calls.at(-1)?.[0] as Record<string, unknown>;
     expect(params.status).toBeUndefined();
+  });
+
+  it('resolves with an empty table result when dispatched-orders list fallback returns empty data', async () => {
+    mocks.getDispatchedOrders.mockResolvedValueOnce({ list: [], total: 0, success: false });
+    render(<MyDispatched mode="pending" />);
+
+    await expect(mocks.latestProTableProps.request({ current: 1, pageSize: 20, moduleCode: 'contract', sort: 'dispatched_at', order: 'descend' })).resolves.toMatchObject({
+      data: [],
+      success: true,
+      total: 0,
+    });
+
+    expect(mocks.getDispatchedOrders).toHaveBeenCalledWith(expect.objectContaining({
+      page: 1,
+      pageSize: 20,
+      moduleCode: 'contract',
+      statuses: 'pending,processing',
+      sort: 'dispatched_at',
+    }));
   });
 });

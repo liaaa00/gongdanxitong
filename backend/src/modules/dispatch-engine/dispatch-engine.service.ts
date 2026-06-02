@@ -140,8 +140,10 @@ export class DispatchEngineService {
       const reminderBeforeHours = config?.slaReminderBeforeHours ?? null;
       child.slaHours = slaHours;
       child.slaReminderBeforeHours = reminderBeforeHours;
-      child.handlerId = await this.resolveModuleTeamHandler(child.moduleCode, config?.dispatchStrategy ?? DispatchStrategy.TEAM_CLAIM, manager);
-      child.dispatchStrategy = config?.dispatchStrategy ?? DispatchStrategy.TEAM_CLAIM;
+      if (config) {
+        child.handlerId = await this.resolveModuleTeamHandler(child.moduleCode, config.dispatchStrategy ?? DispatchStrategy.TEAM_CLAIM, manager);
+        child.dispatchStrategy = config.dispatchStrategy ?? DispatchStrategy.TEAM_CLAIM;
+      }
       if (slaHours !== null && Number.isFinite(Number(slaHours)) && Number(slaHours) > 0) {
         child.dueAt = new Date(base.getTime() + Number(slaHours) * 60 * 60 * 1000);
       } else {

@@ -255,6 +255,7 @@ describe('WorkOrderService unit tests', () => {
     const txOperationLogRepo = createRepositoryMock<OperationLog>();
     const txModuleHandlerRepo = createRepositoryMock<ModuleHandler>();
     txModuleHandlerRepo.findOne.mockImplementation(async ({ where }: { where: { moduleCode: string } }) => ({ handlerId: `handler-${where.moduleCode}` }));
+    txModuleHandlerRepo.find.mockImplementation(async ({ where }: { where: { moduleCode: string } }) => [{ handlerId: `handler-${where.moduleCode}`, isActive: true, isBackup: false, weight: 1 }]);
     txWorkOrderRepo.findOne.mockResolvedValue(draft);
     txWorkOrderRepo.save.mockImplementation(async (input) => input as WorkOrder);
     txDispatchedRepo.save.mockImplementation(async (input) => {
@@ -370,6 +371,57 @@ describe('WorkOrderService unit tests', () => {
     await expect(
       service.findOne('wo-1', makeUser({ sub: 'other-1', roles: ['salesperson'] })),
     ).rejects.toBeInstanceOf(HttpException);
+  });
+
+  it('returns specific 4116 lock error before generic split-order 4130 when a processing order has completed children', async () => {
+    const processing = makeWorkOrder({
+      status: WorkOrderStatus.PROCESSING,
+      extraData: { employee_name: 'Alice', id_card_no: '110101199001011234', mobile: 'old' },
+    });
+    workOrderRepository.findOne.mockResolvedValueOnce(processing);
+    dispatchedOrderRepository.find.mockResolvedValueOnce([
+      makeDispatched({ status: DispatchedOrderStatus.COMPLETED, completedAt: fixedDate }),
+    ]);
+
+    await expect(
+      service.update('wo-1', { extraData: { mobile: '13800000000' } }, makeUser()),
+    ).rejects.toMatchObject({ response: expect.objectContaining({ code: 4116 }) });
+  });
+
+  it('allows salesperson to edit a returned split work order and resubmit it to pending', async () => {
+    const resubmitService = {
+      resubmit: jest.fn(async () => ({
+        workOrder: { id: 'wo-1', status: WorkOrderStatus.PENDING },
+        dispatchedOrders: [],
+      })),
+    };
+    service = new WorkOrderService(
+      workOrderRepository as unknown as Repository<WorkOrder>,
+      dispatchedOrderRepository as unknown as Repository<DispatchedOrder>,
+      fieldConfigRepository as unknown as Repository<FieldConfig>,
+      importJobRepository as unknown as Repository<ImportJob>,
+      notificationRepository as unknown as Repository<Notification>,
+      operationLogRepository as unknown as Repository<OperationLog>,
+      validationService as unknown as WorkOrderValidationService,
+      { getVisibleFieldsForScenario: jest.fn(async () => []) } as never,
+      resubmitService as never,
+    );
+    const returned = makeWorkOrder({
+      status: WorkOrderStatus.RETURNED,
+      extraData: { employee_name: 'Alice', id_card_no: '110101199001011234', mobile: 'old' },
+    });
+    workOrderRepository.findOne
+      .mockResolvedValueOnce(returned)
+      .mockResolvedValueOnce(makeWorkOrder({
+        status: WorkOrderStatus.PENDING,
+        extraData: { employee_name: 'Alice', id_card_no: '110101199001011234', mobile: '13800000000' },
+      }));
+    dispatchedOrderRepository.count.mockResolvedValue(4);
+
+    const result = await service.update('wo-1', { extraData: { mobile: '13800000000' } }, makeUser());
+
+    expect(result.status).toBe(WorkOrderStatus.PENDING);
+    expect(resubmitService.resubmit).toHaveBeenCalledWith('wo-1', { extraData: expect.objectContaining({ mobile: '13800000000' }) }, expect.objectContaining({ sub: 'user-sales-1' }));
   });
 
   it('allows salesperson to update a processing work order and resubmit it to pending', async () => {

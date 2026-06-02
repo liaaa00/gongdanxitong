@@ -101,15 +101,16 @@ export class DispatchedOrderService {
     query: ListDispatchedOrderQueryDto,
     user: JwtUserPayload,
   ): Promise<PagedResponse<DispatchedOrderListItem>> {
-    const page = query.page ?? 1;
+    const page = query.current ?? query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
     const qb = this.baseListQuery();
 
     await this.applyUserScope(qb, user, query.onlyPool === true || query.onlyUnclaimed === true);
     this.applyCommonFilters(qb, { ...query, __currentUserId: user.sub } as ListDispatchedOrderQueryDto & { __currentUserId: string });
+    const sort = this.resolveListSort(query.sort, query.order);
 
     const [rows, total] = await qb
-      .orderBy('d.createdAt', 'DESC')
+      .orderBy(sort.column, sort.direction)
       .offset((page - 1) * pageSize)
       .limit(pageSize)
       .getManyAndCount();
@@ -1109,6 +1110,35 @@ export class DispatchedOrderService {
       .createQueryBuilder('d')
       .leftJoinAndSelect('d.parentOrder', 'w')
       .leftJoinAndSelect('d.handler', 'h');
+  }
+
+  private resolveListSort(sort?: string, order?: string): { column: string; direction: 'ASC' | 'DESC' } {
+    const normalizedSort = String(sort ?? '').trim();
+    const sortColumns: Record<string, string> = {
+      createdAt: 'd.createdAt',
+      created_at: 'd.createdAt',
+      dispatchedAt: 'd.dispatchedAt',
+      dispatched_at: 'd.dispatchedAt',
+      completedAt: 'd.completedAt',
+      completed_at: 'd.completedAt',
+      updatedAt: 'd.updatedAt',
+      updated_at: 'd.updatedAt',
+      status: 'd.status',
+      moduleCode: 'd.moduleCode',
+      module_code: 'd.moduleCode',
+      orderNo: 'w.orderNo',
+      order_no: 'w.orderNo',
+      orderType: 'w.orderType',
+      order_type: 'w.orderType',
+      employeeName: 'w.employeeName',
+      employee_name: 'w.employeeName',
+      customerName: 'w.customerName',
+      customer_name: 'w.customerName',
+    };
+    const column = sortColumns[normalizedSort] ?? 'd.createdAt';
+    const normalizedOrder = String(order ?? '').trim().toLowerCase();
+    const direction: 'ASC' | 'DESC' = normalizedOrder === 'ascend' || normalizedOrder === 'asc' ? 'ASC' : 'DESC';
+    return { column, direction };
   }
 
   private async applyUserScope(

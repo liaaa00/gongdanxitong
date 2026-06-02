@@ -10,7 +10,7 @@ import {
   WarningOutlined, RollbackOutlined, UploadOutlined, BellOutlined,
 } from '@ant-design/icons';
 import {
-  getDispatchedOrders,
+  getDispatchedOrdersSafe,
   acceptDispatchedOrder,
   batchExportDispatchedOrders,
   batchCompleteDispatchedOrders,
@@ -421,7 +421,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
       const defaultCompletedRange = query.orderMonth || query.completedFrom || query.completedTo
         ? {}
         : currentMonthCompletedRange();
-      const result = await getDispatchedOrders({
+      const result = await getDispatchedOrdersSafe({
         ...query,
         ...defaultCompletedRange,
         handlerId: 'current',
@@ -433,7 +433,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
 
     // 业务发起人待办模式：显示退回的子工单
     if (isBusinessInitiator) {
-      const result = await getDispatchedOrders({ ...query, includeReturned: true, status: 'returned' });
+      const result = await getDispatchedOrdersSafe({ ...query, includeReturned: true, status: 'returned' });
       const list = result.list.filter((d) => d.status === 'returned');
       clearSlaCounts();
       return { data: list, success: true, total: result.total };
@@ -442,7 +442,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
     // 普通待办模式：显示 pending 和 processing 状态的子工单。
     // 用户选择“待办理/办理中”时同样传 statuses=pending,processing，避免只筛到 pending 或 processing 之一。
     if (query.statuses) {
-      const result = await getDispatchedOrders({ ...query, statuses: String(query.statuses) });
+      const result = await getDispatchedOrdersSafe({ ...query, statuses: String(query.statuses) });
       const list = result.list.filter((d) => ACTIVE_DISPATCHED_STATUSES.has(d.status));
       updateSlaCounts(list);
       return { data: list, success: true, total: result.total };
@@ -450,7 +450,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
 
     // 其它单值状态保留单值 status 查询，兼容已办/退回等场景。
     if (query.status) {
-      const result = await getDispatchedOrders({ ...query, status: String(query.status) });
+      const result = await getDispatchedOrdersSafe({ ...query, status: String(query.status) });
       const list = result.list.filter((d) => ACTIVE_DISPATCHED_STATUSES.has(d.status));
       updateSlaCounts(list);
       return { data: list, success: true, total: result.total };
@@ -458,7 +458,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
 
     // 没有指定状态时，在后端用同一个查询完成 pending + processing 的筛选与分页。
     // 不能分别请求两个状态再在前端拼接，否则每个状态都会各自分页，导致总数、页码和当前页数据不一致。
-    const result = await getDispatchedOrders({ ...query, statuses: DISPATCHED_PROCESSING_STATUS_FILTER_VALUE });
+    const result = await getDispatchedOrdersSafe({ ...query, statuses: DISPATCHED_PROCESSING_STATUS_FILTER_VALUE });
     const list = result.list.filter((d) => ACTIVE_DISPATCHED_STATUSES.has(d.status));
     updateSlaCounts(list);
     return { data: list, success: true, total: result.total };

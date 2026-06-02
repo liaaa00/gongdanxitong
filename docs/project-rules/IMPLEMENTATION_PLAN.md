@@ -1,277 +1,564 @@
 # IMPLEMENTATION_PLAN.md — 逐步构建序列
 
-> 版本：0.1.0 · 最后更新：2025-05-29
-> 本文件将 `progress.txt` 【接下来】中的每个目标拆解为极小的、原子化的执行步骤。
-> **每条步骤只做一件事。禁止跨步执行或跳步。**
+> 版本：1.0.0
+> 最后更新：2026-05-29
+> 权威路径：`docs/project-rules/IMPLEMENTATION_PLAN.md`
+> 来源：承接 `docs/project-rules/progress.txt` 的【接下来】章节，并结合当前项目目录、依赖配置和核心代码现状。
+> 路径说明：七份规范已统一迁移到 `docs/project-rules/`，本文件在该目录下为唯一权威版本；项目根目录副本不作为验收依据。
+> 核心原则：每一步只做一个极小动作；不跨步、不乱序、不一次改多个功能；每步完成后必须验证，并在允许修改记忆层的任务中同步 `progress.txt`。
 
 ---
 
-## 使用说明
+## 0. 使用规则
 
-- 每条步骤的格式：**步骤 X.Y — [标题]**
-  - `🎯 目标`：本步骤要达成什么
-  - `📁 涉及文件`：需要修改或创建的文件（含路径）
-  - `🔧 具体操作`：逐条列出要执行的代码改动
-  - `✅ 验证方式`：如何确认步骤完成且正确
-- 步骤之间**有顺序依赖关系**，必须按序执行。
-- 每完成一条步骤，立即在 `progress.txt` 中勾选对应的 `[x]` 并记录验证结果。
-
----
-
-## 第 1 步：关键路径加固
-
-### 步骤 1.1 — 清理多余分支和工作树目录
-- 🎯 确保项目只有一个权威代码源，消除多分支混淆风险
-- 📁 涉及文件：`.spectrai-worktrees/` 目录、多余的 git worktree
-- 🔧 具体操作：
-  1. `git worktree list` 列出所有 worktree
-  2. 确认当前 `main` 分支为唯一生产分支
-  3. `git worktree remove <path>` 移除多余 worktree
-  4. 删除 `.spectrai-worktrees/` 目录（如果存在且已无用）
-  5. `git branch -a` 列出所有分支，确认哪些需要合并
-  6. 对已确认完成的特性分支执行 `git merge <branch>` 或 `git branch -d <branch>`
-- ✅ 验证方式：`git worktree list` 只剩 1 个 worktree；`ls .spectrai-worktrees` 返回空或不存在
-
-### 步骤 1.2 — 检查并补全数据库索引
-- 🎯 确保高频查询字段有索引，避免全表扫描
-- 📁 涉及文件：新建 Migration 文件 `backend/src/database/migrations/1716500000000-AddPerformanceIndexes.ts`
-- 🔧 具体操作：
-  1. 审查 `work_orders` 表：`order_type` + `status` 组合索引，`created_by` 索引，`department_id` 索引
-  2. 审查 `dispatched_orders` 表：`parent_order_id` + `module_code` 组合索引，`handler_id` + `status` 组合索引
-  3. 审查 `notifications` 表：`user_id` + `is_read` 组合索引
-  4. 审查 `operation_logs` 表：`entity_type` + `entity_id` 组合索引，`created_at` 索引（已有 migration 1716400000000，需验证）
-  5. 审查 `user_roles` 表：确认复合主键已覆盖 `user_id` + `role_id` + `department_id` 查询
-  6. 只添加缺失的索引，不修改已有 Migration
-- ✅ 验证方式：`EXPLAIN ANALYZE` 验证关键查询使用了索引；`npm run migration:run` 成功
-
-### 步骤 1.3 — 统一密码哈希库
-- 🎯 移除冗余依赖，消除 "用哪个 bcrypt" 的歧义
-- 📁 涉及文件：`backend/package.json`、`backend/src/modules/auth/auth.service.ts`（如有引用 `bcryptjs`）
-- 🔧 具体操作：
-  1. 确认 `auth.service.ts` 只 import 了 `bcrypt`（非 `bcryptjs`）
-  2. 从 `package.json` 的 `dependencies` 中移除 `bcryptjs`
-  3. 执行 `npm install` 更新 `package-lock.json`
-  4. 如果 Docker 构建依赖原生模块 `bcrypt`，确认 `Dockerfile` 安装了 `python3`/`make`/`g++`
-- ✅ 验证方式：`npm run test` 后端测试全部通过；`npm run build` 成功
-
-### 步骤 1.4 — 修复 @nestjs/axios 版本不一致
-- 🎯 消除 `package.json` 声明版本与实际安装版本的不一致
-- 📁 涉及文件：`backend/package.json`
-- 🔧 具体操作：
-  1. 确认实际安装的 `@nestjs/axios` 版本（`npm ls @nestjs/axios`）
-  2. 回退到与 `axios` v1.12.2 兼容的 `@nestjs/axios` 版本，或升级两者
-  3. 更新 `package.json` 版本号
-  4. 执行 `npm install`
-- ✅ 验证方式：`npm ls @nestjs/axios` 版本与 `package.json` 一致
-
-### 步骤 1.5 — 添加工单号唯一约束
-- 🎯 确保 `order_no` 在数据库层面绝对不重复
-- 📁 涉及文件：新建 Migration `backend/src/database/migrations/1716500001000-AddOrderNoUniqueConstraint.ts`
-- 🔧 具体操作：
-  1. 创建 Migration：`ALTER TABLE work_orders ADD CONSTRAINT uq_work_orders_order_no UNIQUE (order_no)`
-  2. （Entity 已有 `unique: true`，但某些环境中可能未在 DB 层面落实）
-  3. 执行 Migration
-- ✅ 验证方式：尝试插入重复 `order_no` 时数据库报唯一约束错误
+1. **按编号顺序执行**：未完成前一步，不开始后一步。
+2. **每步只允许一个小改动**：如果执行中发现新问题，先记录为待办，不要顺手修。
+3. **测试优先**：高风险路径先补回归测试，再做重构或体验优化。
+4. **禁止破坏组织架构规则**：不得恢复本地组织架构同步逻辑；部门、人员选择继续遵守 `CLAUDE.md` 中实时组件规则。
+5. **团队集成目录只读确认**：本计划只允许记录团队 worktree 的路径和用途，不把任何团队 worktree 纳入文件系统操作步骤。
+6. **数据库变更只新增 migration**：不回改历史 migration。
+7. **每步验收必须有证据**：测试命令、日志、截图、SQL 结果或明确人工复核结论至少保留一种。
 
 ---
 
-## 第 2 步：安全性加固
+## 阶段 1. 分支、工作区与权威源治理
 
-### 步骤 2.1 — 添加 API Rate Limiting
-- 🎯 防止暴力破解和 API 滥用
-- 📁 涉及文件：`backend/package.json`、`backend/src/app.module.ts`、新建 `backend/src/common/guards/throttler.guard.ts`
-- 🔧 具体操作：
-  1. `npm install @nestjs/throttler`（或基于 Redis 的 `@nestjs/throttler-storage-redis`）
-  2. 在 `app.module.ts` 中注册 `ThrottlerModule`（全局 60 秒内 100 次）
-  3. 对 `auth/login` 单独设置更严格的限制（60 秒内 5 次）
-  4. 添加 `ThrottlerGuard` 到全局守卫链
-- ✅ 验证方式：连续调用 `/api/auth/login` 超过 5 次后返回 429 Too Many Requests
+### 步骤 1.1 — 记录当前 Git 主工作区状态
+- **目标**：先知道当前主工作区是否干净。
+- **涉及范围/文件**：Git 状态，不改文件。
+- **单一操作**：运行 `git status --short --branch`，记录当前分支、ahead/behind、modified、untracked 概况。
+- **验收标准**：得到当前主分支名和 dirty 状态摘要。
 
-### 步骤 2.2 — JWT Secret 强度启动检测
-- 🎯 防止开发/部署时使用默认的弱 secret
-- 📁 涉及文件：`backend/src/config/env.validation.ts`
-- 🔧 具体操作：
-  1. 在 `validateEnv` 中添加检查：如果 `JWT_SECRET` === `'replace_me_with_a_secure_random_string_32chars_or_more'`
-  2. 如果 `NODE_ENV === 'production'`，直接抛出启动错误
-  3. 如果 `NODE_ENV === 'development'`，打印醒目的 console.warn 警告
-- ✅ 验证方式：启动时如果使用默认 secret，控制台显示红色警告（dev）或启动失败（prod）
+### 步骤 1.2 — 记录所有 Git worktree 清单
+- **目标**：识别多 worktree 来源，避免 AI 混用目录。
+- **涉及范围/文件**：Git worktree 元数据，不删除任何目录。
+- **单一操作**：运行 `git worktree list` 并记录每个路径、分支名、提交号。
+- **验收标准**：得到“worktree 清单”，并标注当前正在使用的主工作区。
 
-### 步骤 2.3 — 文件上传 MIME 类型白名单
-- 🎯 防止用户上传恶意文件（如 `.exe`、`.sh`）
-- 📁 涉及文件：`backend/src/modules/upload/file.controller.ts` 或 `backend/src/modules/uploads/uploads.controller.ts`
-- 🔧 具体操作：
-  1. 定义白名单：`.xlsx`、`.xls`、`.csv`、`.pdf`、`.jpg`、`.jpeg`、`.png`、`.docx`、`.doc`
-  2. 在文件上传的 Multer 配置中添加 `fileFilter` 回调，校验 MIME 类型和扩展名
-  3. 不匹配的文件返回 400 Bad Request
-- ✅ 验证方式：尝试上传 `.exe` 文件时返回错误
+### 步骤 1.3 — 标记 worktree 用途
+- **目标**：区分主工作区、集成工作区、评审工作区、历史会话工作区。
+- **涉及范围/文件**：步骤 1.2 的 worktree 清单。
+- **单一操作**：对每个 worktree 加用途标签：主线 / integration / reviewer / 历史会话 / 未知。
+- **验收标准**：未知用途的 worktree 被列入待确认清单，且没有删除或重置任何目录。
 
-### 步骤 2.4 — DynamicForm XSS 安全审查
-- 🎯 确保用户输入不会被注入 HTML/JS
-- 📁 涉及文件：`frontend/src/components/DynamicForm/index.tsx`
-- 🔧 具体操作：
-  1. 审查所有 `dangerouslySetInnerHTML` 使用情况
-  2. 确认 Ant Design 的 `Input`、`Input.TextArea` 默认转义
-  3. 如果存在自定义渲染（如 `render` 属性返回 HTML），添加 DOMPurify 清洗
-  4. 记录审查结果
-- ✅ 验证方式：在文本字段中输入 `<script>alert(1)</script>` 并在详情页确认被转义显示
+### 步骤 1.4 — 提交 worktree 处置建议而非直接清理
+- **目标**：避免把团队集成目录当普通开发产物误删。
+- **涉及范围/文件**：团队协作记录，不改代码。
+- **单一操作**：把“保留 / 可归档 / 待确认”清单提交给 Leader 或记录为待办。
+- **验收标准**：本步骤只形成建议；交付证据为文字清单，不包含任何文件系统变更。
 
----
+### 步骤 1.5 — 列出所有本地和远程分支
+- **目标**：识别分支分叉和未合并风险。
+- **涉及范围/文件**：Git branch 元数据，不合并不删除。
+- **单一操作**：运行 `git branch -vv` 和 `git branch -r`，记录分支名、上游和 ahead/behind。
+- **验收标准**：形成“分支清单”。
 
-## 第 3 步：测试覆盖
+### 步骤 1.6 — 标记分支风险等级
+- **目标**：决定先处理哪些分支。
+- **涉及范围/文件**：步骤 1.5 的分支清单。
+- **单一操作**：按风险分为 P1 当前主线相关、P2 历史功能、P3 可归档。
+- **验收标准**：每个分支都有风险等级和建议动作。
 
-### 步骤 3.1 — 编写全链路 E2E 测试
-- 🎯 验证 "创建工单 → 提交 → 自动派发 → 处理人接单 → 完成" 完整流程
-- 📁 涉及文件：`tests/e2e/full-pipeline.spec.ts`（新建）
-- 🔧 具体操作：
-  1. 测试登录获取 JWT Token
-  2. 创建入职工单草稿
-  3. 提交工单
-  4. 验证系统自动生成了 4 个子工单（data_entry / social_insurance / onboarding_contact / contract）
-  5. 以处理人身份登录，接单
-  6. 完成子工单
-  7. 验证主工单状态联动
-- ✅ 验证方式：`npm run test:e2e` 全部通过
+### 步骤 1.7 — 选择唯一权威开发主线
+- **目标**：防止未来 AI 在错误分支继续开发。
+- **涉及范围/文件**：Git 分支策略与团队约定。
+- **单一操作**：由 Leader 确认当前唯一权威分支/目录。
+- **验收标准**：后续开发任务都能明确应基于哪条主线开始。
 
-### 步骤 3.2 — Pool 认领并发测试
-- 🎯 验证两个处理人同时认领同一 pool 子工单时不会重复分配
-- 📁 涉及文件：`backend/test/dispatch-engine-pool-concurrency.spec.ts`（新建）
-- 🔧 具体操作：
-  1. 创建一个 pool 策略的子工单
-  2. 使用 `Promise.all` 同时发起两个认领请求
-  3. 验证只有一个成功，另一个返回 "已被认领" 错误
-  4. 使用数据库行级锁或乐观锁验证无竞态
-- ✅ 验证方式：测试通过，且数据库中间状态一致
-
-### 步骤 3.3 — SLA 提醒边界测试
-- 🎯 验证 SLA 提醒在跨天、时区边缘、同子工单重复触发时的正确性
-- 📁 涉及文件：`backend/test/sla-reminder.spec.ts`（新建）
-- 🔧 具体操作：
-  1. 创建子工单，设置 `sla_hours=1`，`due_at=now+1h`
-  2. Mock 时间前进到 `due_at - reminder_before_hours`
-  3. 验证通知生成
-  4. Mock 时间前进到 `due_at`，验证第二次提醒
-  5. 验证不会重复生成通知
-- ✅ 验证方式：测试通过
+### 步骤 1.8 — 更新文档中的权威路径说明
+- **目标**：让 AI 知道七份规范当前在 `docs/project-rules/`。
+- **涉及范围/文件**：`docs/project-rules/progress.txt` 或相关规范文档。
+- **单一操作**：在允许修改文档记忆层的任务中补充“七份规范文档权威路径为 `docs/project-rules/`”。
+- **验收标准**：后续任务不会再误把根目录旧副本当唯一来源。
 
 ---
 
-## 第 4 步：用户体验
+## 阶段 2. 近期高风险接口回归加固
 
-### 步骤 4.1 — 子工单 SLA 倒计时
-- 🎯 在处理人查看子工单详情时，直观显示 "距离截止还有 X 小时 Y 分钟"
-- 📁 涉及文件：`frontend/src/pages/MyDispatched/Detail/index.tsx`
-- 🔧 具体操作：
-  1. 从详情数据中读取 `dueAt` 和 `slaHours`
-  2. 使用 `dayjs` 计算当前时间到 `dueAt` 的差值
-  3. 在页面顶部（标题下方）显示倒计时组件
-  4. 超过截止时间时显示红色警告 "已超时 X 小时"
-  5. 每 60 秒自动刷新（使用 `setInterval` + `useEffect` 清理）
-- ✅ 验证方式：详情页正确显示倒计时；超时后显示红色警告
+### 步骤 2.1 — 定位 `/api/dispatched-orders` 列表控制器
+- **目标**：明确列表接口入口。
+- **涉及范围/文件**：`backend/src/modules/dispatched-orders/dispatched-order.controller.ts`。
+- **单一操作**：找到处理列表查询的方法和 DTO。
+- **验收标准**：记录方法名、DTO 文件名和现有测试文件名。
 
-### 步骤 4.2 — 仪表盘实时计数器
-- 🎯 仪表盘首页展示 "今日新增 X 单 / 今日完成 Y 单"
-- 📁 涉及文件：`backend/src/modules/dashboard/dashboard.service.ts`、`frontend/src/pages/Dashboard/index.tsx`
-- 🔧 具体操作：
-  1. 后端 `getDashboardCards` 返回值中加入 `todayCreated` 和 `todayCompleted` 字段
-  2. SQL 查询：`SELECT COUNT(*) FROM work_orders WHERE DATE(created_at) = CURRENT_DATE` 等
-  3. 前端在仪表盘顶部卡片中展示
-- ✅ 验证方式：今天新建一个工单后，仪表盘数字 +1
+### 步骤 2.2 — 为 `sort=dispatched_at` 新增后端回归测试骨架
+- **目标**：先建立测试用例，不改业务代码。
+- **涉及范围/文件**：`backend/test/dispatched-order.service.spec.ts` 或相邻 spec。
+- **单一操作**：新增一个 describe/it，构造 `sort=dispatched_at` 查询输入。
+- **验收标准**：测试能运行，初始断言只验证不抛异常。
 
-### 步骤 4.3 — 通知全部已读防误触
-- 🎯 避免用户误点 "全部已读" 丢失未读提醒
-- 📁 涉及文件：`frontend/src/pages/Notifications/index.tsx`
-- 🔧 具体操作：
-  1. "全部标记已读" 按钮点击后弹出 `Modal.confirm`
-  2. 确认文案："确定要将所有通知标记为已读吗？此操作不可撤销。"
-  3. 用户确认后才调用 API
-- ✅ 验证方式：点击按钮后出现确认弹窗；取消后通知保持不变
+### 步骤 2.3 — 完成 `sort=dispatched_at` 排序断言
+- **目标**：确认排序字段不会触发 500。
+- **涉及范围/文件**：同 2.2。
+- **单一操作**：断言返回列表按派发时间排序或至少返回合法分页结构。
+- **验收标准**：`cd backend && npm run test -- dispatched-order.service.spec.ts` 通过。
 
-### 步骤 4.4 — 移动端最小可用适配
-- 🎯 至少 Dashboard 和子工单列表在手机上能看
-- 📁 涉及文件：`frontend/src/layouts/BasicLayout.tsx`、`frontend/src/pages/Dashboard/index.tsx`
-- 🔧 具体操作：
-  1. 添加 `<meta name="viewport" content="width=device-width, initial-scale=1">` 到 `index.html`
-  2. Dashboard 卡片在小屏幕上改为单列（`xs={24}` 而非 `xs={12}`）
-  3. ProLayout 在小屏幕上自动折叠侧边栏（Ant Design 默认行为，确认生效）
-  4. 表格在小屏幕上启用横向滚动
-- ✅ 验证方式：Chrome DevTools 模拟 iPhone 12，页面可正常滚动查看
+### 步骤 2.4 — 为 `module_code` 查询新增后端回归测试
+- **目标**：覆盖 snake_case 查询参数。
+- **涉及范围/文件**：`backend/test/dispatched-order.service.spec.ts` 或 controller spec。
+- **单一操作**：新增 `module_code` 过滤用例。
+- **验收标准**：测试断言筛选条件被正确识别。
 
----
+### 步骤 2.5 — 为 `moduleCode` 查询新增后端回归测试
+- **目标**：覆盖 camelCase 兼容查询参数。
+- **涉及范围/文件**：同 2.4。
+- **单一操作**：新增 `moduleCode` 过滤用例。
+- **验收标准**：`moduleCode` 与 `module_code` 行为一致。
 
-## 第 5 步：代码质量
+### 步骤 2.6 — 为 `/api/dispatched-orders` 代理链路新增 Playwright 骨架
+- **目标**：确认 5173 前端代理能访问列表页。
+- **涉及范围/文件**：新建或扩展 `frontend/e2e/dispatched-orders-500-regression.spec.ts`。
+- **单一操作**：打开“我的子工单”页面并等待列表区域出现。
+- **验收标准**：`cd frontend && npx playwright test dispatched-orders-500-regression.spec.ts` 可运行。
 
-### 步骤 5.1 — 引入 Swagger 自动生成 API 文档
-- 🎯 自动生成可交互的 API 文档页面
-- 📁 涉及文件：`backend/package.json`、`backend/src/main.ts`
-- 🔧 具体操作：
-  1. `npm install @nestjs/swagger swagger-ui-express`
-  2. 在 `main.ts` 中配置 `SwaggerModule`
-  3. 为每个 Controller 添加 `@ApiTags()` 和 `@ApiOperation()` 装饰器
-  4. 为每个 DTO 添加 `@ApiProperty()` 装饰器
-  5. 文档访问路径：`/api/docs`
-- ✅ 验证方式：访问 `http://localhost:3000/api/docs` 看到 Swagger UI
+### 步骤 2.7 — 增加页面无 500 响应断言
+- **目标**：捕获最近的 500 回归。
+- **涉及范围/文件**：同 2.6。
+- **单一操作**：监听 response，断言 `/api/dispatched-orders` 没有 500。
+- **验收标准**：测试失败时能指出具体 500 URL。
 
-### 步骤 5.2 — 拆分 BasicLayout.tsx
-- 🎯 将 570 行的布局文件拆分为多个子组件
-- 📁 涉及文件：`frontend/src/layouts/BasicLayout.tsx`、新建若干个组件文件
-- 🔧 具体操作：
-  1. 抽离菜单定义到 `frontend/src/layouts/menuConfig.tsx`
-  2. 抽离通知铃铛到 `frontend/src/components/NotificationBell/index.tsx`
-  3. 抽离用户信息展示到 `frontend/src/components/UserInfoBadge/index.tsx`
-  4. `BasicLayout.tsx` 仅保留 ProLayout 配置和组合逻辑（目标 <200 行）
-- ✅ 验证方式：功能不变，`npm run test` 通过
+### 步骤 2.8 — 增加页面 console error 断言
+- **目标**：防止接口正常但页面崩溃。
+- **涉及范围/文件**：同 2.6。
+- **单一操作**：监听 `page.on('console')`，收集 error 并断言没有业务崩溃错误。
+- **验收标准**：页面级回归能同时覆盖网络和控制台错误。
 
-### 步骤 5.3 — 拆分 work-order.service.ts
-- 🎯 将庞大复杂的 Service 拆分为职责清晰的小服务
-- 📁 涉及文件：`backend/src/modules/work-orders/work-order.service.ts`、创建新 Service 文件
-- 🔧 具体操作：
-  1. 识别 `work-order.service.ts` 中的独立职责：
-     - 状态机转换逻辑 → `work-order-state-machine.service.ts`
-     - 撤回/废弃审批逻辑 → `work-order-approval.service.ts`
-     - 字段校验逻辑 → 已有 `work-order-validation.service.ts`（确保完整）
-  2. 逐一抽离，保持接口不变
-  3. 原有 Service 变成 Orchestrator，只做调用协调
-- ✅ 验证方式：`npm run test` 全部通过
+### 步骤 2.9 — 定位子工单详情接口
+- **目标**：明确详情页依赖的后端接口。
+- **涉及范围/文件**：`backend/src/modules/dispatched-orders/dispatched-order.controller.ts`、`frontend/src/pages/MyDispatched/Detail/index.tsx`。
+- **单一操作**：记录详情接口路径、补充日志接口路径、前端调用 service。
+- **验收标准**：形成详情链路清单。
 
-### 步骤 5.4 — 统一前后端时间格式
-- 🎯 全系统统一使用 ISO 8601 + Asia/Shanghai 时间
-- 📁 涉及文件：后端全局、前端日期显示组件
-- 🔧 具体操作：
-  1. 确认 `main.ts` 中设置了 `process.env.TZ = 'Asia/Shanghai'`
-  2. 后端所有 `timestamptz` 字段的序列化通过全局 Interceptor 统一格式
-  3. 前端所有 `dayjs` 实例统一使用 `dayjs.extend(utc).extend(timezone)` 并设 `dayjs.tz.setDefault('Asia/Shanghai')`
-  4. 排查是否有 `new Date().toLocaleString()` 等本地时区依赖
-- ✅ 验证方式：不同时区环境下查看工单详情，时间显示一致
+### 步骤 2.10 — 为子工单详情新增后端回归测试
+- **目标**：防止列表修复后详情 404/500。
+- **涉及范围/文件**：`backend/test/detail-404-403.spec.ts` 或新增相邻 spec。
+- **单一操作**：新增合法子工单详情查询用例。
+- **验收标准**：返回结构包含 id、status、moduleCode 或等价字段。
+
+### 步骤 2.11 — 为补充日志接口新增后端回归测试
+- **目标**：覆盖详情页关联数据。
+- **涉及范围/文件**：后端 dispatched-order 相关 spec。
+- **单一操作**：新增补充日志查询用例。
+- **验收标准**：无日志时返回空数组，有日志时返回分页或列表结构。
+
+### 步骤 2.12 — 执行近期高风险接口回归包
+- **目标**：汇总验证 2.1-2.11。
+- **涉及范围/文件**：后端 Jest + 前端 Playwright。
+- **单一操作**：依次运行相关后端 spec 和 Playwright spec。
+- **验收标准**：结果写入验证记录；失败必须记录根因和下一步。
 
 ---
 
-## 第 6 步：运维
+## 阶段 3. 并发、定时任务与大数据边界测试
 
-### 步骤 6.1 — 数据库备份脚本
-- 🎯 自动化日常备份
-- 📁 涉及文件：新建 `scripts/backup-db.sh`、可能在 `docker-compose.yml` 中添加 cron 服务
-- 🔧 具体操作：
-  1. 创建 Shell 脚本：`pg_dump -h localhost -U postgres ticket_system > backup_$(date +%Y%m%d_%H%M%S).sql`
-  2. 添加到 postgres 容器的 cron 任务（或外部 cron 调用 `docker exec`）
-  3. 保留最近 7 天的备份，自动清理旧备份
-- ✅ 验证方式：手动执行脚本生成 `.sql` 文件，`psql` 能成功恢复
+### 步骤 3.1 — 定位 Pool 认领服务方法
+- **目标**：找到并发认领的唯一入口。
+- **涉及范围/文件**：`backend/src/modules/dispatched-orders/dispatched-order.service.ts`。
+- **单一操作**：记录 pool claim/accept 相关方法名和事务边界。
+- **验收标准**：明确哪个方法需要并发测试。
 
-### 步骤 6.2 — 应用监控（API 响应时间 + 错误率）
-- 🎯 可观测性基线
-- 📁 涉及文件：新建 `backend/src/common/interceptors/metrics.interceptor.ts`
-- 🔧 具体操作：
-  1. 创建 MetricsInterceptor，记录每个 API 请求的响应时间
-  2. 将指标输出到结构化日志（JSON 格式）
-  3. 可选：集成 Prometheus 或简单的内存聚合
-  4. 慢查询（>3 秒）特殊标记
-- ✅ 验证方式：日志中能看到每个请求的 `duration_ms` 字段
+### 步骤 3.2 — 新建 Pool 并发测试文件
+- **目标**：建立测试位置。
+- **涉及范围/文件**：新建 `backend/test/dispatch-engine-pool-concurrency.spec.ts`。
+- **单一操作**：创建 TestingModule 骨架。
+- **验收标准**：空测试可被 Jest 发现。
 
-### 步骤 6.3 — Nginx gzip + 静态资源缓存
-- 🎯 减少前端资源传输体积，加速首屏加载
-- 📁 涉及文件：`nginx/nginx.conf`
-- 🔧 具体操作：
-  1. 添加 `gzip on; gzip_types text/css application/javascript application/json image/svg+xml;`
-  2. 添加静态资源缓存：`location /assets/ { expires 30d; add_header Cache-Control "public, immutable"; }`
-  3. 添加 `location /api/ { proxy_pass ...; proxy_read_timeout 120s; }` 的超时配置（如需要）
-  4. 测试：`nginx -t` 验证配置正确
-- ✅ 验证方式：浏览器 DevTools 查看 JS/CSS 文件带有 `Cache-Control: public, immutable` 响应头；响应体积变少（gzip）
+### 步骤 3.3 — 构造一个 pool 子工单测试数据
+- **目标**：为并发认领准备同一条目标记录。
+- **涉及范围/文件**：同 3.2。
+- **单一操作**：创建状态为可认领的 pool 子工单。
+- **验收标准**：测试能查询到该子工单。
+
+### 步骤 3.4 — 构造两个处理人测试数据
+- **目标**：准备并发参与者。
+- **涉及范围/文件**：同 3.2。
+- **单一操作**：创建两个有认领权限的用户或 mock 用户上下文。
+- **验收标准**：两个用户 id 不同且权限满足认领条件。
+
+### 步骤 3.5 — 实现双人同时认领断言
+- **目标**：验证同一子工单只会被一个人拿到。
+- **涉及范围/文件**：同 3.2。
+- **单一操作**：用 `Promise.allSettled` 同时调用认领方法。
+- **验收标准**：一个 fulfilled，一个 rejected 或业务失败。
+
+### 步骤 3.6 — 验证 Pool 最终数据库状态
+- **目标**：确认没有中间态污染。
+- **涉及范围/文件**：同 3.2。
+- **单一操作**：认领后重新查询数据库记录。
+- **验收标准**：handler/assignee 只有一个，状态合法。
+
+### 步骤 3.7 — 重复运行 Pool 并发测试
+- **目标**：排除偶发通过。
+- **涉及范围/文件**：后端测试命令。
+- **单一操作**：连续运行该 spec 至少 5 次。
+- **验收标准**：5 次均通过；如失败记录竞态复现条件。
+
+### 步骤 3.8 — 定位 SLA 提醒服务
+- **目标**：明确 Cron/提醒逻辑入口。
+- **涉及范围/文件**：`backend/src/modules/dispatched-orders/sla-notification.service.ts`。
+- **单一操作**：记录扫描方法、通知创建方法和幂等字段。
+- **验收标准**：明确要测的方法名。
+
+### 步骤 3.9 — 新建 SLA 提醒测试文件
+- **目标**：建立 SLA 测试位置。
+- **涉及范围/文件**：新建 `backend/test/sla-reminder.spec.ts`。
+- **单一操作**：创建服务测试骨架。
+- **验收标准**：空测试可运行。
+
+### 步骤 3.10 — 构造未到提醒时间的 SLA 用例
+- **目标**：防止提前提醒。
+- **涉及范围/文件**：同 3.9。
+- **单一操作**：创建 dueAt 仍较远的子工单并执行扫描。
+- **验收标准**：不生成通知。
+
+### 步骤 3.11 — 构造达到提醒时间的 SLA 用例
+- **目标**：验证正常提醒。
+- **涉及范围/文件**：同 3.9。
+- **单一操作**：创建达到提醒阈值的子工单并执行扫描。
+- **验收标准**：生成一条通知。
+
+### 步骤 3.12 — 增加同一子工单重复扫描测试
+- **目标**：验证 SLA 提醒幂等性。
+- **涉及范围/文件**：同 3.9。
+- **单一操作**：对同一数据连续执行两次扫描。
+- **验收标准**：通知数量仍为一条。
+
+### 步骤 3.13 — 增加 SLA 跨天边界测试
+- **目标**：覆盖日期切换边界。
+- **涉及范围/文件**：同 3.9。
+- **单一操作**：构造 dueAt 跨 00:00 的子工单。
+- **验收标准**：提醒时间计算符合预期。
+
+### 步骤 3.14 — 增加 SLA 时区边界测试
+- **目标**：防止 UTC/Asia/Shanghai 偏移错误。
+- **涉及范围/文件**：同 3.9。
+- **单一操作**：用固定时区时间构造 dueAt 和 now。
+- **验收标准**：不会提前或延后 8 小时提醒。
+
+### 步骤 3.15 — 定位 Excel 导入确认服务
+- **目标**：找到 5000 行导入的事务入口。
+- **涉及范围/文件**：`backend/src/modules/imports/*`、`backend/src/modules/work-orders/*import*`。
+- **单一操作**：记录导入预览、确认、落库方法。
+- **验收标准**：明确大文件测试应调用的 service/controller。
+
+### 步骤 3.16 — 准备 5000 行导入测试数据生成器
+- **目标**：稳定生成大文件输入。
+- **涉及范围/文件**：`backend/test` 或 `tests` 下测试辅助文件。
+- **单一操作**：生成内存中的 5000 行数据，不提交业务逻辑。
+- **验收标准**：数据包含合法行和少量非法行。
+
+### 步骤 3.17 — 编写 5000 行部分失败导入测试
+- **目标**：覆盖大文件与部分失败边界。
+- **涉及范围/文件**：导入相关后端 spec。
+- **单一操作**：调用导入确认逻辑并断言 partial 结果。
+- **验收标准**：不会事务超时；失败行有明确错误信息。
+
+### 步骤 3.18 — 记录边界测试运行成本
+- **目标**：避免慢测试拖垮普通单测。
+- **涉及范围/文件**：验证记录或测试注释。
+- **单一操作**：记录大文件测试耗时和是否归入 nightly/manual。
+- **验收标准**：CI 策略有明确建议。
+
+---
+
+## 阶段 4. 依赖、密码库与仓库卫生
+
+### 步骤 4.1 — 全仓搜索 `bcryptjs` 引用
+- **目标**：确认双密码库是否真的被使用。
+- **涉及范围/文件**：后端源码与测试。
+- **单一操作**：搜索 `bcryptjs` import/require。
+- **验收标准**：输出引用清单；无引用也要记录。
+
+### 步骤 4.2 — 全仓搜索 `bcrypt` 引用
+- **目标**：确认当前实际密码哈希库。
+- **涉及范围/文件**：后端源码与测试。
+- **单一操作**：搜索 `bcrypt` import/require。
+- **验收标准**：记录 auth/seed/test 中的实际使用点。
+
+### 步骤 4.3 — 决策保留哪一个密码库
+- **目标**：避免盲删依赖。
+- **涉及范围/文件**：`docs/project-rules/TECH_STACK.md`、搜索结果。
+- **单一操作**：根据引用和 Node/Docker 兼容性写出保留建议。
+- **验收标准**：记录“保留 bcrypt / bcryptjs”的决策依据。
+
+### 步骤 4.4 — 移除未使用密码库依赖
+- **目标**：只移除一个确认未使用的包。
+- **涉及范围/文件**：`backend/package.json`、`backend/package-lock.json`。
+- **单一操作**：删除未使用依赖并运行 `npm install`。
+- **验收标准**：`npm ls bcrypt bcryptjs` 与决策一致。
+
+### 步骤 4.5 — 运行认证相关测试
+- **目标**：确认密码库调整不破坏登录。
+- **涉及范围/文件**：后端 auth 测试。
+- **单一操作**：运行 `cd backend && npm run test -- auth` 或对应 spec。
+- **验收标准**：登录、首次改密、密码校验测试通过。
+
+### 步骤 4.6 — 核对 `@nestjs/axios` 与 `axios` 实际安装版本
+- **目标**：消除依赖漂移误判。
+- **涉及范围/文件**：`backend/package.json`、`backend/package-lock.json`、`docs/project-rules/TECH_STACK.md`。
+- **单一操作**：运行 `cd backend && npm ls @nestjs/axios axios`。
+- **验收标准**：记录实际版本，并与已返工的 `TECH_STACK.md` 保持一致。
+
+### 步骤 4.7 — 对齐依赖声明与 lockfile
+- **目标**：让 package 与 lockfile 版本一致。
+- **涉及范围/文件**：`backend/package.json`、`backend/package-lock.json`。
+- **单一操作**：只选择“更新 lockfile”或“调整声明版本”一种策略。
+- **验收标准**：`npm ls @nestjs/axios axios` 无 invalid。
+
+### 步骤 4.8 — 更新 TECH_STACK 依赖漂移备注
+- **目标**：让规范文档反映最终依赖状态。
+- **涉及范围/文件**：`docs/project-rules/TECH_STACK.md`。
+- **单一操作**：只更新 bcrypt/axios 相关备注。
+- **验收标准**：TECH_STACK 与 `npm ls` 输出一致。
+
+### 步骤 4.9 — 盘点测试产物目录
+- **目标**：识别 coverage、截图、上传样例、临时结果。
+- **涉及范围/文件**：`frontend/coverage`、`frontend/test-results`、`backend/uploads`、`tmp` 等。
+- **单一操作**：列出产物目录和文件类型，不删除。
+- **验收标准**：形成“源码 / 测试产物 / 上传样例 / 临时文件”分类清单。
+
+### 步骤 4.10 — 更新 `.gitignore` 候选清单
+- **目标**：避免测试产物继续污染工作区。
+- **涉及范围/文件**：先写建议，不直接改 `.gitignore`。
+- **单一操作**：根据 4.9 输出应忽略的路径建议。
+- **验收标准**：Leader 确认前不删除任何产物。
+
+### 步骤 4.11 — 修改 `.gitignore` 忽略测试产物
+- **目标**：只加入已确认的忽略规则。
+- **涉及范围/文件**：`.gitignore`。
+- **单一操作**：添加 coverage/test-results/tmp upload sample 等确认规则。
+- **验收标准**：`git status --short` 中新产物噪音减少。
+
+### 步骤 4.12 — 清理已确认无用的测试产物
+- **目标**：只清理 Leader 确认的非源码产物。
+- **涉及范围/文件**：4.9 清单中的 confirmed 项，不包含团队集成 worktree。
+- **单一操作**：删除一个确认无用目录或一类文件。
+- **验收标准**：无源码、文档、配置文件、团队 worktree 被删除。
+
+---
+
+## 阶段 5. 权限兼容、迁移历史与规范同步
+
+### 步骤 5.1 — 搜索旧角色码映射
+- **目标**：定位 `biz_manager`、`biz_leader` 等兼容层。
+- **涉及范围/文件**：前后端角色常量、seed、权限工具。
+- **单一操作**：搜索旧角色码字符串并列清单。
+- **验收标准**：每个旧码都有文件路径和用途说明。
+
+### 步骤 5.2 — 标记旧角色码数据来源
+- **目标**：区分 seed、前端兼容、历史数据。
+- **涉及范围/文件**：5.1 清单。
+- **单一操作**：为每个引用点标记“必须保留 / 可迁移 / 待确认”。
+- **验收标准**：不会盲删兼容代码。
+
+### 步骤 5.3 — 为角色归一化补单元测试
+- **目标**：防止旧码重新 seed 后菜单权限失效。
+- **涉及范围/文件**：`frontend/src/config/routeVisibility.test.ts` 或角色工具测试。
+- **单一操作**：新增旧码到 canonical 码的映射测试。
+- **验收标准**：旧码仍能映射到正确权限层级。
+
+### 步骤 5.4 — 审计用户-角色-部门绑定结构
+- **目标**：确认权限只保存 UserID、RoleID 和必要部门 id，不冗余飞书姓名部门名。
+- **涉及范围/文件**：`backend/src/entities/user-role.entity.ts`、相关 migration。
+- **单一操作**：复核实体字段和迁移字段。
+- **验收标准**：结论同步到 `BACKEND_STRUCTURE.md` 或验证记录。
+
+### 步骤 5.5 — 搜索社交催办字段 migration
+- **目标**：定位 disable/restore 循环。
+- **涉及范围/文件**：`backend/src/database/migrations/20260520002000-DisableSocialUrgeField.ts`、`20260520004000-RestoreSocialUrgeField.ts`。
+- **单一操作**：阅读两个 migration 的 up/down。
+- **验收标准**：记录字段当前最终状态。
+
+### 步骤 5.6 — 为社交催办字段增加 schema guard
+- **目标**：防止字段再次被误删或误恢复。
+- **涉及范围/文件**：`backend/test/database-schema-guard.spec.ts` 或相邻测试。
+- **单一操作**：新增字段存在性/配置状态断言。
+- **验收标准**：schema guard 能描述当前期望状态。
+
+### 步骤 5.7 — 同步 BACKEND_STRUCTURE 的迁移风险备注
+- **目标**：让后端结构文档记录该历史风险。
+- **涉及范围/文件**：`docs/project-rules/BACKEND_STRUCTURE.md`。
+- **单一操作**：只补充社交催办字段迁移历史说明。
+- **验收标准**：文档写明当前状态和禁止随意反转。
+
+### 步骤 5.8 — 建立 Bug 记录模板
+- **目标**：规范后续 `progress.txt` 的 Bug 记录。
+- **涉及范围/文件**：`docs/project-rules/progress.txt`。
+- **单一操作**：新增或确认模板字段：发现日期、影响范围、优先级、根因、验证。
+- **验收标准**：下一次 Bug 可直接套用模板。
+
+### 步骤 5.9 — 建立原子任务完成记录模板
+- **目标**：防止只改代码不更新记忆层。
+- **涉及范围/文件**：`docs/project-rules/progress.txt`。
+- **单一操作**：新增“完成日期 / 改动文件 / 验证命令 / 结果”模板。
+- **验收标准**：每个完成步骤有统一记录格式。
+
+### 步骤 5.10 — 检查七份规范文档路径一致性
+- **目标**：确认文档都在 `docs/project-rules/`。
+- **涉及范围/文件**：七份规范文档。
+- **单一操作**：列出七份文件是否存在且无根目录重复权威说明冲突。
+- **验收标准**：七份文件路径一致，根目录副本如存在则标记为 legacy。
+
+### 步骤 5.11 — 更新 CLAUDE 的文档路径规则
+- **目标**：让 AI 后续优先读统一目录。
+- **涉及范围/文件**：`docs/project-rules/CLAUDE.md`。
+- **单一操作**：补充“规范文档权威路径为 docs/project-rules/”。
+- **验收标准**：CLAUDE 中可搜索到 `docs/project-rules`。
+
+---
+
+## 阶段 6. 体验、可观测性与后续质量提升
+
+### 步骤 6.1 — 定位通知全部已读按钮
+- **目标**：准备防误触改造。
+- **涉及范围/文件**：`frontend/src/pages/Notifications/index.tsx`。
+- **单一操作**：找到全部已读按钮和 API 调用函数。
+- **验收标准**：记录函数名和按钮位置。
+
+### 步骤 6.2 — 为全部已读增加确认弹窗
+- **目标**：降低误操作风险。
+- **涉及范围/文件**：`frontend/src/pages/Notifications/index.tsx`。
+- **单一操作**：点击后先弹 `Modal.confirm`，确认后才调 API。
+- **验收标准**：取消时不发送请求，确认时原流程正常。
+
+### 步骤 6.3 — 为通知确认弹窗补前端测试
+- **目标**：防止后续回归。
+- **涉及范围/文件**：`frontend/src/pages/Notifications/index.test.tsx`。
+- **单一操作**：新增取消与确认两个断言中的一个最小用例。
+- **验收标准**：`cd frontend && npm run test -- Notifications` 通过。
+
+### 步骤 6.4 — 定位子工单 SLA 截止字段
+- **目标**：确认倒计时数据来源。
+- **涉及范围/文件**：`backend/src/entities/dispatched-order.entity.ts`、`frontend/src/pages/MyDispatched/Detail/index.tsx`。
+- **单一操作**：记录字段名，如 `dueAt`、`slaDeadline` 或等价字段。
+- **验收标准**：明确前端可读取的截止时间字段。
+
+### 步骤 6.5 — 新建 SLA 倒计时纯函数
+- **目标**：先实现可测试文案逻辑。
+- **涉及范围/文件**：新建 `frontend/src/utils/slaCountdown.ts`。
+- **单一操作**：输入截止时间和当前时间，输出状态与文案。
+- **验收标准**：未到期、已超时、无截止时间均有返回。
+
+### 步骤 6.6 — 为 SLA 倒计时纯函数补测试
+- **目标**：固定时间边界行为。
+- **涉及范围/文件**：新建 `frontend/src/utils/slaCountdown.test.ts`。
+- **单一操作**：新增 3 个固定时间测试。
+- **验收标准**：`cd frontend && npm run test -- slaCountdown` 通过。
+
+### 步骤 6.7 — 在子工单详情页展示 SLA 倒计时
+- **目标**：只接入展示，不改后端。
+- **涉及范围/文件**：`frontend/src/pages/MyDispatched/Detail/index.tsx`。
+- **单一操作**：在标题下方渲染 6.5 的文案。
+- **验收标准**：有截止时间显示倒计时，无截止时间不报错。
+
+### 步骤 6.8 — 为倒计时增加自动刷新
+- **目标**：打开页面后文案会更新。
+- **涉及范围/文件**：`frontend/src/pages/MyDispatched/Detail/index.tsx`。
+- **单一操作**：增加 60 秒 interval 并在 unmount 清理。
+- **验收标准**：无内存泄露 warning。
+
+### 步骤 6.9 — 定位 Dashboard 今日统计接口
+- **目标**：准备今日新增/完成指标。
+- **涉及范围/文件**：`backend/src/modules/dashboard/dashboard.service.ts`、`frontend/src/services/dashboard.ts`。
+- **单一操作**：记录当前 cards DTO 和前端类型。
+- **验收标准**：明确需要扩展的字段位置。
+
+### 步骤 6.10 — 后端新增今日新增字段
+- **目标**：只加 `todayCreated`。
+- **涉及范围/文件**：`backend/src/modules/dashboard/dashboard.service.ts`、相关 DTO。
+- **单一操作**：统计当天创建的工单数并返回。
+- **验收标准**：dashboard 后端测试通过。
+
+### 步骤 6.11 — 前端展示今日新增字段
+- **目标**：只展示 `todayCreated`。
+- **涉及范围/文件**：`frontend/src/pages/Dashboard/index.tsx`、`frontend/src/services/dashboard.ts`。
+- **单一操作**：增加一个卡片或数字展示。
+- **验收标准**：无值时显示 0。
+
+### 步骤 6.12 — 后端新增今日完成字段
+- **目标**：只加 `todayCompleted`。
+- **涉及范围/文件**：`backend/src/modules/dashboard/dashboard.service.ts`、相关 DTO。
+- **单一操作**：统计当天完成的工单数并返回。
+- **验收标准**：完成时间口径写入测试或注释。
+
+### 步骤 6.13 — 前端展示今日完成字段
+- **目标**：只展示 `todayCompleted`。
+- **涉及范围/文件**：`frontend/src/pages/Dashboard/index.tsx`、`frontend/src/services/dashboard.ts`。
+- **单一操作**：增加今日完成展示。
+- **验收标准**：今日新增和今日完成都可见。
+
+### 步骤 6.14 — 新建 API 响应耗时拦截器
+- **目标**：建立可观测性基线。
+- **涉及范围/文件**：新建 `backend/src/common/interceptors/metrics.interceptor.ts`。
+- **单一操作**：记录 method、url、status、durationMs、traceId。
+- **验收标准**：后端 build 通过。
+
+### 步骤 6.15 — 注册 API 响应耗时拦截器
+- **目标**：让日志真正输出。
+- **涉及范围/文件**：`backend/src/app.module.ts` 或 `backend/src/main.ts`。
+- **单一操作**：全局注册拦截器，保持现有响应格式不变。
+- **验收标准**：请求 `/api/health` 后日志出现 `durationMs`。
+
+### 步骤 6.16 — 增加慢请求标记
+- **目标**：快速定位性能问题。
+- **涉及范围/文件**：`backend/src/common/interceptors/metrics.interceptor.ts`。
+- **单一操作**：超过 3000ms 输出 `slow: true`。
+- **验收标准**：模拟慢请求时日志可见慢标记。
+
+### 步骤 6.17 — 审计 Nginx gzip 配置
+- **目标**：确认是否已开启压缩。
+- **涉及范围/文件**：`nginx/nginx.conf`。
+- **单一操作**：检查 gzip 配置现状。
+- **验收标准**：记录已有/缺失项。
+
+### 步骤 6.18 — 开启 Nginx gzip
+- **目标**：减少静态资源体积。
+- **涉及范围/文件**：`nginx/nginx.conf`。
+- **单一操作**：只添加 gzip 相关配置。
+- **验收标准**：`nginx -t` 通过。
+
+### 步骤 6.19 — 为静态资源添加缓存头
+- **目标**：提升前端加载速度。
+- **涉及范围/文件**：`nginx/nginx.conf`。
+- **单一操作**：只为 `/assets/` 添加长期缓存，不缓存 `index.html`。
+- **验收标准**：JS/CSS 有缓存头，HTML 无 immutable。
+
+### 步骤 6.20 — 审计 API 代理超时
+- **目标**：防止导入等长请求被过早断开。
+- **涉及范围/文件**：`nginx/nginx.conf`。
+- **单一操作**：检查并记录 `/api/` 的 `proxy_read_timeout`。
+- **验收标准**：必要时形成单独修改任务，不与 gzip/cache 混做。
+
+---
+
+## 阶段 7. 完成总验收
+
+### 步骤 7.1 — 运行后端核心测试集合
+- **目标**：确认后端关键路径稳定。
+- **涉及范围/文件**：后端 Jest。
+- **单一操作**：运行与本计划已完成步骤相关的后端 spec。
+- **验收标准**：失败必须记录根因和修复建议。
+
+### 步骤 7.2 — 运行前端核心测试集合
+- **目标**：确认前端关键页面稳定。
+- **涉及范围/文件**：前端 Vitest。
+- **单一操作**：运行与通知、仪表盘、子工单相关的测试。
+- **验收标准**：失败必须定位到组件、接口或 mock。
+
+### 步骤 7.3 — 运行关键 Playwright 回归
+- **目标**：确认页面级链路没有 500 或白屏。
+- **涉及范围/文件**：前端 E2E。
+- **单一操作**：运行登录、创建工单、子工单列表相关 E2E。
+- **验收标准**：失败保留截图、trace 或 error-context。
+
+### 步骤 7.4 — 更新 `progress.txt` 完成记录
+- **目标**：保持外部记忆准确。
+- **涉及范围/文件**：`docs/project-rules/progress.txt`。
+- **单一操作**：把已完成步骤、验证命令和结果写入对应章节。
+- **验收标准**：每个完成项都有日期和证据。
+
+### 步骤 7.5 — 最终检查规范文档一致性
+- **目标**：确认七份规范互相不矛盾。
+- **涉及范围/文件**：`docs/project-rules/*.md` 与 `progress.txt`。
+- **单一操作**：检查 TECH_STACK、CLAUDE、progress、IMPLEMENTATION_PLAN 的路径和依赖描述一致。
+- **验收标准**：无根目录/统一目录冲突，无版本描述冲突。

@@ -62,6 +62,7 @@ describe('return-resubmit flow', () => {
     const txOperationLogRepo = repoMock<OperationLog>({ save: jest.fn(async (input: OperationLog) => input), create: jest.fn((input: Partial<OperationLog>) => input as OperationLog) });
     const txModuleHandlerRepo = repoMock<ModuleHandler>({
       findOne: jest.fn(async ({ where }: { where: { moduleCode: string } }) => ({ handlerId: `handler-${where.moduleCode}` } as ModuleHandler)),
+      find: jest.fn(async ({ where }: { where: { moduleCode: string } }) => [{ handlerId: `handler-${where.moduleCode}`, isActive: true, isBackup: false, weight: 1 } as ModuleHandler]),
     });
     const managerMock = {
       query: jest.fn(async () => undefined),

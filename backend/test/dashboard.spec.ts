@@ -1,7 +1,9 @@
 import { Reflector } from '@nestjs/core';
+import { validate } from 'class-validator';
 import { ROLES_KEY } from 'src/common/decorators/roles.decorator';
 import { DashboardController } from 'src/modules/dashboard/dashboard.controller';
 import { DashboardService } from 'src/modules/dashboard/dashboard.service';
+import { DashboardScopeQueryDto, LeaderTrendQueryDto, OrderTypeMatrixQueryDto } from 'src/modules/dashboard/dto/dashboard-query.dto';
 
 describe('DashboardService', () => {
   const validationStub = { resolveUserDepartmentIds: jest.fn(async () => ['dept-1']) } as never;
@@ -103,7 +105,48 @@ describe('DashboardService', () => {
     }
   });
 
-  it('keeps matrix and leader-trend SQL rates on completed over total minus voided', async () => {
+  it('accepts legal, missing, and unknown dashboard scope query values without validation errors', async () => {
+    const scopes = [undefined, 'mine', 'team', 'global', 'backend_module', 'unexpected_scope'];
+
+    for (const scope of scopes) {
+      const cardsQuery = new DashboardScopeQueryDto();
+      cardsQuery.scope = scope;
+      const matrixQuery = new OrderTypeMatrixQueryDto();
+      matrixQuery.scope = scope;
+      matrixQuery.dimension = 'orderType';
+      const trendQuery = new LeaderTrendQueryDto();
+      trendQuery.scope = scope;
+      trendQuery.orderType = 'onboarding';
+
+      await expect(validate(cardsQuery)).resolves.toHaveLength(0);
+      await expect(validate(matrixQuery)).resolves.toHaveLength(0);
+      await expect(validate(trendQuery)).resolves.toHaveLength(0);
+    }
+  });
+
+  it('normalizes query scope at controller boundary while keeping mine/team explicit', () => {
+    const dashboardService = {
+      getDashboardCards: jest.fn(),
+      getOrderTypeMatrix: jest.fn(),
+      getLeaderTrend: jest.fn(),
+    };
+    const controller = new DashboardController(dashboardService as never);
+    const user = { sub: 'leader-1', roles: ['biz_leader'] } as never;
+
+    controller.cards({ scope: 'mine' }, user);
+    controller.orderTypeMatrix({ scope: 'team', dimension: 'node' }, user);
+    controller.leaderTrend({ scope: 'global', orderType: 'onboarding' }, user);
+    controller.cards({ scope: 'backend_module' }, user);
+    controller.orderTypeMatrix({ scope: 'bad-scope', dimension: 'orderType' }, user);
+
+    expect(dashboardService.getDashboardCards).toHaveBeenNthCalledWith(1, user, 'mine');
+    expect(dashboardService.getOrderTypeMatrix).toHaveBeenNthCalledWith(1, user, 'node', 'team');
+    expect(dashboardService.getLeaderTrend).toHaveBeenCalledWith('onboarding', user, undefined, undefined);
+    expect(dashboardService.getDashboardCards).toHaveBeenNthCalledWith(2, user, undefined);
+    expect(dashboardService.getOrderTypeMatrix).toHaveBeenNthCalledWith(2, user, 'orderType', undefined);
+  });
+
+  it('keeps matrix and leader-trend SQL on dispatched child orders with completed over total minus voided rates', async () => {
     const dataSource = { query: jest.fn(async () => []) };
     const service = new DashboardService(dataSource as never, validationStub);
 
@@ -112,9 +155,14 @@ describe('DashboardService', () => {
     await service.getLeaderTrend('onboarding', { sub: 'admin-1', roles: ['admin'] } as never);
 
     const sqlText = (dataSource.query.mock.calls as unknown[][]).map((call) => String(call[0])).join('\n');
-    expect(sqlText).toContain("AS voided");
-    expect(sqlText).toContain("COUNT(d.id) - COUNT(d.id) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)");
+    expect(sqlText).toContain('FROM dispatched_orders d');
+    expect(sqlText).toContain('JOIN scoped_wo wo ON wo.id = d.parent_order_id');
+    expect(sqlText).toContain("COUNT(d.id) FILTER (WHERE d.status::text <> 'withdrawn')::int AS total");
+    expect(sqlText).toContain("COUNT(d.id) FILTER (WHERE d.status::text = 'completed' AND d.void_at IS NULL)::int AS completed");
+    expect(sqlText).toContain("COUNT(d.id) FILTER (WHERE d.status::text NOT IN ('withdrawn','void') AND d.void_at IS NULL) = 0");
     expect(sqlText).toContain("COUNT(*) - COUNT(*) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)");
+    expect(sqlText).toContain("date_trunc('month', COALESCE(d.completed_at, d.dispatched_at, d.created_at) AT TIME ZONE 'Asia/Shanghai') AS bucket_month");
+    expect(sqlText).not.toContain('FROM work_orders wo\n      SELECT');
     expect(sqlText).not.toContain("completed')::numeric * 100 / COUNT(d.id)");
     expect(sqlText).not.toContain("completed')::numeric * 100 / COUNT(*)");
   });
@@ -244,6 +292,7 @@ describe('DashboardService', () => {
       'business_group_leader',
       'biz_leader',
       'data_entry_leader',
+      'data_entry_team',
       'shared_team_owner',
       'shared_leader',
     ]));

@@ -792,22 +792,22 @@ export class DashboardService {
       scoped_do AS (
         SELECT
           d.*,
-          date_trunc('month', COALESCE(d.dispatched_at, d.created_at) AT TIME ZONE 'Asia/Shanghai') AS bucket_month
+          date_trunc('month', COALESCE(d.completed_at, d.dispatched_at, d.created_at) AT TIME ZONE 'Asia/Shanghai') AS bucket_month
         FROM dispatched_orders d
         JOIN scoped_wo wo ON wo.id = d.parent_order_id
-        WHERE COALESCE(d.dispatched_at, d.created_at) >= (SELECT MIN(month_start) FROM months)
+        WHERE COALESCE(d.completed_at, d.dispatched_at, d.created_at) >= (SELECT MIN(month_start) FROM months)
           AND ($5::text IS NULL OR d.module_code = $5::text)
       )
       SELECT
         to_char(m.month_start, 'YYYY-MM') AS month,
-        COUNT(d.id)::int AS total,
-        COUNT(d.id) FILTER (WHERE d.status::text = 'completed')::int AS completed,
+        COUNT(d.id) FILTER (WHERE d.status::text <> 'withdrawn')::int AS total,
+        COUNT(d.id) FILTER (WHERE d.status::text = 'completed' AND d.void_at IS NULL)::int AS completed,
         COUNT(d.id) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)::int AS voided,
         CASE
-          WHEN (COUNT(d.id) - COUNT(d.id) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)) <= 0 THEN 0
+          WHEN COUNT(d.id) FILTER (WHERE d.status::text NOT IN ('withdrawn','void') AND d.void_at IS NULL) = 0 THEN 0
           ELSE ROUND(
-            COUNT(d.id) FILTER (WHERE d.status::text = 'completed')::numeric * 100
-            / (COUNT(d.id) - COUNT(d.id) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)),
+            COUNT(d.id) FILTER (WHERE d.status::text = 'completed' AND d.void_at IS NULL)::numeric * 100
+            / COUNT(d.id) FILTER (WHERE d.status::text NOT IN ('withdrawn','void') AND d.void_at IS NULL),
             1
           )
         END AS rate
@@ -849,12 +849,12 @@ export class DashboardService {
       scoped_do AS (
         SELECT
           d.*,
-          date_trunc('month', COALESCE(d.dispatched_at, d.created_at) AT TIME ZONE 'Asia/Shanghai') AS bucket_month
+          date_trunc('month', COALESCE(d.completed_at, d.dispatched_at, d.created_at) AT TIME ZONE 'Asia/Shanghai') AS bucket_month
         FROM dispatched_orders d
         JOIN work_orders wo ON wo.id = d.parent_order_id
         WHERE wo.order_type::text = $1
           AND wo.status::text <> 'draft'
-          AND COALESCE(d.dispatched_at, d.created_at) >= (SELECT MIN(month_start) FROM months)
+          AND COALESCE(d.completed_at, d.dispatched_at, d.created_at) >= (SELECT MIN(month_start) FROM months)
           AND ($4::text IS NULL OR d.module_code = $4::text)
           AND (
             d.handler_id = $3::uuid
@@ -864,14 +864,14 @@ export class DashboardService {
       )
       SELECT
         to_char(m.month_start, 'YYYY-MM') AS month,
-        COUNT(d.id)::int AS total,
-        COUNT(d.id) FILTER (WHERE d.status::text = 'completed')::int AS completed,
+        COUNT(d.id) FILTER (WHERE d.status::text <> 'withdrawn')::int AS total,
+        COUNT(d.id) FILTER (WHERE d.status::text = 'completed' AND d.void_at IS NULL)::int AS completed,
         COUNT(d.id) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)::int AS voided,
         CASE
-          WHEN (COUNT(d.id) - COUNT(d.id) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)) <= 0 THEN 0
+          WHEN COUNT(d.id) FILTER (WHERE d.status::text NOT IN ('withdrawn','void') AND d.void_at IS NULL) = 0 THEN 0
           ELSE ROUND(
-            COUNT(d.id) FILTER (WHERE d.status::text = 'completed')::numeric * 100
-            / (COUNT(d.id) - COUNT(d.id) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)),
+            COUNT(d.id) FILTER (WHERE d.status::text = 'completed' AND d.void_at IS NULL)::numeric * 100
+            / COUNT(d.id) FILTER (WHERE d.status::text NOT IN ('withdrawn','void') AND d.void_at IS NULL),
             1
           )
         END AS rate

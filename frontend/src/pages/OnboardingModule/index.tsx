@@ -9,7 +9,7 @@ import {
   batchExportDispatchedOrders,
   batchUrgeDispatchedOrders,
   downloadDispatchedExport,
-  getDispatchedOrders,
+  getDispatchedOrdersSafe,
 } from '@/services/dispatchedOrders';
 import type { DispatchedOrderItem } from '@/services/dispatchedOrders';
 import DispatchedBatchImportModal from '@/components/DispatchedBatchImportModal';
@@ -297,7 +297,7 @@ const OnboardingModule: React.FC = () => {
 
   const requestFn = useCallback(async (params: PageParams, _sort: Record<string, unknown>, filters: TableFilters = {}) => {
     const headerFilters = buildEffectiveHeaderFilterParams(filters, tableFilters);
-    const result = await getDispatchedOrders({ ...params, ...headerFilters, module_code: currentModule });
+    const result = await getDispatchedOrdersSafe({ ...params, ...headerFilters, module_code: currentModule });
     return { data: result.list, success: true, total: result.total };
   }, [currentModule, tableFilters]);
 

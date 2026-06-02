@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageContainer, ProTable } from '@ant-design/pro-components';
 import type { ProColumns } from '@ant-design/pro-components';
-import { Badge, Space, Tag, Tooltip } from 'antd';
+import { Badge, Button, Space, Tag, Tooltip } from 'antd';
 import { EyeOutlined } from '@ant-design/icons';
 import { getWorkOrders } from '@/services/workOrders';
 import type { DispatchedOrderSummary, WorkOrderItem } from '@/services/workOrders';
@@ -177,9 +177,9 @@ const TeamDispatched: React.FC = () => {
       width: 100,
       hideInSearch: true,
       render: (_, record) => (
-        <a onClick={() => navigate(`/work-orders/${record.id}`)}>
+        <Button type="link" size="small" onClick={() => navigate(`/work-orders/${record.id}`)}>
           <Space size={4}><EyeOutlined />详情</Space>
-        </a>
+        </Button>
       ),
     },
   ], [navigate]);

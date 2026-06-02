@@ -3,10 +3,10 @@ import { Repository } from 'typeorm';
 import { businessException } from 'src/common/exceptions/business-exception';
 import {
   DispatchModuleCode,
+  DispatchStrategy,
   ExceptionModuleHandler,
   ModuleField,
   ModuleHandler,
-  ONBOARDING_DISPATCH_MODULE_CODES,
   OrderType,
   WorkOrder,
   isDispatchModuleCode,
@@ -72,6 +72,7 @@ export async function resolveModuleHandler(
   moduleCode: string,
   manager: TxManager,
   customerCode?: string | null,
+  strategy: DispatchStrategy = DispatchStrategy.FIXED,
 ): Promise<string | null> {
   const normalizedCustomerCode = typeof customerCode === 'string' ? customerCode.trim() : '';
   if (normalizedCustomerCode) {
@@ -83,16 +84,19 @@ export async function resolveModuleHandler(
   }
 
   const handlerRepo = manager.getRepository(ModuleHandler);
-  const primary = await handlerRepo.findOne({
-    where: { moduleCode, isActive: true, isBackup: false },
-    order: { weight: 'DESC' },
-  });
-  if (primary) return primary.handlerId;
-  const backup = await handlerRepo.findOne({
+  const handlers = await handlerRepo.find({
     where: { moduleCode, isActive: true },
-    order: { isBackup: 'ASC', weight: 'DESC' },
+    order: { isBackup: 'ASC', weight: 'DESC', id: 'ASC' },
   });
-  return backup?.handlerId ?? null;
+  const sortedHandlers = [...handlers].sort((left, right) => {
+    if (left.isBackup !== right.isBackup) return Number(left.isBackup) - Number(right.isBackup);
+    if ((right.weight ?? 0) !== (left.weight ?? 0)) return (right.weight ?? 0) - (left.weight ?? 0);
+    return String(left.id ?? '').localeCompare(String(right.id ?? ''));
+  });
+  if (sortedHandlers.length === 0) return null;
+  if (sortedHandlers.length === 1) return sortedHandlers[0].handlerId;
+  if (strategy === DispatchStrategy.POOL || strategy === DispatchStrategy.TEAM_CLAIM) return null;
+  return sortedHandlers[0].handlerId;
 }
 
 async function resolveVisibleFields(
@@ -123,7 +127,6 @@ export async function buildOnboardingChildren(
   if (workOrder.orderType !== OrderType.ONBOARDING) return [];
 
   const extra = workOrder.extraData ?? {};
-  const customerCode = resolveCustomerCode(workOrder);
   const targets: DispatchModuleCode[] = [
     DispatchModuleCode.DATA_ENTRY,
     DispatchModuleCode.SOCIAL_INSURANCE,
@@ -131,15 +134,47 @@ export async function buildOnboardingChildren(
   if (isYes(extra['need_onboarding_contact'])) targets.push(DispatchModuleCode.ONBOARDING_CONTACT);
   if (isYes(extra['need_company_contract'])) targets.push(DispatchModuleCode.CONTRACT);
 
+  const children = await buildChildrenForModules(targets, workOrder, manager, fieldPermissionService);
+  children.sort((a, b) => getModuleSortOrder(a.moduleCode) - getModuleSortOrder(b.moduleCode));
+  return children;
+}
+
+async function buildChildrenForModules(
+  targets: DispatchModuleCode[],
+  workOrder: WorkOrder,
+  manager: TxManager,
+  fieldPermissionService: FieldPermissionService,
+): Promise<OnboardingChild[]> {
+  const customerCode = resolveCustomerCode(workOrder);
   const children: OnboardingChild[] = [];
   for (const moduleCode of targets) {
-    if (!ONBOARDING_DISPATCH_MODULE_CODES.includes(moduleCode)) {
-      throw businessException(4203, HttpStatus.INTERNAL_SERVER_ERROR, `非法 module_code: ${moduleCode}`);
-    }
+    assertDispatchModuleCode(moduleCode);
     const handlerId = await resolveModuleHandler(moduleCode, manager, customerCode);
     const visibleFields = await resolveVisibleFields(moduleCode, manager, fieldPermissionService);
     children.push({ moduleCode, handlerId, visibleFields });
   }
-  children.sort((a, b) => getModuleSortOrder(a.moduleCode) - getModuleSortOrder(b.moduleCode));
   return children;
+}
+
+export async function buildWorkOrderDispatchChildren(
+  workOrder: WorkOrder,
+  manager: TxManager,
+  fieldPermissionService: FieldPermissionService,
+): Promise<OnboardingChild[]> {
+  if (workOrder.orderType === OrderType.ONBOARDING) {
+    return buildOnboardingChildren(workOrder, manager, fieldPermissionService);
+  }
+
+  if (workOrder.orderType === OrderType.RENEWAL) {
+    return buildChildrenForModules([DispatchModuleCode.RENEWAL_CONTRACT], workOrder, manager, fieldPermissionService);
+  }
+  if (workOrder.orderType === OrderType.BENEFIT) {
+    return buildChildrenForModules([DispatchModuleCode.BENEFIT_APPLY], workOrder, manager, fieldPermissionService);
+  }
+  if (workOrder.orderType === OrderType.RESIGNATION) {
+    const targets: DispatchModuleCode[] = [DispatchModuleCode.RESIGNATION_CONTACT];
+    if (isYes(workOrder.extraData?.['need_resignation_cert'])) targets.push(DispatchModuleCode.RESIGNATION_CERT);
+    return buildChildrenForModules(targets, workOrder, manager, fieldPermissionService);
+  }
+  return [];
 }

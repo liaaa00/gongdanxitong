@@ -129,6 +129,7 @@ vi.mock('@ant-design/pro-components', () => ({
 async function renderPage() {
   render(<AdminUsers />);
   await waitFor(() => expect(getUsers).toHaveBeenCalled());
+  await screen.findByText('shenwenjun');
 }
 
 describe('AdminUsers user-role assignment', () => {

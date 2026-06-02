@@ -325,7 +325,7 @@ function deleteChildInParent(childId: string): boolean {
   return false;
 }
 
-export async function getDispatchedOrders(params: PageParams & {
+export type DispatchedOrdersListParams = PageParams & {
   module_code?: string;
   moduleCode?: string;
   orderType?: string;
@@ -352,7 +352,9 @@ export async function getDispatchedOrders(params: PageParams & {
   completedFrom?: string;
   completedTo?: string;
   includeReturned?: boolean;
-}): Promise<PageResult<DispatchedOrderItem>> {
+};
+
+export async function getDispatchedOrders(params: DispatchedOrdersListParams): Promise<PageResult<DispatchedOrderItem>> {
   if (isMockMode) {
     let list = flattenDispatched();
     if (params.status) list = list.filter((d) => d.status === params.status);
@@ -393,6 +395,21 @@ export async function getDispatchedOrders(params: PageParams & {
   }
   const raw = await request.get('/dispatched-orders', { params });
   return normalizePageResult(raw);
+}
+
+function emptyDispatchedOrdersPage(params: DispatchedOrdersListParams): PageResult<DispatchedOrderItem> {
+  const page = Number(params.page ?? params.current ?? 1) || 1;
+  const pageSize = Number(params.pageSize ?? 20) || 20;
+  return { list: [], page, pageSize, total: 0, totalPages: 0, success: false };
+}
+
+export async function getDispatchedOrdersSafe(params: DispatchedOrdersListParams): Promise<PageResult<DispatchedOrderItem>> {
+  try {
+    return await getDispatchedOrders(params);
+  } catch (error) {
+    console.error('[dispatched-orders] list request failed, showing empty table fallback', error);
+    return emptyDispatchedOrdersPage(params);
+  }
 }
 
 export async function getDispatchedOrder(id: string): Promise<DispatchedOrderItem> {

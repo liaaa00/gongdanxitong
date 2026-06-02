@@ -144,10 +144,17 @@ function MultiViewTable<T extends Record<string, unknown>>(props: MultiViewTable
     if (filterConditions.length > 0) {
       merged._filters = JSON.stringify(filterConditions);
     }
-    const result = await request(merged);
-    setDataSource(result.data || []);
-    return result;
-  }, [request, filterConditions]);
+    try {
+      const result = await request(merged);
+      setDataSource(result.data || []);
+      return result;
+    } catch (error) {
+      console.error('[MultiViewTable] request failed, showing empty table fallback', error);
+      message.error('列表加载失败，请稍后重试');
+      setDataSource([]);
+      return { data: [], success: false, total: 0 };
+    }
+  }, [request, filterConditions, message]);
 
   const kanbanValues = useMemo(() => {
     if (!kanbanAllowedValues) {

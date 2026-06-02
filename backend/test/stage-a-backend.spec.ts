@@ -56,6 +56,7 @@ describe('BE-A5 dispatch rule priority', () => {
     const service = new DispatchEngineService(
       { find: jest.fn(async () => rules) } as never,
       { find: jest.fn(async () => []) } as never,
+      { find: jest.fn(async () => []) } as never,
       new AstEvaluator(),
       { pick: jest.fn(async () => 'picked') } as never,
       { getVisibleFieldsForScenario: jest.fn(async () => ['employee_name']) } as never,
@@ -64,6 +65,7 @@ describe('BE-A5 dispatch rule priority', () => {
       getRepository: jest.fn((entity) => {
         if (entity.name === 'DispatchRule') return { find: jest.fn(async () => rules) };
         if (entity.name === 'WorkOrderModuleConfig') return { find: jest.fn(async () => []) };
+        if (entity.name === 'ModuleHandler') return { find: jest.fn(async () => [{ handlerId: 'fallback-user' }]) };
         return { findOne: jest.fn(async ({ where }: { where: { id: string } }) => where.id === 'fallback-user' ? { id: 'fallback-user', isActive: true } : null) };
       }),
     } as never;

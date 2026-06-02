@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import NotificationsPage from './index';
-import { getNotifications, markNotificationsReadByQuery } from '@/services/notifications';
+import { getNotifications } from '@/services/notifications';
 
 const { notification } = vi.hoisted(() => ({
   notification: {
@@ -68,14 +68,16 @@ describe('Notifications Page', () => {
     }, { timeout: 5000 });
   });
 
-  it('renders mark all read button', async () => {
+  it('only keeps the process entry and does not render bulk read buttons', async () => {
     render(
       <MemoryRouter>
         <NotificationsPage />
       </MemoryRouter>,
     );
     await waitFor(() => {
-      expect(screen.getByText('全部已读')).toBeTruthy();
+      expect(screen.getByText('仅保留“处理”入口；进入关联工单处理完成后，责任通知按后端规则自动消失。')).toBeTruthy();
+      expect(screen.queryByText('全部已读')).toBeNull();
+      expect(screen.queryByText('当前分类已读')).toBeNull();
     }, { timeout: 5000 });
   });
 
@@ -132,16 +134,16 @@ describe('Notifications Page', () => {
     }, { timeout: 5000 });
   });
 
-  it('marks the current category read with the active bucket', async () => {
+  it('does not render current category read action after switching bucket tabs', async () => {
     render(
       <MemoryRouter>
         <NotificationsPage />
       </MemoryRouter>,
     );
     fireEvent.click(await screen.findByText('后道数据修改'));
-    fireEvent.click(await screen.findByText('当前分类已读'));
     await waitFor(() => {
-      expect(markNotificationsReadByQuery).toHaveBeenCalledWith({ bucket: 'field_changed' });
+      expect(getNotifications).toHaveBeenCalledWith(expect.objectContaining({ bucket: 'field_changed' }));
+      expect(screen.queryByText('当前分类已读')).toBeNull();
     }, { timeout: 5000 });
   });
 });

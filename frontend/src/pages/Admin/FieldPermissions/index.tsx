@@ -259,7 +259,7 @@ const AdminFieldPermissions: React.FC = () => {
     } catch { message.error('加载失败'); }
     finally { setLoading(false); }
   };
-  useEffect(() => { load(); setDirty({}); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [scenario]);
+  useEffect(() => { load(); setDirty({}); }, [scenario]);
 
   useEffect(() => {
     if (!data?.roles?.length) return;

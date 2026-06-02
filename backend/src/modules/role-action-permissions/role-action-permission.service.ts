@@ -47,7 +47,7 @@ export const DEFAULT_ROLE_ACTION_PERMISSIONS: RoleActionPermissionMatrix = {
   contract_specialist: ['work_order.view', 'work_order.export'],
   labor_contract_member: ['work_order.view', 'work_order.export'],
   onboarding_specialist: ['work_order.view', 'work_order.export'],
-  onboarding_resignation_member: ['work_order.view', 'work_order.export'],
+  onboarding_resignation_member: ['work_order.view', 'work_order.update', 'work_order.export'],
   social_insurance_specialist: ['work_order.view', 'work_order.export'],
   social_security_team: ['work_order.view', 'work_order.export'],
 };

@@ -1,9 +1,12 @@
 import { IsIn, IsOptional, IsString } from 'class-validator';
 
+export type DashboardResolvedScope = 'mine' | 'team';
+export type DashboardQueryScope = DashboardResolvedScope | 'global' | 'backend_module';
+
 export class DashboardScopeQueryDto {
   @IsOptional()
-  @IsIn(['mine', 'team'])
-  scope?: 'mine' | 'team';
+  @IsString()
+  scope?: DashboardQueryScope | string;
 }
 
 export class OrderTypeMatrixQueryDto extends DashboardScopeQueryDto {

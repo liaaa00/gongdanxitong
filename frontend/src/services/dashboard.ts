@@ -1,7 +1,6 @@
 import request, { MAX_PAGE_SIZE } from './request';
 import { isMockMode, mockDelay, type PageParams, type PageResult } from './mock';
 import { getDispatchedOrders, type DispatchedOrderItem } from './dispatchedOrders';
-import { getWorkOrders, type WorkOrderItem } from './workOrders';
 export type DashboardOrderType = 'onboarding' | 'renewal' | 'resignation' | 'benefit';
 export type DashboardMatrixDimension = 'orderType' | 'node';
 export type DashboardAudience = 'business' | 'backend';
@@ -56,15 +55,21 @@ interface ParentOrderLite {
   order_type?: string;
   orderType?: string;
   created_at?: string;
-  dispatched_orders?: Array<{
-    module_code: string;
-    module_name?: string;
-    status?: string;
-    handler_id?: string | null;
-    handler_name?: string | null;
-    completed_at?: string | null;
-    dispatched_at?: string | null;
-  }>;
+  dispatched_orders?: ChildOrderLite[];
+}
+
+interface ChildOrderLite {
+  module_code: string;
+  module_name?: string;
+  status?: string;
+  handler_id?: string | null;
+  handler_name?: string | null;
+  completed_at?: string | null;
+  dispatched_at?: string | null;
+  created_at?: string | null;
+  void_at?: string | null;
+  order_type?: string;
+  orderType?: string;
 }
 
 const ORDER_TYPE_LABELS: Record<DashboardOrderType, string> = {
@@ -97,6 +102,17 @@ function readParents(): ParentOrderLite[] {
   } catch {
     return [];
   }
+}
+
+function readMockChildren(): Array<ChildOrderLite & { order_type?: string }> {
+  return readParents().flatMap((parent) => (parent.dispatched_orders || []).map((child) => ({
+    ...child,
+    order_type: parent.order_type ?? parent.orderType,
+  })));
+}
+
+function getMockMonthChildren(month = currentMonthValue()): Array<ChildOrderLite & { order_type?: string }> {
+  return readMockChildren().filter((child) => isCurrentMonthValue(child.dispatched_at || child.created_at || child.completed_at || undefined, month));
 }
 
 function monthLabel(d: Date): string {
@@ -251,7 +267,7 @@ function buildOrderTypeRow(orderType: DashboardOrderType, statuses: Array<string
   };
 }
 
-function buildNodeMatrixRows(children: DispatchedOrderItem[], dimension: DashboardMatrixDimension): OrderTypeMatrixRow[] {
+function buildNodeMatrixRows(children: Array<Pick<ChildOrderLite, 'module_code' | 'module_name' | 'status' | 'dispatched_at' | 'created_at' | 'completed_at' | 'void_at' | 'order_type' | 'orderType'> & { node_type?: string | null }>, dimension: DashboardMatrixDimension): OrderTypeMatrixRow[] {
   const map = new Map<string, { label: string; statuses: Array<string | undefined> }>();
   children.forEach((child) => {
     const moduleCode = child.module_code || child.node_type || 'unknown';
@@ -279,22 +295,25 @@ function buildNodeMatrixRows(children: DispatchedOrderItem[], dimension: Dashboa
   });
 }
 
+function buildOrderTypeRowsFromChildren(children: Array<Pick<ChildOrderLite, 'status' | 'order_type' | 'orderType'>>): OrderTypeMatrixRow[] {
+  return ORDER_TYPES.map((orderType) => buildOrderTypeRow(
+    orderType,
+    children.filter((child) => normalizeOrderType(child.order_type ?? child.orderType) === orderType).map((child) => child.status),
+    'orderType',
+  ));
+}
+
 async function buildMatrixRowsFromListApis(dimension: DashboardMatrixDimension): Promise<OrderTypeMatrixResult> {
   const month = currentMonthValue();
+  const children = await fetchAllPages<DispatchedOrderItem>(getDispatchedOrders, { silentError: true });
+  const monthChildren = children.filter((child) => isCurrentMonthValue(child.dispatched_at || child.created_at || child.completed_at || undefined, month));
+
   if (dimension === 'node') {
-    const children = await fetchAllPages<DispatchedOrderItem>(getDispatchedOrders, { silentError: true });
-    const monthChildren = children.filter((child) => isCurrentMonthValue(child.dispatched_at || child.created_at || child.completed_at || undefined, month));
     const rows = buildNodeMatrixRows(monthChildren, dimension);
     return { rows, total: rows.length };
   }
 
-  const orders = await fetchAllPages<WorkOrderItem>(getWorkOrders, { silentError: true });
-  const monthOrders = orders.filter((order) => isCurrentMonthValue(order.created_at || order.submitted_at || order.updated_at, month));
-  const rows = ORDER_TYPES.map((orderType) => buildOrderTypeRow(
-    orderType,
-    monthOrders.filter((order: WorkOrderItem) => normalizeOrderType(order.order_type) === orderType).map((order) => order.status),
-    dimension,
-  ));
+  const rows = buildOrderTypeRowsFromChildren(monthChildren);
   return { rows, total: rows.length };
 }
 
@@ -380,11 +399,7 @@ function normalizeLeaderTrend(raw: unknown, fallbackOrderType: DashboardOrderTyp
 
 export async function getDashboardCards(audience: DashboardAudience = 'business', scope?: DashboardScopeMode): Promise<DashboardCards> {
   if (isMockMode) {
-    const month = currentMonthValue();
-    const parents = readParents();
-    const monthOrders = parents.filter((p) => isCurrentMonthValue(p.created_at, month));
-    const children = monthOrders.flatMap((p) => p.dispatched_orders || []);
-    const source = children.length > 0 ? children : monthOrders;
+    const source = getMockMonthChildren();
     return mockDelay({
       totalThisMonth: source.length,
       processing: source.filter((item) => isOpenStatus(item.status)).length,
@@ -405,13 +420,15 @@ export async function getDashboardCards(audience: DashboardAudience = 'business'
 export async function getOrderTypeMatrix(params: { dimension?: DashboardMatrixDimension; audience?: DashboardAudience; scope?: DashboardScopeMode } = {}): Promise<OrderTypeMatrixResult> {
   const dimension = params.dimension || 'node';
   if (isMockMode) {
-    const month = currentMonthValue();
-    const rows = buildMatrixRows(readParents().filter((p) => isCurrentMonthValue(p.created_at, month)), dimension);
+    const monthChildren = getMockMonthChildren();
+    const rows = dimension === 'node'
+      ? buildNodeMatrixRows(monthChildren, dimension)
+      : buildOrderTypeRowsFromChildren(monthChildren);
     return mockDelay({ rows, total: rows.length });
   }
 
   try {
-    const result = await request.get('/dashboard/order-type-matrix', { params: { dimension, ...(params.scope ? { scope: params.scope } : {}) }, silentError: true } as any);
+    const result = await request.get('/dashboard/order-type-matrix', { params: { dimension }, silentError: true } as any);
     return normalizeOrderTypeMatrix(result, dimension);
   } catch (err) {
     console.warn('[dashboard] order-type-matrix unavailable, fallback to list aggregation', err);
@@ -421,12 +438,11 @@ export async function getOrderTypeMatrix(params: { dimension?: DashboardMatrixDi
 
 export async function getLeaderTrend(orderType: DashboardOrderType, moduleCode?: string, scope?: DashboardScopeMode): Promise<LeaderTrendResult> {
   if (isMockMode) {
-    const parents = readParents().filter((p) => getParentOrderType(p) === orderType);
+    const children = readMockChildren().filter((child) => normalizeOrderType(child.order_type ?? child.orderType) === orderType);
     const buckets = recentMonths(12).map((m) => {
-      const list = parents.filter((p) => isSameMonth(p.created_at, m));
-      const children = list.flatMap((p) => p.dispatched_orders || []).filter((d) => !moduleCode || d.module_code === moduleCode);
-      const fallback = moduleCode ? [] : list;
-      const source = children.length > 0 ? children : fallback;
+      const source = children
+        .filter((child) => isSameMonth(child.dispatched_at || child.created_at || child.completed_at || undefined, m))
+        .filter((child) => !moduleCode || child.module_code === moduleCode);
       const total = source.length;
       const completed = source.filter((item) => isCompletedStatus(item.status)).length;
       const voided = source.filter((item) => isVoidStatus(item.status)).length;
@@ -442,7 +458,7 @@ export async function getLeaderTrend(orderType: DashboardOrderType, moduleCode?:
 
   try {
     const result = await request.get('/dashboard/leader-trend', {
-      params: { orderType, ...(moduleCode ? { moduleCode } : {}), ...(scope ? { scope } : {}) },
+      params: { orderType, ...(moduleCode ? { moduleCode } : {}) },
       silentError: true,
     } as any);
     return normalizeLeaderTrend(result, orderType, moduleCode);

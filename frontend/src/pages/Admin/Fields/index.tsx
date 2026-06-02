@@ -94,7 +94,7 @@ const AdminFields: React.FC = () => {
     } catch { message.error('加载失败'); }
     finally { setLoading(false); }
   };
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [filterType, filterSource, filterScope, filterGroup]);
+  useEffect(() => { load(); }, [filterType, filterSource, filterScope, filterGroup]);
 
   const onSave = async () => {
     const v = await form.validateFields();

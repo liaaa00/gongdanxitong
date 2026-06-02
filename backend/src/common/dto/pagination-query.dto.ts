@@ -48,4 +48,9 @@ export class PaginationQueryDto {
   @IsOptional()
   @IsString()
   sort?: string;
+
+  /** Ant Design Table sends `order=ascend|descend` together with `sort`. */
+  @IsOptional()
+  @IsString()
+  order?: string;
 }

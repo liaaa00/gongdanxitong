@@ -5,7 +5,7 @@ import { PageContainer, ProTable } from '@ant-design/pro-components';
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
 import { Button, DatePicker, Space, Tag } from 'antd';
 import { EyeOutlined } from '@ant-design/icons';
-import { getDispatchedOrders } from '@/services/dispatchedOrders';
+import { getDispatchedOrdersSafe } from '@/services/dispatchedOrders';
 import type { DispatchedOrderItem } from '@/services/dispatchedOrders';
 import type { PageParams } from '@/services/mock';
 import { getModuleLabel } from '@/constants/modules';
@@ -62,7 +62,7 @@ const HistoryWorkOrders: React.FC = () => {
         pagination={{ defaultPageSize: 20, pageSizeOptions: ['20', '50', '100'], showSizeChanger: true }}
         dateFormatter="string"
         request={async (params: PageParams & Record<string, unknown>) => {
-          const result = await getDispatchedOrders({
+          const result = await getDispatchedOrdersSafe({
             ...params,
             pageSize: Math.min(Number(params.pageSize || 20), 100),
             includeReturned: true,

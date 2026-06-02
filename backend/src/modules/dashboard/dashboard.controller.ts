@@ -3,7 +3,7 @@ import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { DashboardService } from './dashboard.service';
-import { DashboardScopeQueryDto, LeaderTrendQueryDto, OrderTypeMatrixQueryDto } from './dto/dashboard-query.dto';
+import { DashboardResolvedScope, DashboardScopeQueryDto, LeaderTrendQueryDto, OrderTypeMatrixQueryDto } from './dto/dashboard-query.dto';
 
 const TEAM_DASHBOARD_ROLES = [
   'contract_specialist',
@@ -36,6 +36,7 @@ const LEADER_TREND_ROLES = [
   'business_group_leader',
   'biz_leader',
   'data_entry_leader',
+  'data_entry_team',
   'shared_team_owner',
   'shared_leader',
 ];
@@ -44,9 +45,13 @@ const LEADER_TREND_ROLES = [
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
+  private resolveQueryScope(scope?: string): DashboardResolvedScope | undefined {
+    return scope === 'mine' || scope === 'team' ? scope : undefined;
+  }
+
   @Get('cards')
   cards(@Query() query: DashboardScopeQueryDto, @CurrentUser() user: JwtUserPayload) {
-    return this.dashboardService.getDashboardCards(user, query.scope);
+    return this.dashboardService.getDashboardCards(user, this.resolveQueryScope(query.scope));
   }
 
   /** @Deprecated retained for compatibility; use GET /dashboard/cards. */
@@ -83,12 +88,12 @@ export class DashboardController {
 
   @Get('order-type-matrix')
   orderTypeMatrix(@Query() query: OrderTypeMatrixQueryDto, @CurrentUser() user: JwtUserPayload) {
-    return this.dashboardService.getOrderTypeMatrix(user, query.dimension ?? 'orderType', query.scope);
+    return this.dashboardService.getOrderTypeMatrix(user, query.dimension ?? 'orderType', this.resolveQueryScope(query.scope));
   }
 
   @Get('leader-trend')
   @Roles(...LEADER_TREND_ROLES)
   leaderTrend(@Query() query: LeaderTrendQueryDto, @CurrentUser() user: JwtUserPayload) {
-    return this.dashboardService.getLeaderTrend(query.orderType ?? 'onboarding', user, query.moduleCode, query.scope);
+    return this.dashboardService.getLeaderTrend(query.orderType ?? 'onboarding', user, query.moduleCode, this.resolveQueryScope(query.scope));
   }
 }

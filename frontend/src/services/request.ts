@@ -149,7 +149,6 @@ const onResponseRejected = (error: AxiosError) => {
   return Promise.reject(error);
 };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 request.interceptors.response.use(onResponseFulfilled as any, onResponseRejected);
 
 export { TIMEOUT_MS, getFriendlyErrorMessage };

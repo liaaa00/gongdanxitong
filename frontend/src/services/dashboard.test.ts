@@ -63,7 +63,7 @@ describe('dashboard services', () => {
     });
   });
 
-  it('prefers real order-type matrix endpoint before frontend aggregation and does not pass audience', async () => {
+  it('prefers real order-type matrix endpoint and does not pass audience or unsupported scope', async () => {
     requestGet.mockResolvedValueOnce({
       rows: [
         { orderType: 'onboarding', label: '入职', total: 3, processing: 1, completed: 2, completionRate: 66.7 },
@@ -77,8 +77,9 @@ describe('dashboard services', () => {
     });
 
     expect(requestGet).toHaveBeenCalledTimes(1);
-    expect(requestGet).toHaveBeenCalledWith('/dashboard/order-type-matrix', { params: { dimension: 'orderType', scope: 'team' }, silentError: true });
+    expect(requestGet).toHaveBeenCalledWith('/dashboard/order-type-matrix', { params: { dimension: 'orderType' }, silentError: true });
     expect(requestGet.mock.calls[0][1].params).not.toHaveProperty('audience');
+    expect(requestGet.mock.calls[0][1].params).not.toHaveProperty('scope');
   });
 
   it('calculates matrix completion rate with voided orders excluded from denominator when backend omits rate', async () => {
@@ -135,21 +136,34 @@ describe('dashboard services', () => {
     expect(requestGet.mock.calls[1][1].params.pageSize).toBeLessThanOrEqual(100);
   });
 
-  it('falls back to order aggregation with pageSize within backend max 100 when real matrix endpoint is unavailable', async () => {
+  it('falls back to order-type aggregation from dispatched child orders and never requests work orders', async () => {
     requestGet
       .mockRejectedValueOnce(new Error('not found'))
-      .mockResolvedValueOnce({ list: [], page: 1, pageSize: 100, total: 0, totalPages: 0 });
+      .mockResolvedValueOnce({
+        list: [
+          { id: 'd-1', module_code: 'data_entry', module_name: '数据录入', order_type: 'onboarding', status: 'completed', dispatched_at: new Date().toISOString() },
+          { id: 'd-2', module_code: 'contract', module_name: '劳动合同签订', order_type: 'onboarding', status: 'void', dispatched_at: new Date().toISOString() },
+          { id: 'd-3', module_code: 'renewal_contract', module_name: '续签合同', order_type: 'renewal', status: 'processing', dispatched_at: new Date().toISOString() },
+        ],
+        page: 1,
+        pageSize: 100,
+        total: 3,
+        totalPages: 1,
+      });
 
-    await getOrderTypeMatrix({ dimension: 'orderType' });
+    const result = await getOrderTypeMatrix({ dimension: 'orderType' });
 
     expect(requestGet).toHaveBeenNthCalledWith(1, '/dashboard/order-type-matrix', { params: { dimension: 'orderType' }, silentError: true });
-    expect(requestGet).toHaveBeenNthCalledWith(2, '/work-orders', {
+    expect(requestGet).toHaveBeenNthCalledWith(2, '/dispatched-orders', {
       params: expect.objectContaining({ page: 1, pageSize: 100, silentError: true }),
     });
     expect(requestGet.mock.calls[1][1].params.pageSize).toBeLessThanOrEqual(100);
+    expect(requestGet).not.toHaveBeenCalledWith('/work-orders', expect.anything());
+    expect(result.rows.find((row) => row.orderType === 'onboarding')).toMatchObject({ total: 2, completed: 1, voided: 1, completionRate: 100 });
+    expect(result.rows.find((row) => row.orderType === 'renewal')).toMatchObject({ total: 1, processing: 1, completionRate: 0 });
   });
 
-  it('prefers leader trend endpoint and normalizes empty buckets to zero trend data', async () => {
+  it('prefers leader trend endpoint and does not pass unsupported scope or audience', async () => {
     requestGet.mockResolvedValueOnce({
       orderType: 'onboarding',
       moduleCode: 'data_entry',
@@ -159,7 +173,7 @@ describe('dashboard services', () => {
       ],
     });
 
-    await expect(getLeaderTrend('onboarding', 'data_entry')).resolves.toMatchObject({
+    await expect(getLeaderTrend('onboarding', 'data_entry', 'team')).resolves.toMatchObject({
       orderType: 'onboarding',
       moduleCode: 'data_entry',
       buckets: [
@@ -171,6 +185,8 @@ describe('dashboard services', () => {
       params: { orderType: 'onboarding', moduleCode: 'data_entry' },
       silentError: true,
     });
+    expect(requestGet.mock.calls[0][1].params).not.toHaveProperty('scope');
+    expect(requestGet.mock.calls[0][1].params).not.toHaveProperty('audience');
   });
 
   it('calculates leader trend rate with voided orders excluded from denominator when backend omits rate', async () => {

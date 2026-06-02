@@ -157,7 +157,6 @@ export class WorkOrderService {
     this.assertBusinessOwnerReadOnly(user);
     const workOrder = await this.loadWorkOrder(id);
     this.assertOwner(workOrder, user.sub);
-    await this.assertMainOperationMovedToChildren(workOrder, user, '修改');
     const editableStatuses = [WorkOrderStatus.DRAFT, WorkOrderStatus.PROCESSING, WorkOrderStatus.RETURNED];
     if (!editableStatuses.includes(workOrder.status)) {
       throw businessException(4101, HttpStatus.CONFLICT, '工单状态不允许该操作');
@@ -171,6 +170,9 @@ export class WorkOrderService {
       : [];
     if (payload.extraData && activeChildren.some((child) => child.status === DispatchedOrderStatus.COMPLETED)) {
       throw businessException(4116, HttpStatus.CONFLICT, '存在已完成子单，需由模块主管或管理员退回后才能修改');
+    }
+    if (workOrder.status !== WorkOrderStatus.RETURNED) {
+      await this.assertMainOperationMovedToChildren(workOrder, user, '修改');
     }
 
     const beforeExtraData = { ...workOrder.extraData };
