@@ -24,6 +24,13 @@ function repo<T extends object>(overrides: RepoMock<T> = {}): Repository<T> {
 describe('onboarding split dispatch', () => {
   it('always creates data_entry and conditionally creates onboarding_contact/contract from Chinese aliases', async () => {
     const ruleRepo = repo<DispatchRule>({ find: jest.fn(async () => []) });
+    const moduleHandlerRepo = repo({
+      find: jest.fn(async ({ where }: { where: { moduleCode: string; isActive: boolean; isBackup: boolean } }) => {
+        const moduleCode = where.moduleCode;
+        if (!where.isActive) return [];
+        return [{ moduleCode, handlerId: `handler-${moduleCode}`, weight: 10, isBackup: false, isActive: true }];
+      }),
+    });
     const picker = {
       pick: jest.fn(async (_strategy: DispatchStrategy, moduleCode: string) => `handler-${moduleCode}`),
     } as unknown as HandlerPickerService;
@@ -33,6 +40,7 @@ describe('onboarding split dispatch', () => {
     const service = new DispatchEngineService(
       ruleRepo,
       repo({ find: jest.fn(async () => []) }) as never,
+      moduleHandlerRepo as never,
       new AstEvaluator(),
       picker,
       fieldPermissionService,
@@ -64,9 +72,17 @@ describe('onboarding split dispatch', () => {
   });
 
   it('does not create optional onboarding children when flags are no', async () => {
+    const moduleHandlerRepo = repo({
+      find: jest.fn(async ({ where }: { where: { moduleCode: string; isActive: boolean; isBackup: boolean } }) => {
+        const moduleCode = where.moduleCode;
+        if (!where.isActive) return [];
+        return [{ moduleCode, handlerId: `handler-${moduleCode}`, weight: 10, isBackup: false, isActive: true }];
+      }),
+    });
     const service = new DispatchEngineService(
       repo<DispatchRule>({ find: jest.fn(async () => []) }),
       repo({ find: jest.fn(async () => []) }) as never,
+      moduleHandlerRepo as never,
       new AstEvaluator(),
       { pick: jest.fn(async (_strategy: DispatchStrategy, moduleCode: string) => `handler-${moduleCode}`) } as unknown as HandlerPickerService,
       { getVisibleFieldsForScenario: jest.fn(async () => []) } as unknown as FieldPermissionService,

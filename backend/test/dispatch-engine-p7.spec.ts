@@ -30,9 +30,16 @@ describe('P7 DispatchEngine business routing', () => {
         rules.filter((rule) => rule.orderType === options.where.orderType && rule.isActive === options.where.isActive),
       ),
     } as unknown as Repository<DispatchRule>;
+    const moduleHandlerRepo = {
+      find: jest.fn(async (options: { where: { moduleCode: string; isActive: boolean; isBackup: boolean } }) => {
+        const moduleCode = options.where.moduleCode;
+        if (!options.where.isActive) return [];
+        return [{ moduleCode, handlerId: `handler-${moduleCode}`, weight: 10, isBackup: false, isActive: true }];
+      }),
+    } as unknown as Repository<any>;
     const picker = { pick: jest.fn(async (_strategy: DispatchStrategy, moduleCode: string) => `handler-${moduleCode}`) } as unknown as HandlerPickerService;
     const permissions = { getVisibleFieldsForScenario: jest.fn(async (scenario: string) => [scenario]) } as unknown as FieldPermissionService;
-    const service = new DispatchEngineService(repo, { find: jest.fn(async () => []) } as never, new AstEvaluator(), picker, permissions);
+    const service = new DispatchEngineService(repo, { find: jest.fn(async () => []) } as never, moduleHandlerRepo as never, new AstEvaluator(), picker, permissions);
     return { service, repo, picker, permissions };
   }
 
