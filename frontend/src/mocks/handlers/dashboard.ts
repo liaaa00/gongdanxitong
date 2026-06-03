@@ -18,7 +18,7 @@ export const dashboardHandlers = [
 
   http.get('/api/dashboard/team/:module', async () => {
     return ok({
-      module_code: 'contract', module_name: '劳动合同签订',
+      module_code: 'contract', module_name: '劳动合同新签',
       total_pending: 10, total_processing: 5, completed_today: 3, completed_this_month: 42,
       avg_processing_hours: 4.5,
       trend: [
@@ -44,9 +44,9 @@ export const dashboardHandlers = [
         { month: '5月', total: 35, completed: 18 },
       ],
       by_module: [
-        { module_code: 'contract', module_name: '劳动合同签订', pending: 5, processing: 8, completed: 20 },
+        { module_code: 'contract', module_name: '劳动合同新签', pending: 5, processing: 8, completed: 20 },
         { module_code: 'onboarding_contact', module_name: '入职联系', pending: 3, processing: 5, completed: 12 },
-        { module_code: 'data_entry', module_name: '数据录入', pending: 10, processing: 5, completed: 18 },
+        { module_code: 'data_entry', module_name: '增员报岗录入', pending: 10, processing: 5, completed: 18 },
       ],
       by_salesperson: [
         { user_id: 's1', user_name: '业务员A', total: 15, completed: 8, processing: 5 },

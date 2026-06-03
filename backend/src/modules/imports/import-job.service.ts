@@ -13,6 +13,7 @@ import { AiMappingService } from 'src/modules/ai/ai-mapping.service';
 import { ImportFieldValidationService } from './field-validation.service';
 import { ImportErrorExcelService } from './error-excel.service';
 import { WorkOrderImportService } from './work-order-import.service';
+import { assertCanImportWorkOrder } from './import-permissions';
 
 interface PreviewSession {
   fileId: string;
@@ -59,6 +60,7 @@ export class ImportJobService {
     orderType: OrderType;
     sampleRows?: number;
   }): Promise<ImportPreviewResult> {
+    assertCanImportWorkOrder(input.user, input.orderType);
     const meta = await this.resolveImportFile(input.fileId, input.user);
     const parsed = await this.excelParserService.parseFile(meta.filePath);
     const availableFields = await this.fieldValidationService.buildCandidateFields(input.orderType);
@@ -89,6 +91,7 @@ export class ImportJobService {
     defaults?: Record<string, unknown>;
     jobName?: string;
   }): Promise<Record<string, unknown>> {
+    assertCanImportWorkOrder(input.user, input.orderType);
     const session = this.previewSessions.get(input.user.sub);
     const meta = input.fileId
       ? await this.resolveImportFile(input.fileId, input.user)
@@ -198,6 +201,7 @@ export class ImportJobService {
     await this.importJobRepository.update({ id: job.id }, { totalRows: parsed.rows.length, aiMappingRaw: { ...(job.aiMappingRaw ?? {}), headers: parsed.headers } });
 
     const orderType = this.readOrderType(job.aiMappingRaw) ?? OrderType.ONBOARDING;
+    assertCanImportWorkOrder(user, orderType);
     const defaults = this.readDefaults(job.aiMappingRaw);
     const autoSubmit = this.readAutoSubmit(job.aiMappingRaw);
     const mapping = this.normalizeMapping(job.fieldMapping ?? {});
@@ -562,9 +566,7 @@ export class ImportJobService {
       return null;
     }
     const value = (raw as Record<string, unknown>).orderType;
-    return value === OrderType.RENEWAL || value === OrderType.RESIGNATION || value === OrderType.BENEFIT || value === OrderType.ONBOARDING
-      ? value
-      : null;
+    return value === OrderType.ONBOARDING || value === OrderType.RESIGNATION ? value : null;
   }
 
   private readDefaults(raw: unknown): Record<string, unknown> {

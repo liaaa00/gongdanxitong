@@ -80,7 +80,7 @@ describe('Notifications Page', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Test Notification')).toBeTruthy();
-      expect(container.textContent).toContain('劳动合同签订反馈');
+      expect(container.textContent).toContain('劳动合同新签反馈');
       expect(container.textContent).toContain('待确认');
       expect(container.textContent).toContain('已完成签订');
       expect(container.textContent).not.toContain('contract_feedback');

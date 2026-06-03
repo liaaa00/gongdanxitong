@@ -111,7 +111,7 @@ describe('WorkOrdersDetail main order readonly mode', () => {
     renderDetail('/work-orders/wo-1');
 
     expect(await screen.findByText('当前工单为可返修状态')).toBeInTheDocument();
-    expect(screen.getByText('劳动合同签约: 合同信息需修正')).toBeInTheDocument();
+    expect(screen.getByText('劳动合同新签: 合同信息需修正')).toBeInTheDocument();
     expect(screen.getByTestId('dynamic-form')).toHaveAttribute('data-readonly', 'false');
     expect(screen.getAllByRole('button', { name: /修改重新提交/ }).length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: /一键作废/ })).toBeInTheDocument();
@@ -134,6 +134,15 @@ describe('WorkOrdersDetail main order readonly mode', () => {
     fireEvent.click(screen.getAllByRole('button', { name: '修改重新提交' }).at(-1)!);
     await waitFor(() => expect(updateWorkOrderMock).toHaveBeenCalledWith('wo-1', { employee_name: '修改后员工' }));
     expect(resubmitWorkOrderMock).toHaveBeenCalledWith('wo-1', { employee_name: '修改后员工' });
+  });
+
+  it('shows resignation order type in Chinese for resignation aliases', async () => {
+    getWorkOrderMock.mockResolvedValueOnce({ ...baseOrder, order_type: 'offboarding' });
+
+    renderDetail('/work-orders/wo-1');
+
+    expect(await screen.findByText('工单详情')).toBeInTheDocument();
+    expect(screen.getByText('离职')).toBeInTheDocument();
   });
 
   it('shows an error when main order detail fails to load', async () => {

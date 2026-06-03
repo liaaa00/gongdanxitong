@@ -5,9 +5,16 @@ describe('onboarding module_fields baseline', () => {
   const moduleSeed = readFileSync(join(process.cwd(), 'src/database/seeds/seed-module-configs.ts'), 'utf8');
 
   function extractFields(moduleCode: string): string[] {
-    const match = moduleSeed.match(new RegExp(`${moduleCode}: \\[([\\s\\S]*?)\\],`));
-    expect(match).toBeTruthy();
-    return Array.from(match![1].matchAll(/'([^']+)'/g)).map((item) => item[1]);
+    const inlineMatch = moduleSeed.match(new RegExp(`${moduleCode}: \\[([\\s\\S]*?)\\],`));
+    if (inlineMatch) {
+      return Array.from(inlineMatch[1].matchAll(/'([^']+)'/g)).map((item) => item[1]);
+    }
+    const aliasMatch = moduleSeed.match(new RegExp(`${moduleCode}:\\s*([A-Za-z0-9_]+),`));
+    expect(aliasMatch).toBeTruthy();
+    const aliasName = aliasMatch![1];
+    const definitionMatch = moduleSeed.match(new RegExp(`const ${aliasName} = \\[([\\s\\S]*?)\\];`));
+    expect(definitionMatch).toBeTruthy();
+    return Array.from(definitionMatch![1].matchAll(/'([^']+)'/g)).map((item) => item[1]);
   }
 
   it('matches onboarding split-4 module field lists from the 20260515 baseline', () => {

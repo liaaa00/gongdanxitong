@@ -27,9 +27,10 @@ import { getUsersByTeam } from '@/services/users';
 import type { UserItem } from '@/services/users';
 // 我的工单列表统一按子工单维度展示，不再混入主工单表。
 import { useAuth } from '@/hooks/useAuth';
-import { getModuleLabel } from '@/constants/modules';
+import { getModuleLabel, getPhaseOneModuleOptions, isPhaseOneVisibleModule } from '@/constants/modules';
 import { getStatusColor, getStatusText } from '@/constants/dictionaries';
 import { ROLE } from '@/constants/roles';
+import { isPhase1VisibleOrderType } from '@/utils/moduleAccess';
 import {
   DISPATCHED_PROCESSING_STATUS_OPTION,
   DISPATCHED_PROCESSING_STATUS_FILTER_VALUE,
@@ -51,16 +52,10 @@ interface MyDispatchedProps {
 
 const ACTIVE_DISPATCHED_STATUSES = new Set(['pending', 'processing']);
 
-const WORK_TYPE_OPTIONS = [
-  { label: '数据录入子工单', value: 'data_entry' },
-  { label: '社保公积金办理子工单', value: 'social_insurance' },
-  { label: '入职联系子工单', value: 'onboarding_contact' },
-  { label: '劳动合同签订子工单', value: 'contract' },
-  { label: '续签合同子工单', value: 'renewal_contract' },
-  { label: '离职联系子工单', value: 'resignation_contact' },
-  { label: '离职证明子工单', value: 'resignation_cert' },
-  { label: '待遇申报子工单', value: 'benefit_apply' },
-];
+const WORK_TYPE_OPTIONS = getPhaseOneModuleOptions().map((option) => ({
+  label: `${option.label}子工单`,
+  value: option.value,
+}));
 
 const DISPATCHED_STATUS_OPTIONS = [
   DISPATCHED_PROCESSING_STATUS_OPTION,
@@ -100,6 +95,19 @@ function getOperatorDisplay(record: DispatchedOrderItem) {
   return record.handler_name || '负责人未配置';
 }
 
+function moduleAllowedByCurrentBackendRole(moduleCode: string | undefined | null, hasAnyRole: (roles: string[]) => boolean): boolean {
+  const code = String(moduleCode || '');
+  if (!code) return false;
+  if (!isPhaseOneVisibleModule(code)) return false;
+  if (hasAnyRole([ROLE.ADMIN])) return true;
+  if (hasAnyRole([ROLE.LABOR_CONTRACT_MEMBER])) return ['contract', 'contract_signing'].includes(code);
+  if (hasAnyRole([ROLE.ONBOARDING_RESIGNATION_MEMBER])) return ['onboarding_contact', 'resignation_contact', 'resignation_cert'].includes(code);
+  if (hasAnyRole([ROLE.DATA_ENTRY_LEADER])) return ['data_entry', 'data_entry_resign'].includes(code);
+  if (hasAnyRole([ROLE.SOCIAL_INSURANCE_SPECIALIST])) return ['social_insurance', 'social_insurance_resign', 'resignation_social_insurance'].includes(code);
+  if (hasAnyRole([ROLE.SHARED_TEAM_OWNER])) return ['contract', 'contract_signing', 'onboarding_contact', 'resignation_contact', 'resignation_cert'].includes(code);
+  return true;
+}
+
 const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -123,6 +131,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
   const headerTitle = isDoneMode ? '我的已办' : isInitiatedMode ? '我发起的' : isReturnedMode ? '我的退回' : '我的待办';
   const childTableTitle = isDoneMode ? '当月已办子工单' : isInitiatedMode ? '我发起的子工单' : isReturnedMode ? '退回待处理子工单' : '待办子工单';
   const emptyText = isDoneMode ? '本月暂无已办子工单' : isInitiatedMode ? '暂无我发起的子工单' : isReturnedMode ? '暂无退回待处理子工单' : '暂无待办子工单';
+  const readonlyHint = isReadonlyMyWorkMode ? '我的待办/我的已办仅作为个人视图只读查看；后道接单、完成、退回等操作请回到左侧负责的子工单列表执行。' : null;
   const [exporting, setExporting] = useState(false);
   const [batchImportMode, setBatchImportMode] = useState<DispatchedBatchImportMode | null>(null);
   const [slaWarningCount, setSlaWarningCount] = useState(0);
@@ -272,11 +281,11 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
     const visibleSet = new Set(visibleImportModuleCodes);
     const roleFallback = WORK_TYPE_OPTIONS.filter((option) => {
       if (visibleSet.size > 0) return visibleSet.has(option.value);
-      if (hasAnyRole([ROLE.LABOR_CONTRACT_MEMBER])) return ['contract', 'renewal_contract'].includes(option.value);
+      if (hasAnyRole([ROLE.LABOR_CONTRACT_MEMBER])) return ['contract'].includes(option.value);
       if (hasAnyRole([ROLE.ONBOARDING_RESIGNATION_MEMBER])) return ['onboarding_contact', 'resignation_contact', 'resignation_cert'].includes(option.value);
-      if (hasAnyRole([ROLE.DATA_ENTRY_LEADER])) return option.value === 'data_entry';
-      if (hasAnyRole([ROLE.SOCIAL_INSURANCE_SPECIALIST])) return option.value === 'social_insurance';
-      if (hasAnyRole([ROLE.SHARED_TEAM_OWNER])) return ['contract', 'renewal_contract', 'onboarding_contact', 'resignation_contact', 'resignation_cert'].includes(option.value);
+      if (hasAnyRole([ROLE.DATA_ENTRY_LEADER])) return ['data_entry', 'data_entry_resign'].includes(option.value);
+      if (hasAnyRole([ROLE.SOCIAL_INSURANCE_SPECIALIST])) return ['social_insurance', 'social_insurance_resign', 'resignation_social_insurance'].includes(option.value);
+      if (hasAnyRole([ROLE.SHARED_TEAM_OWNER])) return ['contract', 'onboarding_contact', 'resignation_contact', 'resignation_cert'].includes(option.value);
       if (hasAnyRole([ROLE.ADMIN])) return true;
       return false;
     });
@@ -324,7 +333,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
       render: (_, r) => (
         <Space size={4} wrap>
           {r.has_unread_dirty && <Badge color="red" />}
-          <Tag color="blue">{getModuleLabel(r.module_code)}</Tag>
+          <Tag color="blue">{getModuleLabel(r.module_code, r.order_type)}</Tag>
           {r.has_unread_dirty && <Tag color="red">字段变更</Tag>}
         </Space>
       ),
@@ -434,6 +443,14 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
       page: (params as { current?: number }).current || params.page || 1,
     });
 
+    const filterVisibleList = (rows: DispatchedOrderItem[]) => rows.filter((row) => {
+      if (row.order_type && !isPhase1VisibleOrderType(row.order_type)) return false;
+      const phaseVisible = isPhaseOneVisibleModule(row.module_code);
+      if (!phaseVisible) return false;
+      if (!isReadonlyMyWorkMode) return true;
+      return moduleAllowedByCurrentBackendRole(row.module_code, hasAnyRole);
+    });
+
     // 已办模式：只显示当前用户已完成的子工单
     if (isDoneMode) {
       const defaultCompletedRange = query.orderMonth || query.completedFrom || query.completedTo
@@ -445,54 +462,56 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
         handlerId: 'current',
         status: 'completed',
       });
+      const list = filterVisibleList(result.list);
       setVisibleImportModuleCodes([]);
       clearSlaCounts();
-      return { data: result.list, success: true, total: result.total };
+      return { data: list, success: true, total: list.length };
     }
 
     // 我发起的：后端按当前用户创建人 scope 兜底；前端保持逐子工单一行并允许状态筛选。
     if (isInitiatedMode) {
       const result = await getDispatchedOrdersSafe({ ...query, includeReturned: true });
+      const list = filterVisibleList(result.list);
       setVisibleImportModuleCodes([]);
       clearSlaCounts();
-      return { data: result.list, success: true, total: result.total };
+      return { data: list, success: true, total: list.length };
     }
 
     // 我的退回：仅展示退回子工单，避免主工单表和子工单表重复展示。
     if (isReturnedMode) {
       const result = await getDispatchedOrdersSafe({ ...query, includeReturned: true, status: 'returned' });
-      const list = result.list.filter((d) => d.status === 'returned');
+      const list = filterVisibleList(result.list.filter((d) => d.status === 'returned'));
       setVisibleImportModuleCodes([]);
       clearSlaCounts();
-      return { data: list, success: true, total: result.total };
+      return { data: list, success: true, total: list.length };
     }
 
     // 普通待办模式：显示 pending 和 processing 状态的子工单。
     // 用户选择“待办理/办理中”时同样传 statuses=pending,processing，避免只筛到 pending 或 processing 之一。
     if (query.statuses) {
       const result = await getDispatchedOrdersSafe({ ...query, statuses: String(query.statuses) });
-      const list = result.list.filter((d) => ACTIVE_DISPATCHED_STATUSES.has(d.status));
+      const list = filterVisibleList(result.list.filter((d) => ACTIVE_DISPATCHED_STATUSES.has(d.status)));
       setVisibleImportModuleCodes(Array.from(new Set(list.map((item) => item.module_code).filter(Boolean))));
       updateSlaCounts(list);
-      return { data: list, success: true, total: result.total };
+      return { data: list, success: true, total: list.length };
     }
 
     // 其它单值状态保留单值 status 查询，兼容已办/退回等场景。
     if (query.status) {
       const result = await getDispatchedOrdersSafe({ ...query, status: String(query.status) });
-      const list = result.list.filter((d) => ACTIVE_DISPATCHED_STATUSES.has(d.status));
+      const list = filterVisibleList(result.list.filter((d) => ACTIVE_DISPATCHED_STATUSES.has(d.status)));
       setVisibleImportModuleCodes(Array.from(new Set(list.map((item) => item.module_code).filter(Boolean))));
       updateSlaCounts(list);
-      return { data: list, success: true, total: result.total };
+      return { data: list, success: true, total: list.length };
     }
 
     // 没有指定状态时，在后端用同一个查询完成 pending + processing 的筛选与分页。
     // 不能分别请求两个状态再在前端拼接，否则每个状态都会各自分页，导致总数、页码和当前页数据不一致。
     const result = await getDispatchedOrdersSafe({ ...query, statuses: DISPATCHED_PROCESSING_STATUS_FILTER_VALUE });
-    const list = result.list.filter((d) => ACTIVE_DISPATCHED_STATUSES.has(d.status));
+    const list = filterVisibleList(result.list.filter((d) => ACTIVE_DISPATCHED_STATUSES.has(d.status)));
     setVisibleImportModuleCodes(Array.from(new Set(list.map((item) => item.module_code).filter(Boolean))));
     updateSlaCounts(list);
-    return { data: list, success: true, total: result.total };
+    return { data: list, success: true, total: list.length };
   };
 
   return (
@@ -503,6 +522,15 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
         slaBreachedCount > 0 ? <Badge key="sla-breached" count={slaBreachedCount}><Tag color="red" icon={<ClockCircleOutlined />}>已超时</Tag></Badge> : null,
       ].filter(Boolean) : undefined,
     }}>
+      {readonlyHint && (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="当前视图为只读"
+          description={readonlyHint}
+        />
+      )}
       {/* 我的退回统一只显示退回子工单，主工单重复区已移除。 */}
       <ProTable<DispatchedOrderItem>
         actionRef={actionRef} columns={columns} rowKey="id"
@@ -514,8 +542,8 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
         scroll={{ x: 1500 }}
         dateFormatter="string"
         locale={{ emptyText }}
-        rowSelection={{ preserveSelectedRowKeys: true }}
-        tableAlertRender={({ selectedRowKeys, onCleanSelected }) => (
+        rowSelection={isReadonlyMyWorkMode ? false : { preserveSelectedRowKeys: true }}
+        tableAlertRender={isReadonlyMyWorkMode ? false : ({ selectedRowKeys, onCleanSelected }) => (
           <Space wrap>
             <span>已选 {selectedRowKeys.length} 项</span>
             <RefButton size="small" onClick={onCleanSelected}>取消</RefButton>
@@ -616,7 +644,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
           <Form.Item label="当前节点">
             <Space wrap>
               <Tag>{reassignTarget?.order_no}</Tag>
-              <Tag color="blue">{getModuleLabel(reassignTarget?.module_code)}</Tag>
+              <Tag color="blue">{getModuleLabel(reassignTarget?.module_code, reassignTarget?.order_type)}</Tag>
               <span>{reassignTarget?.handler_name || '待认领'}</span>
             </Space>
           </Form.Item>

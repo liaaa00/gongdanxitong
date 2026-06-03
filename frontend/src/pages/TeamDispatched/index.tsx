@@ -9,12 +9,11 @@ import type { DispatchedOrderItem } from '@/services/dispatchedOrders';
 import type { PageParams } from '@/services/mock';
 import { getModuleLabel } from '@/constants/modules';
 import { getStatusColor, getStatusText } from '@/constants/dictionaries';
+import { isPhase1VisibleModule, isPhase1VisibleOrderType } from '@/utils/moduleAccess';
 
 const ORDER_TYPE_OPTIONS = [
   { value: 'onboarding', label: '入职' },
-  { value: 'renewal', label: '续签' },
   { value: 'resignation', label: '离职' },
-  { value: 'benefit', label: '待遇申报' },
 ];
 const ORDER_TYPE_MAP = Object.fromEntries(ORDER_TYPE_OPTIONS.map((item) => [item.value, item.label]));
 
@@ -69,7 +68,7 @@ const TeamDispatched: React.FC = () => {
       dataIndex: 'module_code',
       key: 'module_code',
       width: 170,
-      render: (_, record) => <Tag color="blue">{getModuleLabel(record.module_code)}</Tag>,
+      render: (_, record) => <Tag color="blue">{getModuleLabel(record.module_code, record.order_type)}</Tag>,
     },
     { title: '客户代码', dataIndex: 'customer_code', key: 'customer_code', width: 120, search: { transform: (value) => ({ customerCode: value }) }, renderText: (value) => value || '-' },
     { title: '客户名称', dataIndex: 'customer_name', key: 'customer_name', width: 170, ellipsis: true, search: { transform: (value) => ({ customerName: value }) } },
@@ -129,7 +128,8 @@ const TeamDispatched: React.FC = () => {
         columns={columns}
         request={async (params: PageParams & Record<string, unknown>) => {
           const result = await getDispatchedOrdersSafe(normalizeQuery(params));
-          return { data: result.list, success: true, total: result.total };
+          const list = result.list.filter((row) => isPhase1VisibleModule(row.module_code) && (!row.order_type || isPhase1VisibleOrderType(row.order_type)));
+          return { data: list, success: true, total: list.length };
         }}
         rowKey="id"
         search={{ labelWidth: 'auto' }}

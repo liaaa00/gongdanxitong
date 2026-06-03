@@ -37,9 +37,9 @@ describe('notification operator display helpers', () => {
   });
 
   it('localizes known internal field keys in legacy notification content', () => {
-    expect(getNotificationFieldLabel('contract_feedback')).toBe('劳动合同签订反馈');
-    expect(localizeNotificationInternalKeys('杨纯 修改了 contract_feedback')).toBe('杨纯 修改了 劳动合同签订反馈');
-    expect(getNotificationDisplayContent({ content: '杨纯 修改了 contract_feedback' } as any)).toBe('杨纯 修改了 劳动合同签订反馈');
+    expect(getNotificationFieldLabel('contract_feedback')).toBe('劳动合同新签反馈');
+    expect(localizeNotificationInternalKeys('杨纯 修改了 contract_feedback')).toBe('杨纯 修改了 劳动合同新签反馈');
+    expect(getNotificationDisplayContent({ content: '杨纯 修改了 contract_feedback' } as any)).toBe('杨纯 修改了 劳动合同新签反馈');
     expect(getNotificationDisplayContent({ content: '杨纯 修改了 contract_feedback' } as any)).not.toContain('contract_feedback');
   });
 
@@ -54,7 +54,7 @@ describe('notification operator display helpers', () => {
       newValue: '已完成签订',
     } as any);
 
-    expect(content).toBe('杨纯 修改了【劳动合同签订】：【劳动合同签订反馈】由【待确认】改为【已完成签订】');
+    expect(content).toBe('杨纯 修改了【劳动合同新签】：【劳动合同新签反馈】由【待确认】改为【已完成签订】');
     expect(content).not.toContain('contract_feedback');
   });
 
@@ -71,7 +71,7 @@ describe('notification operator display helpers', () => {
       },
     } as any);
 
-    expect(content).toBe('杨纯 修改了【子工单】：【劳动合同签订反馈】由【空】改为【补充合同签订情况】');
+    expect(content).toBe('杨纯 修改了【子工单】：【劳动合同新签反馈】由【空】改为【补充合同签订情况】');
     expect(content).not.toContain('contract_feedback');
   });
 
@@ -82,7 +82,7 @@ describe('notification operator display helpers', () => {
       diff_summary: 'contract_feedback：待确认 → 已完成签订',
     } as any);
 
-    expect(content).toBe('杨纯 修改了：劳动合同签订反馈：待确认 → 已完成签订');
+    expect(content).toBe('杨纯 修改了：劳动合同新签反馈：待确认 → 已完成签订');
     expect(content).not.toContain('contract_feedback');
   });
 
@@ -99,7 +99,7 @@ describe('notification operator display helpers', () => {
       },
     } as any);
 
-    expect(content).toBe('杨纯 修改了【劳动合同签订】：【劳动合同签订反馈】由【待确认】改为【已完成签订】');
+    expect(content).toBe('杨纯 修改了【劳动合同新签】：【劳动合同新签反馈】由【待确认】改为【已完成签订】');
     expect(content).not.toContain('contract_feedback');
   });
 
@@ -116,7 +116,7 @@ describe('notification operator display helpers', () => {
       },
     } as any);
 
-    expect(content).toBe('杨纯 修改了【劳动合同签订】：【劳动合同签订反馈】由【待确认】改为【已完成签订】');
+    expect(content).toBe('杨纯 修改了【劳动合同新签】：【劳动合同新签反馈】由【待确认】改为【已完成签订】');
     expect(content).not.toContain('contract_feedback');
   });
 
@@ -140,8 +140,8 @@ describe('notification operator display helpers', () => {
       ],
     } as any);
 
-    expect(snakeCaseContent).toBe('杨纯 修改了【子工单】：【劳动合同签订反馈】由【无】改为【已反馈】');
-    expect(camelCaseContent).toBe('杨纯 修改了【子工单】：【劳动合同签订反馈】由【无】改为【已反馈】');
+    expect(snakeCaseContent).toBe('杨纯 修改了【子工单】：【劳动合同新签反馈】由【无】改为【已反馈】');
+    expect(camelCaseContent).toBe('杨纯 修改了【子工单】：【劳动合同新签反馈】由【无】改为【已反馈】');
     expect(snakeCaseContent).not.toContain('contract_feedback');
     expect(camelCaseContent).not.toContain('contract_feedback');
   });

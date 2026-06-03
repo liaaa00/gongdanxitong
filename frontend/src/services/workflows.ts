@@ -97,16 +97,16 @@ const DEFAULT_DEFINITION: WorkflowDefinitionJson = {
   nodes: [
     { id: 'start', type: 'start', label: '开始', auto_dispatch: true, position: { x: 40, y: 160 }, form_schema: { visible_fields: [], editable_fields: [], action_buttons: ['submit'] } },
     {
-      id: 'data_entry', type: 'process', label: '数据录入', module_code: 'data_entry',
-      generation_rule: { mode: 'always', description: '入职工单提交后默认生成数据录入子工单', expression: 'true' }, assignee_role: 'data_entry_leader',
+      id: 'data_entry', type: 'process', label: '增员报岗录入', module_code: 'data_entry',
+      generation_rule: { mode: 'always', description: '入职工单提交后默认生成增员报岗录入子工单', expression: 'true' }, assignee_role: 'data_entry_leader',
       assignee: { strategy: 'role', role: 'data_entry_leader', module_code: 'data_entry' }, sla_hours: 24,
       reminder: { enabled: true, before_hours: 4, repeat_hours: 8, channels: ['in_app'] },
       return_rule: { allow_return: true, return_to: 'start', require_reason: true, allow_return_completed: true },
       position: { x: 280, y: 60 }, form_schema: { visible_fields: ['employee_name', 'id_card_no', 'mobile'], editable_fields: ['employee_name', 'id_card_no', 'mobile'], action_buttons: ['complete', 'return'] },
     },
     {
-      id: 'contract', type: 'approval', label: '劳动合同签订', module_code: 'contract',
-      generation_rule: { mode: 'condition', match_mode: 'all', conditions: [{ field: 'need_company_contract', operator: 'eq', value: '是' }], description: '当需要企服发起劳动合同时生成劳动合同签订子工单', expression: 'need_company_contract == "是"', fields: ['need_company_contract'] }, assignee_role: 'labor_contract_member',
+      id: 'contract', type: 'approval', label: '劳动合同新签', module_code: 'contract',
+      generation_rule: { mode: 'condition', match_mode: 'all', conditions: [{ field: 'need_company_contract', operator: 'eq', value: '是' }], description: '当需要企服发起劳动合同时生成劳动合同新签子工单', expression: 'need_company_contract == "是"', fields: ['need_company_contract'] }, assignee_role: 'labor_contract_member',
       assignee: { strategy: 'role', role: 'labor_contract_member', module_code: 'contract' }, sla_hours: 48,
       reminder: { enabled: true, before_hours: 8, repeat_hours: 12, channels: ['in_app'] },
       return_rule: { allow_return: true, return_to: 'data_entry', require_reason: true, allow_return_completed: true },
@@ -121,8 +121,8 @@ const DEFAULT_DEFINITION: WorkflowDefinitionJson = {
       position: { x: 520, y: 60 }, form_schema: { visible_fields: ['employee_name', 'mobile'], editable_fields: ['onboarding_feedback'], action_buttons: ['complete', 'return'] },
     },
     {
-      id: 'social_insurance', type: 'process', label: '社保公积金办理', module_code: 'social_insurance',
-      generation_rule: { mode: 'always', description: '入职工单提交后默认生成社保公积金办理子工单', expression: 'true' }, assignee_role: 'social_insurance_specialist',
+      id: 'social_insurance', type: 'process', label: '社保公积金增员', module_code: 'social_insurance',
+      generation_rule: { mode: 'always', description: '入职工单提交后默认生成社保公积金增员子工单', expression: 'true' }, assignee_role: 'social_insurance_specialist',
       assignee: { strategy: 'role', role: 'social_insurance_specialist', module_code: 'social_insurance' }, sla_hours: 48,
       reminder: { enabled: true, before_hours: 8, repeat_hours: 12, channels: ['in_app'] },
       return_rule: { allow_return: true, return_to: 'data_entry', require_reason: true },
@@ -134,10 +134,10 @@ const DEFAULT_DEFINITION: WorkflowDefinitionJson = {
     { id: 'start-data_entry', source: 'start', target: 'data_entry', condition: '提交后派发', condition_expression: 'status == "submitted"', priority: 1 },
     { id: 'data_entry-contract', source: 'data_entry', target: 'contract', condition: '需要企服发起劳动合同', condition_expression: 'need_company_contract == "是"', condition_fields: ['need_company_contract'], priority: 10 },
     { id: 'data_entry-onboarding_contact', source: 'data_entry', target: 'onboarding_contact', condition: '需要入职材料集约收集', condition_expression: 'need_onboarding_contact == "是"', condition_fields: ['need_onboarding_contact'], priority: 20 },
-    { id: 'data_entry-social_insurance', source: 'data_entry', target: 'social_insurance', condition: '固定生成社保公积金办理', condition_expression: 'true', priority: 30 },
+    { id: 'data_entry-social_insurance', source: 'data_entry', target: 'social_insurance', condition: '固定生成社保公积金增员', condition_expression: 'true', priority: 30 },
     { id: 'contract-end', source: 'contract', target: 'end', condition: '签约完成', condition_expression: 'node.status == "completed"', priority: 10 },
     { id: 'onboarding_contact-end', source: 'onboarding_contact', target: 'end', condition: '入职联系完成', condition_expression: 'node.status == "completed"', priority: 20 },
-    { id: 'social_insurance-end', source: 'social_insurance', target: 'end', condition: '社保公积金办理完成', condition_expression: 'node.status == "completed"', priority: 30 },
+    { id: 'social_insurance-end', source: 'social_insurance', target: 'end', condition: '社保公积金增员完成', condition_expression: 'node.status == "completed"', priority: 30 },
   ],
 };
 

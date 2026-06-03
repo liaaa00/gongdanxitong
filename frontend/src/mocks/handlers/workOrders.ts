@@ -17,9 +17,9 @@ const workOrderList = [
     submitted_at: '2026-05-11T09:15:00+08:00', completed_at: null,
     created_at: '2026-05-11T09:00:00+08:00', updated_at: '2026-05-11T09:15:00+08:00',
     dispatched_orders: [
-      { id: '70011', module_code: 'data_entry', module_name: '数据录入', status: 'pending', handler_name: '录入员丁', dispatched_at: '2026-05-11T09:15:00+08:00', accepted_at: null, completed_at: null },
+      { id: '70011', module_code: 'data_entry', module_name: '增员报岗录入', status: 'pending', handler_name: '录入员丁', dispatched_at: '2026-05-11T09:15:00+08:00', accepted_at: null, completed_at: null },
       { id: '70013', module_code: 'onboarding_contact', module_name: '入职联系', status: 'pending', handler_name: '联络丙', dispatched_at: '2026-05-11T09:15:00+08:00', accepted_at: null, completed_at: null },
-      { id: '70014', module_code: 'contract', module_name: '劳动合同签订', status: 'pending', handler_name: '合同乙', dispatched_at: '2026-05-11T09:15:00+08:00', accepted_at: null, completed_at: null },
+      { id: '70014', module_code: 'contract', module_name: '劳动合同新签', status: 'pending', handler_name: '合同乙', dispatched_at: '2026-05-11T09:15:00+08:00', accepted_at: null, completed_at: null },
     ],
   },
   {
@@ -30,7 +30,7 @@ const workOrderList = [
     submitted_at: '2026-05-10T10:00:00+08:00', completed_at: '2026-05-11T15:00:00+08:00',
     created_at: '2026-05-10T09:00:00+08:00', updated_at: '2026-05-11T15:00:00+08:00',
     dispatched_orders: [
-      { id: '70021', module_code: 'data_entry', module_name: '数据录入', status: 'completed', handler_name: '录入员丁', dispatched_at: '2026-05-10T10:00:00+08:00', accepted_at: '2026-05-10T11:00:00+08:00', completed_at: '2026-05-11T14:00:00+08:00' },
+      { id: '70021', module_code: 'data_entry', module_name: '增员报岗录入', status: 'completed', handler_name: '录入员丁', dispatched_at: '2026-05-10T10:00:00+08:00', accepted_at: '2026-05-10T11:00:00+08:00', completed_at: '2026-05-11T14:00:00+08:00' },
     ],
   },
   {
@@ -46,13 +46,13 @@ const workOrderList = [
 
 function buildDispatchedOrders(extraData: Record<string, unknown> = {}) {
   const orders = [
-    { id: '70011', module_code: 'data_entry', module_name: '数据录入', status: 'pending', handler_name: '录入员丁', dispatched_at: '2026-05-11T09:15:00+08:00', accepted_at: null, completed_at: null },
+    { id: '70011', module_code: 'data_entry', module_name: '增员报岗录入', status: 'pending', handler_name: '录入员丁', dispatched_at: '2026-05-11T09:15:00+08:00', accepted_at: null, completed_at: null },
   ];
   if (extraData.need_onboarding_contact === '是') {
     orders.push({ id: '70013', module_code: 'onboarding_contact', module_name: '入职联系', status: 'pending', handler_name: '联络丙', dispatched_at: '2026-05-11T09:15:00+08:00', accepted_at: null, completed_at: null });
   }
   if (extraData.need_company_contract === '是') {
-    orders.push({ id: '70014', module_code: 'contract', module_name: '劳动合同签订', status: 'pending', handler_name: '合同乙', dispatched_at: '2026-05-11T09:15:00+08:00', accepted_at: null, completed_at: null });
+    orders.push({ id: '70014', module_code: 'contract', module_name: '劳动合同新签', status: 'pending', handler_name: '合同乙', dispatched_at: '2026-05-11T09:15:00+08:00', accepted_at: null, completed_at: null });
   }
   return orders;
 }

@@ -28,7 +28,7 @@ describe('Admin field permission matrix', () => {
     }
   });
 
-  it('GET /admin/field-permissions/matrix returns 12 scenario columns', async () => {
+  it('GET /admin/field-permissions/matrix returns 12 phase-1 scenario columns with social insurance reduction and no resignation cert legacy column', async () => {
     const getMatrix = jest.fn().mockResolvedValue({
       scenarios: [...FIELD_PERMISSION_MATRIX_SCENARIOS],
       matrix: {},
@@ -59,5 +59,7 @@ describe('Admin field permission matrix', () => {
     expect(getMatrix).toHaveBeenCalledTimes(1);
     expect(response.body.scenarios).toHaveLength(12);
     expect(response.body.scenarios).toEqual([...FIELD_PERMISSION_MATRIX_SCENARIOS]);
+    expect(response.body.scenarios).toContain('dispatched:resignation_social_insurance');
+    expect(response.body.scenarios).not.toContain('dispatched:resignation_cert');
   });
 });

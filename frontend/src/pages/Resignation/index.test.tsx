@@ -53,7 +53,7 @@ describe('Resignation List Page', () => {
       </MemoryRouter>,
     );
     await waitFor(() => {
-      expect(screen.getByText('离职证明')).toBeTruthy();
+      expect(screen.getByText('离职材料收集')).toBeTruthy();
     }, { timeout: 5000 });
   });
 

@@ -54,59 +54,81 @@ describe('routeVisibility admin-only configuration routes', () => {
     expect(canAccessPath('/my-work/pending', ownerRoles)).toBe(false);
   });
 
-  it('allows salesperson history but blocks team and backend module menus', () => {
+  it('restores salesperson onboarding list/import and my-work views without team/backend menus', () => {
     const memberRoles = roles([ROLE.BUSINESS_GROUP_MEMBER]);
+    expect(canAccessPath('/work-orders', memberRoles)).toBe(true);
+    expect(canAccessPath('/work-orders/create', memberRoles)).toBe(true);
+    expect(canAccessPath('/work-orders/import', memberRoles)).toBe(true);
     expect(canAccessPath('/my-work/initiated', memberRoles)).toBe(true);
     expect(canAccessPath('/my-work/returned', memberRoles)).toBe(true);
     expect(canAccessPath('/my-work/history', memberRoles)).toBe(true);
-    expect(canAccessPath('/work-orders/create', memberRoles)).toBe(true);
-    expect(canAccessPath('/work-orders/import', memberRoles)).toBe(true);
     expect(canAccessPath('/my-work/team', memberRoles)).toBe(false);
+    expect(canAccessPath('/my-work/pending', memberRoles)).toBe(false);
     expect(canAccessPath('/onboarding/contract', memberRoles)).toBe(false);
   });
 
-  it('keeps business group leader on team and history work only', () => {
+  it('restores business group leader salesperson capabilities plus team view', () => {
     const leaderRoles = roles([ROLE.BUSINESS_GROUP_LEADER]);
-    expect(canAccessPath('/my-work/initiated', leaderRoles)).toBe(false);
-    expect(canAccessPath('/my-work/returned', leaderRoles)).toBe(false);
+    expect(canAccessPath('/work-orders', leaderRoles)).toBe(true);
+    expect(canAccessPath('/work-orders/create', leaderRoles)).toBe(true);
+    expect(canAccessPath('/work-orders/import', leaderRoles)).toBe(true);
+    expect(canAccessPath('/my-work/initiated', leaderRoles)).toBe(true);
+    expect(canAccessPath('/my-work/returned', leaderRoles)).toBe(true);
     expect(canAccessPath('/my-work/history', leaderRoles)).toBe(true);
     expect(canAccessPath('/my-work/team', leaderRoles)).toBe(true);
     expect(canAccessPath('/my-dispatched/child-1', leaderRoles)).toBe(true);
-    expect(canAccessPath('/work-orders', leaderRoles)).toBe(false);
-    expect(canAccessPath('/work-orders/create', leaderRoles)).toBe(false);
-    expect(canAccessPath('/work-orders/import', leaderRoles)).toBe(false);
     expect(canAccessPath('/my-work/pending', leaderRoles)).toBe(false);
+    expect(canAccessPath('/onboarding/contract', leaderRoles)).toBe(false);
   });
 
-  it('keeps shared team owner out of data entry, benefit and social insurance routes', () => {
+  it('hides all in-service routes in phase 1, including admin and backend accounts', () => {
+    const adminRoles = roles([ROLE.ADMIN]);
+    const contractRoles = roles([ROLE.LABOR_CONTRACT_MEMBER]);
+    expect(canAccessPath('/renewal', adminRoles)).toBe(false);
+    expect(canAccessPath('/renewal/new', adminRoles)).toBe(false);
+    expect(canAccessPath('/benefit', adminRoles)).toBe(false);
+    expect(canAccessPath('/benefit/new', adminRoles)).toBe(false);
+    expect(canAccessPath('/onboarding/renewal_contract', adminRoles)).toBe(false);
+    expect(canAccessPath('/onboarding/benefit_apply', adminRoles)).toBe(false);
+    expect(canAccessPath('/in-service/contract-renewal', contractRoles)).toBe(false);
+    expect(canAccessPath('/in-service/benefit-claim', contractRoles)).toBe(false);
+  });
+
+  it('keeps shared team owner on Yang Chun plus Mao Yani visible phase-1 modules only', () => {
     const sharedOwnerRoles = roles([ROLE.SHARED_TEAM_OWNER]);
     expect(canAccessPath('/onboarding/contract', sharedOwnerRoles)).toBe(true);
     expect(canAccessPath('/onboarding/onboarding_contact', sharedOwnerRoles)).toBe(true);
-    expect(canAccessPath('/onboarding/renewal_contract', sharedOwnerRoles)).toBe(true);
-    expect(canAccessPath('/in-service/contract-renewal', sharedOwnerRoles)).toBe(true);
     expect(canAccessPath('/onboarding/resignation_contact', sharedOwnerRoles)).toBe(true);
     expect(canAccessPath('/onboarding/resignation_cert', sharedOwnerRoles)).toBe(true);
     expect(canAccessPath('/offboarding/contact-pool', sharedOwnerRoles)).toBe(true);
     expect(canAccessPath('/offboarding/proof-pool', sharedOwnerRoles)).toBe(true);
     expect(canAccessPath('/onboarding/data_entry', sharedOwnerRoles)).toBe(false);
     expect(canAccessPath('/onboarding/data_entry_resign', sharedOwnerRoles)).toBe(false);
-    expect(canAccessPath('/onboarding/benefit_apply', sharedOwnerRoles)).toBe(false);
-    expect(canAccessPath('/in-service/benefit-claim', sharedOwnerRoles)).toBe(false);
     expect(canAccessPath('/onboarding/social_insurance', sharedOwnerRoles)).toBe(false);
+    expect(canAccessPath('/onboarding/social_insurance_resign', sharedOwnerRoles)).toBe(false);
+    expect(canAccessPath('/onboarding/renewal_contract', sharedOwnerRoles)).toBe(false);
+    expect(canAccessPath('/onboarding/benefit_apply', sharedOwnerRoles)).toBe(false);
   });
 
-  it('keeps data entry leader on data-entry modules only', () => {
+  it('keeps data entry and social insurance backend roles on their own phase-1 modules only', () => {
     const dataEntryRoles = roles([ROLE.DATA_ENTRY_LEADER]);
+    const socialRoles = roles([ROLE.SOCIAL_INSURANCE_SPECIALIST]);
+
     expect(canAccessPath('/onboarding/data_entry', dataEntryRoles)).toBe(true);
     expect(canAccessPath('/onboarding/data_entry_resign', dataEntryRoles)).toBe(true);
     expect(canAccessPath('/offboarding/social-suspend-pool', dataEntryRoles)).toBe(true);
-    expect(canAccessPath('/onboarding/contract', dataEntryRoles)).toBe(false);
-    expect(canAccessPath('/onboarding/onboarding_contact', dataEntryRoles)).toBe(false);
-    expect(canAccessPath('/onboarding/resignation_contact', dataEntryRoles)).toBe(false);
     expect(canAccessPath('/onboarding/social_insurance', dataEntryRoles)).toBe(false);
+    expect(canAccessPath('/onboarding/contract', dataEntryRoles)).toBe(false);
+
+    expect(canAccessPath('/onboarding/social_insurance', socialRoles)).toBe(true);
+    expect(canAccessPath('/onboarding/social_insurance_resign', socialRoles)).toBe(true);
+    expect(canAccessPath('/offboarding/social-insurance-resign-pool', socialRoles)).toBe(true);
+    expect(canAccessPath('/onboarding/onboarding_contact', socialRoles)).toBe(false);
+    expect(canAccessPath('/onboarding/contract', socialRoles)).toBe(false);
+    expect(canAccessPath('/onboarding/data_entry', socialRoles)).toBe(false);
   });
 
-  it('does not let broad dynamic permissions reopen restricted owner and shared-owner routes', () => {
+  it('does not let broad dynamic permissions reopen owner or hidden in-service/shared-owner routes', () => {
     const ownerRoles = roles([ROLE.BUSINESS_OWNER]);
     const leaderRoles = roles([ROLE.BUSINESS_GROUP_LEADER]);
     const sharedOwnerRoles = roles([ROLE.SHARED_TEAM_OWNER]);
@@ -120,8 +142,9 @@ describe('routeVisibility admin-only configuration routes', () => {
     expect(canAccessPath('/offboarding/contact-pool', ownerRoles, broadPermissions)).toBe(false);
 
     expect(canAccessPath('/my-work/team', leaderRoles, broadPermissions)).toBe(true);
-    expect(canAccessPath('/work-orders', leaderRoles, broadPermissions)).toBe(false);
-    expect(canAccessPath('/my-work/initiated', leaderRoles, broadPermissions)).toBe(false);
+    expect(canAccessPath('/work-orders', leaderRoles, broadPermissions)).toBe(true);
+    expect(canAccessPath('/work-orders/import', leaderRoles, broadPermissions)).toBe(true);
+    expect(canAccessPath('/my-work/initiated', leaderRoles, broadPermissions)).toBe(true);
     expect(canAccessPath('/my-work/pending', leaderRoles, broadPermissions)).toBe(false);
 
     expect(canAccessPath('/onboarding/contract', sharedOwnerRoles, broadPermissions)).toBe(true);

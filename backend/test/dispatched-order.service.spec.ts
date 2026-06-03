@@ -86,6 +86,61 @@ describe('DispatchedOrderService', () => {
     expect(result.items[0].handlerId).toBe('handler-1');
   });
 
+  it('does not leak unrelated creator child modules for Jiang Lu shared backend list scope', async () => {
+    const { service, queryBuilder } = makeService({
+      find: jest.fn(async () => [
+        { moduleCode: 'contract', handlerId: 'jianglu', isActive: true } as unknown as ModuleHandler,
+        { moduleCode: 'onboarding_contact', handlerId: 'jianglu', isActive: true } as unknown as ModuleHandler,
+        { moduleCode: 'resignation_contact', handlerId: 'jianglu', isActive: true } as unknown as ModuleHandler,
+        { moduleCode: 'social_insurance', handlerId: 'jianglu', isActive: true } as unknown as ModuleHandler,
+      ]),
+    });
+    const user: JwtUserPayload = { sub: 'jianglu', username: 'jianglu', roles: ['shared_leader', 'contract_specialist', 'onboarding_specialist'] } as JwtUserPayload;
+
+    await service.findAll({ page: 1, pageSize: 20 } as never, user);
+
+    const scopeCallback = (queryBuilder.andWhere.mock.calls as Array<[unknown, unknown?]>)
+      .map(([condition]) => condition)
+      .find((condition) => typeof condition === 'object' && condition && condition.constructor?.name === 'Brackets');
+    expect(scopeCallback).toBeDefined();
+    const scopeQb = { where: jest.fn(), orWhere: jest.fn() };
+    (scopeCallback as { whereFactory: (qb: typeof scopeQb) => void }).whereFactory(scopeQb);
+
+    expect(scopeQb.where).toHaveBeenCalledWith('d.handler_id = :userId AND d.module_code IN (:...modules)', { userId: 'jianglu', modules: ['contract', 'onboarding_contact', 'resignation_contact'] });
+    expect(scopeQb.orWhere).not.toHaveBeenCalledWith('w.created_by = :userId', { userId: 'jianglu' });
+    expect(scopeQb.orWhere).toHaveBeenCalledWith('d.module_code IN (:...modules)', { modules: ['contract', 'onboarding_contact', 'resignation_contact'] });
+  });
+
+  it('keeps backend assigned scope inside role allow-list even when stale social handler rows point to the user', async () => {
+    const socialOrder = {
+      ...makeDispatchedOrder(DispatchedOrderStatus.PROCESSING),
+      moduleCode: 'social_insurance',
+      handlerId: 'jianglu',
+      parentOrder: { ...makeDispatchedOrder().parentOrder, createdBy: 'sales-2' },
+    } as DispatchedOrder;
+    const dispatchedOrderRepo = repoMock<DispatchedOrder>({ findOne: jest.fn(async () => socialOrder) });
+    const service = new DispatchedOrderService(
+      dispatchedOrderRepo,
+      repoMock<WorkOrder>(),
+      repoMock<ModuleHandler>({ count: jest.fn(async () => 1), find: jest.fn(async () => [{ moduleCode: 'social_insurance', handlerId: 'jianglu', isActive: true } as unknown as ModuleHandler]) }),
+      repoMock<UserRole>(),
+      repoMock<FieldConfig>(),
+      repoMock<Notification>(),
+      repoMock<OperationLog>(),
+      {} as FieldPermissionService,
+      { getLogs: jest.fn() } as unknown as FieldSupplementService,
+      { exportSingleDispatchedOrder: jest.fn() } as never,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      repoMock(),
+    );
+
+    await expect(service.findOne('do-processing', { sub: 'jianglu', username: 'jianglu', roles: ['shared_leader', 'contract_specialist', 'onboarding_specialist'] } as JwtUserPayload))
+      .rejects.toMatchObject({ status: HttpStatus.FORBIDDEN });
+  });
+
   it('maps Chinese moduleName and nodeType filters to module_code', async () => {
     const { service, queryBuilder } = makeService({
       find: jest.fn(async () => [{ moduleCode: 'onboarding_contact', handlerId: 'user-1', isActive: true } as unknown as ModuleHandler]),

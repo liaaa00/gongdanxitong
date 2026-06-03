@@ -11,9 +11,9 @@ import type { FieldConfigItem } from '@/services/fields';
 import type { PageParams } from '@/services/mock';
 
 const MODULE_OPTIONS = [
-  { label: '劳动合同签订', value: 'contract' },
+  { label: '劳动合同新签', value: 'contract' },
   { label: '入职联系', value: 'onboarding_contact' },
-  { label: '数据录入', value: 'data_entry' },
+  { label: '增员报岗录入', value: 'data_entry' },
 ];
 
 const ExportTemplates: React.FC = () => {
@@ -74,9 +74,9 @@ const ExportTemplates: React.FC = () => {
       title: '模块', dataIndex: 'module_code', key: 'module_code', width: 120,
       valueType: 'select',
       valueEnum: {
-        contract: { text: '劳动合同' },
+        contract: { text: '劳动合同新签' },
         onboarding_contact: { text: '入职联系' },
-        data_entry: { text: '数据录入' },
+        data_entry: { text: '增员报岗录入' },
       },
     },
     {

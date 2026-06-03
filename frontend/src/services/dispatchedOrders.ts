@@ -62,7 +62,7 @@ export interface DispatchedOrderItem {
 
 const MODULE_META: Record<string, { name: string; visible_fields: string[]; supplementable_fields: string[] }> = {
   data_entry: {
-    name: '数据录入',
+    name: '增员报岗录入',
     visible_fields: [
       'customer_name', 'customer_code', 'outsource_type', 'position',
       'employee_name', 'id_card_no', 'gender',
@@ -76,7 +76,7 @@ const MODULE_META: Record<string, { name: string; visible_fields: string[]; supp
     supplementable_fields: ['bank_name', 'bank_account', 'pay_location'],
   },
   contract: {
-    name: '劳动合同签订',
+    name: '劳动合同新签',
     visible_fields: [
       'customer_name', 'customer_code', 'outsource_type', 'position',
       'employee_name', 'id_card_no', 'gender',
@@ -105,7 +105,7 @@ const MODULE_META: Record<string, { name: string; visible_fields: string[]; supp
     supplementable_fields: ['mobile', 'email', 'bank_name', 'bank_account'],
   },
   social_insurance: {
-    name: '社保公积金办理',
+    name: '社保公积金增员',
     visible_fields: [
       'customer_name', 'customer_code', 'employee_name', 'id_card_no', 'mobile',
       'social_location', 'start_month', 'social_base', 'fund_base', 'fund_ratio',
@@ -113,9 +113,12 @@ const MODULE_META: Record<string, { name: string; visible_fields: string[]; supp
     ],
     supplementable_fields: ['social_location', 'start_month', 'social_base', 'fund_base'],
   },
-  renewal_contract: { name: '续签合同', visible_fields: [], supplementable_fields: [] },
-  resignation_contact: { name: '离职联系', visible_fields: [], supplementable_fields: [] },
-  resignation_cert: { name: '离职证明', visible_fields: [], supplementable_fields: [] },
+  renewal_contract: { name: '劳动合同续签', visible_fields: [], supplementable_fields: [] },
+  resignation_contact: { name: '离职材料收集', visible_fields: [], supplementable_fields: [] },
+  resignation_cert: { name: '离职材料收集', visible_fields: [], supplementable_fields: [] },
+  data_entry_resign: { name: '减员报岗录入', visible_fields: [], supplementable_fields: [] },
+  social_insurance_resign: { name: '社保公积金减员', visible_fields: [], supplementable_fields: [] },
+  resignation_social_insurance: { name: '社保公积金减员', visible_fields: [], supplementable_fields: [] },
   benefit_apply: { name: '待遇申报', visible_fields: [], supplementable_fields: [] },
 };
 
@@ -515,7 +518,7 @@ export async function getDispatchedOrder(id: string): Promise<DispatchedOrderIte
     const found = all.find((d) => d.id === id);
     if (!found) {
       return mockDelay({
-        id, parent_order_id: '', order_no: '', module_code: 'data_entry', module_name: '数据录入',
+        id, parent_order_id: '', order_no: '', module_code: 'data_entry', module_name: '增员报岗录入',
         status: 'pending', handler_id: null, handler_name: null, employee_name: '', customer_name: '',
         visible_fields: [], return_reason: null, dispatched_at: null, accepted_at: null, completed_at: null,
         supplementable_fields: [], dirty_fields: [], dirty_count: 0, has_unread_dirty: false,
@@ -676,9 +679,11 @@ export async function urgeDispatchedOrder(id: string, reason?: string): Promise<
 export async function withdrawDispatchedOrder(id: string, reason: string, moduleCode?: string | null): Promise<DispatchedOrderItem> {
   if (isMockMode) {
     const updated = updateChildInParent(id, (c) => {
-      c.status = 'withdraw_pending';
-      c.return_reason = `业务员撤回申请：${reason}`;
-      c.completed_at = null;
+      const isSocial = moduleCode === 'social_insurance' || moduleCode === 'social_insurance_resign' || moduleCode === 'resignation_social_insurance';
+      const isUnaccepted = c.status === 'pending' && !c.accepted_at;
+      c.status = isSocial && isUnaccepted ? 'withdrawn' : 'withdraw_pending';
+      c.return_reason = isSocial && isUnaccepted ? `业务员直接撤回：${reason}` : `业务员撤回申请：${reason}`;
+      c.completed_at = isSocial && isUnaccepted ? new Date().toISOString() : null;
     });
     return mockDelay(updated || ({} as DispatchedOrderItem));
   }
@@ -701,12 +706,16 @@ export async function approveWithdrawDispatchedOrder(id: string, approved: boole
 
 export async function voidDispatchedOrder(id: string, reason: string, moduleCode?: string | null): Promise<DispatchedOrderItem> {
   if (isMockMode) {
+    const now = new Date().toISOString();
     const updated = updateChildInParent(id, (c) => {
-      c.status = 'void_pending';
-      c.return_reason = `业务员作废申请：${reason}`;
-      c.completed_at = null;
+      const isSocial = moduleCode === 'social_insurance' || moduleCode === 'social_insurance_resign' || moduleCode === 'resignation_social_insurance';
+      const isUnaccepted = c.status === 'pending' && !c.accepted_at;
+      c.status = isSocial && isUnaccepted ? 'void' : 'void_pending';
+      c.void_at = isSocial && isUnaccepted ? now : null;
+      c.return_reason = isSocial && isUnaccepted ? `业务员直接作废：${reason}` : `业务员作废申请：${reason}`;
+      c.completed_at = isSocial && isUnaccepted ? now : null;
     });
-    return mockDelay(updated || ({} as DispatchedOrderItem));
+    return mockDelay(updated ? { ...updated, void_at: updated.void_at || null, voidAt: updated.void_at || null } : ({} as DispatchedOrderItem));
   }
   const raw = await request.post(`/dispatched-orders/${id}/void`, { reason, moduleCode, module_code: moduleCode });
   return normalizeDispatchedOrderItem(raw);

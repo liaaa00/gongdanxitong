@@ -194,6 +194,7 @@ const OnboardingModule: React.FC = () => {
   const [exporting, setExporting] = useState(false);
 
   const currentModule = moduleCode || '';
+  const backendModuleCode = currentModule === 'social_insurance_resign' ? 'resignation_social_insurance' : currentModule;
   const moduleLabel = getModuleLabel(currentModule);
 
   useEffect(() => {
@@ -218,12 +219,12 @@ const OnboardingModule: React.FC = () => {
     ));
   }, []);
 
-  const isSocialModule = currentModule === 'social_insurance';
+  const isSocialModule = ['social_insurance', 'social_insurance_resign', 'resignation_social_insurance'].includes(currentModule);
   const canOperateCurrentModule = hasRole('admin')
     || (['contract', 'renewal_contract'].includes(currentModule) && (hasRole('labor_contract_member') || hasRole('shared_team_owner')))
     || (['onboarding_contact', 'resignation_contact', 'resignation_cert'].includes(currentModule) && (hasRole('onboarding_resignation_member') || hasRole('shared_team_owner')))
-    || (currentModule === 'data_entry' && hasRole('data_entry_leader'))
-    || (currentModule === 'social_insurance' && hasRole('social_insurance_specialist'));
+    || (['data_entry', 'data_entry_resign'].includes(currentModule) && hasRole('data_entry_leader'))
+    || (['social_insurance', 'social_insurance_resign', 'resignation_social_insurance'].includes(currentModule) && hasRole('social_insurance_specialist'));
   const canBackendOperate = canOperateCurrentModule;
   const canBatchComplete = canBackendOperate;
   const canBatchUrge = hasRole('admin') || hasRole('business_group_member') || hasRole('business_group_leader') || hasRole('business_owner');
@@ -301,13 +302,13 @@ const OnboardingModule: React.FC = () => {
 
   const requestFn = useCallback(async (params: PageParams, _sort: Record<string, unknown>, filters: TableFilters = {}) => {
     const headerFilters = buildEffectiveHeaderFilterParams(filters, tableFilters);
-    const result = await getDispatchedOrders({ ...params, ...headerFilters, module_code: currentModule });
+    const result = await getDispatchedOrders({ ...params, ...headerFilters, module_code: backendModuleCode });
     return { data: result.list, success: true, total: result.total };
-  }, [currentModule, tableFilters]);
+  }, [backendModuleCode, tableFilters]);
 
   const handleBatchUrge = async (rows: DispatchedOrderItem[] = selectedRows) => {
     const ids = rows
-      .filter((row) => row.module_code === currentModule && ACTIVE_DISPATCHED_STATUSES.has(row.status))
+      .filter((row) => row.module_code === backendModuleCode && ACTIVE_DISPATCHED_STATUSES.has(row.status))
       .map((row) => row.id);
     if (ids.length === 0) {
       message.warning('请选择当前模块处理中子工单');
@@ -326,7 +327,7 @@ const OnboardingModule: React.FC = () => {
   };
 
   const handleBatchExport = async (rows: DispatchedOrderItem[] = selectedRows) => {
-    const ids = rows.filter((row) => row.module_code === currentModule).map((row) => row.id);
+    const ids = rows.filter((row) => row.module_code === backendModuleCode).map((row) => row.id);
     if (ids.length === 0) {
       message.warning('请先选择当前子工单页面中要导出的数据');
       return;
@@ -346,7 +347,7 @@ const OnboardingModule: React.FC = () => {
   const handleBatchOk = async () => {
     const values = await batchForm.validateFields();
     const remark = String(values.remark || '').trim();
-    const ids = selectedRows.filter((row) => row.module_code === currentModule && ACTIVE_DISPATCHED_STATUSES.has(row.status)).map((row) => row.id);
+    const ids = selectedRows.filter((row) => row.module_code === backendModuleCode && ACTIVE_DISPATCHED_STATUSES.has(row.status)).map((row) => row.id);
     if (ids.length === 0) {
       message.warning('请选择当前模块未完成的子工单');
       return;

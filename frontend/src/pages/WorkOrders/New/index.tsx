@@ -21,10 +21,10 @@ const CONDITIONAL_REQUIRED: ConditionalRequired[] = [
 
 // 子工单模块信息：页面只展示中文，内部模块码仅作为请求参数使用
 const SUB_TICKET_INFO: Record<string, { label: string; color: string; desc: string; handler: string; required?: boolean }> = {
-  data_entry: { label: '数据录入', color: 'blue', desc: '所有入职数据自动流转至数据录入岗，由数据录入组长统一处理。', handler: '数据录入组长（安娜祯）', required: true },
-  social_insurance: { label: '社保公积金办理', color: 'purple', desc: '所有入职工单固定生成，用于办理社保、公积金增员、基数等事项。', handler: '社保公积金负责人（后台配置）', required: true },
-  onboarding_contact: { label: '入职联系', color: 'cyan', desc: '由共享团队办理员工入职联络事宜（入职通知、资料确认等）。', handler: '入离职联系专员（毛雅妮）' },
-  contract: { label: '劳动合同签订', color: 'green', desc: '由合同组负责签署劳动合同及相关文件。', handler: '合同专员（杨纯）' },
+  onboarding_contact: { label: '入职联系', color: 'cyan', desc: '由毛雅妮/江璐办理员工入职联络事宜（入职通知、资料确认等）。', handler: '入职联系负责人（毛雅妮 / 江璐）' },
+  contract: { label: '劳动合同新签', color: 'green', desc: '由杨纯/江璐负责劳动合同新签及相关文件。', handler: '劳动合同新签负责人（杨纯 / 江璐）' },
+  data_entry: { label: '增员报岗录入', color: 'blue', desc: '所有入职数据自动流转至增员报岗录入岗，由安娜祯负责处理。', handler: '增员报岗录入负责人（安娜祯）', required: true },
+  social_insurance: { label: '社保公积金增员', color: 'purple', desc: '所有入职工单固定生成，用于办理社保、公积金增员等事项。', handler: '社保公积金增员负责人（傅倩雯）', required: true },
 };
 
 const WorkOrdersNew: React.FC = () => {
@@ -201,8 +201,8 @@ const WorkOrdersNew: React.FC = () => {
             <Steps size="small" direction="vertical" current={-1}
               items={[
                 { title: '填写入职信息采集表', description: '客户填报与业务员补充的字段均已按采集分组整理，按序填写即可' },
-                { title: '选择流程判断项', description: '"是否需要入职联系" → 是 → 拆分入职联系子工单；"是否企服发起劳动合同" → 是 → 拆分合同签订子工单' },
-                { title: '提交工单', description: '数据录入、社保公积金办理始终生成；入职联系和劳动合同签订按原条件生成。提交后由对应人员在我的待办中处理。' },
+                { title: '选择流程判断项', description: '"是否需要入职联系" → 是 → 拆分入职联系子工单；"是否企服发起劳动合同" → 是 → 拆分劳动合同新签子工单' },
+                { title: '提交工单', description: '增员报岗录入、社保公积金增员始终生成；入职联系和劳动合同新签按原条件生成。提交后由对应人员在我的待办中处理。' },
               ]}
             />
           ),
@@ -234,7 +234,7 @@ const WorkOrdersNew: React.FC = () => {
               </span>
             </Space>
             <span style={{ color: '#666', fontSize: 12 }}>
-              数据录入、社保公积金办理为固定必生成；入职联系、劳动合同签订按流程判断项生成。
+              增员报岗录入、社保公积金增员为固定必生成；入职联系、劳动合同新签按流程判断项生成。
             </span>
           </Space>
         }
@@ -279,12 +279,12 @@ const WorkOrdersNew: React.FC = () => {
             message={
               <Space direction="vertical" size={2}>
                 {needContract
-                  ? <span>✅ 「企服发起劳动合同」为<strong>是</strong> → 将拆分 <Tag color="green">劳动合同签订</Tag> 子工单</span>
-                  : <span>「企服发起劳动合同」为<strong>否</strong> → 不生成劳动合同签订子工单</span>}
+                  ? <span>✅ 「企服发起劳动合同」为<strong>是</strong> → 将拆分 <Tag color="green">劳动合同新签</Tag> 子工单</span>
+                  : <span>「企服发起劳动合同」为<strong>否</strong> → 不生成劳动合同新签子工单</span>}
                 {needContact
                   ? <span>✅ 「需要入职联系」为<strong>是</strong> → 将拆分 <Tag color="cyan">入职联系</Tag> 子工单</span>
                   : <span>「需要入职联系」为<strong>否</strong> → 不生成入职联系子工单</span>}
-                <span style={{ color: '#999', fontSize: 12 }}>💡 数据录入、社保公积金办理子工单始终生成；另两类子工单按条件生成。</span>
+                <span style={{ color: '#999', fontSize: 12 }}>💡 增员报岗录入、社保公积金增员子工单始终生成；另两类子工单按条件生成。</span>
               </Space>
             }
           />

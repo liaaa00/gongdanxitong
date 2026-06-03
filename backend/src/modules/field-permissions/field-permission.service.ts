@@ -32,6 +32,9 @@ const SCENARIO_ALIASES: Record<string, string[]> = {
   main: ['create:onboarding', 'create:in_service', 'create:resignation'],
   'dispatched:benefit_apply': ['dispatched:benefit'],
   'dispatched:social_security': ['dispatched:social_insurance'],
+  'dispatched:resignation_social_insurance': ['dispatched:social_insurance_resign'],
+  'dispatched:social_insurance_change': ['dispatched:social_insurance'],
+  'dispatched:resignation_cert': ['dispatched:resignation_contact'],
 };
 
 function expandScenarioAliases(scenario: string): string[] {

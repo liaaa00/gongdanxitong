@@ -18,22 +18,30 @@ export interface ModuleHandlerItem {
   isActive?: boolean;
 }
 
-const KEY = 'mock_admin_module_handlers_v4'; // ★ v4: benefit_apply 模块码及 role 同步
+const KEY = 'mock_admin_module_handlers_v5'; // ★ v5: 0603 一期模块负责人，与后端 seed-module-handlers 对齐
 const SEED: ModuleHandlerItem[] = [
-  { id: '1', module_code: 'contract', handler_id: '22', handler_name: '江璐', weight: 2, is_backup: false, is_active: true },
-  { id: '2', module_code: 'contract', handler_id: '23', handler_name: '杨纯', weight: 2, is_backup: false, is_active: true },
-  { id: '3', module_code: 'renewal_contract', handler_id: '23', handler_name: '杨纯', weight: 1, is_backup: false, is_active: true },
-  { id: '4', module_code: 'benefit', handler_id: '23', handler_name: '杨纯', weight: 1, is_backup: false, is_active: true },
-  { id: '5', module_code: 'onboarding_contact', handler_id: '22', handler_name: '江璐', weight: 1, is_backup: false, is_active: true },
-  { id: '6', module_code: 'onboarding_contact', handler_id: '24', handler_name: '毛雅妮', weight: 1, is_backup: false, is_active: true },
-  { id: '7', module_code: 'resignation_contact', handler_id: '22', handler_name: '江璐', weight: 1, is_backup: false, is_active: true },
-  { id: '8', module_code: 'resignation_contact', handler_id: '24', handler_name: '毛雅妮', weight: 1, is_backup: false, is_active: true },
-  { id: '9', module_code: 'resignation_cert', handler_id: '24', handler_name: '毛雅妮', weight: 1, is_backup: false, is_active: true },
-  { id: '10', module_code: 'data_entry', handler_id: '21', handler_name: '安娜祯', weight: 1, is_backup: false, is_active: true },
-  // 社保公积金办理负责人暂不硬编码具体人员，管理员可在模块负责人页面配置。
+  // 劳动合同：杨纯主办，江璐为共享负责人/备份；江璐可看到杨纯合同类合集。
+  { id: '1', module_code: 'contract', handler_id: '23', handler_name: '杨纯', weight: 10, is_backup: false, is_active: true },
+  { id: '2', module_code: 'contract', handler_id: '22', handler_name: '江璐', weight: 1, is_backup: true, is_active: true },
+  { id: '3', module_code: 'renewal_contract', handler_id: '23', handler_name: '杨纯', weight: 10, is_backup: false, is_active: true },
+  { id: '4', module_code: 'renewal_contract', handler_id: '22', handler_name: '江璐', weight: 1, is_backup: true, is_active: true },
+
+  // 入离职联系/材料收集：毛雅妮主办，江璐为共享负责人/备份；江璐可看到毛雅妮联系类合集。
+  { id: '5', module_code: 'onboarding_contact', handler_id: '24', handler_name: '毛雅妮', weight: 10, is_backup: false, is_active: true },
+  { id: '6', module_code: 'onboarding_contact', handler_id: '22', handler_name: '江璐', weight: 1, is_backup: true, is_active: true },
+  { id: '7', module_code: 'resignation_contact', handler_id: '24', handler_name: '毛雅妮', weight: 10, is_backup: false, is_active: true },
+  { id: '8', module_code: 'resignation_contact', handler_id: '22', handler_name: '江璐', weight: 1, is_backup: true, is_active: true },
+
+  // 报岗录入：安娜祯负责增员/减员报岗录入。
+  { id: '9', module_code: 'data_entry', handler_id: '21', handler_name: '安娜祯', weight: 10, is_backup: false, is_active: true },
+  { id: '10', module_code: 'data_entry_resign', handler_id: '21', handler_name: '安娜祯', weight: 10, is_backup: false, is_active: true },
+
+  // 社保公积金：傅倩雯负责增员/减员。
+  { id: '11', module_code: 'social_insurance', handler_id: '25', handler_name: '傅倩雯', weight: 10, is_backup: false, is_active: true },
+  { id: '12', module_code: 'resignation_social_insurance', handler_id: '25', handler_name: '傅倩雯', weight: 10, is_backup: false, is_active: true },
 ];
 
-// 负责人姓名由 /admin/users 列表在页面侧渲染，不在此维护前端假表。
+// Mock 仅保留后台配置与一期可见链路一致的处理人；在职配置由路由/模块可见性统一隐藏。
 
 const store = () => loadList<ModuleHandlerItem>(KEY, SEED);
 const commit = (l: ModuleHandlerItem[]) => saveList(KEY, l);

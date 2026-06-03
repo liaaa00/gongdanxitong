@@ -12,7 +12,12 @@ import {
   hasModuleSupervisorRole,
   isAdminRole,
 } from 'src/common/auth/role-permissions';
-import { resolveDispatchModuleCode } from 'src/common/constants/dispatch-modules';
+import {
+  filterPhase1VisibleDispatchModules,
+  isPhase1VisibleDispatchModule,
+  isSocialInsuranceDispatchModule,
+  resolveDispatchModuleCode,
+} from 'src/common/constants/dispatch-modules';
 import { businessException } from 'src/common/exceptions/business-exception';
 import { isUuidLike } from 'src/common/utils/uuid-param';
 import {
@@ -114,6 +119,7 @@ export class DispatchedOrderService {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
     const qb = this.baseListQuery();
+    this.applyPhase1VisibleModuleScope(qb);
 
     await this.applyUserScope(qb, user, query.onlyPool === true || query.onlyUnclaimed === true);
     this.applyCommonFilters(qb, { ...query, __currentUserId: user.sub } as ListDispatchedOrderQueryDto & { __currentUserId: string });
@@ -263,7 +269,7 @@ export class DispatchedOrderService {
     this.assertParentAllowsDispatchedHandling(order);
     await this.assertCanHandle(order, user);
     const remark = payload.remark?.trim() ?? '';
-    if (order.moduleCode === 'social_insurance' && remark.length === 0) {
+    if (isSocialInsuranceDispatchModule(order.moduleCode) && remark.length === 0) {
       throw businessException(4223, HttpStatus.BAD_REQUEST, '社保公积金办理完成备注必填，请填写月份、基数、操作类型等追溯信息');
     }
 
@@ -418,8 +424,8 @@ export class DispatchedOrderService {
     const uniqueIds = Array.from(new Set(payload.ids));
     for (const id of uniqueIds) {
       const order = await this.loadDispatchedOrder(id);
-      if (order.moduleCode !== 'social_insurance') {
-        skipped.push({ id, reason: '仅支持社保公积金办理子单' });
+      if (!isSocialInsuranceDispatchModule(order.moduleCode)) {
+        skipped.push({ id, reason: '仅支持社保公积金增员/减员子单' });
         continue;
       }
       if (order.status !== DispatchedOrderStatus.PROCESSING && order.status !== DispatchedOrderStatus.PENDING) {
@@ -455,7 +461,7 @@ export class DispatchedOrderService {
     let successRows = 0;
 
     if (payload.mode === 'status' && !payload.forceAction) {
-      throw businessException(4224, HttpStatus.BAD_REQUEST, '导入办理必须选择标准动作：批办理完成或批办理退回');
+      throw businessException(4224, HttpStatus.BAD_REQUEST, '导入办理必须选择标准动作：批办理完成、批办理退回或保持处理中');
     }
     await this.assertCanBatchImportModule(moduleCode, user);
 
@@ -466,16 +472,19 @@ export class DispatchedOrderService {
         const order = await this.resolveImportTarget(moduleCode, row);
         if (payload.mode === 'status') {
           const action = payload.forceAction ?? this.normalizeImportResult(row.result ?? row.status ?? row.raw?.['办理结果'] ?? row.raw?.['状态']);
-          if (!action) throw businessException(4224, HttpStatus.BAD_REQUEST, '导入办理必须选择标准动作：批办理完成或批办理退回');
+          if (!action) throw businessException(4224, HttpStatus.BAD_REQUEST, '导入办理必须选择标准动作：批办理完成、批办理退回或保持处理中');
           if (action === 'complete') {
             const remark = this.readImportString(row.remark ?? row.raw?.['办理备注'] ?? row.raw?.['备注'] ?? payload.defaultRemark) ?? '批量导入办理完成';
             await this.completeOrderByBatchImport(order, remark, user);
             details.push({ rowNumber, success: true, id: order.id, orderNo: order.parentOrder.orderNo, employeeIdCard: order.parentOrder.employeeIdCard, action: 'complete', message: '已更新为已完成' });
-          } else {
+          } else if (action === 'return') {
             const returnReason = this.readImportString(row.returnReason ?? row.raw?.['退回原因'] ?? row.raw?.['原因'] ?? payload.defaultReturnReason);
             if (!returnReason) throw businessException(4222, HttpStatus.BAD_REQUEST, '退回结果必须填写退回原因');
             await this.returnOrder(order.id, { returnReason, returnedFields: [] }, user);
             details.push({ rowNumber, success: true, id: order.id, orderNo: order.parentOrder.orderNo, employeeIdCard: order.parentOrder.employeeIdCard, action: 'return', message: '已更新为已退回' });
+          } else {
+            await this.keepProcessingByBatchImport(order, row, user);
+            details.push({ rowNumber, success: true, id: order.id, orderNo: order.parentOrder.orderNo, employeeIdCard: order.parentOrder.employeeIdCard, action: 'processing', message: '保持处理中' });
           }
         } else {
           const fields = this.extractAllowedImportFields(row);
@@ -523,6 +532,7 @@ export class DispatchedOrderService {
     const order = await this.loadDispatchedOrder(id);
     this.assertCanCreatorOperate(order, user, '修改');
     this.assertCreatorActionAllowed(order, '修改');
+    this.assertCreatorDirectChangeAllowed(order, '修改');
 
     const fields = payload.fields && typeof payload.fields === 'object' ? payload.fields : {};
     const entries = Object.entries(fields).filter(([key]) => key.trim().length > 0);
@@ -635,6 +645,20 @@ export class DispatchedOrderService {
 
     const before = this.snapshot(order);
     const previousStatus = order.status;
+    if (this.isUnacceptedSocialInsuranceOrder(order)) {
+      order.status = DispatchedOrderStatus.WITHDRAWN;
+      order.returnReason = `业务员未接单前直接撤回：${reason}`;
+      order.completedAt = order.completedAt ?? new Date();
+      await this.dispatchedOrderRepository.save(order);
+      await this.writeLog('dispatched_order', order.id, user.sub, 'creator_withdraw_direct_before_accept', before, {
+        reason,
+        previousStatus,
+        status: order.status,
+        approvalSkipped: true,
+      });
+      return this.findOne(order.id, user);
+    }
+
     order.status = DispatchedOrderStatus.WITHDRAW_PENDING;
     order.returnReason = `业务员撤回申请：${reason}`;
     order.completedAt = null;
@@ -685,6 +709,22 @@ export class DispatchedOrderService {
 
     const before = this.snapshot(order);
     const previousStatus = order.status;
+
+    if (this.isUnacceptedSocialInsuranceOrder(order)) {
+      order.status = DispatchedOrderStatus.VOID;
+      order.voidAt = new Date();
+      order.returnReason = `业务员未接单前直接作废：${reason}`;
+      order.completedAt = order.completedAt ?? new Date();
+      await this.dispatchedOrderRepository.save(order);
+      await this.writeLog('dispatched_order', order.id, user.sub, 'creator_void_direct_before_accept', before, {
+        reason,
+        previousStatus,
+        status: order.status,
+        voidAt: order.voidAt,
+        approvalSkipped: true,
+      });
+      return this.findOne(order.id, user);
+    }
 
     // 0602 E-5/目标-6：撤回成功后发起人作废，子单直接进入 VOID 终态，无需后道二次审批。
     // 其余状态（处理中/待处理/已退回）仍走 VOID_PENDING 审批流，避免越权直接作废在办子单。
@@ -1073,11 +1113,12 @@ export class DispatchedOrderService {
     return null;
   }
 
-  private normalizeImportResult(value: unknown): 'complete' | 'return' | null {
+  private normalizeImportResult(value: unknown): 'complete' | 'return' | 'processing' | null {
     const raw = this.readImportString(value)?.toLowerCase();
     if (!raw) return null;
-    if (['完成', '已完成', '办结', '已办结', 'complete', 'completed', 'done', 'success'].includes(raw)) return 'complete';
-    if (['退回', '已退回', '返回', '驳回', 'return', 'returned', 'reject', 'rejected'].includes(raw)) return 'return';
+    if (['完成', '已完成', '办结', '已办结', '成功', '办理成功', 'complete', 'completed', 'done', 'success'].includes(raw)) return 'complete';
+    if (['退回', '已退回', '返回', '驳回', '业务问题', '业务数据问题', '资料问题', '数据问题', 'return', 'returned', 'reject', 'rejected'].includes(raw)) return 'return';
+    if (['处理中', '办理中', '等待', '待复办', '复办等待', '需要复办', '暂缓', 'pending', 'processing', 'wait', 'waiting', 'retry'].includes(raw)) return 'processing';
     return null;
   }
 
@@ -1130,6 +1171,28 @@ export class DispatchedOrderService {
     await this.workOrderRepository.save(order.parentOrder);
     await this.writeLog('dispatched_order', order.id, user.sub, 'batch_import_field_update', this.snapshot(order), { fields: entries.map(([fieldCode]) => fieldCode), diff });
     await this.markAndNotifyAffectedDispatchedOrders(order, diff, user.sub, 'order.field_changed');
+  }
+
+  private async keepProcessingByBatchImport(order: DispatchedOrder, row: BatchImportDispatchedOrderRowDto, user: JwtUserPayload): Promise<void> {
+    this.assertParentAllowsDispatchedHandling(order);
+    await this.assertCanHandle(order, user);
+    if ([DispatchedOrderStatus.COMPLETED, DispatchedOrderStatus.WITHDRAW_PENDING, DispatchedOrderStatus.WITHDRAWN, DispatchedOrderStatus.VOID_PENDING, DispatchedOrderStatus.VOID].includes(order.status) || order.voidAt) {
+      throw businessException(4201, HttpStatus.CONFLICT, '已完成、审批中或已终止的子工单不允许导入保持处理中');
+    }
+    if (![DispatchedOrderStatus.PENDING, DispatchedOrderStatus.PROCESSING].includes(order.status)) {
+      throw businessException(4201, HttpStatus.CONFLICT, '当前状态不允许导入保持处理中');
+    }
+    const before = this.snapshot(order);
+    if (order.status === DispatchedOrderStatus.PENDING) {
+      order.status = DispatchedOrderStatus.PROCESSING;
+      order.acceptedAt = order.acceptedAt ?? new Date();
+      order.handlerId = order.handlerId ?? user.sub;
+      await this.dispatchedOrderRepository.save(order);
+    }
+    await this.writeLog('dispatched_order', order.id, user.sub, 'batch_import_keep_processing', before, {
+      remark: this.readImportString(row.remark ?? row.raw?.['办理备注'] ?? row.raw?.['备注']) ?? null,
+      status: order.status,
+    });
   }
 
   private async completeOrderByBatchImport(order: DispatchedOrder, remark: string, user: JwtUserPayload): Promise<void> {
@@ -1254,6 +1317,19 @@ export class DispatchedOrderService {
       .leftJoinAndSelect('d.handler', 'h');
   }
 
+  private applyPhase1VisibleModuleScope(qb: SelectQueryBuilder<DispatchedOrder>): void {
+    qb.andWhere('d.module_code IN (:...phase1Modules)', { phase1Modules: filterPhase1VisibleDispatchModules([
+      'onboarding_contact',
+      'contract',
+      'data_entry',
+      'social_insurance',
+      'resignation_contact',
+      'data_entry_resign',
+      'resignation_social_insurance',
+    ]) });
+    qb.andWhere("w.order_type::text IN ('onboarding','resignation')");
+  }
+
   private async applyUserScope(
     qb: SelectQueryBuilder<DispatchedOrder>,
     user: JwtUserPayload,
@@ -1265,10 +1341,20 @@ export class DispatchedOrderService {
     }
     const modules = await this.getAccessibleModules(user.sub, user.roles);
     const canSeeModuleAll = hasManagementScopeRole(user.roles) || hasModuleSupervisorRole(user.roles) || (await this.hasSupervisorLevel(user.sub));
+    const includeCreatorScope = this.shouldIncludeCreatorScope(user, modules);
+    const restrictAssignedScope = this.shouldRestrictAssignedScope(user, modules);
     qb.andWhere(new Brackets((scope) => {
       if (!onlyPool) {
-        scope.where('d.handler_id = :userId', { userId: user.sub });
-        scope.orWhere('w.created_by = :userId', { userId: user.sub });
+        if (restrictAssignedScope && modules.length > 0) {
+          scope.where('d.handler_id = :userId AND d.module_code IN (:...modules)', { userId: user.sub, modules });
+        } else if (restrictAssignedScope) {
+          scope.where('1 = 0');
+        } else {
+          scope.where('d.handler_id = :userId', { userId: user.sub });
+        }
+        if (includeCreatorScope) {
+          scope.orWhere('w.created_by = :userId', { userId: user.sub });
+        }
       } else {
         scope.where('1 = 0');
       }
@@ -1282,6 +1368,22 @@ export class DispatchedOrderService {
         }
       }
     }));
+  }
+
+  private shouldIncludeCreatorScope(user: JwtUserPayload, accessibleModules: readonly string[]): boolean {
+    if (hasAnyRole(user.roles, BUSINESS_MEMBER_ROLES) || hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES) || hasAnyRole(user.roles, BUSINESS_LEADER_ROLES)) {
+      return true;
+    }
+    // Backend processors must only see their assigned/responsible child modules in phase 1.
+    // If a backend user happens to be the parent work order creator, do not let that creator scope leak unrelated modules.
+    return accessibleModules.length === 0;
+  }
+
+  private shouldRestrictAssignedScope(user: JwtUserPayload, accessibleModules: readonly string[]): boolean {
+    if (hasAnyRole(user.roles, BUSINESS_MEMBER_ROLES) || hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES) || hasAnyRole(user.roles, BUSINESS_LEADER_ROLES)) {
+      return false;
+    }
+    return accessibleModules.length > 0;
   }
 
   private applyCommonFilters(qb: SelectQueryBuilder<DispatchedOrder>, query: ListDispatchedOrderQueryDto): void {
@@ -1402,6 +1504,9 @@ export class DispatchedOrderService {
       this.rethrowInvalidIdAsNotFound(error, '子工单不存在');
     }
     if (!order) {
+      throw new NotFoundException('子工单不存在');
+    }
+    if (!isPhase1VisibleDispatchModule(order.moduleCode) || !['onboarding', 'resignation'].includes(String(order.parentOrder.orderType))) {
       throw new NotFoundException('子工单不存在');
     }
     return order;
@@ -1581,14 +1686,23 @@ export class DispatchedOrderService {
   }
 
   private async assertCanRead(order: DispatchedOrder, user: JwtUserPayload): Promise<void> {
-    if (this.isAdmin(user) || order.handlerId === user.sub || order.parentOrder.createdBy === user.sub) return;
-    if (!order.handlerId && (await this.hasModuleAccess(user.sub, order.moduleCode))) return;
+    if (this.isAdmin(user) || order.parentOrder.createdBy === user.sub) return;
+    if (order.handlerId === user.sub && this.canReadAssignedModule(user, order.moduleCode)) return;
+    if (!order.handlerId && (await this.hasModuleAccess(user.sub, order.moduleCode, user.roles))) return;
     if (await this.canViewAsSupervisor(user, order.moduleCode)) return;
     throw new ForbiddenException('无权访问该子工单');
   }
 
+  private canReadAssignedModule(user: JwtUserPayload, moduleCode: string): boolean {
+    if (hasAnyRole(user.roles, BUSINESS_MEMBER_ROLES) || hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES) || hasAnyRole(user.roles, BUSINESS_LEADER_ROLES)) {
+      return true;
+    }
+    return this.filterModulesByRoleAllowList(user.roles, [moduleCode]).includes(moduleCode);
+  }
+
   private async assertCanHandle(order: DispatchedOrder, user: JwtUserPayload): Promise<void> {
-    if (this.isAdmin(user) || order.handlerId === user.sub) return;
+    if (this.isAdmin(user)) return;
+    if (order.handlerId === user.sub && this.canReadAssignedModule(user, order.moduleCode)) return;
     if (await this.canActAsModuleSupervisor(user, order.moduleCode)) return;
     throw businessException(5000, HttpStatus.FORBIDDEN, '无权操作该子工单');
   }
@@ -1620,6 +1734,18 @@ export class DispatchedOrderService {
     }
   }
 
+  private isUnacceptedSocialInsuranceOrder(order: DispatchedOrder): boolean {
+    return isSocialInsuranceDispatchModule(order.moduleCode)
+      && order.status === DispatchedOrderStatus.PENDING
+      && !order.acceptedAt;
+  }
+
+  private assertCreatorDirectChangeAllowed(order: DispatchedOrder, actionLabel: string): void {
+    if (!isSocialInsuranceDispatchModule(order.moduleCode)) return;
+    if (this.isUnacceptedSocialInsuranceOrder(order)) return;
+    throw businessException(4201, HttpStatus.CONFLICT, `社保公积金子工单接单/已受理后，业务员${actionLabel}需后道同意或走审批`);
+  }
+
   private assertCreatorActionAllowed(order: DispatchedOrder, actionLabel: string): void {
     if (!([DispatchedOrderStatus.RETURNED, DispatchedOrderStatus.WITHDRAWN].includes(order.status) && ['作废', '修改'].includes(actionLabel))) {
       this.assertParentAllowsDispatchedHandling(order);
@@ -1644,7 +1770,7 @@ export class DispatchedOrderService {
   }
 
   private async assertModulePoolAccess(user: JwtUserPayload, moduleCode: string): Promise<void> {
-    if (this.isAdmin(user) || (await this.hasModuleAccess(user.sub, moduleCode))) return;
+    if (this.isAdmin(user) || (await this.hasModuleAccess(user.sub, moduleCode, user.roles))) return;
     throw businessException(5000, HttpStatus.FORBIDDEN, '无权接取该模块待认领工单');
   }
 
@@ -1656,14 +1782,16 @@ export class DispatchedOrderService {
   private async canViewAsSupervisor(user: JwtUserPayload, moduleCode: string): Promise<boolean> {
     if (hasManagementScopeRole(user.roles)) return true;
     if (this.roleAllowsModule(user.roles, moduleCode)) return true;
+    if (user.roles.length > 0 && !this.filterModulesByRoleAllowList(user.roles, [moduleCode]).includes(moduleCode)) return false;
     if (hasModuleSupervisorRole(user.roles) && (await this.hasModuleAccess(user.sub, moduleCode, user.roles))) return true;
     return (await this.hasSupervisorLevel(user.sub)) && (await this.hasModuleAccess(user.sub, moduleCode, user.roles));
   }
 
   private async canActAsModuleSupervisor(user: JwtUserPayload, moduleCode: string): Promise<boolean> {
     if (hasAnyRole(user.roles, ['business_owner', 'manager', 'biz_manager'])) return false;
-    if (await this.hasModuleSupervisorConfig(user.sub, moduleCode)) return true;
     if (this.roleAllowsModule(user.roles, moduleCode)) return true;
+    if (user.roles.length > 0 && !this.filterModulesByRoleAllowList(user.roles, [moduleCode]).includes(moduleCode)) return false;
+    if (await this.hasModuleSupervisorConfig(user.sub, moduleCode)) return true;
     if (hasModuleSupervisorRole(user.roles) && (await this.hasModuleAccess(user.sub, moduleCode, user.roles))) return true;
     return (await this.hasSupervisorLevel(user.sub)) && (await this.hasModuleAccess(user.sub, moduleCode, user.roles));
   }
@@ -1682,6 +1810,7 @@ export class DispatchedOrderService {
 
   private async hasModuleAccess(userId: string, moduleCode: string, roles: readonly string[] = []): Promise<boolean> {
     if (this.roleAllowsModule(roles, moduleCode)) return true;
+    if (roles.length > 0 && !this.filterModulesByRoleAllowList(roles, [moduleCode]).includes(moduleCode)) return false;
     const count = await this.moduleHandlerRepository.count({ where: { handlerId: userId, moduleCode, isActive: true } });
     if (count > 0) return true;
     return this.hasModuleSupervisorConfig(userId, moduleCode);
@@ -1691,27 +1820,62 @@ export class DispatchedOrderService {
     const handlerRows = await this.moduleHandlerRepository.find({ where: { handlerId: userId, isActive: true } });
     const handlerModules = handlerRows.map((row) => row.moduleCode);
 
-    // Also include modules where the user is configured as a supervisor
+    // Also include modules where the user is configured as a supervisor.
+    // 0603 backend fallback: role-level allow lists are authoritative for phase-1 backend accounts.
+    // This prevents stale/legacy handler or supervisor rows from leaking unrelated modules, e.g. 江璐 must not see social_insurance.
     const supervisorModules: string[] = [];
     if (this.moduleSupervisorRepository) {
       const supervisorRows = await this.moduleSupervisorRepository.find({ where: { supervisorId: userId, isActive: true } });
       supervisorModules.push(...supervisorRows.map((row) => row.moduleCode));
     }
 
-    return Array.from(new Set([...handlerModules, ...supervisorModules, ...this.roleAccessibleModules(roles)]));
+    return this.filterModulesByRoleAllowList(roles, filterPhase1VisibleDispatchModules([...handlerModules, ...supervisorModules, ...this.roleAccessibleModules(roles)]));
   }
 
   private roleAllowsModule(roles: readonly string[], moduleCode: string): boolean {
-    if (moduleCode === 'data_entry') return hasAnyRole(roles, DATA_ENTRY_MODULE_ROLES);
-    if (moduleCode === 'social_insurance') return hasAnyRole(roles, SOCIAL_INSURANCE_MODULE_ROLES);
+    if (this.sharedTeamModuleCodes().includes(moduleCode)) return this.hasSharedTeamRole(roles);
+    if (this.contractModuleCodes().includes(moduleCode)) return hasAnyRole(roles, ['contract_specialist', 'labor_contract_member', 'contract_team']);
+    if (this.onboardingContactModuleCodes().includes(moduleCode)) return hasAnyRole(roles, ['onboarding_specialist', 'onboarding_resignation_member', 'onboarding_team']);
+    if (moduleCode === 'data_entry' || moduleCode === 'data_entry_resign') return hasAnyRole(roles, DATA_ENTRY_MODULE_ROLES);
+    if (isSocialInsuranceDispatchModule(moduleCode)) return hasAnyRole(roles, SOCIAL_INSURANCE_MODULE_ROLES);
     return false;
   }
 
   private roleAccessibleModules(roles: readonly string[]): string[] {
     const modules: string[] = [];
-    if (hasAnyRole(roles, DATA_ENTRY_MODULE_ROLES)) modules.push('data_entry');
-    if (hasAnyRole(roles, SOCIAL_INSURANCE_MODULE_ROLES)) modules.push('social_insurance');
-    return modules;
+    if (this.hasSharedTeamRole(roles)) modules.push(...this.sharedTeamModuleCodes());
+    else {
+      if (hasAnyRole(roles, ['contract_specialist', 'labor_contract_member', 'contract_team'])) modules.push(...this.contractModuleCodes());
+      if (hasAnyRole(roles, ['onboarding_specialist', 'onboarding_resignation_member', 'onboarding_team'])) modules.push(...this.onboardingContactModuleCodes());
+    }
+    if (hasAnyRole(roles, DATA_ENTRY_MODULE_ROLES)) modules.push('data_entry', 'data_entry_resign');
+    if (hasAnyRole(roles, SOCIAL_INSURANCE_MODULE_ROLES)) modules.push('social_insurance', 'resignation_social_insurance');
+    return filterPhase1VisibleDispatchModules(modules);
+  }
+
+  private filterModulesByRoleAllowList(roles: readonly string[], moduleCodes: string[]): string[] {
+    if (roles.includes('admin') || hasAnyRole(roles, BUSINESS_MANAGER_ROLES) || hasAnyRole(roles, BUSINESS_LEADER_ROLES)) {
+      return filterPhase1VisibleDispatchModules(moduleCodes);
+    }
+    const allowed = new Set(this.roleAccessibleModules(roles));
+    if (allowed.size === 0) return filterPhase1VisibleDispatchModules(moduleCodes);
+    return filterPhase1VisibleDispatchModules(moduleCodes).filter((moduleCode) => allowed.has(moduleCode));
+  }
+
+  private hasSharedTeamRole(roles: readonly string[]): boolean {
+    return hasAnyRole(roles, ['shared_leader', 'shared_team_owner']);
+  }
+
+  private sharedTeamModuleCodes(): string[] {
+    return ['contract', 'onboarding_contact', 'resignation_contact'];
+  }
+
+  private contractModuleCodes(): string[] {
+    return ['contract'];
+  }
+
+  private onboardingContactModuleCodes(): string[] {
+    return ['onboarding_contact', 'resignation_contact'];
   }
 
   private isAdmin(user: JwtUserPayload): boolean {

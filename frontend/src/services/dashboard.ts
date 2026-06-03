@@ -82,18 +82,21 @@ const ORDER_TYPE_LABELS: Record<DashboardOrderType, string> = {
   benefit: '待遇申报',
 };
 
-const ORDER_TYPES: DashboardOrderType[] = ['onboarding', 'renewal', 'resignation', 'benefit'];
+const PHASE1_ORDER_TYPES: DashboardOrderType[] = ['onboarding', 'resignation'];
 
 const MODULE_LABELS: Record<string, string> = {
-  data_entry: '数据录入',
-  social_insurance: '社保公积金办理',
+  data_entry: '增员报岗录入',
+  social_insurance: '社保公积金增员',
   onboarding_contact: '入职联系',
-  contract: '劳动合同签订',
-  renewal_contract: '续签合同',
+  contract: '劳动合同新签',
+  contract_signing: '劳动合同新签',
+  renewal_contract: '劳动合同续签',
   benefit: '待遇申报',
-  resignation_contact: '离职联系',
-  resignation_cert: '离职证明',
-  data_entry_resign: '社保停保',
+  benefit_apply: '待遇申报',
+  resignation_contact: '离职材料收集',
+  resignation_cert: '离职材料收集',
+  data_entry_resign: '减员报岗录入',
+  social_insurance_resign: '社保公积金减员',
 };
 
 function readParents(): ParentOrderLite[] {
@@ -227,7 +230,7 @@ function buildMatrixRows(parents: ParentOrderLite[], dimension: DashboardMatrixD
     }));
   }
 
-  return ORDER_TYPES.map((orderType) => buildOrderTypeRow(
+  return PHASE1_ORDER_TYPES.map((orderType) => buildOrderTypeRow(
     orderType,
     parents
       .filter((p) => getParentOrderType(p) === orderType)

@@ -66,8 +66,8 @@ export class BatchImportDispatchedOrdersDto {
 
   /** Standardized status import action. When provided, row free-text result/status is ignored. */
   @IsOptional()
-  @IsIn(['complete', 'return'])
-  forceAction?: 'complete' | 'return';
+  @IsIn(['complete', 'return', 'processing'])
+  forceAction?: 'complete' | 'return' | 'processing';
 
   @IsArray()
   @ArrayNotEmpty()

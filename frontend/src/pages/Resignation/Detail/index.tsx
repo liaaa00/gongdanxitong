@@ -78,7 +78,7 @@ const ResignationDetail: React.FC = () => {
             <Descriptions.Item label="创建时间">{order.created_at}</Descriptions.Item>
           </Descriptions>
           <Space style={{ marginTop: 16 }}>
-            <Button icon={<FileTextOutlined />} onClick={() => navigate('/resignation/' + order.id + '/cert')}>离职证明</Button>
+            <Button icon={<FileTextOutlined />} onClick={() => navigate('/resignation/' + order.id + '/cert')}>离职材料收集</Button>
           </Space>
         </Card>
 
@@ -94,7 +94,7 @@ const ResignationDetail: React.FC = () => {
               </Card>
             ),
           },
-          { key: 'materials', label: '离职证明',
+          { key: 'materials', label: '离职材料收集',
             children: <MaterialsUpload workOrderId={order.id} bizPurpose="resignation_cert" />,
           },
           { key: 'stages', label: '工单节点',

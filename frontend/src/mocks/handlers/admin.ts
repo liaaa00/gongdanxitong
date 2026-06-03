@@ -39,11 +39,11 @@ const ROLES = [
   { id: 'role-biz-owner', code: 'business_owner', name: '业务负责人', level: '管理层', description: '查看全部业务工单、全局看板、导出，不可操作工单', is_active: true },
   { id: 'role-biz-leader', code: 'business_group_leader', name: '业务组长', level: '主管层', description: '查看本组全部工单；可发起/修改/撤回', is_active: true },
   { id: 'role-biz-member', code: 'business_group_member', name: '业务员', level: '执行层', description: '只看自己发起的工单', is_active: true },
-  { id: 'role-data-leader', code: 'data_entry_leader', name: '数据录入组长', level: '主管层', description: '数据录入模块全量', is_active: true },
-  { id: 'role-shared-owner', code: 'shared_team_owner', name: '共享团队负责人', level: '主管层', description: '劳动合同+入离职联系模块全量', is_active: true },
-  { id: 'role-contract', code: 'labor_contract_member', name: '合同专员', level: '执行层', description: '合同新签/续签/待遇申报', is_active: true },
-  { id: 'role-hr-contact', code: 'onboarding_resignation_member', name: '入离职联系专员', level: '执行层', description: '入职联系/离职联系/离职证明', is_active: true },
-  { id: 'role-social-insurance', code: 'social_insurance_specialist', name: '福保负责人', level: '主管层', description: '福利保障部社保公积金办理负责人', is_active: true },
+  { id: 'role-data-leader', code: 'data_entry_leader', name: '数据录入组长', level: '主管层', description: '增员报岗录入/减员报岗录入模块全量', is_active: true },
+  { id: 'role-shared-owner', code: 'shared_team_owner', name: '共享团队负责人', level: '主管层', description: '劳动合同新签/续签+入职联系/离职材料收集模块全量', is_active: true },
+  { id: 'role-contract', code: 'labor_contract_member', name: '合同专员', level: '执行层', description: '劳动合同新签/续签', is_active: true },
+  { id: 'role-hr-contact', code: 'onboarding_resignation_member', name: '入离职联系专员', level: '执行层', description: '入职联系/离职材料收集', is_active: true },
+  { id: 'role-social-insurance', code: 'social_insurance_specialist', name: '福保负责人', level: '主管层', description: '福利保障部社保公积金增员/减员负责人', is_active: true },
 ];
 
 const DEPTS = [
@@ -92,29 +92,34 @@ const FIELD_PERMISSIONS = [
 ];
 
 const DISPATCH_RULES = [
-  { id: 'dr-1', rule_name: '入职→数据录入（无条件）', order_type: 'onboarding', trigger_conditions: null, target_module: 'data_entry', dispatch_strategy: 'pool', is_active: true, priority: 1, created_at: now },
+  { id: 'dr-1', rule_name: '入职→增员报岗录入（无条件）', order_type: 'onboarding', trigger_conditions: null, target_module: 'data_entry', dispatch_strategy: 'pool', is_active: true, priority: 1, created_at: now },
   { id: 'dr-3', rule_name: '入职→入职联系（需联系=是）', order_type: 'onboarding', trigger_conditions: { type: 'group', operator: 'AND', conditions: [{ type: 'leaf', field: 'need_onboarding_contact', operator: 'eq', value: '是' }] }, target_module: 'onboarding_contact', dispatch_strategy: 'pool', is_active: true, priority: 3, created_at: now },
   { id: 'dr-4', rule_name: '入职→劳动合同（企服发起=是）', order_type: 'onboarding', trigger_conditions: { type: 'group', operator: 'AND', conditions: [{ type: 'leaf', field: 'need_company_contract', operator: 'eq', value: '是' }] }, target_module: 'contract', dispatch_strategy: 'round_robin', is_active: true, priority: 4, created_at: now },
   { id: 'dr-5', rule_name: '入职→合同主管备份', order_type: 'onboarding', trigger_conditions: null, target_module: 'contract', dispatch_strategy: 'fixed', is_active: false, priority: 5, created_at: now },
 ];
 
 const MODULE_HANDLERS_MSW = [
-  { id: 'mh-1', module_code: 'contract', handler_id: 'u-22', handler_name: '江璐', weight: 2, is_backup: false, is_active: true },
-  { id: 'mh-2', module_code: 'contract', handler_id: 'u-23', handler_name: '杨纯', weight: 2, is_backup: false, is_active: true },
-  { id: 'mh-3', module_code: 'renewal_contract', handler_id: 'u-23', handler_name: '杨纯', weight: 1, is_backup: false, is_active: true },
-  { id: 'mh-4', module_code: 'benefit', handler_id: 'u-23', handler_name: '杨纯', weight: 1, is_backup: false, is_active: true },
-  { id: 'mh-5', module_code: 'onboarding_contact', handler_id: 'u-22', handler_name: '江璐', weight: 1, is_backup: false, is_active: true },
-  { id: 'mh-6', module_code: 'onboarding_contact', handler_id: 'u-24', handler_name: '毛雅妮', weight: 1, is_backup: false, is_active: true },
-  { id: 'mh-7', module_code: 'resignation_contact', handler_id: 'u-22', handler_name: '江璐', weight: 1, is_backup: false, is_active: true },
-  { id: 'mh-8', module_code: 'resignation_contact', handler_id: 'u-24', handler_name: '毛雅妮', weight: 1, is_backup: false, is_active: true },
-  { id: 'mh-9', module_code: 'resignation_cert', handler_id: 'u-24', handler_name: '毛雅妮', weight: 1, is_backup: false, is_active: true },
-  { id: 'mh-10', module_code: 'data_entry', handler_id: 'u-21', handler_name: '安娜祯', weight: 1, is_backup: false, is_active: true },
+  // 0603 口径：杨纯/江璐负责合同新签/续签，杨纯主办、江璐备份。
+  { id: 'mh-1', module_code: 'contract', handler_id: 'u-23', handler_name: '杨纯', weight: 10, is_backup: false, is_active: true },
+  { id: 'mh-2', module_code: 'contract', handler_id: 'u-22', handler_name: '江璐', weight: 1, is_backup: true, is_active: true },
+  { id: 'mh-3', module_code: 'renewal_contract', handler_id: 'u-23', handler_name: '杨纯', weight: 10, is_backup: false, is_active: true },
+  { id: 'mh-4', module_code: 'renewal_contract', handler_id: 'u-22', handler_name: '江璐', weight: 1, is_backup: true, is_active: true },
+  // 毛雅妮/江璐负责入职联系/离职材料收集，毛雅妮主办、江璐备份。
+  { id: 'mh-5', module_code: 'onboarding_contact', handler_id: 'u-24', handler_name: '毛雅妮', weight: 10, is_backup: false, is_active: true },
+  { id: 'mh-6', module_code: 'onboarding_contact', handler_id: 'u-22', handler_name: '江璐', weight: 1, is_backup: true, is_active: true },
+  { id: 'mh-7', module_code: 'resignation_contact', handler_id: 'u-24', handler_name: '毛雅妮', weight: 10, is_backup: false, is_active: true },
+  { id: 'mh-8', module_code: 'resignation_contact', handler_id: 'u-22', handler_name: '江璐', weight: 1, is_backup: true, is_active: true },
+  // 安娜祯负责增员/减员报岗录入。
+  { id: 'mh-9', module_code: 'data_entry', handler_id: 'u-21', handler_name: '安娜祯', weight: 10, is_backup: false, is_active: true },
+  { id: 'mh-10', module_code: 'data_entry_resign', handler_id: 'u-21', handler_name: '安娜祯', weight: 10, is_backup: false, is_active: true },
+  // 傅倩雯负责社保公积金增员/减员。
   { id: 'mh-11', module_code: 'social_insurance', handler_id: 'u-25', handler_name: '傅倩雯', weight: 10, is_backup: false, is_active: true },
+  { id: 'mh-12', module_code: 'resignation_social_insurance', handler_id: 'u-25', handler_name: '傅倩雯', weight: 10, is_backup: false, is_active: true },
 ];
 
 const EXPORT_TEMPLATES = [
   { id: 't-1', template_name: '入职工单导出模板', module_code: 'contract', field_list: [{ field_code: 'employee_name', alias: '姓名', order: 1 }, { field_code: 'id_card_no', alias: '身份证号', order: 2 }, { field_code: 'contract_start_date', alias: '合同开始', order: 3 }, { field_code: 'contract_end_date', alias: '合同结束', order: 4 }], created_by: 'admin', is_shared: true, created_at: now },
-  { id: 't-2', template_name: '数据录入导出表', module_code: 'data_entry', field_list: [{ field_code: 'employee_name', alias: '姓名', order: 1 }, { field_code: 'mobile', alias: '手机', order: 2 }, { field_code: 'email', alias: '邮箱', order: 3 }], created_by: 'admin', is_shared: true, created_at: now },
+  { id: 't-2', template_name: '增员报岗录入导出表', module_code: 'data_entry', field_list: [{ field_code: 'employee_name', alias: '姓名', order: 1 }, { field_code: 'mobile', alias: '手机', order: 2 }, { field_code: 'email', alias: '邮箱', order: 3 }], created_by: 'admin', is_shared: true, created_at: now },
 ];
 
 const LOGS = [

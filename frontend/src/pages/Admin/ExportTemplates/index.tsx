@@ -9,25 +9,26 @@ const MODULE_GROUPS = [
   {
     label: '入职管理',
     options: [
-      { label: '数据录入', value: 'data_entry' },
-      { label: '社保公积金办理', value: 'social_insurance' },
+      { label: '增员报岗录入', value: 'data_entry' },
+      { label: '社保公积金增员', value: 'social_insurance' },
       { label: '入职联系', value: 'onboarding_contact' },
-      { label: '劳动合同签订', value: 'contract' },
+      { label: '劳动合同新签', value: 'contract' },
     ],
   },
   {
-    label: '在职管理',
+    label: '在职管理（后台保留，第一阶段界面隐藏）',
     options: [
-      { label: '续签合同', value: 'renewal_contract' },
+      { label: '劳动合同续签', value: 'renewal_contract' },
       { label: '待遇申报', value: 'benefit' },
     ],
   },
   {
     label: '离职管理',
     options: [
-      { label: '离职联系', value: 'resignation_contact' },
-      { label: '离职证明', value: 'resignation_cert' },
-      { label: '社保停保', value: 'data_entry_resign' },
+      { label: '离职材料收集', value: 'resignation_contact' },
+      { label: '离职材料收集（历史兼容）', value: 'resignation_cert' },
+      { label: '减员报岗录入', value: 'data_entry_resign' },
+      { label: '社保公积金减员', value: 'resignation_social_insurance' },
     ],
   },
 ];
@@ -76,7 +77,7 @@ const FIELD_OPTIONS: Array<{ group: string; fields: Array<{ code: string; name: 
       { code: 'contract_subject', name: '劳动合同主体' },
       { code: 'contract_template', name: '劳动合同模板' },
       { code: 'need_contract_urge', name: '劳动合同签署是否需要催办' },
-      { code: 'contract_feedback', name: '劳动合同签订反馈' },
+      { code: 'contract_feedback', name: '劳动合同新签反馈' },
     ],
   },
   {
@@ -117,7 +118,7 @@ const FIELD_OPTIONS: Array<{ group: string; fields: Array<{ code: string; name: 
     fields: [
       { code: 'need_onboarding_contact', name: '入职材料是否需要集约收集' },
       { code: 'onboarding_feedback', name: '入职联系反馈' },
-      { code: 'data_entry_feedback', name: '数据录入反馈' },
+      { code: 'data_entry_feedback', name: '增员报岗录入反馈' },
     ],
   },
 ];

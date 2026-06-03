@@ -10,19 +10,19 @@ import type { DispatchedOrderItem } from '@/services/dispatchedOrders';
 import type { PageParams } from '@/services/mock';
 import { getModuleLabel } from '@/constants/modules';
 import { getStatusColor, getStatusText } from '@/constants/dictionaries';
+import { isPhase1VisibleModule, isPhase1VisibleOrderType } from '@/utils/moduleAccess';
 import { useRef } from 'react';
 
 const HISTORY_STATUSES = new Set(['completed', 'returned', 'withdrawn', 'void']);
 
 const MODULE_OPTIONS = [
-  { label: '数据录入', value: 'data_entry' },
-  { label: '入职社保公积金办理', value: 'social_insurance' },
   { label: '入职联系', value: 'onboarding_contact' },
-  { label: '劳动合同签订', value: 'contract' },
-  { label: '劳动合同续签', value: 'renewal_contract' },
+  { label: '劳动合同新签', value: 'contract' },
+  { label: '增员报岗录入', value: 'data_entry' },
+  { label: '社保公积金增员', value: 'social_insurance' },
   { label: '离职材料收集', value: 'resignation_contact' },
-  { label: '离职证明', value: 'resignation_cert' },
-  { label: '待遇申报', value: 'benefit_apply' },
+  { label: '减员报岗录入', value: 'data_entry_resign' },
+  { label: '社保公积金减员', value: 'social_insurance_resign' },
 ];
 
 const STATUS_OPTIONS = [
@@ -58,7 +58,7 @@ const HistoryWorkOrders: React.FC = () => {
 
   const columns = useMemo<ProColumns<DispatchedOrderItem>[]>(() => [
     { title: '工单编号', dataIndex: 'order_no', width: 160, copyable: true, search: { transform: (value) => ({ orderNo: value }) } },
-    { title: '子工单类型', dataIndex: 'module_code', width: 150, valueType: 'select', fieldProps: { options: MODULE_OPTIONS }, search: { transform: (value) => ({ moduleCode: value }) }, render: (_, row) => <Tag>{getModuleLabel(row.module_code)}</Tag> },
+    { title: '子工单类型', dataIndex: 'module_code', width: 150, valueType: 'select', fieldProps: { options: MODULE_OPTIONS }, search: { transform: (value) => ({ moduleCode: value }) }, render: (_, row) => <Tag>{getModuleLabel(row.module_code, row.order_type)}</Tag> },
     { title: '员工姓名', dataIndex: 'employee_name', width: 110, search: { transform: (value) => ({ employeeName: value }) } },
     { title: '员工证件号', dataIndex: 'employee_id_card', width: 170, ellipsis: true, search: { transform: (value) => ({ idCardNo: value }) } },
     { title: '客户代码', dataIndex: 'customer_code', width: 120, search: { transform: (value) => ({ customerCode: value }) } },
@@ -68,7 +68,7 @@ const HistoryWorkOrders: React.FC = () => {
     { title: '完成时间', dataIndex: 'completed_at', valueType: 'dateTime', width: 170 },
     {
       title: '操作', valueType: 'option', width: 90,
-      render: (_, row) => <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => navigate(`/my-dispatched/${row.id}`)}>详情</Button>,
+      render: (_, row) => <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => navigate(`/my-dispatched/${row.id}?readonly=1&from=my-work`)}>详情</Button>,
     },
   ], [navigate]);
 
@@ -107,8 +107,8 @@ const HistoryWorkOrders: React.FC = () => {
             orderMonth: (month || dayjs()).format('YYYY-MM'),
             statuses: query.status ? undefined : Array.from(HISTORY_STATUSES).join(','),
           });
-          const list = result.list.filter((row) => HISTORY_STATUSES.has(row.status) || Boolean(row.void_at));
-          return { data: list, success: true, total: query.status ? result.total : list.length };
+          const list = result.list.filter((row) => isPhase1VisibleModule(row.module_code) && (!row.order_type || isPhase1VisibleOrderType(row.order_type)) && (HISTORY_STATUSES.has(row.status) || Boolean(row.void_at)));
+          return { data: list, success: true, total: list.length };
         }}
       />
     </PageContainer>

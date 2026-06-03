@@ -50,8 +50,8 @@ const DATA_SCOPE: Record<string, string> = {
   salesperson: '本人发起的工单',
   shared_team_owner: '共享团队工单',
   labor_contract_member: '合同类工单',
-  onboarding_resignation_member: '入离职联系工单',
-  data_entry_leader: '数据录入工单',
+  onboarding_resignation_member: '入职联系/离职材料收集工单',
+  data_entry_leader: '增员/减员报岗录入工单',
   social_insurance_specialist: '社保公积金工单',
 };
 

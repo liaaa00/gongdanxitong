@@ -205,7 +205,7 @@ const AdminModuleConfig: React.FC = () => {
           type="success"
           showIcon
           style={{ marginBottom: 16 }}
-          message="勾选后，该办理环节的处理人就会看到这些信息。比如“数据录入”只勾选姓名、证件号、社保、公积金、银行卡等需要录入的信息。"
+          message="勾选后，该办理环节的处理人就会看到这些信息。比如“增员报岗录入”只勾选姓名、证件号、社保、公积金、银行卡等需要录入的信息。"
         />
         <Spin spinning={fieldLoading}>
           <Space direction="vertical" style={{ width: '100%' }} size={12}>

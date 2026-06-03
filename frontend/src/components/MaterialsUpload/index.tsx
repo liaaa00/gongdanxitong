@@ -90,7 +90,7 @@ const MaterialsUpload: React.FC<MaterialsUploadProps> = ({ workOrderId, bizPurpo
   };
 
   return (
-    <Card title={bizPurpose === 'resignation_cert' ? '离职证明材料' : '申报材料'} loading={loading}>
+    <Card title={bizPurpose === 'resignation_cert' ? '离职材料收集' : '申报材料'} loading={loading}>
       <Space direction="vertical" style={{ width: '100%' }} size="middle">
         <Upload
           multiple

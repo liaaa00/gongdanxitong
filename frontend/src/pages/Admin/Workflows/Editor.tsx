@@ -33,13 +33,15 @@ const NODE_TYPE_OPTIONS: Array<{ label: string; value: WorkflowNodeType }> = [
 ];
 
 const MODULE_OPTIONS = [
-  { label: '数据录入', value: 'data_entry' },
-  { label: '合同签约', value: 'contract' },
+  { label: '增员报岗录入', value: 'data_entry' },
+  { label: '劳动合同新签', value: 'contract' },
   { label: '入职联系', value: 'onboarding_contact' },
-  { label: '社保公积金', value: 'social_insurance' },
-  { label: '续签合同', value: 'renewal_contract' },
-  { label: '离职联系', value: 'resignation_contact' },
-  { label: '离职证明', value: 'resignation_cert' },
+  { label: '社保公积金增员', value: 'social_insurance' },
+  { label: '劳动合同续签', value: 'renewal_contract' },
+  { label: '离职材料收集', value: 'resignation_contact' },
+  { label: '离职材料收集（历史兼容）', value: 'resignation_cert' },
+  { label: '减员报岗录入', value: 'data_entry_resign' },
+  { label: '社保公积金减员', value: 'resignation_social_insurance' },
   { label: '待遇申报', value: 'benefit_apply' },
 ];
 

@@ -124,7 +124,7 @@ describe('P1 split4 dirty return backend rules', () => {
   });
 
   it('denies normal handler returning a completed child but allows configured module supervisor', async () => {
-    const completed = child({ status: DispatchedOrderStatus.COMPLETED, handlerId: 'handler-1' });
+    const completed = child({ status: DispatchedOrderStatus.COMPLETED, handlerId: 'handler-1', moduleCode: 'contract' });
     const dispatchedRepo = repo<DispatchedOrder>({ findOne: jest.fn(async () => completed) });
     const workOrderRepo = repo<WorkOrder>();
     const supervisorRepo = repo<ModuleSupervisor>({ count: jest.fn(async ({ where }: { where: { supervisorId: string } }) => where.supervisorId === 'sup-1' ? 1 : 0) });

@@ -21,7 +21,7 @@ describe('workflow configuration service mock contract', () => {
         {
           id: 'data_entry',
           type: 'process' as const,
-          label: '数据录入',
+          label: '增员报岗录入',
           module_code: 'data_entry',
           assignee_role: 'data_entry_leader',
           position: { x: 200, y: 0 },

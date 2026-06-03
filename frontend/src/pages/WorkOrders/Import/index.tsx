@@ -79,7 +79,7 @@ const WorkOrdersImport: React.FC = () => {
   };
 
   return (
-    <PageContainer header={{ title: '批量导入工单' }}>
+    <PageContainer header={{ title: '入职导入' }}>
       <Card>
         <Alert
           message="导入前请确认"
@@ -87,7 +87,7 @@ const WorkOrdersImport: React.FC = () => {
             <Space direction="vertical" size={4}>
               <span>只允许导入你名下客户的入职工单。</span>
               <span>身份证 + 入职月份不可重复，重复行会在错行报告中标出。</span>
-              <span>上传后系统会按规则拆为数据录入、社保公积金办理、入职联系、劳动合同签订等子工单。</span>
+              <span>上传后系统会按规则拆为入职联系、劳动合同新签、增员报岗录入、社保公积金增员等子工单。</span>
               <span>模板按当前字段配置生成；管理员调整字段后，请重新下载最新模板。</span>
             </Space>
           )}
