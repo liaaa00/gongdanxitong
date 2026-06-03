@@ -287,6 +287,14 @@ describe('WorkOrderService unit tests', () => {
       .sort();
     expect(savedModules).toEqual(['contract', 'data_entry', 'onboarding_contact', 'social_insurance']);
     expect(txNotificationRepo.save).toHaveBeenCalledTimes(4);
+    const notifications = txNotificationRepo.save.mock.calls.map(([row]) => row as Notification);
+    expect(notifications).toEqual(expect.arrayContaining([
+      expect.objectContaining({ userId: 'handler-contract', content: '主工单 ON20260511001 分派到 劳动合同新签', payload: expect.objectContaining({ moduleCode: 'contract', moduleName: '劳动合同新签' }) }),
+      expect.objectContaining({ userId: 'handler-data_entry', content: '主工单 ON20260511001 分派到 增员报岗录入', payload: expect.objectContaining({ moduleCode: 'data_entry', moduleName: '增员报岗录入' }) }),
+      expect.objectContaining({ userId: 'handler-onboarding_contact', content: '主工单 ON20260511001 分派到 入职联系', payload: expect.objectContaining({ moduleCode: 'onboarding_contact', moduleName: '入职联系' }) }),
+      expect.objectContaining({ userId: 'handler-social_insurance', content: '主工单 ON20260511001 分派到 社保公积金增员', payload: expect.objectContaining({ moduleCode: 'social_insurance', moduleName: '社保公积金增员' }) }),
+    ]));
+    expect(notifications.map((item) => item.content).join(' ')).not.toContain('social_insurance');
     expect(result.dispatchedOrders.map((item) => item.moduleCode).sort()).toEqual(['contract', 'data_entry', 'onboarding_contact', 'social_insurance']);
   });
 

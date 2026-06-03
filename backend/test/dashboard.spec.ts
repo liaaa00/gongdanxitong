@@ -80,17 +80,23 @@ describe('DashboardService', () => {
   });
 
   it('returns dashboard cards for backend handler with dispatched order scope', async () => {
-    const dataSource = { query: jest.fn()
-      .mockResolvedValueOnce([{ count: 4 }])
-      .mockResolvedValueOnce([{ totalThisMonth: 7, processing: 2, completed: 5 }]) };
-    const service = new DashboardService(dataSource as never, validationStub);
+    const query = jest.fn(async (sql: string) => {
+      if (sql.includes('notifications')) return [{ count: 4 }];
+      if (sql.includes('scoped_all AS (')) return [{ totalThisMonth: 7, processing: 2, completed: 5 }];
+      if (sql.includes('SELECT module_code FROM module_handlers') && !sql.includes('scoped_all AS (')) return [{ module_code: 'contract' }];
+      if (sql.includes("FROM user_roles ur") && sql.includes("r.level IN ('supervisor','management','global')")) return [];
+      return [];
+    });
+    const service = new DashboardService({ query, transaction: jest.fn(async (callback: (manager: { query: typeof query }) => unknown) => callback({ query })) } as never, validationStub);
 
     const result = await service.getDashboardCards({ sub: 'handler-1', roles: ['contract_specialist'] } as never);
 
     expect(result).toEqual({ totalThisMonth: 7, processing: 2, ...pendingFields(2), completed: 5, ...rateFields(71.4), ...zeroVoided, myMessages: 4, scope: 'backend_module' });
-    expect(dataSource.query).toHaveBeenNthCalledWith(2, expect.stringContaining('FROM dispatched_orders'), ['handler-1', expect.any(String), phase1Modules]);
-    expect(dataSource.query.mock.calls[1][0]).toContain("status::text NOT IN ('completed','void','withdrawn') AND void_at IS NULL");
-    expect(dataSource.query.mock.calls[1][0]).toContain('AS voided');
+    const cardsCall = (query.mock.calls as unknown[][]).find(([sql]) => String(sql).includes('FROM dispatched_orders'));
+    expect(cardsCall).toBeDefined();
+    expect(cardsCall![1]).toEqual(['handler-1', expect.any(String), ['contract']]);
+    expect(String(cardsCall![0])).toContain("status::text NOT IN ('completed','void','withdrawn') AND void_at IS NULL");
+    expect(String(cardsCall![0])).toContain('AS voided');
   });
 
   it('calculates dashboard card completion rate with voided orders excluded from denominator', async () => {
@@ -260,6 +266,52 @@ describe('DashboardService', () => {
 
     expect(dataSource.query).toHaveBeenCalledWith(expect.stringContaining('FROM dispatched_orders d'), [false, [], null, expect.any(String), phase1Modules]);
     expect(result).toEqual({ rows: [expect.objectContaining({ moduleCode: 'onboarding_contact', label: '入职联系' })] });
+  });
+
+  it('filters shared leader backend dashboard card modules by 0603 role allow-list even with stale social configs', async () => {
+    const query = jest.fn(async (sql: string) => {
+      if (sql.includes('notifications')) return [{ count: 0 }];
+      if (sql.includes('SELECT module_code FROM module_handlers')) {
+        return [
+          { module_code: 'contract' },
+          { module_code: 'onboarding_contact' },
+          { module_code: 'resignation_contact' },
+          { module_code: 'social_insurance' },
+        ];
+      }
+      if (sql.includes('FROM dispatched_orders')) return [{ totalThisMonth: 3, pendingTotal: 2, pendingThisMonth: 1, completed: 1, voided: 0 }];
+      return [];
+    });
+    const service = new DashboardService({ query, transaction: jest.fn(async (callback: (manager: { query: typeof query }) => unknown) => callback({ query })) } as never, validationStub);
+
+    await service.getDashboardCards({ sub: 'jianglu', roles: ['shared_leader', 'contract_specialist', 'onboarding_specialist'] } as never);
+
+    const cardsCall = (query.mock.calls as unknown[][]).find(([sql]) => String(sql).includes('FROM dispatched_orders'));
+    expect(cardsCall).toBeDefined();
+    expect(cardsCall![1]).toEqual(['jianglu', expect.any(String), ['contract', 'onboarding_contact', 'resignation_contact']]);
+  });
+
+  it('filters shared leader backend node matrix modules by 0603 role allow-list even with stale social configs', async () => {
+    const query = jest.fn(async (sql: string) => {
+      if (sql.includes('SELECT module_code FROM module_handlers')) {
+        return [
+          { module_code: 'contract' },
+          { module_code: 'onboarding_contact' },
+          { module_code: 'resignation_contact' },
+          { module_code: 'social_insurance' },
+          { module_code: 'resignation_social_insurance' },
+        ];
+      }
+      if (sql.includes('current_role_scope')) return [{ can_view_module_all: true }];
+      return [];
+    });
+    const service = new DashboardService({ query, transaction: jest.fn(async (callback: (manager: { query: typeof query }) => unknown) => callback({ query })) } as never, validationStub);
+
+    await service.getOrderTypeMatrix({ sub: 'jianglu', roles: ['shared_leader', 'contract_specialist', 'onboarding_specialist'] } as never, 'node');
+
+    const nodeMatrixCall = (query.mock.calls as unknown[][]).find(([sql]) => String(sql).includes('current_role_scope'));
+    expect(nodeMatrixCall).toBeDefined();
+    expect(nodeMatrixCall![1]).toEqual(['jianglu', expect.any(String), ['contract', 'onboarding_contact', 'resignation_contact']]);
   });
 
   it('filters leader trend by moduleCode or Chinese module name', async () => {

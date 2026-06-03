@@ -4,10 +4,18 @@ import { In, MoreThan, QueryFailedError, Repository } from 'typeorm';
 import {
   BUSINESS_LEADER_ROLES,
   BUSINESS_MANAGER_ROLES,
+  CONTRACT_MODULE_ROLES,
+  DATA_ENTRY_MODULE_ROLES,
+  SOCIAL_INSURANCE_MODULE_ROLES,
   hasAnyRole,
   hasModuleSupervisorRole,
   isAdminRole,
 } from 'src/common/auth/role-permissions';
+import {
+  filterPhase1VisibleDispatchModules,
+  isPhase1VisibleDispatchModule,
+  isPhase1VisibleOrderType,
+} from 'src/common/constants/dispatch-modules';
 import { businessException } from 'src/common/exceptions/business-exception';
 import {
   DispatchedOrder,
@@ -30,6 +38,7 @@ import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { DispatchEngineService } from 'src/modules/dispatch-engine/dispatch-engine.service';
 import { FieldPermissionService } from 'src/modules/field-permissions/field-permission.service';
 import { FieldChangeHook } from 'src/modules/notifications/field-change.hook';
+import { fallbackBusinessLabel } from 'src/modules/notifications/notification-display.util';
 import {
   describeActionCode,
   getOperationLogContextFields,
@@ -322,9 +331,11 @@ export class WorkOrderService {
           afterData: snapshotWorkOrder(workOrder),
           ipAddress: null,
         }));
+        const visibleChildren = (await dispatchedRepo.find({ where: { parentOrderId: workOrder.id }, relations: { handler: true } }))
+          .filter((child) => isPhase1VisibleDispatchModule(child.moduleCode));
         return {
           workOrder: await this.loadDetail(workOrder.id),
-          dispatchedOrders: toWorkOrderSubOrderItems(await dispatchedRepo.find({ where: { parentOrderId: workOrder.id }, relations: { handler: true } })),
+          dispatchedOrders: toWorkOrderSubOrderItems(visibleChildren),
         };
       }
 
@@ -384,13 +395,14 @@ export class WorkOrderService {
           ipAddress: null,
         }));
         if (child.handlerId) {
+          const moduleLabel = fallbackBusinessLabel(child.moduleCode) ?? child.moduleCode;
           await notificationRepo.save(notificationRepo.create({
             userId: child.handlerId,
             bizType: 'dispatch',
             title: '新子工单待处理',
-            content: `主工单 ${workOrder.orderNo} 分派到 ${child.moduleCode}`,
+            content: `主工单 ${workOrder.orderNo} 分派到 ${moduleLabel}`,
             link: `/dispatched-orders/${child.id}`,
-            payload: { workOrderId: workOrder.id, dispatchedOrderId: child.id, moduleCode: child.moduleCode },
+            payload: { workOrderId: workOrder.id, dispatchedOrderId: child.id, moduleCode: child.moduleCode, moduleName: moduleLabel },
             isRead: false,
             readAt: null,
           }));
@@ -408,9 +420,11 @@ export class WorkOrderService {
       }));
 
       const childrenWithHandlers = await dispatchedRepo.find({ where: { parentOrderId: workOrder.id }, relations: { handler: true } });
+      const visibleChildren = (childrenWithHandlers.length > 0 ? childrenWithHandlers : savedChildren)
+        .filter((child) => isPhase1VisibleDispatchModule(child.moduleCode));
       return {
         workOrder: await this.loadDetail(workOrder.id),
-        dispatchedOrders: toWorkOrderSubOrderItems(childrenWithHandlers.length > 0 ? childrenWithHandlers : savedChildren),
+        dispatchedOrders: toWorkOrderSubOrderItems(visibleChildren),
       };
     });
   }
@@ -839,6 +853,7 @@ export class WorkOrderService {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
     const qb = this.workOrderRepository.createQueryBuilder('w');
+    qb.andWhere("w.order_type::text IN ('onboarding','resignation')");
 
     if (!isAdminRole(user.roles)) {
       if (hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES)) {
@@ -860,6 +875,9 @@ export class WorkOrderService {
 
     const orderType = query.orderType ?? query.order_type;
     if (orderType) {
+      if (!isPhase1VisibleOrderType(orderType)) {
+        return { items: [], total: 0, page, pageSize };
+      }
       qb.andWhere('w.order_type = :orderType', { orderType });
     }
     if (query.status) {
@@ -916,7 +934,9 @@ export class WorkOrderService {
 
     const items = rows.map((row) => {
       const subOrders = toWorkOrderSubOrderItems(
-        (childrenByParentId.get(row.id) ?? []).sort((a, b) => getModuleSortOrder(a.moduleCode) - getModuleSortOrder(b.moduleCode)),
+        (childrenByParentId.get(row.id) ?? [])
+          .filter((child) => isPhase1VisibleDispatchModule(child.moduleCode))
+          .sort((a, b) => getModuleSortOrder(a.moduleCode) - getModuleSortOrder(b.moduleCode)),
       );
       return toWorkOrderListItem(row, subOrders);
     });
@@ -926,6 +946,9 @@ export class WorkOrderService {
 
   async findOne(id: string, user: JwtUserPayload): Promise<WorkOrderDetailItem> {
     const workOrder = await this.loadWorkOrder(id);
+    if (!isPhase1VisibleOrderType(workOrder.orderType)) {
+      throw new NotFoundException('工单不存在');
+    }
     await this.assertReadable(workOrder, user);
     return this.loadDetail(id);
   }
@@ -1121,7 +1144,9 @@ export class WorkOrderService {
     }
 
     const subOrders = toWorkOrderSubOrderItems(
-      [...workOrder.dispatchedOrders].sort((a, b) => getModuleSortOrder(a.moduleCode) - getModuleSortOrder(b.moduleCode)),
+      [...workOrder.dispatchedOrders]
+        .filter((child) => isPhase1VisibleDispatchModule(child.moduleCode))
+        .sort((a, b) => getModuleSortOrder(a.moduleCode) - getModuleSortOrder(b.moduleCode)),
     );
 
     return {
@@ -1515,10 +1540,11 @@ export class WorkOrderService {
     userRoleRepository: Repository<UserRole>,
   ): Promise<boolean> {
     if (hasAnyRole(user.roles, ['business_owner', 'manager', 'biz_manager'])) return false;
+    if (!this.filterReadableBackendModules(user.roles, [moduleCode]).includes(moduleCode)) return false;
     if (await this.hasWithdrawModuleSupervisorConfig(user.sub, moduleCode, moduleSupervisorRepository)) return true;
-    if (hasModuleSupervisorRole(user.roles) && (await this.hasWithdrawModuleAccess(user.sub, moduleCode, moduleHandlerRepository, moduleSupervisorRepository))) return true;
+    if (hasModuleSupervisorRole(user.roles) && (await this.hasWithdrawModuleAccess(user.sub, moduleCode, moduleHandlerRepository, moduleSupervisorRepository, user.roles))) return true;
     return (await this.hasWithdrawSupervisorLevel(user.sub, userRoleRepository))
-      && (await this.hasWithdrawModuleAccess(user.sub, moduleCode, moduleHandlerRepository, moduleSupervisorRepository));
+      && (await this.hasWithdrawModuleAccess(user.sub, moduleCode, moduleHandlerRepository, moduleSupervisorRepository, user.roles));
   }
 
   private async hasWithdrawModuleSupervisorConfig(
@@ -1540,7 +1566,9 @@ export class WorkOrderService {
     moduleCode: string,
     moduleHandlerRepository: Repository<ModuleHandler>,
     moduleSupervisorRepository: Repository<ModuleSupervisor>,
+    roles: readonly string[] = [],
   ): Promise<boolean> {
+    if (roles.length > 0 && !this.filterReadableBackendModules(roles, [moduleCode]).includes(moduleCode)) return false;
     const count = await moduleHandlerRepository.count({ where: { handlerId: userId, moduleCode, isActive: true } });
     if (count > 0) return true;
     return this.hasWithdrawModuleSupervisorConfig(userId, moduleCode, moduleSupervisorRepository);
@@ -1610,16 +1638,56 @@ export class WorkOrderService {
       }
     }
 
-    // 检查是否为子工单办理人
+    // 后道仅可读取自己负责/管理且第一阶段可见的子工单所属主工单详情。
     const children = await this.dispatchedOrderRepository.find({
       where: { parentOrderId: workOrder.id },
-      select: { handlerId: true },
+      select: { handlerId: true, moduleCode: true },
     });
-    if (children.some((child) => child.handlerId === user.sub)) {
+    const visibleChildren = children.filter((child) => isPhase1VisibleDispatchModule(child.moduleCode));
+    if (visibleChildren.some((child) => child.handlerId === user.sub)) {
+      return;
+    }
+    const accessibleModules = await this.resolveReadableBackendModules(user);
+    if (visibleChildren.some((child) => accessibleModules.includes(child.moduleCode))) {
       return;
     }
 
     throw new ForbiddenException('无权访问该资源');
+  }
+
+  private async resolveReadableBackendModules(user: JwtUserPayload): Promise<string[]> {
+    const modules: string[] = [];
+    if (this.moduleHandlerRepository) {
+      const rows = await this.moduleHandlerRepository.find({ where: { handlerId: user.sub, isActive: true } });
+      modules.push(...rows.map((row) => row.moduleCode));
+    }
+    if (this.moduleSupervisorRepository) {
+      const rows = await this.moduleSupervisorRepository.find({ where: { supervisorId: user.sub, isActive: true } });
+      modules.push(...rows.map((row) => row.moduleCode));
+    }
+    return this.filterReadableBackendModules(user.roles, modules);
+  }
+
+  private filterReadableBackendModules(roles: readonly string[], modules: readonly string[]): string[] {
+    const visibleModules = filterPhase1VisibleDispatchModules(modules);
+    if (roles.includes('admin') || hasAnyRole(roles, BUSINESS_MANAGER_ROLES) || hasAnyRole(roles, BUSINESS_LEADER_ROLES)) {
+      return visibleModules;
+    }
+    const allowed = new Set(this.roleReadableBackendModules(roles));
+    if (allowed.size === 0) return visibleModules;
+    return visibleModules.filter((moduleCode) => allowed.has(moduleCode));
+  }
+
+  private roleReadableBackendModules(roles: readonly string[]): string[] {
+    const modules: string[] = [];
+    if (hasAnyRole(roles, ['shared_leader', 'shared_team_owner'])) modules.push('contract', 'onboarding_contact', 'resignation_contact');
+    else {
+      if (hasAnyRole(roles, CONTRACT_MODULE_ROLES)) modules.push('contract');
+      if (hasAnyRole(roles, ['onboarding_specialist', 'onboarding_resignation_member', 'onboarding_team'])) modules.push('onboarding_contact', 'resignation_contact');
+    }
+    if (hasAnyRole(roles, DATA_ENTRY_MODULE_ROLES)) modules.push('data_entry', 'data_entry_resign');
+    if (hasAnyRole(roles, SOCIAL_INSURANCE_MODULE_ROLES)) modules.push('social_insurance', 'resignation_social_insurance');
+    return filterPhase1VisibleDispatchModules(modules);
   }
 
   private assertBusinessOwnerReadOnly(user: JwtUserPayload): void {

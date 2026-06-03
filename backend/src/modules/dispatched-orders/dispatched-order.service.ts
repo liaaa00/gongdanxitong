@@ -1341,10 +1341,20 @@ export class DispatchedOrderService {
     }
     const modules = await this.getAccessibleModules(user.sub, user.roles);
     const canSeeModuleAll = hasManagementScopeRole(user.roles) || hasModuleSupervisorRole(user.roles) || (await this.hasSupervisorLevel(user.sub));
+    const includeCreatorScope = this.shouldIncludeCreatorScope(user, modules);
+    const restrictAssignedScope = this.shouldRestrictAssignedScope(user, modules);
     qb.andWhere(new Brackets((scope) => {
       if (!onlyPool) {
-        scope.where('d.handler_id = :userId', { userId: user.sub });
-        scope.orWhere('w.created_by = :userId', { userId: user.sub });
+        if (restrictAssignedScope && modules.length > 0) {
+          scope.where('d.handler_id = :userId AND d.module_code IN (:...modules)', { userId: user.sub, modules });
+        } else if (restrictAssignedScope) {
+          scope.where('1 = 0');
+        } else {
+          scope.where('d.handler_id = :userId', { userId: user.sub });
+        }
+        if (includeCreatorScope) {
+          scope.orWhere('w.created_by = :userId', { userId: user.sub });
+        }
       } else {
         scope.where('1 = 0');
       }
@@ -1358,6 +1368,22 @@ export class DispatchedOrderService {
         }
       }
     }));
+  }
+
+  private shouldIncludeCreatorScope(user: JwtUserPayload, accessibleModules: readonly string[]): boolean {
+    if (hasAnyRole(user.roles, BUSINESS_MEMBER_ROLES) || hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES) || hasAnyRole(user.roles, BUSINESS_LEADER_ROLES)) {
+      return true;
+    }
+    // Backend processors must only see their assigned/responsible child modules in phase 1.
+    // If a backend user happens to be the parent work order creator, do not let that creator scope leak unrelated modules.
+    return accessibleModules.length === 0;
+  }
+
+  private shouldRestrictAssignedScope(user: JwtUserPayload, accessibleModules: readonly string[]): boolean {
+    if (hasAnyRole(user.roles, BUSINESS_MEMBER_ROLES) || hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES) || hasAnyRole(user.roles, BUSINESS_LEADER_ROLES)) {
+      return false;
+    }
+    return accessibleModules.length > 0;
   }
 
   private applyCommonFilters(qb: SelectQueryBuilder<DispatchedOrder>, query: ListDispatchedOrderQueryDto): void {
@@ -1660,14 +1686,23 @@ export class DispatchedOrderService {
   }
 
   private async assertCanRead(order: DispatchedOrder, user: JwtUserPayload): Promise<void> {
-    if (this.isAdmin(user) || order.handlerId === user.sub || order.parentOrder.createdBy === user.sub) return;
-    if (!order.handlerId && (await this.hasModuleAccess(user.sub, order.moduleCode))) return;
+    if (this.isAdmin(user) || order.parentOrder.createdBy === user.sub) return;
+    if (order.handlerId === user.sub && this.canReadAssignedModule(user, order.moduleCode)) return;
+    if (!order.handlerId && (await this.hasModuleAccess(user.sub, order.moduleCode, user.roles))) return;
     if (await this.canViewAsSupervisor(user, order.moduleCode)) return;
     throw new ForbiddenException('无权访问该子工单');
   }
 
+  private canReadAssignedModule(user: JwtUserPayload, moduleCode: string): boolean {
+    if (hasAnyRole(user.roles, BUSINESS_MEMBER_ROLES) || hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES) || hasAnyRole(user.roles, BUSINESS_LEADER_ROLES)) {
+      return true;
+    }
+    return this.filterModulesByRoleAllowList(user.roles, [moduleCode]).includes(moduleCode);
+  }
+
   private async assertCanHandle(order: DispatchedOrder, user: JwtUserPayload): Promise<void> {
-    if (this.isAdmin(user) || order.handlerId === user.sub) return;
+    if (this.isAdmin(user)) return;
+    if (order.handlerId === user.sub && this.canReadAssignedModule(user, order.moduleCode)) return;
     if (await this.canActAsModuleSupervisor(user, order.moduleCode)) return;
     throw businessException(5000, HttpStatus.FORBIDDEN, '无权操作该子工单');
   }
@@ -1735,7 +1770,7 @@ export class DispatchedOrderService {
   }
 
   private async assertModulePoolAccess(user: JwtUserPayload, moduleCode: string): Promise<void> {
-    if (this.isAdmin(user) || (await this.hasModuleAccess(user.sub, moduleCode))) return;
+    if (this.isAdmin(user) || (await this.hasModuleAccess(user.sub, moduleCode, user.roles))) return;
     throw businessException(5000, HttpStatus.FORBIDDEN, '无权接取该模块待认领工单');
   }
 
@@ -1747,14 +1782,16 @@ export class DispatchedOrderService {
   private async canViewAsSupervisor(user: JwtUserPayload, moduleCode: string): Promise<boolean> {
     if (hasManagementScopeRole(user.roles)) return true;
     if (this.roleAllowsModule(user.roles, moduleCode)) return true;
+    if (user.roles.length > 0 && !this.filterModulesByRoleAllowList(user.roles, [moduleCode]).includes(moduleCode)) return false;
     if (hasModuleSupervisorRole(user.roles) && (await this.hasModuleAccess(user.sub, moduleCode, user.roles))) return true;
     return (await this.hasSupervisorLevel(user.sub)) && (await this.hasModuleAccess(user.sub, moduleCode, user.roles));
   }
 
   private async canActAsModuleSupervisor(user: JwtUserPayload, moduleCode: string): Promise<boolean> {
     if (hasAnyRole(user.roles, ['business_owner', 'manager', 'biz_manager'])) return false;
-    if (await this.hasModuleSupervisorConfig(user.sub, moduleCode)) return true;
     if (this.roleAllowsModule(user.roles, moduleCode)) return true;
+    if (user.roles.length > 0 && !this.filterModulesByRoleAllowList(user.roles, [moduleCode]).includes(moduleCode)) return false;
+    if (await this.hasModuleSupervisorConfig(user.sub, moduleCode)) return true;
     if (hasModuleSupervisorRole(user.roles) && (await this.hasModuleAccess(user.sub, moduleCode, user.roles))) return true;
     return (await this.hasSupervisorLevel(user.sub)) && (await this.hasModuleAccess(user.sub, moduleCode, user.roles));
   }
@@ -1773,6 +1810,7 @@ export class DispatchedOrderService {
 
   private async hasModuleAccess(userId: string, moduleCode: string, roles: readonly string[] = []): Promise<boolean> {
     if (this.roleAllowsModule(roles, moduleCode)) return true;
+    if (roles.length > 0 && !this.filterModulesByRoleAllowList(roles, [moduleCode]).includes(moduleCode)) return false;
     const count = await this.moduleHandlerRepository.count({ where: { handlerId: userId, moduleCode, isActive: true } });
     if (count > 0) return true;
     return this.hasModuleSupervisorConfig(userId, moduleCode);
@@ -1782,17 +1820,22 @@ export class DispatchedOrderService {
     const handlerRows = await this.moduleHandlerRepository.find({ where: { handlerId: userId, isActive: true } });
     const handlerModules = handlerRows.map((row) => row.moduleCode);
 
-    // Also include modules where the user is configured as a supervisor
+    // Also include modules where the user is configured as a supervisor.
+    // 0603 backend fallback: role-level allow lists are authoritative for phase-1 backend accounts.
+    // This prevents stale/legacy handler or supervisor rows from leaking unrelated modules, e.g. 江璐 must not see social_insurance.
     const supervisorModules: string[] = [];
     if (this.moduleSupervisorRepository) {
       const supervisorRows = await this.moduleSupervisorRepository.find({ where: { supervisorId: userId, isActive: true } });
       supervisorModules.push(...supervisorRows.map((row) => row.moduleCode));
     }
 
-    return filterPhase1VisibleDispatchModules([...handlerModules, ...supervisorModules, ...this.roleAccessibleModules(roles)]);
+    return this.filterModulesByRoleAllowList(roles, filterPhase1VisibleDispatchModules([...handlerModules, ...supervisorModules, ...this.roleAccessibleModules(roles)]));
   }
 
   private roleAllowsModule(roles: readonly string[], moduleCode: string): boolean {
+    if (this.sharedTeamModuleCodes().includes(moduleCode)) return this.hasSharedTeamRole(roles);
+    if (this.contractModuleCodes().includes(moduleCode)) return hasAnyRole(roles, ['contract_specialist', 'labor_contract_member', 'contract_team']);
+    if (this.onboardingContactModuleCodes().includes(moduleCode)) return hasAnyRole(roles, ['onboarding_specialist', 'onboarding_resignation_member', 'onboarding_team']);
     if (moduleCode === 'data_entry' || moduleCode === 'data_entry_resign') return hasAnyRole(roles, DATA_ENTRY_MODULE_ROLES);
     if (isSocialInsuranceDispatchModule(moduleCode)) return hasAnyRole(roles, SOCIAL_INSURANCE_MODULE_ROLES);
     return false;
@@ -1800,9 +1843,39 @@ export class DispatchedOrderService {
 
   private roleAccessibleModules(roles: readonly string[]): string[] {
     const modules: string[] = [];
+    if (this.hasSharedTeamRole(roles)) modules.push(...this.sharedTeamModuleCodes());
+    else {
+      if (hasAnyRole(roles, ['contract_specialist', 'labor_contract_member', 'contract_team'])) modules.push(...this.contractModuleCodes());
+      if (hasAnyRole(roles, ['onboarding_specialist', 'onboarding_resignation_member', 'onboarding_team'])) modules.push(...this.onboardingContactModuleCodes());
+    }
     if (hasAnyRole(roles, DATA_ENTRY_MODULE_ROLES)) modules.push('data_entry', 'data_entry_resign');
     if (hasAnyRole(roles, SOCIAL_INSURANCE_MODULE_ROLES)) modules.push('social_insurance', 'resignation_social_insurance');
     return filterPhase1VisibleDispatchModules(modules);
+  }
+
+  private filterModulesByRoleAllowList(roles: readonly string[], moduleCodes: string[]): string[] {
+    if (roles.includes('admin') || hasAnyRole(roles, BUSINESS_MANAGER_ROLES) || hasAnyRole(roles, BUSINESS_LEADER_ROLES)) {
+      return filterPhase1VisibleDispatchModules(moduleCodes);
+    }
+    const allowed = new Set(this.roleAccessibleModules(roles));
+    if (allowed.size === 0) return filterPhase1VisibleDispatchModules(moduleCodes);
+    return filterPhase1VisibleDispatchModules(moduleCodes).filter((moduleCode) => allowed.has(moduleCode));
+  }
+
+  private hasSharedTeamRole(roles: readonly string[]): boolean {
+    return hasAnyRole(roles, ['shared_leader', 'shared_team_owner']);
+  }
+
+  private sharedTeamModuleCodes(): string[] {
+    return ['contract', 'onboarding_contact', 'resignation_contact'];
+  }
+
+  private contractModuleCodes(): string[] {
+    return ['contract'];
+  }
+
+  private onboardingContactModuleCodes(): string[] {
+    return ['onboarding_contact', 'resignation_contact'];
   }
 
   private isAdmin(user: JwtUserPayload): boolean {

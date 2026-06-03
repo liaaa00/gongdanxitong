@@ -8,6 +8,7 @@ import {
   ModuleHandler,
   Notification,
 } from 'src/entities';
+import { fallbackBusinessLabel } from 'src/modules/notifications/notification-display.util';
 
 const OPEN_SLA_STATUSES = [DispatchedOrderStatus.PENDING, DispatchedOrderStatus.PROCESSING];
 const SLA_BREACH_BIZ_TYPE = 'sla_breach';
@@ -74,13 +75,14 @@ export class SlaNotificationService {
         })
         .map((item) => item.userId));
 
+      const moduleLabel = fallbackBusinessLabel(order.moduleCode) ?? order.moduleCode;
       const rows = recipients
         .filter((userId) => !existingKeys.has(userId))
         .map((userId) => this.notificationRepository.create({
           userId,
           bizType: SLA_BREACH_BIZ_TYPE,
           title: '子工单已超时',
-          content: `工单 ${order.parentOrder.orderNo} 的 ${order.moduleCode} 子工单已超过处理时限，请尽快处理。`,
+          content: `工单 ${order.parentOrder.orderNo} 的 ${moduleLabel} 子工单已超过处理时限，请尽快处理。`,
           link: `/my-dispatched/${order.id}`,
           payload: {
             workOrderId: order.parentOrder.id,
@@ -89,6 +91,7 @@ export class SlaNotificationService {
             entityType: 'dispatched_order',
             entityId: order.id,
             moduleCode: order.moduleCode,
+            moduleName: moduleLabel,
             status: order.status,
             dueAt: dueAt.toISOString(),
             due_at: dueAt.toISOString(),

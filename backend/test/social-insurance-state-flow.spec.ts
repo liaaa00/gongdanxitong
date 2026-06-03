@@ -170,6 +170,31 @@ describe('social insurance state flow guards (0603)', () => {
     expect(voidContext.operationLogRepo.save).toHaveBeenCalledWith(expect.objectContaining({ actionType: 'creator_void_request' }));
   });
 
+  it('applies the same lock rules to resignation social insurance reduction orders', async () => {
+    const pendingReduction = makeSocialOrder({
+      moduleCode: 'resignation_social_insurance',
+      status: DispatchedOrderStatus.PENDING,
+      acceptedAt: null,
+      parentOrder: makeParent({ orderType: OrderType.RESIGNATION, orderNo: 'RS20260603001' }),
+    });
+    const pendingContext = makeService(pendingReduction);
+
+    await pendingContext.service.withdraw(ORDER_ID, { reason: 'cancel reduction before accept' }, creator);
+    expect(pendingReduction.status).toBe(DispatchedOrderStatus.WITHDRAWN);
+    expect(pendingContext.operationLogRepo.save).toHaveBeenCalledWith(expect.objectContaining({ actionType: 'creator_withdraw_direct_before_accept' }));
+
+    const acceptedReduction = makeSocialOrder({
+      moduleCode: 'resignation_social_insurance',
+      status: DispatchedOrderStatus.PROCESSING,
+      acceptedAt: new Date('2026-06-02T00:00:00.000Z'),
+      parentOrder: makeParent({ orderType: OrderType.RESIGNATION, orderNo: 'RS20260603002' }),
+    });
+    const acceptedContext = makeService(acceptedReduction);
+    await acceptedContext.service.voidByCreator(ORDER_ID, { reason: 'void reduction after accept' }, creator);
+    expect(acceptedReduction.status).toBe(DispatchedOrderStatus.VOID_PENDING);
+    expect(acceptedContext.operationLogRepo.save).toHaveBeenCalledWith(expect.objectContaining({ actionType: 'creator_void_request' }));
+  });
+
   it('keeps retry/waiting batch feedback in processing instead of adding extra failure states', async () => {
     const order = makeSocialOrder({ status: DispatchedOrderStatus.PENDING, acceptedAt: null, handlerId: 'handler-1' });
     const { service, dispatchedOrderRepo, operationLogRepo } = makeService(order);

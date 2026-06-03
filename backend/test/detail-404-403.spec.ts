@@ -51,7 +51,7 @@ describe('P1 detail 404/403 normalization', () => {
   });
 
   it('work-orders detail returns ForbiddenException when user has no scope', async () => {
-    const service = makeWorkOrderService(jest.fn(async () => ({ id: WORK_ORDER_ID, createdBy: 'owner', departmentId: 'dep1' } as WorkOrder)));
+    const service = makeWorkOrderService(jest.fn(async () => ({ id: WORK_ORDER_ID, orderType: 'onboarding', createdBy: 'owner', departmentId: 'dep1' } as WorkOrder)));
     await expect(service.findOne(WORK_ORDER_ID, { sub: 'u2', username: 'u2', roles: ['salesperson'] })).rejects.toBeInstanceOf(ForbiddenException);
   });
 

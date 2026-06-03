@@ -291,10 +291,10 @@ describeIf('0520 feedback coverage E2E (external BASE_URL)', () => {
       expect(missingRemark.status).toBe(400);
     });
 
-    it('B5: shared owner can filter team dispatched orders by Chinese module name', async () => {
+    it('B5: social specialist can filter team dispatched orders by Chinese module name', async () => {
       const res = await request(baseOrigin())
-        .get(encodeURI(apiPath('/dispatched-orders?page=1&pageSize=20&moduleName=社保公积金办理')))
-        .set(auth(SHARED_OWNER_TOKEN!));
+        .get(encodeURI(apiPath('/dispatched-orders?page=1&pageSize=20&moduleName=社保公积金增员')))
+        .set(auth(BACKOFFICE_HANDLER_TOKEN!));
       expect(res.status).toBe(200);
       const items = unwrapItems(res.body);
       for (const item of items) {

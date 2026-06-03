@@ -210,12 +210,15 @@ describe('five control-flow regression coverage', () => {
     expect((moduleScopeCall![1] as { modules: string[] }).modules).toContain(moduleCode);
   });
 
-  it('shared leader jianglu module scope is Yang Chun plus Mao Yani phase-1 modules only', async () => {
+  // 0603：江璐是杨纯（劳动合同新签/续签）+ 毛雅妮（入职联系/离职材料收集）的合集。
+  // 第一阶段界面/接口隐藏在职模块，因此实际列表 scope 只应保留入职/离职可见模块，不含数据录入、社保公积金或待遇申报。
+  it('shared leader 江璐 module scope is Yang Chun plus Mao Yani phase-1 modules only', async () => {
     const jianglu: JwtUserPayload = {
       sub: 'jianglu',
       username: 'jianglu',
       roles: ['shared_leader', 'contract_specialist', 'onboarding_specialist'],
     };
+    // 江璐 seed 中保留合同续签配置，但第一阶段列表 scope 会过滤掉在职模块 renewal_contract。
     const jiangluHandlerModules = ['contract', 'renewal_contract', 'onboarding_contact', 'resignation_contact'];
     const expectedPhase1Modules = ['contract', 'onboarding_contact', 'resignation_contact'];
     const forbiddenModules = ['data_entry', 'data_entry_resign', 'social_insurance', 'onboarding_social_insurance', 'resignation_social_insurance', 'benefit_apply', 'renewal_contract'];
@@ -246,6 +249,7 @@ describe('five control-flow regression coverage', () => {
     const scope = { where: jest.fn(), orWhere: jest.fn() };
     bracket!.whereFactory(scope);
 
+    // 监督级可见本模块全部子单：scope 必须按 module_code 限定，且模块集合不含任何被禁模块。
     const moduleScopeCall = scope.orWhere.mock.calls.find(([clause]) => clause === 'd.module_code IN (:...modules)');
     expect(moduleScopeCall).toBeDefined();
     const scopedModules = (moduleScopeCall![1] as { modules: string[] }).modules;
@@ -282,5 +286,18 @@ describe('seed module handler assignments (0603 final business matrix)', () => {
     expect(seed).toMatch(/moduleCode:\s*'contract',\s*username:\s*'yangchun'/);
     expect(seed).toMatch(/moduleCode:\s*'onboarding_contact',\s*username:\s*'maoyani'/);
     expect(seed).toMatch(/moduleCode:\s*'data_entry',\s*username:\s*'annazhen'/);
+  });
+
+  it('seeds module supervisors without stale social access for Jiang Lu', async () => {
+    const { readFileSync } = await import('fs');
+    const { join } = await import('path');
+    const configSeed = readFileSync(join(process.cwd(), 'src/database/seeds/seed-module-configs.ts'), 'utf8');
+
+    expect(configSeed).toContain("{ moduleCode: 'resignation_contact', usernames: ['jianglu', 'onboardsup01'] }");
+    expect(configSeed).toContain("{ moduleCode: 'contract', usernames: ['jianglu', 'contractsup01'] }");
+    expect(configSeed).toContain("{ moduleCode: 'social_insurance', usernames: ['fuqianwen'] }");
+    expect(configSeed).toContain("{ moduleCode: 'resignation_social_insurance', usernames: ['fuqianwen'] }");
+    expect(configSeed).toContain("{ moduleCode: 'renewal_contract', usernames: ['jianglu', 'contractsup01'] }");
+    expect(configSeed).toContain("{ moduleCode: 'data_entry_resign', usernames: ['annazhen', 'dataentrysup01'] }");
   });
 });

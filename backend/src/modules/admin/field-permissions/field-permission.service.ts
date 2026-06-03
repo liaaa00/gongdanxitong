@@ -21,8 +21,8 @@ export const FIELD_PERMISSION_MATRIX_SCENARIOS = [
   'dispatched:renewal_contract',
   'dispatched:benefit',
   'dispatched:resignation_contact',
-  'dispatched:resignation_cert',
   'dispatched:data_entry_resign',
+  'dispatched:resignation_social_insurance',
 ] as const;
 
 const FIELD_PERMISSION_MATRIX_SCENARIO_SET = new Set<string>(FIELD_PERMISSION_MATRIX_SCENARIOS);

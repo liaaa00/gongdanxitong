@@ -90,7 +90,8 @@ export class DashboardService {
     const myMessages = await this.countUnreadMessages(user.sub);
 
     if (this.isBackendHandler(user)) {
-      return { ...(await this.queryDispatchedOrderCards(user, selectedMonth)), myMessages, scope: 'backend_module' };
+      const backendScope = await this.resolveBackendDashboardScope(user);
+      return { ...(await this.queryDispatchedOrderCards(user, selectedMonth, backendScope)), myMessages, scope: 'backend_module' };
     }
 
     if (requestedScope === 'mine') {
@@ -186,7 +187,7 @@ export class DashboardService {
       return this.emptyTeam(normalizedModuleCode, true);
     }
     const canViewAll = await this.canViewBackendModuleAll(user, normalizedModuleCode);
-    if (!canViewAll && !(await this.hasModuleAccess(user.sub, normalizedModuleCode))) {
+    if (!canViewAll && !(await this.hasModuleAccess(user.sub, normalizedModuleCode, user.roles))) {
       return this.emptyTeam(normalizedModuleCode, true);
     }
     const rows = await this.dataSource.query(
@@ -408,8 +409,12 @@ export class DashboardService {
     return this.toCardsWithoutMessages(rows[0]);
   }
 
-  private async queryDispatchedOrderCards(user: JwtUserPayload, month: string): Promise<Omit<DashboardCardsDto, 'myMessages'>> {
-    const rows = await this.dataSource.query(
+  private async queryDispatchedOrderCards(user: JwtUserPayload, month: string, scope?: BackendDashboardScope): Promise<Omit<DashboardCardsDto, 'myMessages'>> {
+    const backendScope = scope ?? await this.resolveBackendDashboardScope(user);
+    const moduleCodes = this.filterModulesByRoleAllowList(user.roles, backendScope.modules);
+    if (moduleCodes.length === 0) return this.emptyCards();
+
+    const rows = (await this.dataSource.query(
       `
       WITH bounds AS (
         SELECT
@@ -451,8 +456,8 @@ export class DashboardService {
         COUNT(*) FILTER (WHERE status = 'void' OR void_at IS NOT NULL)::int AS voided
       FROM scoped_month
       `,
-      [user.sub, this.toMonthStart(month), [...PHASE1_VISIBLE_DISPATCH_MODULE_CODES]],
-    ) as DashboardCardsRow[];
+      [user.sub, this.toMonthStart(month), moduleCodes],
+    ) ?? []) as DashboardCardsRow[];
     return this.toCardsWithoutMessages(rows[0]);
   }
 
@@ -540,21 +545,19 @@ export class DashboardService {
   private async canViewBackendModuleAll(user: JwtUserPayload, moduleCode: string): Promise<boolean> {
     if (await this.canViewAllWorkOrders(user) || hasManagementScopeRole(user.roles)) return true;
     if (!hasModuleSupervisorRole(user.roles) && !user.roles.some((role) => role.endsWith('_supervisor'))) return false;
-    if (await this.hasModuleAccess(user.sub, moduleCode)) return true;
-    if (await this.hasModuleSupervisorConfig(user.sub, moduleCode)) return true;
-    return false;
+    return this.hasModuleAccess(user.sub, moduleCode, user.roles);
   }
 
   private async resolveBackendDashboardScope(user: JwtUserPayload): Promise<BackendDashboardScope> {
-    const modules = await this.getAccessibleModules(user.sub);
+    const modules = await this.getAccessibleModules(user.sub, user.roles);
     const includeModuleAll = await this.canViewAllWorkOrders(user)
       || hasManagementScopeRole(user.roles)
       || hasModuleSupervisorRole(user.roles)
       || await this.hasSupervisorLevel(user.sub);
-    return { modules: filterPhase1VisibleDispatchModules(modules), includeModuleAll };
+    return { modules: this.filterModulesByRoleAllowList(user.roles, modules), includeModuleAll };
   }
 
-  private async getAccessibleModules(userId: string): Promise<string[]> {
+  private async getAccessibleModules(userId: string, roles: readonly string[] = []): Promise<string[]> {
     const rows = await this.dataSource.query(
       `
       SELECT module_code FROM module_handlers WHERE handler_id = $1 AND is_active = true
@@ -563,10 +566,43 @@ export class DashboardService {
       `,
       [userId],
     ) as Array<{ module_code: string }>;
-    return filterPhase1VisibleDispatchModules(Array.from(new Set(rows.map((row) => row.module_code).filter(Boolean))));
+    return this.filterModulesByRoleAllowList(roles, filterPhase1VisibleDispatchModules([
+      ...rows.map((row) => row.module_code).filter(Boolean),
+      ...this.roleAccessibleModules(roles),
+    ]));
   }
 
-  private async hasModuleAccess(userId: string, moduleCode: string): Promise<boolean> {
+  private roleAccessibleModules(roles: readonly string[]): string[] {
+    const modules: string[] = [];
+    if (this.hasSharedTeamRole(roles)) modules.push(...this.sharedTeamModuleCodes());
+    else {
+      if (hasAnyRole(roles, ['contract_specialist', 'labor_contract_member', 'contract_team'])) modules.push('contract');
+      if (hasAnyRole(roles, ['onboarding_specialist', 'onboarding_resignation_member', 'onboarding_team'])) modules.push('onboarding_contact', 'resignation_contact');
+    }
+    if (hasAnyRole(roles, ['data_entry_leader', 'data_entry_team', 'data_entry_supervisor', 'data_entry_specialist'])) modules.push('data_entry', 'data_entry_resign');
+    if (hasAnyRole(roles, ['social_insurance_specialist', 'social_insurance_team', 'social_insurance_supervisor', 'social_security_supervisor'])) modules.push('social_insurance', 'resignation_social_insurance');
+    return filterPhase1VisibleDispatchModules(modules);
+  }
+
+  private filterModulesByRoleAllowList(roles: readonly string[], moduleCodes: string[]): string[] {
+    if (roles.includes('admin') || hasAnyRole(roles, BUSINESS_MANAGER_ROLES) || hasAnyRole(roles, BUSINESS_LEADER_ROLES)) {
+      return filterPhase1VisibleDispatchModules(moduleCodes);
+    }
+    const allowed = new Set(this.roleAccessibleModules(roles));
+    if (allowed.size === 0) return filterPhase1VisibleDispatchModules(moduleCodes);
+    return filterPhase1VisibleDispatchModules(moduleCodes).filter((moduleCode) => allowed.has(moduleCode));
+  }
+
+  private hasSharedTeamRole(roles: readonly string[]): boolean {
+    return hasAnyRole(roles, ['shared_leader', 'shared_team_owner']);
+  }
+
+  private sharedTeamModuleCodes(): string[] {
+    return ['contract', 'onboarding_contact', 'resignation_contact'];
+  }
+
+  private async hasModuleAccess(userId: string, moduleCode: string, roles: readonly string[] = []): Promise<boolean> {
+    if (roles.length > 0 && !this.filterModulesByRoleAllowList(roles, [moduleCode]).includes(moduleCode)) return false;
     const rows = await this.dataSource.query(
       `
       SELECT 1 FROM module_handlers WHERE handler_id = $1 AND module_code = $2 AND is_active = true
@@ -579,16 +615,9 @@ export class DashboardService {
     return rows.length > 0;
   }
 
-  private async hasModuleSupervisorConfig(userId: string, moduleCode: string): Promise<boolean> {
-    const rows = await this.dataSource.query(
-      `SELECT 1 FROM module_supervisors WHERE supervisor_id = $1 AND module_code = $2 AND is_active = true LIMIT 1`,
-      [userId, moduleCode],
-    ) as Array<{ '?column?'?: number }>;
-    return rows.length > 0;
-  }
 
   private async hasSupervisorLevel(userId: string): Promise<boolean> {
-    const rows = await this.dataSource.query(
+    const rows = (await this.dataSource.query(
       `
       SELECT 1
         FROM user_roles ur
@@ -598,7 +627,7 @@ export class DashboardService {
        LIMIT 1
       `,
       [userId],
-    ) as Array<{ '?column?'?: number }>;
+    ) ?? []) as Array<{ '?column?'?: number }>;
     return rows.length > 0;
   }
 
@@ -623,7 +652,8 @@ export class DashboardService {
   async getOrderTypeMatrix(user: JwtUserPayload, dimension: 'orderType' | 'node' = 'orderType', requestedScope?: 'mine' | 'team', month?: string): Promise<unknown> {
     const selectedMonth = this.resolveDashboardMonth(month);
     if (dimension === 'node' && this.isBackendHandler(user) && !this.isGlobalBusinessOverview(user)) {
-      return { rows: await this.queryBackendNodeMatrixRows(user, selectedMonth) };
+      const backendScope = await this.resolveBackendDashboardScope(user);
+      return { rows: await this.queryBackendNodeMatrixRows(user, selectedMonth, backendScope) };
     }
 
     const scope = await this.resolveDashboardScope(user, requestedScope);
@@ -642,7 +672,8 @@ export class DashboardService {
 
     if (dimension === 'node') {
       if (this.isBackendHandler(user) && !this.isGlobalBusinessOverview(user)) {
-        return { rows: await this.queryBackendNodeMatrixRows(user, selectedMonth) };
+        const backendScope = await this.resolveBackendDashboardScope(user);
+        return { rows: await this.queryBackendNodeMatrixRows(user, selectedMonth, backendScope) };
       }
       return { rows: await this.queryNodeMatrixRows(params, selectedMonth) };
     }
@@ -703,7 +734,11 @@ export class DashboardService {
     return { rows };
   }
 
-  private async queryBackendNodeMatrixRows(user: JwtUserPayload, month: string): Promise<Array<Record<string, unknown>>> {
+  private async queryBackendNodeMatrixRows(user: JwtUserPayload, month: string, scope?: BackendDashboardScope): Promise<Array<Record<string, unknown>>> {
+    const backendScope = scope ?? await this.resolveBackendDashboardScope(user);
+    const moduleCodes = this.filterModulesByRoleAllowList(user.roles, backendScope.modules);
+    if (moduleCodes.length === 0) return [];
+
     const rows = await this.dataSource.query(
       `
       WITH bounds AS (
@@ -753,7 +788,7 @@ export class DashboardService {
       GROUP BY d.module_code
       ORDER BY d.module_code
       `,
-      [user.sub, this.toMonthStart(month), [...PHASE1_VISIBLE_DISPATCH_MODULE_CODES]],
+      [user.sub, this.toMonthStart(month), moduleCodes],
     ) as Array<Record<string, unknown> & { moduleCode: string }>;
 
     return rows.map((row) => ({
