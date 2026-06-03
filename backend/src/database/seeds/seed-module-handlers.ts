@@ -7,35 +7,32 @@ const moduleHandlerSeeds: Array<{
   weight: number;
   isBackup: boolean;
 }> = [
-  // 合同模块：杨纯为主处理人，江璐为共享团队负责人/备份，可查看并代理全部合同类子单。
+  // 劳动合同：杨纯主办，江璐为共享负责人/备份；江璐可看到杨纯合同类合集。
   { moduleCode: 'contract', username: 'yangchun', weight: 10, isBackup: false },
   { moduleCode: 'contract', username: 'jianglu', weight: 1, isBackup: true },
   { moduleCode: 'renewal_contract', username: 'yangchun', weight: 10, isBackup: false },
   { moduleCode: 'renewal_contract', username: 'jianglu', weight: 1, isBackup: true },
 
-  // 入离职模块：毛雅妮为主处理人，江璐为共享团队负责人/备份，可查看并代理全部入离职类子单。
+  // 入离职联系/材料收集：毛雅妮主办，江璐为共享负责人/备份；江璐可看到毛雅妮联系类合集。
   { moduleCode: 'onboarding_contact', username: 'maoyani', weight: 10, isBackup: false },
   { moduleCode: 'onboarding_contact', username: 'jianglu', weight: 1, isBackup: true },
   { moduleCode: 'resignation_contact', username: 'maoyani', weight: 10, isBackup: false },
   { moduleCode: 'resignation_contact', username: 'jianglu', weight: 1, isBackup: true },
-  { moduleCode: 'resignation_cert', username: 'maoyani', weight: 10, isBackup: false },
-  { moduleCode: 'resignation_cert', username: 'jianglu', weight: 1, isBackup: true },
 
-  // 数据录入模块：安娜珍。
+  // 报岗录入：安娜祯负责增员/减员报岗录入。
   { moduleCode: 'data_entry', username: 'annazhen', weight: 10, isBackup: false },
+  { moduleCode: 'data_entry_resign', username: 'annazhen', weight: 10, isBackup: false },
+
+  // 社保公积金：会议口径指定傅倩雯负责增员/减员；账号 username 仍为历史兼容拼音 fuqianwen，realName 为傅倩雯。
+  { moduleCode: 'social_insurance', username: 'fuqianwen', weight: 10, isBackup: false },
+  { moduleCode: 'resignation_social_insurance', username: 'fuqianwen', weight: 10, isBackup: false },
 ];
 
 const managedModules = Array.from(new Set(moduleHandlerSeeds.map((seed) => seed.moduleCode)));
-const deprecatedModules = ['social_security'];
-
-// 0602 业务最终口径：社保公积金办理（含入职/离职拆分）与待遇申报暂不绑定负责人，
-// 负责人留空，不强行绑定付倩文/杨纯/江璐。任何遗留绑定都需置为 inactive，
-// 保证后端不会把这些模块的可操作人权限分配给共享团队（含江璐）。
-const vacatedModules = [
-  'social_insurance',
+const deprecatedModules = [
+  'social_security',
   'onboarding_social_insurance',
-  'resignation_social_insurance',
-  'benefit_apply',
+  'resignation_cert',
 ];
 
 export async function seedModuleHandlers(dataSource: DataSource): Promise<void> {
@@ -85,12 +82,11 @@ export async function seedModuleHandlers(dataSource: DataSource): Promise<void> 
     .where('module_code IN (:...moduleCodes)', { moduleCodes: deprecatedModules })
     .execute();
 
-  // 0602 最终口径：社保公积金/待遇申报负责人留空。将任何遗留的处理人绑定置为 inactive，
-  // 确保后端权限兜底不会把这些模块的可操作人权限发放给共享团队（含江璐）。
+  // 第一阶段在职模块后台配置可保留，但不把社保变更/待遇申报暴露给后道处理人。
   await moduleHandlerRepo
     .createQueryBuilder()
     .update(ModuleHandler)
     .set({ isActive: false })
-    .where('module_code IN (:...moduleCodes)', { moduleCodes: vacatedModules })
+    .where('module_code IN (:...moduleCodes)', { moduleCodes: ['benefit_apply', 'social_insurance_change'] })
     .execute();
 }

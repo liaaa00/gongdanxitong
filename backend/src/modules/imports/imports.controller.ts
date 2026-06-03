@@ -12,6 +12,7 @@ import { FieldsService } from 'src/modules/admin/fields/fields.service';
 import { ConfirmImportDto, ConfirmNewFieldDto } from './dto/confirm-import.dto';
 import { PreviewImportDto } from './dto/preview-import.dto';
 import { ImportJobService } from './import-job.service';
+import { assertCanImportWorkOrder } from './import-permissions';
 
 const excelFilter = (_req: unknown, file: Express.Multer.File, callback: (error: Error | null, acceptFile: boolean) => void): void => {
   const ok = file.originalname.toLowerCase().endsWith('.xlsx') || file.originalname.toLowerCase().endsWith('.xls');
@@ -34,6 +35,7 @@ export class ImportsController {
     @UploadedFile() file: Express.Multer.File | undefined,
     @CurrentUser() user: JwtUserPayload,
   ) {
+    assertCanImportWorkOrder(user, payload.orderType);
     let fileId = payload.fileId?.trim();
     if (!fileId && file) {
       const meta = await this.uploadsService.save({
@@ -59,6 +61,7 @@ export class ImportsController {
   @Post('import/confirm')
   @BusinessPermission('work_order.import')
   async confirm(@Body() payload: ConfirmImportDto, @CurrentUser() user: JwtUserPayload) {
+    assertCanImportWorkOrder(user, payload.orderType);
     if (payload.newFields && payload.newFields.length > 0) {
       const headerToFieldCode = await this.materializeNewFields(payload.newFields, payload.orderType);
       this.applyNewFieldsToPayload(payload, headerToFieldCode);

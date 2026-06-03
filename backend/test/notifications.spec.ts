@@ -145,7 +145,7 @@ describe('NotificationService read response and filters', () => {
     });
     const repo = repoMock<Notification>({
       find: jest.fn(async () => [row]),
-      manager: { query: jest.fn(async () => [{ field_code: 'data_entry_feedback', field_name: '数据录入反馈' }]) },
+      manager: { query: jest.fn(async () => [{ field_code: 'data_entry_feedback', field_name: '增员报岗录入反馈' }]) },
     });
     const userRepo = {
       find: jest.fn(async () => [{ id: 'actor-1', realName: '张三', username: 'zhangsan' } as User]),
@@ -154,7 +154,7 @@ describe('NotificationService read response and filters', () => {
 
     const result = await service.list('user-1', { includeDispatch: true, page: 1, pageSize: 20 });
 
-    expect(result.items[0].content).toBe('张三 修改了 数据录入反馈');
+    expect(result.items[0].content).toBe('张三 修改了 增员报岗录入反馈');
     expect(result.items[0].content).not.toContain('办理人');
     expect(result.items[0].content).not.toContain('data_entry_feedback');
     expect(result.items[0]).toEqual(expect.objectContaining({
@@ -180,7 +180,7 @@ describe('NotificationService read response and filters', () => {
     });
     const repo = repoMock<Notification>({
       find: jest.fn(async () => [row]),
-      manager: { query: jest.fn(async () => [{ field_code: 'contract_feedback', field_name: '劳动合同签订反馈' }]) },
+      manager: { query: jest.fn(async () => [{ field_code: 'contract_feedback', field_name: '劳动合同新签反馈' }]) },
     });
     const userRepo = {
       find: jest.fn(async () => [{ id: 'actor-1', realName: '杨纯', username: 'yangchun' } as User]),
@@ -190,18 +190,18 @@ describe('NotificationService read response and filters', () => {
     const result = await service.list('user-1', { includeDispatch: true, page: 1, pageSize: 20 });
     const item = result.items[0];
 
-    expect(item.content).toBe('杨纯 修改了【工单字段】：【劳动合同签订反馈】由【未签】改为【已签】');
+    expect(item.content).toBe('杨纯 修改了【工单字段】：【劳动合同新签反馈】由【未签】改为【已签】');
     expect(item.content).not.toContain('contract_feedback');
-    expect(item.diff_summary).toBe('【劳动合同签订反馈】由【未签】改为【已签】');
+    expect(item.diff_summary).toBe('【劳动合同新签反馈】由【未签】改为【已签】');
     expect(item.diffSummary).toBe(item.diff_summary);
     expect(item.diff_fields).toEqual([
       expect.objectContaining({
         field_code: 'contract_feedback',
-        field_name: '劳动合同签订反馈',
+        field_name: '劳动合同新签反馈',
         old_value: '未签',
         new_value: '已签',
         fieldCode: 'contract_feedback',
-        fieldName: '劳动合同签订反馈',
+        fieldName: '劳动合同新签反馈',
         oldValue: '未签',
         newValue: '已签',
         oldText: '未签',
@@ -209,7 +209,7 @@ describe('NotificationService read response and filters', () => {
       }),
     ]);
     expect(item.diffFields).toEqual(item.diff_fields);
-    expect((item.payload as Record<string, unknown>).diff_summary).toBe('【劳动合同签订反馈】由【未签】改为【已签】');
+    expect((item.payload as Record<string, unknown>).diff_summary).toBe('【劳动合同新签反馈】由【未签】改为【已签】');
     expect((item.payload as Record<string, unknown>).diff_fields).toEqual(item.diff_fields);
   });
 
@@ -226,20 +226,20 @@ describe('NotificationService read response and filters', () => {
     });
     const repo = repoMock<Notification>({
       find: jest.fn(async () => [row]),
-      manager: { query: jest.fn(async () => [{ field_code: 'contract_feedback', field_name: '劳动合同签订反馈' }]) },
+      manager: { query: jest.fn(async () => [{ field_code: 'contract_feedback', field_name: '劳动合同新签反馈' }]) },
     });
     const service = makeService(repo as unknown as Partial<Repository<Notification>>);
 
     const result = await service.list('user-1', { includeDispatch: true, page: 1, pageSize: 20 });
     const item = result.items[0];
 
-    expect(item.content).toBe('杨纯 修改了【工单字段】：【劳动合同签订反馈】由【待确认】改为【已签回】');
+    expect(item.content).toBe('杨纯 修改了【工单字段】：【劳动合同新签反馈】由【待确认】改为【已签回】');
     expect(item.content).not.toContain('contract_feedback');
-    expect(item.diff_summary).toBe('【劳动合同签订反馈】由【待确认】改为【已签回】');
+    expect(item.diff_summary).toBe('【劳动合同新签反馈】由【待确认】改为【已签回】');
     expect(item.diff_fields).toEqual([
       expect.objectContaining({
         field_code: 'contract_feedback',
-        field_name: '劳动合同签订反馈',
+        field_name: '劳动合同新签反馈',
         old_value: '待确认',
         new_value: '已签回',
       }),
@@ -346,14 +346,14 @@ describe('Field-change notification generation', () => {
     expect(notificationService.bulkCreate).toHaveBeenCalledTimes(1);
     const [inputs] = (notificationService.bulkCreate as jest.Mock).mock.calls[0] as [Array<Record<string, unknown>>];
     expect(inputs).toHaveLength(2);
-    expect(inputs[0].content).toBe('杨纯 修改了【工单字段】：【劳动合同签订反馈】由【未签】改为【已签】');
+    expect(inputs[0].content).toBe('杨纯 修改了【工单字段】：【劳动合同新签反馈】由【未签】改为【已签】');
     expect(inputs[0].content as string).not.toContain('contract_feedback');
     expect(inputs[0].payload).toEqual(expect.objectContaining({
       diff: [{ field: 'contract_feedback', before: '未签', after: '已签' }],
-      diffSummary: '【劳动合同签订反馈】由【未签】改为【已签】',
+      diffSummary: '【劳动合同新签反馈】由【未签】改为【已签】',
       diffFields: [expect.objectContaining({
         field_code: 'contract_feedback',
-        field_name: '劳动合同签订反馈',
+        field_name: '劳动合同新签反馈',
         old_value: '未签',
         new_value: '已签',
       })],
@@ -406,17 +406,17 @@ describe('Field-change notification generation', () => {
 
     expect(notificationRepo.save).toHaveBeenCalled();
     const saved = (notificationRepo.save as jest.Mock).mock.calls[0][0] as Notification;
-    expect(saved.content).toBe('操作人 补充了【工单字段】：【劳动合同签订反馈】由【未签】改为【已签】');
+    expect(saved.content).toBe('操作人 补充了【工单字段】：【劳动合同新签反馈】由【未签】改为【已签】');
     expect(saved.content).not.toContain('contract_feedback');
     expect(saved.payload).toEqual(expect.objectContaining({
       fieldCode: 'contract_feedback',
-      fieldName: '劳动合同签订反馈',
+      fieldName: '劳动合同新签反馈',
       oldValue: '未签',
       newValue: '已签',
-      diffSummary: '【劳动合同签订反馈】由【未签】改为【已签】',
+      diffSummary: '【劳动合同新签反馈】由【未签】改为【已签】',
       diffFields: [expect.objectContaining({
         field_code: 'contract_feedback',
-        field_name: '劳动合同签订反馈',
+        field_name: '劳动合同新签反馈',
         old_value: '未签',
         new_value: '已签',
       })],
