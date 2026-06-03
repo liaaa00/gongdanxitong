@@ -20,11 +20,11 @@ const SEED: RoleItem[] = [
   { id: '2', code: 'business_owner', name: '业务负责人', level: '管理层', description: '敖蕾、薛锟、余琴霞 — 查看全部业务工单、全局看板、导出，不可操作工单', is_active: true, parent_role_id: '1' },
   { id: '3', code: 'business_group_leader', name: '业务组长', level: '主管层', description: '沈文君、陈宇辰、高璐璐、刘程、余维维 — 查看本组全部工单；可发起/修改/撤回', is_active: true, parent_role_id: '2' },
   { id: '4', code: 'business_group_member', name: '业务员', level: '执行层', description: '姚怡萍、闫秋月等10人 — 只看自己发起的工单', is_active: true, parent_role_id: '3' },
-  { id: '5', code: 'data_entry_leader', name: '数据录入组长', level: '主管层', description: '安娜祯 — 数据录入模块全量，执行+审核管理', is_active: true, parent_role_id: '2' },
-  { id: '6', code: 'shared_team_owner', name: '共享团队负责人', level: '主管层', description: '江璐 — 劳动合同+入离职联系模块全量，可接单/完成/退回/补充/改派', is_active: true, parent_role_id: '2' },
-  { id: '7', code: 'labor_contract_member', name: '合同专员', level: '执行层', description: '杨纯 — 合同新签/续签/待遇申报，合同全生命周期', is_active: true, parent_role_id: '2' },
-  { id: '8', code: 'onboarding_resignation_member', name: '入离职联系专员', level: '执行层', description: '毛雅妮 — 入职联系/离职联系/离职证明', is_active: true, parent_role_id: '2' },
-  { id: '9', code: 'social_insurance_specialist', name: '福保负责人', level: '主管层', description: '傅倩雯 — 福利保障部，负责社保公积金办理子工单', is_active: true, parent_role_id: '2' },
+  { id: '5', code: 'data_entry_leader', name: '数据录入组长', level: '主管层', description: '安娜祯 — 增员报岗录入/减员报岗录入模块全量，执行+审核管理', is_active: true, parent_role_id: '2' },
+  { id: '6', code: 'shared_team_owner', name: '共享团队负责人', level: '主管层', description: '江璐 — 杨纯合同新签/续签 + 毛雅妮入职联系/离职材料收集合集，可接单/完成/退回/补充/改派', is_active: true, parent_role_id: '2' },
+  { id: '7', code: 'labor_contract_member', name: '合同专员', level: '执行层', description: '杨纯 — 劳动合同新签/续签，待遇申报一期隐藏', is_active: true, parent_role_id: '2' },
+  { id: '8', code: 'onboarding_resignation_member', name: '入离职联系专员', level: '执行层', description: '毛雅妮 — 入职联系/离职材料收集', is_active: true, parent_role_id: '2' },
+  { id: '9', code: 'social_insurance_specialist', name: '福保负责人', level: '主管层', description: '傅倩雯 — 福利保障部，负责社保公积金增员/减员子工单', is_active: true, parent_role_id: '2' },
 ];
 
 const store = () => loadList<RoleItem>(KEY, SEED);

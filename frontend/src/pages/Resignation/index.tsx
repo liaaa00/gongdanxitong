@@ -33,7 +33,7 @@ const ResignationList: React.FC = () => {
         <Space>
           <Button type="link" size="small" icon={<EyeOutlined />}
             onClick={() => navigate('/resignation/' + record.id)}>详情</Button>
-          <Button type="link" size="small" onClick={() => navigate('/resignation/' + record.id + '/cert')}>离职证明</Button>
+          <Button type="link" size="small" onClick={() => navigate('/resignation/' + record.id + '/cert')}>离职材料收集</Button>
         </Space>
       ),
     },

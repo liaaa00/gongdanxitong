@@ -165,7 +165,7 @@ export const ROUTE_VISIBILITY = {
   '/in-service/contract-renewal': IN_SERVICE_ROLES,
   '/in-service/benefit-claim': IN_SERVICE_ROLES,
 
-  // 离职管理：离职联系/证明由入离职岗负责，离职数据录入由数据录入岗负责。
+  // 离职管理：离职材料收集由入离职岗负责，减员报岗录入由报岗录入岗负责。
   '/offboarding': OFFBOARDING_ROLES,
   '/offboarding/contact-pool': [ROLE.ADMIN, ROLE.ONBOARDING_RESIGNATION_MEMBER, ROLE.SHARED_TEAM_OWNER],
   '/offboarding/proof-pool': [ROLE.ADMIN, ROLE.ONBOARDING_RESIGNATION_MEMBER, ROLE.SHARED_TEAM_OWNER],

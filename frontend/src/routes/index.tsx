@@ -149,7 +149,7 @@ const AppRoutes: React.FC = () => (
         <Route path="resignation" element={<RoleRoute><RouteGuard moduleName="离职列表"><ResignationList /></RouteGuard></RoleRoute>} />
         <Route path="resignation/new" element={<RoleRoute><RouteGuard moduleName="新建离职"><ResignationNew /></RouteGuard></RoleRoute>} />
         <Route path="resignation/:id" element={<RoleRoute><RouteGuard moduleName="离职详情"><ResignationDetail /></RouteGuard></RoleRoute>} />
-        <Route path="resignation/:id/cert" element={<RoleRoute><RouteGuard moduleName="离职证明"><ResignationCert /></RouteGuard></RoleRoute>} />
+        <Route path="resignation/:id/cert" element={<RoleRoute><RouteGuard moduleName="离职材料收集"><ResignationCert /></RouteGuard></RoleRoute>} />
 
         <Route path="benefit" element={<RoleRoute><RouteGuard moduleName="待遇申报列表"><BenefitList /></RouteGuard></RoleRoute>} />
         <Route path="benefit/new" element={<RoleRoute><RouteGuard moduleName="新建申报"><BenefitNew /></RouteGuard></RoleRoute>} />

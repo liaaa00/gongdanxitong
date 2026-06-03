@@ -32,16 +32,21 @@ const SOURCE_CATEGORY_OPT = [
 const SUB_TICKET_SCOPE_OPT = [
   { label: '全部环节', value: '' },
   { label: '所有环节', value: 'all' },
-  { label: '数据录入环节', value: 'data_entry' },
+  { label: '增员报岗录入环节', value: 'data_entry' },
+  { label: '减员报岗录入环节', value: 'data_entry_resign' },
+  { label: '社保公积金增员环节', value: 'social_insurance' },
+  { label: '社保公积金减员环节', value: 'resignation_social_insurance' },
   { label: '入职联系环节', value: 'onboarding_contact' },
-  { label: '劳动合同签订环节', value: 'contract' },
+  { label: '离职材料收集环节', value: 'resignation_contact' },
+  { label: '劳动合同新签环节', value: 'contract' },
 ];
 
 const COLLECTION_GROUP_OPT = [
   { label: '全部分组', value: '' },
   { label: '基本信息', value: '基本信息' },
-  { label: '劳动合同签订', value: '劳动合同签订' },
+  { label: '劳动合同新签', value: '劳动合同新签' },
   { label: '入职联系', value: '入职联系' },
+  { label: '离职材料收集', value: '离职材料收集' },
   { label: '发薪信息', value: '发薪信息' },
   { label: '社保公积金类', value: '社保公积金类' },
 ];
@@ -56,9 +61,14 @@ const SOURCE_TAG: Record<string, { color: string; label: string }> = {
 
 const SCOPE_TAG: Record<string, { color: string; label: string }> = {
   all: { color: 'green', label: '所有环节' },
-  data_entry: { color: 'cyan', label: '数据录入' },
+  data_entry: { color: 'cyan', label: '增员报岗录入' },
+  data_entry_resign: { color: 'cyan', label: '减员报岗录入' },
+  social_insurance: { color: 'blue', label: '社保公积金增员' },
+  social_insurance_resign: { color: 'purple', label: '社保公积金减员' },
+  resignation_social_insurance: { color: 'purple', label: '社保公积金减员' },
   onboarding_contact: { color: 'purple', label: '入职联系' },
-  contract: { color: 'gold', label: '劳动合同签订' },
+  resignation_contact: { color: 'magenta', label: '离职材料收集' },
+  contract: { color: 'gold', label: '劳动合同新签' },
 };
 
 const AdminFields: React.FC = () => {
@@ -180,10 +190,13 @@ const AdminFields: React.FC = () => {
           <Form.Item name="sub_ticket_scope" label="主要显示在哪个环节">
             <Select allowClear options={[
               { label: '所有环节', value: 'all' },
-              { label: '数据录入环节', value: 'data_entry' },
-              { label: '社保公积金办理环节', value: 'social_insurance' },
+              { label: '增员报岗录入环节', value: 'data_entry' },
+              { label: '减员报岗录入环节', value: 'data_entry_resign' },
+              { label: '社保公积金增员环节', value: 'social_insurance' },
+              { label: '社保公积金减员环节', value: 'resignation_social_insurance' },
               { label: '入职联系环节', value: 'onboarding_contact' },
-              { label: '劳动合同签订环节', value: 'contract' },
+              { label: '离职材料收集环节', value: 'resignation_contact' },
+              { label: '劳动合同新签环节', value: 'contract' },
             ]} placeholder="不限定" getPopupContainer={getSelectPopupContainer} />
           </Form.Item>
           <Form.Item name="collection_group" label="表单分组">

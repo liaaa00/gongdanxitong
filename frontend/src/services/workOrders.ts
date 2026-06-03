@@ -414,9 +414,9 @@ const mockInitialWorkOrders: WorkOrderItem[] = [
     submitted_at: '2026-05-08T10:00:00Z', completed_at: null,
     created_at: '2026-05-08T09:30:00Z', updated_at: '2026-05-08T10:00:00Z',
     dispatched_orders: [
-      { id: 'd1', module_code: 'data_entry', module_name: '数据录入', status: 'pending', handler_name: null, dispatched_at: '2026-05-08T10:00:01Z', accepted_at: null, completed_at: null },
-      { id: 'd2', module_code: 'social_insurance', module_name: '社保公积金办理', status: 'pending', handler_name: '傅倩雯', dispatched_at: '2026-05-08T10:00:01Z', accepted_at: null, completed_at: null },
-      { id: 'd3', module_code: 'contract', module_name: '劳动合同签订', status: 'processing', handler_name: '合同专员A', dispatched_at: '2026-05-08T10:00:01Z', accepted_at: '2026-05-08T11:00:00Z', completed_at: null },
+      { id: 'd1', module_code: 'data_entry', module_name: '增员报岗录入', status: 'pending', handler_name: null, dispatched_at: '2026-05-08T10:00:01Z', accepted_at: null, completed_at: null },
+      { id: 'd2', module_code: 'social_insurance', module_name: '社保公积金增员', status: 'pending', handler_name: '傅倩雯', dispatched_at: '2026-05-08T10:00:01Z', accepted_at: null, completed_at: null },
+      { id: 'd3', module_code: 'contract', module_name: '劳动合同新签', status: 'processing', handler_name: '合同专员A', dispatched_at: '2026-05-08T10:00:01Z', accepted_at: '2026-05-08T11:00:00Z', completed_at: null },
       { id: 'd4', module_code: 'onboarding_contact', module_name: '入职联系', status: 'pending', handler_name: null, dispatched_at: '2026-05-08T10:00:01Z', accepted_at: null, completed_at: null },
     ],
   },
@@ -436,9 +436,9 @@ const mockInitialWorkOrders: WorkOrderItem[] = [
     submitted_at: '2026-05-07T11:00:00Z', completed_at: null,
     created_at: '2026-05-07T10:00:00Z', updated_at: '2026-05-08T09:00:00Z',
     dispatched_orders: [
-      { id: 'd7', module_code: 'data_entry', module_name: '数据录入', status: 'processing', handler_name: '录入员B', dispatched_at: '2026-05-07T11:00:01Z', accepted_at: '2026-05-07T12:00:00Z', completed_at: null },
-      { id: 'd8', module_code: 'social_insurance', module_name: '社保公积金办理', status: 'pending', handler_name: '傅倩雯', dispatched_at: '2026-05-07T11:00:01Z', accepted_at: null, completed_at: null },
-      { id: 'd9', module_code: 'contract', module_name: '劳动合同签订', status: 'returned', handler_name: '合同专员B', return_reason: '合同开始日期与入职日期不符，请核实', dispatched_at: '2026-05-07T11:00:01Z', accepted_at: '2026-05-07T12:00:00Z', completed_at: null },
+      { id: 'd7', module_code: 'data_entry', module_name: '增员报岗录入', status: 'processing', handler_name: '录入员B', dispatched_at: '2026-05-07T11:00:01Z', accepted_at: '2026-05-07T12:00:00Z', completed_at: null },
+      { id: 'd8', module_code: 'social_insurance', module_name: '社保公积金增员', status: 'pending', handler_name: '傅倩雯', dispatched_at: '2026-05-07T11:00:01Z', accepted_at: null, completed_at: null },
+      { id: 'd9', module_code: 'contract', module_name: '劳动合同新签', status: 'returned', handler_name: '合同专员B', return_reason: '合同开始日期与入职日期不符，请核实', dispatched_at: '2026-05-07T11:00:01Z', accepted_at: '2026-05-07T12:00:00Z', completed_at: null },
     ],
   },
 ];
@@ -517,13 +517,13 @@ const AVAILABLE_FIELDS_MOCK = [
   { field_code: 'contract_subject', field_name: '劳动合同主体' },
   { field_code: 'contract_template', field_name: '劳动合同模板' },
   { field_code: 'contract_urge', field_name: '劳动合同签署是否需要催办员工' },
-  { field_code: 'contract_feedback', field_name: '劳动合同签订反馈' },
+  { field_code: 'contract_feedback', field_name: '劳动合同新签反馈' },
   { field_code: 'need_onboarding_contact', field_name: '入职材料是否需要集约收集', is_required: true },
   { field_code: 'onboarding_feedback', field_name: '入职联系反馈' },
   { field_code: 'need_company_payroll', field_name: '是否企服发薪', is_required: true },
   { field_code: 'pay_location', field_name: '发薪地' },
   { field_code: 'special_remark', field_name: '特殊备注' },
-  { field_code: 'data_entry_feedback', field_name: '数据录入反馈' },
+  { field_code: 'data_entry_feedback', field_name: '增员报岗录入反馈' },
 ];
 
 let importJobCounter = 1;
@@ -896,17 +896,17 @@ export async function createWorkOrder(data: Record<string, unknown>): Promise<Wo
       completed_at: null,
       created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
       dispatched_orders: action === 'submit' ? (orderTypeValue === 'renewal' ? [
-        { id: `d-n1`, module_code: 'renewal_contract', module_name: '续签合同', status: 'pending', handler_name: null, dispatched_at: new Date().toISOString(), accepted_at: null, completed_at: null },
+        { id: `d-n1`, module_code: 'renewal_contract', module_name: '劳动合同续签', status: 'pending', handler_name: null, dispatched_at: new Date().toISOString(), accepted_at: null, completed_at: null },
       ] : orderTypeValue === 'resignation' ? [
-        { id: `d-n1`, module_code: 'resignation_contact', module_name: '离职联系', status: 'pending', handler_name: null, dispatched_at: new Date().toISOString(), accepted_at: null, completed_at: null },
-        ...(mergedExtra.need_resignation_cert === '是' ? [{ id: `d-n2`, module_code: 'resignation_cert', module_name: '离职证明', status: 'pending', handler_name: null, dispatched_at: new Date().toISOString(), accepted_at: null, completed_at: null }] : []),
+        { id: `d-n1`, module_code: 'resignation_contact', module_name: '离职材料收集', status: 'pending', handler_name: null, dispatched_at: new Date().toISOString(), accepted_at: null, completed_at: null },
+        ...(mergedExtra.need_resignation_cert === '是' ? [{ id: `d-n2`, module_code: 'resignation_cert', module_name: '离职材料收集', status: 'pending', handler_name: null, dispatched_at: new Date().toISOString(), accepted_at: null, completed_at: null }] : []),
       ] : orderTypeValue === 'benefit' ? [
         { id: `d-n1`, module_code: 'benefit_apply', module_name: '待遇申报', status: 'pending', handler_name: null, dispatched_at: new Date().toISOString(), accepted_at: null, completed_at: null },
       ] : [
-        // onboarding 默认：数据录入、社保公积金办理固定生成；合同/入职联系按原条件生成
-        { id: `d-n1`, module_code: 'data_entry', module_name: '数据录入', status: 'pending', handler_name: null, dispatched_at: new Date().toISOString(), accepted_at: null, completed_at: null },
-        { id: `d-n2`, module_code: 'social_insurance', module_name: '社保公积金办理', status: 'pending', handler_name: '傅倩雯', dispatched_at: new Date().toISOString(), accepted_at: null, completed_at: null },
-        ...(mergedExtra.need_company_contract === '是' ? [{ id: `d-n3`, module_code: 'contract', module_name: '劳动合同签订', status: 'pending', handler_name: null, dispatched_at: new Date().toISOString(), accepted_at: null, completed_at: null }] : []),
+        // onboarding 默认：增员报岗录入、社保公积金增员固定生成；合同/入职联系按原条件生成
+        { id: `d-n1`, module_code: 'data_entry', module_name: '增员报岗录入', status: 'pending', handler_name: null, dispatched_at: new Date().toISOString(), accepted_at: null, completed_at: null },
+        { id: `d-n2`, module_code: 'social_insurance', module_name: '社保公积金增员', status: 'pending', handler_name: '傅倩雯', dispatched_at: new Date().toISOString(), accepted_at: null, completed_at: null },
+        ...(mergedExtra.need_company_contract === '是' ? [{ id: `d-n3`, module_code: 'contract', module_name: '劳动合同新签', status: 'pending', handler_name: null, dispatched_at: new Date().toISOString(), accepted_at: null, completed_at: null }] : []),
         ...(mergedExtra.need_onboarding_contact === '是' ? [{ id: `d-n4`, module_code: 'onboarding_contact', module_name: '入职联系', status: 'pending', handler_name: null, dispatched_at: new Date().toISOString(), accepted_at: null, completed_at: null }] : []),
       ]) : [],
     };
@@ -976,9 +976,9 @@ export async function submitWorkOrder(id: string): Promise<WorkOrderItem> {
     const updated: WorkOrderItem = {
       ...found, status: 'processing', submitted_at: now, updated_at: now,
       dispatched_orders: [
-        { id: `d-s1-${id}`, module_code: 'data_entry', module_name: '数据录入', status: 'pending', handler_name: null, dispatched_at: now, accepted_at: null, completed_at: null },
-        { id: `d-s2-${id}`, module_code: 'social_insurance', module_name: '社保公积金办理', status: 'pending', handler_name: '傅倩雯', dispatched_at: now, accepted_at: null, completed_at: null },
-        ...(needContract ? [{ id: `d-s3-${id}`, module_code: 'contract', module_name: '劳动合同签订', status: 'pending' as const, handler_name: null, dispatched_at: now, accepted_at: null, completed_at: null }] : []),
+        { id: `d-s1-${id}`, module_code: 'data_entry', module_name: '增员报岗录入', status: 'pending', handler_name: null, dispatched_at: now, accepted_at: null, completed_at: null },
+        { id: `d-s2-${id}`, module_code: 'social_insurance', module_name: '社保公积金增员', status: 'pending', handler_name: '傅倩雯', dispatched_at: now, accepted_at: null, completed_at: null },
+        ...(needContract ? [{ id: `d-s3-${id}`, module_code: 'contract', module_name: '劳动合同新签', status: 'pending' as const, handler_name: null, dispatched_at: now, accepted_at: null, completed_at: null }] : []),
         ...(needContact ? [{ id: `d-s4-${id}`, module_code: 'onboarding_contact', module_name: '入职联系', status: 'pending' as const, handler_name: null, dispatched_at: now, accepted_at: null, completed_at: null }] : []),
       ],
     };
@@ -1175,13 +1175,15 @@ const HEADER_SUGGESTIONS: Record<string, { code: string; name: string; confidenc
   '劳动合同主体': { code: 'contract_subject', name: '劳动合同主体', confidence: 0.95 },
   '劳动合同模板': { code: 'contract_template', name: '劳动合同模板', confidence: 0.95 },
   '劳动合同签署是否需要催办员工': { code: 'contract_urge', name: '劳动合同签署是否需要催办员工', confidence: 0.95 },
-  '劳动合同签订反馈': { code: 'contract_feedback', name: '劳动合同签订反馈', confidence: 0.95 },
+  '劳动合同新签反馈': { code: 'contract_feedback', name: '劳动合同新签反馈', confidence: 0.95 },
+  '劳动合同签订反馈': { code: 'contract_feedback', name: '劳动合同新签反馈', confidence: 0.9 },
   '入职材料是否需要集约收集': { code: 'need_onboarding_contact', name: '入职材料是否需要集约收集', confidence: 0.95 },
   '是否需要入职联系': { code: 'need_onboarding_contact', name: '入职材料是否需要集约收集', confidence: 0.85 },
   '入职联系反馈': { code: 'onboarding_feedback', name: '入职联系反馈', confidence: 0.95 },
   '是否企服发薪': { code: 'need_company_payroll', name: '是否企服发薪', confidence: 0.95 },
   '特殊备注': { code: 'special_remark', name: '特殊备注', confidence: 0.9 },
-  '数据录入反馈': { code: 'data_entry_feedback', name: '数据录入反馈', confidence: 0.95 },
+  '增员报岗录入反馈': { code: 'data_entry_feedback', name: '增员报岗录入反馈', confidence: 0.95 },
+  '数据录入反馈': { code: 'data_entry_feedback', name: '增员报岗录入反馈', confidence: 0.9 },
 };
 
 async function readExcelFile(file: File): Promise<{ headers: string[]; rows: Record<string, unknown>[] }> {
@@ -1452,9 +1454,9 @@ export async function getImportJob(jobId: string): Promise<ImportJob> {
           const needContract = String(r.need_company_contract ?? '是') === '是';
           const needContact = String(r.need_onboarding_contact ?? '是') === '是';
           const dispatched = [
-            { id: `${id}-d1`, module_code: 'data_entry', module_name: '数据录入', status: 'pending' as const, handler_name: null, dispatched_at: now, accepted_at: null, completed_at: null },
-            { id: `${id}-d2`, module_code: 'social_insurance', module_name: '社保公积金办理', status: 'pending' as const, handler_name: '傅倩雯', dispatched_at: now, accepted_at: null, completed_at: null },
-            ...(needContract ? [{ id: `${id}-d3`, module_code: 'contract', module_name: '劳动合同签订', status: 'pending' as const, handler_name: null, dispatched_at: now, accepted_at: null, completed_at: null }] : []),
+            { id: `${id}-d1`, module_code: 'data_entry', module_name: '增员报岗录入', status: 'pending' as const, handler_name: null, dispatched_at: now, accepted_at: null, completed_at: null },
+            { id: `${id}-d2`, module_code: 'social_insurance', module_name: '社保公积金增员', status: 'pending' as const, handler_name: '傅倩雯', dispatched_at: now, accepted_at: null, completed_at: null },
+            ...(needContract ? [{ id: `${id}-d3`, module_code: 'contract', module_name: '劳动合同新签', status: 'pending' as const, handler_name: null, dispatched_at: now, accepted_at: null, completed_at: null }] : []),
             ...(needContact ? [{ id: `${id}-d4`, module_code: 'onboarding_contact', module_name: '入职联系', status: 'pending' as const, handler_name: null, dispatched_at: now, accepted_at: null, completed_at: null }] : []),
           ];
           mockWorkOrders.unshift({

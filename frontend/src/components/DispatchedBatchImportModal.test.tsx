@@ -47,7 +47,7 @@ describe('DispatchedBatchImportModal', () => {
       <DispatchedBatchImportModal
         open
         mode="status"
-        moduleOptions={[{ label: '劳动合同签订', value: 'contract' }]}
+        moduleOptions={[{ label: '劳动合同新签', value: 'contract' }]}
         defaultModuleCode="contract"
         onClose={vi.fn()}
       />,
@@ -89,7 +89,7 @@ describe('DispatchedBatchImportModal', () => {
       <DispatchedBatchImportModal
         open
         mode="status"
-        moduleOptions={[{ label: '劳动合同签订', value: 'contract' }]}
+        moduleOptions={[{ label: '劳动合同新签', value: 'contract' }]}
         defaultModuleCode="contract"
         onClose={vi.fn()}
       />,
@@ -103,7 +103,7 @@ describe('DispatchedBatchImportModal', () => {
       <DispatchedBatchImportModal
         open
         mode="status"
-        moduleOptions={[{ label: '劳动合同签订', value: 'contract' }]}
+        moduleOptions={[{ label: '劳动合同新签', value: 'contract' }]}
         defaultModuleCode="contract"
         onClose={vi.fn()}
       />,

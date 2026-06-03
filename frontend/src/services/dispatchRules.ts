@@ -25,14 +25,14 @@ export interface DispatchRuleItem {
   priority: number;
 }
 
-const KEY = 'mock_admin_dispatch_rules_v2'; // ★ v2: try-catch 防御
+const KEY = 'mock_admin_dispatch_rules_v3'; // ★ v3: 0603 模块名称同步
 const SEED: DispatchRuleItem[] = [
-  { id: '1', rule_name: '入职→数据录入', order_type: 'onboarding', trigger_conditions: { operator: 'AND', conditions: [] }, target_module: 'data_entry', dispatch_strategy: 'pool', is_active: true, priority: 10 },
+  { id: '1', rule_name: '入职→增员报岗录入', order_type: 'onboarding', trigger_conditions: { operator: 'AND', conditions: [] }, target_module: 'data_entry', dispatch_strategy: 'pool', is_active: true, priority: 10 },
   { id: '2', rule_name: '入职→入职联系', order_type: 'onboarding', trigger_conditions: { operator: 'AND', conditions: [{ type: 'leaf', field: 'need_onboarding_contact', operator: 'eq', value: '是' }] }, target_module: 'onboarding_contact', dispatch_strategy: 'pool', is_active: true, priority: 20 },
-  { id: '3', rule_name: '入职→劳动合同签订', order_type: 'onboarding', trigger_conditions: { operator: 'AND', conditions: [] }, target_module: 'contract', dispatch_strategy: 'pool', is_active: true, priority: 30 },
-  { id: '4', rule_name: '续签→劳动合同签订', order_type: 'renewal', trigger_conditions: { operator: 'AND', conditions: [] }, target_module: 'contract', dispatch_strategy: 'pool', is_active: true, priority: 10 },
-  { id: '5', rule_name: '离职→社保停保', order_type: 'resignation', trigger_conditions: { operator: 'AND', conditions: [] }, target_module: 'data_entry', dispatch_strategy: 'pool', is_active: true, priority: 10 },
-  { id: '6', rule_name: '待遇申报→数据录入', order_type: 'benefit', trigger_conditions: { operator: 'AND', conditions: [] }, target_module: 'data_entry', dispatch_strategy: 'pool', is_active: true, priority: 10 },
+  { id: '3', rule_name: '入职→劳动合同新签', order_type: 'onboarding', trigger_conditions: { operator: 'AND', conditions: [] }, target_module: 'contract', dispatch_strategy: 'pool', is_active: true, priority: 30 },
+  { id: '4', rule_name: '续签→劳动合同续签', order_type: 'renewal', trigger_conditions: { operator: 'AND', conditions: [] }, target_module: 'renewal_contract', dispatch_strategy: 'pool', is_active: true, priority: 10 },
+  { id: '5', rule_name: '离职→减员报岗录入', order_type: 'resignation', trigger_conditions: { operator: 'AND', conditions: [] }, target_module: 'data_entry_resign', dispatch_strategy: 'pool', is_active: true, priority: 10 },
+  { id: '6', rule_name: '离职→社保公积金减员', order_type: 'resignation', trigger_conditions: { operator: 'AND', conditions: [] }, target_module: 'resignation_social_insurance', dispatch_strategy: 'pool', is_active: true, priority: 20 },
 ];
 
 const store = () => loadList<DispatchRuleItem>(KEY, SEED);

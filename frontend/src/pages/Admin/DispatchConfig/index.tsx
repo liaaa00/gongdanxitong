@@ -60,17 +60,18 @@ const ORDER_TYPES: Option[] = [
 ];
 
 const SUB_MODULES: Array<Option & { orderType: string }> = [
-  { label: '数据录入', value: 'data_entry', orderType: 'onboarding' },
-  { label: '社保公积金办理', value: 'social_insurance', orderType: 'onboarding' },
+  { label: '增员报岗录入', value: 'data_entry', orderType: 'onboarding' },
+  { label: '社保公积金增员', value: 'social_insurance', orderType: 'onboarding' },
   { label: '入职联系', value: 'onboarding_contact', orderType: 'onboarding' },
-  { label: '劳动合同签订', value: 'contract', orderType: 'onboarding' },
-  { label: '劳动合同签订', value: 'contract_signing', orderType: 'onboarding' },
-  { label: '续签合同', value: 'renewal_contract', orderType: 'renewal' },
+  { label: '劳动合同新签', value: 'contract', orderType: 'onboarding' },
+  { label: '劳动合同新签', value: 'contract_signing', orderType: 'onboarding' },
+  { label: '劳动合同续签', value: 'renewal_contract', orderType: 'renewal' },
   { label: '待遇申报', value: 'benefit', orderType: 'benefit' },
   { label: '待遇申报', value: 'benefit_apply', orderType: 'benefit' },
-  { label: '离职联系', value: 'resignation_contact', orderType: 'resignation' },
-  { label: '离职证明', value: 'resignation_cert', orderType: 'resignation' },
-  { label: '社保停保', value: 'data_entry_resign', orderType: 'resignation' },
+  { label: '离职材料收集', value: 'resignation_contact', orderType: 'resignation' },
+  { label: '离职材料收集（历史兼容）', value: 'resignation_cert', orderType: 'resignation' },
+  { label: '减员报岗录入', value: 'data_entry_resign', orderType: 'resignation' },
+  { label: '社保公积金减员', value: 'resignation_social_insurance', orderType: 'resignation' },
 ];
 
 const CUSTOMER_EXCEPTION_MODULE_CODES = new Set(['data_entry', 'social_insurance', 'onboarding_contact', 'contract']);
@@ -768,7 +769,7 @@ const AdminDispatchConfig: React.FC = () => {
                 <Select showSearch optionFilterProp="label" options={customers} placeholder="选择具体客户" />
               </Form.Item>
               <Form.Item name="rule_name" label="例外名称（可选，不填会自动生成）"> 
-                <Input placeholder="例如：某客户-入职数据录入例外" />
+                <Input placeholder="例如：某客户-入职增员报岗录入例外" />
               </Form.Item>
             </>
           )}

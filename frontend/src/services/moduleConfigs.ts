@@ -49,15 +49,16 @@ const KEY = 'mock_admin_module_configs_v1';
 const MODULE_FIELD_KEY = 'mock_admin_module_fields_v1';
 const SEED: ModuleConfigItem[] = [
   { id: '1', module_code: 'onboarding', module_name: '入职管理', module_type: 'main', display_order: 10, is_active: true, created_at: new Date().toISOString() },
-  { id: '2', module_code: 'data_entry', module_name: '数据录入', parent_module_code: 'onboarding', module_type: 'sub', display_order: 11, is_active: true, created_at: new Date().toISOString() },
-  { id: '3', module_code: 'social_insurance', module_name: '社保公积金办理', parent_module_code: 'onboarding', module_type: 'sub', display_order: 12, is_active: true, created_at: new Date().toISOString() },
+  { id: '2', module_code: 'data_entry', module_name: '增员报岗录入', parent_module_code: 'onboarding', module_type: 'sub', display_order: 11, is_active: true, created_at: new Date().toISOString() },
+  { id: '3', module_code: 'social_insurance', module_name: '社保公积金增员', parent_module_code: 'onboarding', module_type: 'sub', display_order: 12, is_active: true, created_at: new Date().toISOString() },
   { id: '4', module_code: 'onboarding_contact', module_name: '入职联系', parent_module_code: 'onboarding', module_type: 'sub', display_order: 13, is_active: true, created_at: new Date().toISOString() },
-  { id: '5', module_code: 'contract', module_name: '劳动合同签订', parent_module_code: 'onboarding', module_type: 'sub', display_order: 14, is_active: true, created_at: new Date().toISOString() },
-  { id: '6', module_code: 'renewal_contract', module_name: '续签合同', module_type: 'sub', display_order: 20, is_active: true, created_at: new Date().toISOString() },
+  { id: '5', module_code: 'contract', module_name: '劳动合同新签', parent_module_code: 'onboarding', module_type: 'sub', display_order: 14, is_active: true, created_at: new Date().toISOString() },
+  { id: '6', module_code: 'renewal_contract', module_name: '劳动合同续签', module_type: 'sub', display_order: 20, is_active: true, created_at: new Date().toISOString() },
   { id: '7', module_code: 'benefit', module_name: '待遇申报', module_type: 'sub', display_order: 30, is_active: true, created_at: new Date().toISOString() },
-  { id: '8', module_code: 'resignation_contact', module_name: '离职联系', module_type: 'sub', display_order: 40, is_active: true, created_at: new Date().toISOString() },
-  { id: '9', module_code: 'resignation_cert', module_name: '离职证明', module_type: 'sub', display_order: 41, is_active: true, created_at: new Date().toISOString() },
-  { id: '10', module_code: 'data_entry_resign', module_name: '社保停保', module_type: 'sub', display_order: 42, is_active: true, created_at: new Date().toISOString() },
+  { id: '8', module_code: 'resignation_contact', module_name: '离职材料收集', module_type: 'sub', display_order: 40, is_active: true, created_at: new Date().toISOString() },
+  { id: '9', module_code: 'resignation_cert', module_name: '离职材料收集', module_type: 'sub', display_order: 41, is_active: true, created_at: new Date().toISOString() },
+  { id: '10', module_code: 'data_entry_resign', module_name: '减员报岗录入', module_type: 'sub', display_order: 42, is_active: true, created_at: new Date().toISOString() },
+  { id: '11', module_code: 'social_insurance_resign', module_name: '社保公积金减员', module_type: 'sub', display_order: 43, is_active: true, created_at: new Date().toISOString() },
 ];
 
 const store = () => loadList<ModuleConfigItem>(KEY, SEED);

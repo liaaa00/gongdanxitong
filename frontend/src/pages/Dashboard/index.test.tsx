@@ -6,6 +6,7 @@ import Dashboard from './index';
 import { useUserStore } from '@/stores/userStore';
 import { ROLE } from '@/constants/roles';
 import { getDashboardCards, getLeaderTrend, getOrderTypeMatrix } from '@/services/dashboard';
+import { getModuleConfigs } from '@/services/moduleConfigs';
 
 type MatrixTestRow = {
   rowKey?: string;
@@ -38,6 +39,7 @@ vi.mock('@/services/moduleConfigs', () => ({
 const mockedGetDashboardCards = vi.mocked(getDashboardCards);
 const mockedGetOrderTypeMatrix = vi.mocked(getOrderTypeMatrix);
 const mockedGetLeaderTrend = vi.mocked(getLeaderTrend);
+const mockedGetModuleConfigs = vi.mocked(getModuleConfigs);
 
 describe('Dashboard display behavior', () => {
   beforeEach(() => {
@@ -60,6 +62,7 @@ describe('Dashboard display behavior', () => {
     });
     mockedGetDashboardCards.mockResolvedValue({ totalPending: 0, monthPending: 0, totalThisMonth: 0, processing: 0, completed: 0, voided: 0, myMessages: 0 });
     mockedGetOrderTypeMatrix.mockRejectedValue(new Error('matrix unavailable'));
+    mockedGetModuleConfigs.mockResolvedValue([]);
     mockedGetLeaderTrend.mockResolvedValue({
       orderType: 'onboarding',
       fallbackReason: 'endpoint_error',
@@ -193,6 +196,35 @@ describe('Dashboard display behavior', () => {
     expect(container.textContent).not.toContain('在职管理');
   });
 
+  it('loads backend sub_module configs into leader trend module options while hiding in-service modules', async () => {
+    mockedGetModuleConfigs.mockResolvedValue([
+      { id: 'cfg-1', module_code: 'social_insurance', module_name: '社保公积金增员', module_type: 'sub_module', is_active: true },
+      { id: 'cfg-2', module_code: 'resignation_social_insurance', module_name: '社保公积金减员', module_type: 'sub_module', is_active: true },
+      { id: 'cfg-3', module_code: 'renewal_contract', module_name: '劳动合同续签', module_type: 'sub_module', is_active: true },
+    ]);
+    mockedGetOrderTypeMatrix.mockResolvedValue({
+      rows: [
+        { orderType: 'onboarding', moduleCode: 'social_insurance', label: '社保公积金增员', total: 2, processing: 1, completed: 1, voided: 0, completionRate: 50 },
+      ],
+      total: 1,
+    });
+
+    const { container, getByText } = render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(mockedGetModuleConfigs).toHaveBeenCalledWith({ isActive: true });
+      expect(getByText('负责人月办结完成率趋势')).toBeTruthy();
+      expect(mockedGetLeaderTrend).toHaveBeenCalledWith('onboarding', undefined, undefined, expect.any(AbortSignal), expect.stringMatching(/^\d{4}-\d{2}$/));
+      expect(mockedGetLeaderTrend).toHaveBeenCalledWith('resignation', undefined, undefined, expect.any(AbortSignal), expect.stringMatching(/^\d{4}-\d{2}$/));
+    });
+    expect(container.textContent).not.toContain('在职');
+    expect(container.textContent).not.toContain('劳动合同续签');
+  });
+
   it('filters backend dashboard rows to social insurance increase/decrease for social specialist', async () => {
     useUserStore.setState({
       user: {
@@ -230,5 +262,6 @@ describe('Dashboard display behavior', () => {
     expect(container.textContent).not.toContain('入职联系');
     expect(container.textContent).not.toContain('劳动合同新签');
     expect(container.textContent).not.toContain('增员报岗录入');
+    expect(mockedGetModuleConfigs).not.toHaveBeenCalled();
   });
 });

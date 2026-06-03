@@ -13,10 +13,11 @@ const ROLES_SEED: RoleItem[] = [
   { id: '2', code: 'business_owner', name: '业务负责人', level: '管理层', description: '查看全部业务工单、全局看板、导出，不可操作工单', is_active: true },
   { id: '3', code: 'business_group_leader', name: '业务组长', level: '主管层', description: '查看本组全部工单；可发起/修改/撤回', is_active: true },
   { id: '4', code: 'business_group_member', name: '业务员', level: '执行层', description: '只看自己发起的工单', is_active: true },
-  { id: '5', code: 'data_entry_leader', name: '数据录入组长', level: '主管层', description: '数据录入模块全量', is_active: true },
-  { id: '6', code: 'shared_team_owner', name: '共享团队负责人', level: '主管层', description: '劳动合同+入离职联系模块全量', is_active: true },
-  { id: '7', code: 'labor_contract_member', name: '合同专员', level: '执行层', description: '合同新签/续签/待遇申报', is_active: true },
-  { id: '8', code: 'onboarding_resignation_member', name: '入离职联系专员', level: '执行层', description: '入职联系/离职联系/离职证明', is_active: true },
+  { id: '5', code: 'data_entry_leader', name: '数据录入组长', level: '主管层', description: '增员报岗录入/减员报岗录入模块全量', is_active: true },
+  { id: '6', code: 'shared_team_owner', name: '共享团队负责人', level: '主管层', description: '江璐：合同新签/续签 + 入职联系/离职材料收集合集', is_active: true },
+  { id: '7', code: 'labor_contract_member', name: '合同专员', level: '执行层', description: '劳动合同新签/续签，待遇申报一期隐藏', is_active: true },
+  { id: '8', code: 'onboarding_resignation_member', name: '入离职联系专员', level: '执行层', description: '入职联系/离职材料收集', is_active: true },
+  { id: '9', code: 'social_insurance_specialist', name: '福保负责人', level: '主管层', description: '社保公积金增员/减员子工单', is_active: true },
 ];
 
 const MOCK_SESSION_KEY = 'mock_session_user_v1';

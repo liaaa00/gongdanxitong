@@ -160,7 +160,7 @@ const mockNotifications: NotificationItem[] = [
   },
   {
     id: 'n2', type: 'warning', biz_type: 'sla_warning', priority: 'urgent',
-    title: 'SLA 即将超时', content: '数据录入子工单即将超时，请尽快处理。',
+    title: 'SLA 即将超时', content: '增员报岗录入子工单即将超时，请尽快处理。',
     entity_type: 'dispatched_order', entity_id: '2', link: '/my-dispatched/2',
     is_read: false, created_at: new Date(Date.now() - 7200000).toISOString(),
     ref_order_id: '2', ref_order_no: 'WO-2026-0002',

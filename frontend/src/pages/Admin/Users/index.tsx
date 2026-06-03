@@ -108,11 +108,11 @@ function getAbilitySummary(user: UserItem): string[] {
   if (roleCodes.includes(ROLE.BUSINESS_OWNER)) abilities.push('查看业务全局数据和报表，不直接办理后道任务');
   if (roleCodes.includes(ROLE.BUSINESS_GROUP_LEADER)) abilities.push('查看本组工单，作为业务员时可发起/修改/撤回');
   if (roleCodes.includes(ROLE.BUSINESS_GROUP_MEMBER)) abilities.push('发起工单、跟踪本人发起工单');
-  if (roleCodes.includes(ROLE.DATA_ENTRY_LEADER)) abilities.push('处理数据录入、社保公积金相关节点');
-  if (roleCodes.includes(ROLE.SHARED_TEAM_OWNER)) abilities.push('处理共享团队授权节点，可查看团队办理情况');
-  if (roleCodes.includes(ROLE.LABOR_CONTRACT_MEMBER)) abilities.push('处理劳动合同签订/续签相关节点');
-  if (roleCodes.includes(ROLE.ONBOARDING_RESIGNATION_MEMBER)) abilities.push('处理入职联系、离职联系和离职证明节点');
-  if (roleCodes.includes(ROLE.SOCIAL_INSURANCE_SPECIALIST)) abilities.push('处理社保公积金和停保相关节点');
+  if (roleCodes.includes(ROLE.DATA_ENTRY_LEADER)) abilities.push('处理增员报岗录入、减员报岗录入相关节点');
+  if (roleCodes.includes(ROLE.SHARED_TEAM_OWNER)) abilities.push('处理合同新签/续签、入职联系/离职材料收集授权节点，可查看团队办理情况');
+  if (roleCodes.includes(ROLE.LABOR_CONTRACT_MEMBER)) abilities.push('处理劳动合同新签/续签相关节点');
+  if (roleCodes.includes(ROLE.ONBOARDING_RESIGNATION_MEMBER)) abilities.push('处理入职联系、离职材料收集节点');
+  if (roleCodes.includes(ROLE.SOCIAL_INSURANCE_SPECIALIST)) abilities.push('处理社保公积金增员/减员相关节点');
   return Array.from(new Set(abilities));
 }
 
@@ -323,10 +323,11 @@ const AdminUsers: React.FC = () => {
             <Descriptions.Item label={<Tag color="purple">业务负责人</Tag>}>查看业务全局数据、看板和报表，不直接接单/退回/办结后道任务。</Descriptions.Item>
             <Descriptions.Item label={<Tag color="blue">业务组长</Tag>}>查看本组工单；自己作为业务员时可发起、修改、撤回工单。</Descriptions.Item>
             <Descriptions.Item label={<Tag color="default">业务员</Tag>}>只看自己发起的工单，可发起和跟踪本人客户工单。</Descriptions.Item>
-            <Descriptions.Item label={<Tag color="magenta">共享团队负责人</Tag>}>处理合同签订、入离职联系等共享团队授权节点，可查看团队办理情况。</Descriptions.Item>
-            <Descriptions.Item label={<Tag color="green">合同专员</Tag>}>处理劳动合同签订、续签和待遇申报相关节点。</Descriptions.Item>
-            <Descriptions.Item label={<Tag color="cyan">入离职联系专员</Tag>}>处理入职联系、离职联系和离职证明相关节点。</Descriptions.Item>
-            <Descriptions.Item label={<Tag color="orange">数据录入组长</Tag>}>处理数据录入、社保公积金录入和审核相关节点。</Descriptions.Item>
+            <Descriptions.Item label={<Tag color="magenta">共享团队负责人</Tag>}>处理劳动合同新签/续签、入职联系/离职材料收集等共享团队授权节点，可查看团队办理情况。</Descriptions.Item>
+            <Descriptions.Item label={<Tag color="green">合同专员</Tag>}>处理劳动合同新签/续签相关节点。</Descriptions.Item>
+            <Descriptions.Item label={<Tag color="cyan">入离职联系专员</Tag>}>处理入职联系、离职材料收集相关节点。</Descriptions.Item>
+            <Descriptions.Item label={<Tag color="orange">数据录入组长</Tag>}>处理增员报岗录入、减员报岗录入相关节点。</Descriptions.Item>
+            <Descriptions.Item label={<Tag color="blue">福保负责人</Tag>}>处理社保公积金增员/减员相关节点。</Descriptions.Item>
           </Descriptions>
         </Space>
       </Drawer>

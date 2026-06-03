@@ -22,10 +22,10 @@ const ResignationCert: React.FC = () => {
   }, [id]);
 
   if (loading) return <PageContainer loading />;
-  if (!order) return <PageContainer header={{ title: '离职证明' }}><Empty description="工单不存在" /></PageContainer>;
+  if (!order) return <PageContainer header={{ title: '离职材料收集' }}><Empty description="工单不存在" /></PageContainer>;
 
   return (
-    <PageContainer header={{ title: '离职证明', extra: [
+    <PageContainer header={{ title: '离职材料收集', extra: [
       <Button key="back" onClick={() => navigate('/resignation/' + id)}>返回详情</Button>,
     ]}}>
       <Space direction="vertical" size="large" style={{ width: '100%' }}>

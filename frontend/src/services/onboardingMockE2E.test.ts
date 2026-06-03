@@ -91,7 +91,7 @@ function buildComplete54FieldOrder() {
     onboarding_feedback: '',
     need_company_payroll: '是',
     payroll_location: '杭州',
-    special_remark: '要求生成数据录入、入职联系、劳动合同签订3个子工单',
+    special_remark: '要求生成增员报岗录入、入职联系、劳动合同新签3个子工单',
     data_entry_feedback: '',
   } satisfies Record<(typeof FIELD_CODES)[number], unknown>;
 }

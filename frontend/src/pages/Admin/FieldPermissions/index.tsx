@@ -82,47 +82,53 @@ const SOURCE_LABEL: Record<string, string> = {
 
 const SCOPE_LABEL: Record<string, string> = {
   all: '全局',
-  data_entry: '数据录入',
+  data_entry: '增员报岗录入',
+  data_entry_resign: '减员报岗录入',
   onboarding_contact: '入职联系',
-  contract: '劳动合同签订',
-  social_insurance: '社保公积金办理',
+  resignation_contact: '离职材料收集',
+  contract: '劳动合同新签',
+  social_insurance: '社保公积金增员',
+  social_insurance_resign: '社保公积金减员',
+  resignation_social_insurance: '社保公积金减员',
 };
 
 // 情境列表：按工单发起（三大模块）+ 子工单拆分维度
 const DEFAULT_SCENARIOS = [
   // 三大模块的新建工单
   'create:onboarding',                // 新建-入职管理
-  'create:in_service',                // 新建-在职管理
+  'create:in_service',                // 新建-在职管理（后台保留，第一阶段界面隐藏）
   'create:resignation',               // 新建-离职管理
   // 入职管理 子工单
-  'dispatched:data_entry',            // 数据录入
-  'dispatched:social_insurance',      // 社保公积金办理
+  'dispatched:data_entry',            // 增员报岗录入
+  'dispatched:social_insurance',      // 社保公积金增员
   'dispatched:onboarding_contact',    // 入职联系
-  'dispatched:contract',              // 劳动合同签订
+  'dispatched:contract',              // 劳动合同新签
   // 在职管理 子工单
-  'dispatched:renewal_contract',      // 续签合同
+  'dispatched:renewal_contract',      // 劳动合同续签
   'dispatched:benefit',               // 待遇申报
   // 离职管理 子工单
-  'dispatched:resignation_contact',   // 离职联系
-  'dispatched:resignation_cert',      // 离职证明
-  'dispatched:data_entry_resign',     // 社保停保
+  'dispatched:resignation_contact',   // 离职材料收集
+  'dispatched:data_entry_resign',     // 减员报岗录入
+  'dispatched:resignation_social_insurance', // 社保公积金减员
 ];
 
 // 兼容旧 main 场景显示
 const SCENARIO_LABEL: Record<string, string> = {
   'main': '新建工单（旧）',
   'create:onboarding': '发起入职工单时',
-  'create:in_service': '发起在职工单时',
+  'create:in_service': '发起在职工单时（第一阶段隐藏）',
   'create:resignation': '发起离职工单时',
-  'dispatched:data_entry': '办理数据录入时',
-  'dispatched:social_insurance': '办理社保公积金时',
+  'dispatched:data_entry': '办理增员报岗录入时',
+  'dispatched:social_insurance': '办理社保公积金增员时',
   'dispatched:onboarding_contact': '办理入职联系时',
-  'dispatched:contract': '办理劳动合同签订时',
-  'dispatched:renewal_contract': '办理续签合同时',
+  'dispatched:contract': '办理劳动合同新签时',
+  'dispatched:renewal_contract': '办理劳动合同续签时',
   'dispatched:benefit': '办理待遇申报时',
-  'dispatched:resignation_contact': '办理离职联系时',
-  'dispatched:resignation_cert': '办理离职证明时',
-  'dispatched:data_entry_resign': '办理社保停保时',
+  'dispatched:resignation_contact': '办理离职材料收集时',
+  'dispatched:resignation_cert': '办理离职材料收集时（历史兼容）',
+  'dispatched:data_entry_resign': '办理减员报岗录入时',
+  'dispatched:social_insurance_resign': '办理社保公积金减员时',
+  'dispatched:resignation_social_insurance': '办理社保公积金减员时',
 };
 
 /**
@@ -149,14 +155,16 @@ function defaultPermission(roleCodeRaw: string, scenario: string, fieldCode: str
 
   const modulePart = scenario.startsWith('dispatched:') ? scenario.slice('dispatched:'.length) : '';
 
-  // 数据录入模块 → 数据录入组长
-  if ((modulePart === 'data_entry' || modulePart === 'social_insurance') && roleCode === 'data_entry_leader') return 'editable';
+  // 报岗录入模块 → 报岗录入负责人
+  if ((modulePart === 'data_entry' || modulePart === 'data_entry_resign') && roleCode === 'data_entry_leader') return 'editable';
+  // 社保公积金增员/减员 → 社保公积金负责人（傅倩雯）
+  if ((modulePart === 'social_insurance' || modulePart === 'social_insurance_resign' || modulePart === 'resignation_social_insurance') && roleCode === 'social_insurance_specialist') return 'editable';
   // 劳动合同相关 → 合同专员、共享团队负责人
-  if ((modulePart === 'contract' || modulePart === 'renewal_contract' || modulePart === 'benefit') && roleCode === 'labor_contract_member') return 'editable';
+  if ((modulePart === 'contract' || modulePart === 'renewal_contract') && roleCode === 'labor_contract_member') return 'editable';
   if ((modulePart === 'contract' || modulePart === 'renewal_contract') && roleCode === 'shared_team_owner') return 'editable';
   // 入离职联系 → 入离职联系专员
   if ((modulePart === 'onboarding_contact' || modulePart === 'resignation_contact' || modulePart === 'resignation_cert') && roleCode === 'onboarding_resignation_member') return 'editable';
-  // 共享团队负责人对其所有模块可编辑
+  // 共享团队负责人对其所有模块可编辑（江璐仅合同 + 入职联系/离职材料收集合集）
   if ((modulePart === 'contract' || modulePart === 'onboarding_contact' || modulePart === 'resignation_contact' || modulePart === 'resignation_cert') && roleCode === 'shared_team_owner') return 'editable';
 
   // 核心字段（客户名称、姓名、身份证号）对所有角色至少可见
@@ -507,9 +515,13 @@ const AdminFieldPermissions: React.FC = () => {
               getPopupContainer={(triggerNode) => triggerNode.parentElement || document.body}
               options={[
                 { label: '所有环节', value: 'all' },
-                { label: '数据录入', value: 'data_entry' },
+                { label: '增员报岗录入', value: 'data_entry' },
+                { label: '减员报岗录入', value: 'data_entry_resign' },
+                { label: '社保公积金增员', value: 'social_insurance' },
+                { label: '社保公积金减员', value: 'resignation_social_insurance' },
                 { label: '入职联系', value: 'onboarding_contact' },
-                { label: '劳动合同签订', value: 'contract' },
+                { label: '离职材料收集', value: 'resignation_contact' },
+                { label: '劳动合同新签', value: 'contract' },
               ]}
             />
           </Space>

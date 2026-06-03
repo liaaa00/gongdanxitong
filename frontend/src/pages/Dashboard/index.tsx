@@ -536,7 +536,7 @@ const Dashboard: React.FC = () => {
         });
         if (moduleResult.status === 'fulfilled') {
           setModuleOptions(moduleResult.value
-            .filter((item) => item.module_type === 'sub' || item.moduleType === 'sub')
+            .filter((item) => ['sub', 'sub_module'].includes(String(item.module_type || item.moduleType || '')))
             .filter((item) => canAccessModuleCode(item.module_code || item.moduleCode, user?.roles, user?.permissions))
             .map((item) => ({
               ...item,

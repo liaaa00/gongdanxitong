@@ -9,10 +9,10 @@ import { getModuleLabel } from '@/constants/modules';
 import { getStatusText } from '@/constants/dictionaries';
 
 const TABS = [
-  { key: 'contract', label: '劳动合同签订池' },
+  { key: 'contract', label: '劳动合同新签池' },
   { key: 'onboarding_contact', label: '入职联系池' },
-  { key: 'data_entry', label: '数据录入池' },
-  { key: 'social_insurance', label: '社保公积金办理池' },
+  { key: 'data_entry', label: '增员报岗录入池' },
+  { key: 'social_insurance', label: '社保公积金增员池' },
 ];
 
 const WorkOrderPool: React.FC = () => {
