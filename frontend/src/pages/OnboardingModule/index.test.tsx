@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   getDispatchedOrders: vi.fn(),
   reload: vi.fn(),
   navigate: vi.fn(),
+  moduleCode: 'data_entry',
 }));
 
 vi.mock('@ant-design/pro-components', () => ({
@@ -33,7 +34,7 @@ vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
   return {
     ...actual,
-    useParams: () => ({ moduleCode: 'data_entry' }),
+    useParams: () => ({ moduleCode: mocks.moduleCode }),
     useNavigate: () => mocks.navigate,
   };
 });
@@ -58,6 +59,7 @@ describe('OnboardingModule header table filters', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.latestProTableProps = undefined;
+    mocks.moduleCode = 'data_entry';
     mocks.getDispatchedOrders.mockResolvedValue({ list: [], total: 0 });
   });
 
@@ -90,6 +92,22 @@ describe('OnboardingModule header table filters', () => {
       pageSize: 20,
       module_code: 'data_entry',
       statuses: 'pending,processing',
+    })));
+  });
+
+  it('maps social_insurance_resign route to backend resignation_social_insurance module code', async () => {
+    mocks.moduleCode = 'social_insurance_resign';
+
+    render(<OnboardingModule />);
+
+    await act(async () => {
+      await mocks.latestProTableProps.request({ current: 1, pageSize: 20 }, {}, {});
+    });
+
+    await waitFor(() => expect(mocks.getDispatchedOrders).toHaveBeenCalledWith(expect.objectContaining({
+      current: 1,
+      pageSize: 20,
+      module_code: 'resignation_social_insurance',
     })));
   });
 

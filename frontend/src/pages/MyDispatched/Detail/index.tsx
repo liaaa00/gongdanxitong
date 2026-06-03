@@ -24,7 +24,7 @@ import type { DirtyFieldMark, DispatchedOrderItem } from '@/services/dispatchedO
 import { getFallbackFields, getFields } from '@/services/fields';
  import { getSupplementLogs } from '@/services/supplementLogs';
 import type { SupplementLogItem } from '@/services/supplementLogs';
-import { getModuleColor, getModuleLabel } from '@/constants/modules';
+import { getModuleColor, getModuleLabel, isSocialInsuranceModule } from '@/constants/modules';
 import { getStatusColor, getStatusText } from '@/constants/dictionaries';
 import { useAuth } from '@/hooks/useAuth';
 import { getUsersByTeam } from '@/services/users';
@@ -226,7 +226,10 @@ const MyDispatchedDetail: React.FC = () => {
     ?? '',
   );
   const searchParams = new URLSearchParams(location.search);
-  const isReadOnlyView = searchParams.get('readonly') === '1' || searchParams.get('from') === 'team';
+  const readonlyFrom = searchParams.get('from');
+  const isReadOnlyView = searchParams.get('readonly') === '1' || readonlyFrom === 'team' || readonlyFrom === 'my-work';
+  const isTeamReadOnlyView = readonlyFrom === 'team';
+  const isMyWorkReadOnlyView = readonlyFrom === 'my-work';
   const isAdminUser = hasRole('admin');
   const canBackendOperateByRole = isAdminUser || hasRole('data_entry_leader') || hasRole('shared_team_owner')
     || hasRole('labor_contract_member') || hasRole('onboarding_resignation_member') || hasRole('social_insurance_specialist');
@@ -235,6 +238,9 @@ const MyDispatchedDetail: React.FC = () => {
   const isCreator = isAdminUser || isOrderCreator;
   const isVoided = Boolean(order?.void_at || order?.voidAt || order?.status === 'void');
   const isResubmittableStatus = Boolean(order && (['returned', 'withdrawn', 'void'].includes(order.status) || isVoided));
+  const isSocialInsuranceOrder = isSocialInsuranceModule(order?.module_code);
+  const isAcceptedByBackend = Boolean(order?.accepted_at) || order?.status === 'processing';
+  const isSocialInsuranceUnaccepted = Boolean(isSocialInsuranceOrder && order?.status === 'pending' && !order?.accepted_at);
   const canAccept = canBackendOperate && !isVoided && order?.status === 'pending';
   const canComplete = canBackendOperate && !isVoided && order?.status === 'processing';
   const canReturn = canBackendOperate && !isVoided && (order?.status === 'processing' || order?.status === 'pending');
@@ -243,11 +249,14 @@ const MyDispatchedDetail: React.FC = () => {
   const isTerminalStatus = Boolean(order && ['completed', 'withdraw_pending', 'void_pending', 'void'].includes(order.status));
   const isTerminal = isVoided || (isTerminalStatus && !isRepairableStatus);
   const canCreatorOperate = Boolean(order && isCreator && !isReadOnlyView && (!isTerminalStatus || isRepairableStatus));
-  const canCreatorUpdate = canCreatorOperate && isResubmittableStatus;
+  const socialInsuranceOperationLocked = Boolean(isSocialInsuranceOrder && isAcceptedByBackend && !isResubmittableStatus);
+  const canCreatorUpdate = canCreatorOperate && !socialInsuranceOperationLocked && (isResubmittableStatus || isSocialInsuranceUnaccepted);
   const canCreatorResubmit = canCreatorOperate && isResubmittableStatus;
   const canCreatorUrge = canCreatorOperate && !isResubmittableStatus;
-  const canCreatorWithdraw = canCreatorOperate && !isResubmittableStatus;
-  const canCreatorVoid = canCreatorOperate && !isVoided;
+  const canShowCreatorWithdraw = canCreatorOperate && !isResubmittableStatus && !isVoided && order?.status !== 'completed';
+  const canShowCreatorVoid = canCreatorOperate && !isVoided && order?.status !== 'completed';
+  const canCreatorWithdraw = canShowCreatorWithdraw && !socialInsuranceOperationLocked;
+  const canCreatorVoid = canShowCreatorVoid && !socialInsuranceOperationLocked;
   const canApproveWithdraw = canBackendOperate && order?.status === 'withdraw_pending' && (isAdminUser || !isOrderCreator);
   const canApproveVoid = canBackendOperate && order?.status === 'void_pending' && (isAdminUser || !isOrderCreator);
   const canReturnCompleted = canBackendOperate && !isVoided && order?.status === 'completed' && (
@@ -255,6 +264,7 @@ const MyDispatchedDetail: React.FC = () => {
     order?.is_module_supervisor === true ||
     hasRole('admin')
   );
+  const readOnlyBackPath = isTeamReadOnlyView ? '/my-work/team' : order?.status === 'completed' ? '/my-work/done' : '/my-work/pending';
 
   const fillCreatorEditForm = () => {
     if (!order) return;
@@ -282,6 +292,10 @@ const MyDispatchedDetail: React.FC = () => {
   if (!order) return <PageContainer header={{ title: '子工单详情' }}><Empty description="子工单不存在" /></PageContainer>;
 
   const openCreatorEdit = () => {
+    if (socialInsuranceOperationLocked) {
+      message.info('社保公积金子工单已接单/已受理，业务员如需修改请先联系后道同意后再处理。');
+      return;
+    }
     fillCreatorEditForm();
     setCreatorEditOpen(true);
   };
@@ -314,6 +328,10 @@ const MyDispatchedDetail: React.FC = () => {
   };
 
   const handleCreatorWithdrawOk = async () => {
+    if (socialInsuranceOperationLocked) {
+      message.info('社保公积金子工单已接单/已受理，业务员撤回需后道同意或走审批。');
+      return;
+    }
     const values = await withdrawForm.validateFields();
     const reason = String(values.reason || '').trim();
     const updated = await handleWithdraw(reason);
@@ -324,6 +342,10 @@ const MyDispatchedDetail: React.FC = () => {
   };
 
   const handleCreatorVoidOk = async () => {
+    if (socialInsuranceOperationLocked) {
+      message.info('社保公积金子工单已接单/已受理，业务员作废需后道同意或走审批。');
+      return;
+    }
     const values = await voidForm.validateFields();
     const reason = String(values.reason || '').trim();
     const updated = await handleVoid(reason);
@@ -466,16 +488,32 @@ const MyDispatchedDetail: React.FC = () => {
   return (
     <PageContainer header={{
       title: '子工单详情',
-      extra: [<Button key="back" onClick={() => navigate(isReadOnlyView ? '/my-work/team' : getDispatchedListPath(order))}>返回列表</Button>],
+      extra: [<Button key="back" onClick={() => navigate(isReadOnlyView ? readOnlyBackPath : getDispatchedListPath(order))}>返回列表</Button>],
       ghost: false,
     }}>
       <Space direction="vertical" size="large" style={{ width: '100%' }}>
-        {isReadOnlyView && (
+        {isTeamReadOnlyView && (
           <Alert
             type="info"
             showIcon
             message="团队工单只读详情"
             description="当前从团队工单进入，仅允许查看，不展示接单、完成、退回、修改、作废、重新提交等操作按钮。"
+          />
+        )}
+        {isMyWorkReadOnlyView && (
+          <Alert
+            type="info"
+            showIcon
+            message="我的工单只读详情"
+            description="后道在“我的待办/我的已办”中仅允许查看；如需接单、完成、退回等操作，请返回对应负责的子工单列表执行。"
+          />
+        )}
+        {socialInsuranceOperationLocked && !isReadOnlyView && (
+          <Alert
+            type="warning"
+            showIcon
+            message="社保公积金子工单已接单/已受理"
+            description="按当前一期规则，未接单前业务员可直接修改、撤回、作废；接单或已受理后，需要后道同意或走审批流程，已完成则不可直接操作。"
           />
         )}
         {hasUnreadDirty && (
@@ -503,7 +541,7 @@ const MyDispatchedDetail: React.FC = () => {
             <Descriptions.Item label="子工单号">{order.id}</Descriptions.Item>
             <Descriptions.Item label="所属工单">{order.order_no}</Descriptions.Item>
             <Descriptions.Item label="模块">
-              <Tag color={getModuleColor(order.module_code)}>{getModuleLabel(order.module_code)}</Tag>
+              <Tag color={getModuleColor(order.module_code)}>{getModuleLabel(order.module_code, order.order_type)}</Tag>
             </Descriptions.Item>
             <Descriptions.Item label="状态">
               <Tag color={getStatusColor(isVoided ? 'void' : order.status)}>{getStatusText(isVoided ? 'void' : order.status)}</Tag>
@@ -535,6 +573,13 @@ const MyDispatchedDetail: React.FC = () => {
           </Descriptions>
 
           <Space style={{ marginTop: 16 }} wrap>
+            {socialInsuranceOperationLocked && isCreator && !isReadOnlyView && (
+              <>
+                <Button disabled icon={<EditOutlined />}>修改需后道同意</Button>
+                <Button disabled icon={<RollbackOutlined />}>撤回需审批</Button>
+                <Button disabled danger icon={<StopOutlined />}>作废需审批</Button>
+              </>
+            )}
             {canCreatorUpdate && (
               <Button icon={<EditOutlined />} onClick={openCreatorEdit}>修改</Button>
             )}
@@ -821,7 +866,7 @@ const MyDispatchedDetail: React.FC = () => {
             description="仅模块主管或系统管理员可退回已完成节点。业务员需要等待相关已完成节点被退回后才能修改并重新提交。" />
           <Form form={returnCompletedForm} layout="vertical">
             <Form.Item label="子单名称">
-              <Tag color={getModuleColor(order.module_code)}>{getModuleLabel(order.module_code)}</Tag>
+              <Tag color={getModuleColor(order.module_code)}>{getModuleLabel(order.module_code, order.order_type)}</Tag>
             </Form.Item>
             <Form.Item label="当前状态"><Tag color="success">已完成</Tag></Form.Item>
             <Form.Item name="reason" label="退回原因"
@@ -839,9 +884,13 @@ const MyDispatchedDetail: React.FC = () => {
           onCancel={() => setCompleteModalOpen(false)} confirmLoading={actionLoading} destroyOnHidden>
           <Form form={completeForm} layout="vertical">
             <Form.Item name={FEEDBACK_FIELD_MAP[order.module_code] || 'feedback'}
-              label={order.module_code === 'social_insurance' ? '社保公积金办理结果' : '反馈状态'}
+              label={order.module_code === 'social_insurance' ? `${getModuleLabel(order.module_code, order.order_type)}结果` : '反馈状态'}
               rules={[{ required: true, message: '请选择反馈状态' }]}>
-              <Select getPopupContainer={(triggerNode) => triggerNode.parentElement || document.body} options={[
+              <Select getPopupContainer={(triggerNode) => triggerNode.parentElement || document.body} options={order.module_code === 'social_insurance' ? [
+                { label: '处理中', value: '处理中' },
+                { label: '退回', value: '退回' },
+                { label: '完成', value: '完成' },
+              ] : [
                 { label: '已办结', value: '已办结' },
                 { label: '办理中', value: '办理中' },
                 { label: '未办', value: '未办' },
@@ -896,7 +945,7 @@ const MyDispatchedDetail: React.FC = () => {
             <Form.Item label="当前节点">
               <Space wrap>
                 <Tag>{order.order_no}</Tag>
-                <Tag color={getModuleColor(order.module_code)}>{getModuleLabel(order.module_code)}</Tag>
+                <Tag color={getModuleColor(order.module_code)}>{getModuleLabel(order.module_code, order.order_type)}</Tag>
                 <span>{order.handler_name || '待认领'}</span>
               </Space>
             </Form.Item>

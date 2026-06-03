@@ -89,4 +89,22 @@ describe('TeamDispatched readonly child-order view', () => {
 
     expect(mocks.navigate).toHaveBeenCalledWith('/my-dispatched/d-1?readonly=1&from=team');
   });
+
+  it('filters out in-service child modules in phase one while keeping onboarding and resignation rows', async () => {
+    mocks.getDispatchedOrdersSafe.mockResolvedValue({
+      list: [
+        { id: 'contact', module_code: 'onboarding_contact', order_type: 'onboarding' },
+        { id: 'social-minus', module_code: 'social_insurance_resign', order_type: 'resignation' },
+        { id: 'renewal', module_code: 'renewal_contract', order_type: 'renewal' },
+        { id: 'benefit', module_code: 'benefit_apply', order_type: 'benefit' },
+      ],
+      total: 4,
+    });
+    render(<TeamDispatched />);
+
+    const result = await mocks.latestProTableProps.request({ current: 1, pageSize: 20 });
+
+    expect(result.data.map((row: { id: string }) => row.id)).toEqual(['contact', 'social-minus']);
+    expect(result.total).toBe(2);
+  });
 });
