@@ -208,18 +208,18 @@ describe('five control-flow regression coverage', () => {
     expect(scope.orWhere).toHaveBeenCalledWith('d.handler_id IS NULL AND d.module_code IN (:...modules)', { modules: [moduleCode] });
   });
 
-  // 0602 C/目标-B：社保公积金办理（含入职/离职拆分）与待遇申报暂留空，不绑定 fuqianwen/yangchun/jianglu。
-  // 江璐(shared_leader + contract_specialist + onboarding_specialist) 的可见模块只能来自其合同/入离职处理人绑定，
-  // 绝不能因为遗留 seed 或角色兜底而看到 data_entry / social_insurance / benefit_apply。
-  it('shared leader 江璐 module scope never includes data_entry / social_insurance / benefit_apply', async () => {
+  // 0603：江璐是杨纯（劳动合同新签/续签）+ 毛雅妮（入职联系/离职材料收集）的合集。
+  // 第一阶段界面/接口隐藏在职模块，因此实际列表 scope 只应保留入职/离职可见模块，不含数据录入、社保公积金或待遇申报。
+  it('shared leader 江璐 module scope is Yang Chun plus Mao Yani phase-1 modules only', async () => {
     const jianglu: JwtUserPayload = {
       sub: 'jianglu',
       username: 'jianglu',
       roles: ['shared_leader', 'contract_specialist', 'onboarding_specialist'],
     };
-    // 江璐实际生效的处理人绑定：合同 / 续签 / 入职联系 / 离职联系 / 离职证明（备份），不含社保/待遇/数据录入。
-    const jiangluHandlerModules = ['contract', 'renewal_contract', 'onboarding_contact', 'resignation_contact', 'resignation_cert'];
-    const forbiddenModules = ['data_entry', 'social_insurance', 'onboarding_social_insurance', 'resignation_social_insurance', 'benefit_apply'];
+    // 江璐 seed 中保留合同续签配置，但第一阶段列表 scope 会过滤掉在职模块 renewal_contract。
+    const jiangluHandlerModules = ['contract', 'renewal_contract', 'onboarding_contact', 'resignation_contact'];
+    const expectedPhase1Modules = ['contract', 'onboarding_contact', 'resignation_contact'];
+    const forbiddenModules = ['data_entry', 'data_entry_resign', 'social_insurance', 'onboarding_social_insurance', 'resignation_social_insurance', 'benefit_apply', 'renewal_contract'];
 
     const qb = {
       leftJoinAndSelect: jest.fn(),
@@ -240,44 +240,42 @@ describe('five control-flow regression coverage', () => {
 
     await service.findAll({ page: 1, pageSize: 20 } as never, jianglu);
 
-    const bracket = qb.andWhere.mock.calls[0][0] as { whereFactory: (scope: { where: jest.Mock; orWhere: jest.Mock }) => void };
+    const bracket = qb.andWhere.mock.calls
+      .map(([clause]) => clause)
+      .find((clause) => typeof clause === 'object' && clause !== null && typeof (clause as { whereFactory?: unknown }).whereFactory === 'function') as { whereFactory: (scope: { where: jest.Mock; orWhere: jest.Mock }) => void } | undefined;
+    expect(bracket).toBeDefined();
     const scope = { where: jest.fn(), orWhere: jest.fn() };
-    bracket.whereFactory(scope);
+    bracket!.whereFactory(scope);
 
     // 监督级可见本模块全部子单：scope 必须按 module_code 限定，且模块集合不含任何被禁模块。
     const moduleScopeCall = scope.orWhere.mock.calls.find(([clause]) => clause === 'd.module_code IN (:...modules)');
     expect(moduleScopeCall).toBeDefined();
     const scopedModules = (moduleScopeCall![1] as { modules: string[] }).modules;
-    expect(scopedModules.sort()).toEqual([...jiangluHandlerModules].sort());
+    expect(scopedModules.sort()).toEqual([...expectedPhase1Modules].sort());
     for (const forbidden of forbiddenModules) {
       expect(scopedModules).not.toContain(forbidden);
     }
   });
 });
 
-describe('seed module handler assignments (0602 final business matrix)', () => {
+describe('seed module handler assignments (0603 final business matrix)', () => {
   async function readSeed(): Promise<string> {
     const { readFileSync } = await import('fs');
     const { join } = await import('path');
     return readFileSync(join(process.cwd(), 'src/database/seeds/seed-module-handlers.ts'), 'utf8');
   }
 
-  it('leaves social_insurance and benefit_apply unassigned (no fuqianwen / yangchun / jianglu binding)', async () => {
+  it('assigns social insurance increase/decrease to Fu Qianwen and keeps in-service modules inactive', async () => {
     const seed = await readSeed();
     const activeSeedBlock = seed.slice(0, seed.indexOf('const managedModules'));
 
-    // 社保公积金/待遇申报不得出现在生效的处理人绑定数组中。
-    expect(activeSeedBlock).not.toMatch(/moduleCode:\s*'social_insurance'/);
-    expect(activeSeedBlock).not.toMatch(/moduleCode:\s*'onboarding_social_insurance'/);
-    expect(activeSeedBlock).not.toMatch(/moduleCode:\s*'resignation_social_insurance'/);
+    expect(activeSeedBlock).toMatch(/moduleCode:\s*'social_insurance',\s*username:\s*'fuqianwen'/);
+    expect(activeSeedBlock).toMatch(/moduleCode:\s*'resignation_social_insurance',\s*username:\s*'fuqianwen'/);
+    expect(activeSeedBlock).toMatch(/moduleCode:\s*'data_entry_resign',\s*username:\s*'annazhen'/);
     expect(activeSeedBlock).not.toMatch(/moduleCode:\s*'benefit_apply'/);
+    expect(activeSeedBlock).not.toMatch(/moduleCode:\s*'social_insurance_change'/);
 
-    // 不得把社保/待遇强行绑定给 fuqianwen，也不得让 benefit_apply 落到 yangchun/jianglu。
-    expect(seed).not.toMatch(/'social_insurance'[^\n]*fuqianwen/);
-    expect(seed).not.toMatch(/'benefit_apply'[^\n]*(yangchun|jianglu)/);
-
-    // 任何遗留的社保/待遇处理人绑定都必须被置为 inactive（留空口径）。
-    expect(seed).toMatch(/vacatedModules/);
+    expect(seed).toContain("moduleCodes: ['benefit_apply', 'social_insurance_change']");
     expect(seed).toMatch(/isActive:\s*false/);
   });
 

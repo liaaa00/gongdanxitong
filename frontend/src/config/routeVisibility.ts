@@ -22,10 +22,13 @@ const ALL_ROLES = [
 
 const BUSINESS_ORDER_ROLES = [
   ROLE.ADMIN,
+  ROLE.BUSINESS_GROUP_LEADER,
+  ROLE.BUSINESS_GROUP_MEMBER,
 ] as const satisfies readonly CanonicalRole[];
 
 const WORK_ORDER_CREATE_ROLES = [
   ROLE.ADMIN,
+  ROLE.BUSINESS_GROUP_LEADER,
   ROLE.BUSINESS_GROUP_MEMBER,
 ] as const satisfies readonly CanonicalRole[];
 
@@ -38,11 +41,8 @@ const ONBOARDING_ROLES = [
   ROLE.SOCIAL_INSURANCE_SPECIALIST,
 ] as const satisfies readonly CanonicalRole[];
 
-const IN_SERVICE_ROLES = [
-  ROLE.ADMIN,
-  ROLE.SHARED_TEAM_OWNER,
-  ROLE.LABOR_CONTRACT_MEMBER,
-] as const satisfies readonly CanonicalRole[];
+// 第一阶段只开放入职、离职；在职模块保留后台配置但前端路由和菜单不可见。
+const IN_SERVICE_ROLES = [] as const satisfies readonly CanonicalRole[];
 
 const OFFBOARDING_ROLES = [
   ROLE.ADMIN,
@@ -53,11 +53,13 @@ const OFFBOARDING_ROLES = [
 
 const INITIATED_WORK_ROLES = [
   ROLE.ADMIN,
+  ROLE.BUSINESS_GROUP_LEADER,
   ROLE.BUSINESS_GROUP_MEMBER,
 ] as const satisfies readonly CanonicalRole[];
 
 const RETURNED_WORK_ROLES = [
   ROLE.ADMIN,
+  ROLE.BUSINESS_GROUP_LEADER,
   ROLE.BUSINESS_GROUP_MEMBER,
 ] as const satisfies readonly CanonicalRole[];
 
@@ -151,16 +153,17 @@ export const ROUTE_VISIBILITY = {
   '/onboarding/contract': [ROLE.ADMIN, ROLE.LABOR_CONTRACT_MEMBER, ROLE.SHARED_TEAM_OWNER],
   '/onboarding/data_entry': [ROLE.ADMIN, ROLE.DATA_ENTRY_LEADER],
   '/onboarding/social_insurance': [ROLE.ADMIN, ROLE.SOCIAL_INSURANCE_SPECIALIST],
-  '/onboarding/renewal_contract': [ROLE.ADMIN, ROLE.LABOR_CONTRACT_MEMBER, ROLE.SHARED_TEAM_OWNER],
-  '/onboarding/benefit_apply': [ROLE.ADMIN],
+  '/onboarding/renewal_contract': IN_SERVICE_ROLES,
+  '/onboarding/benefit_apply': IN_SERVICE_ROLES,
   '/onboarding/resignation_contact': [ROLE.ADMIN, ROLE.ONBOARDING_RESIGNATION_MEMBER, ROLE.SHARED_TEAM_OWNER],
   '/onboarding/resignation_cert': [ROLE.ADMIN, ROLE.ONBOARDING_RESIGNATION_MEMBER, ROLE.SHARED_TEAM_OWNER],
   '/onboarding/data_entry_resign': [ROLE.ADMIN, ROLE.DATA_ENTRY_LEADER],
+  '/onboarding/social_insurance_resign': [ROLE.ADMIN, ROLE.SOCIAL_INSURANCE_SPECIALIST],
 
-  // 在职管理：续签 + 待遇申报，按 P2.1 角色矩阵收紧。
+  // 在职管理：第一阶段暂不开放，后台配置可保留但界面不可见。
   '/in-service': IN_SERVICE_ROLES,
-  '/in-service/contract-renewal': [ROLE.ADMIN, ROLE.LABOR_CONTRACT_MEMBER, ROLE.SHARED_TEAM_OWNER],
-  '/in-service/benefit-claim': [ROLE.ADMIN],
+  '/in-service/contract-renewal': IN_SERVICE_ROLES,
+  '/in-service/benefit-claim': IN_SERVICE_ROLES,
 
   // 离职管理：离职联系/证明由入离职岗负责，离职数据录入由数据录入岗负责。
   '/offboarding': OFFBOARDING_ROLES,
@@ -199,25 +202,35 @@ export const ROUTE_VISIBILITY = {
 
 export type VisibilityRoute = keyof typeof ROUTE_VISIBILITY;
 
+const PHASE1_HIDDEN_ROUTES = new Set<VisibilityRoute>([
+  '/onboarding/renewal_contract',
+  '/onboarding/benefit_apply',
+  '/in-service',
+  '/in-service/contract-renewal',
+  '/in-service/benefit-claim',
+]);
+
 const LEGACY_ROUTE_ALIASES: Record<string, VisibilityRoute> = {
   '/work-orders/new': '/work-orders/create',
   '/my-dispatched': '/my-work/pending',
   '/team-dispatched': '/my-work/team',
   '/export-templates': '/export-templates',
-  '/renewal': '/work-orders',
-  '/renewal/new': '/work-orders/create',
+  '/renewal': '/in-service',
+  '/renewal/new': '/in-service',
   '/renewal/:id': '/in-service/contract-renewal',
   '/resignation': '/work-orders',
   '/resignation/new': '/work-orders/create',
   '/resignation/:id': '/offboarding',
   '/resignation/:id/cert': '/offboarding/proof-pool',
-  '/benefit': '/work-orders',
-  '/benefit/new': '/work-orders/create',
+  '/benefit': '/in-service',
+  '/benefit/new': '/in-service',
   '/benefit/:id': '/in-service/benefit-claim',
   '/onboarding/contact-pool': '/onboarding/onboarding_contact',
   '/onboarding/contract-pool': '/onboarding/contract',
   '/onboarding/data-entry-pool': '/onboarding/data_entry',
   '/onboarding/social-insurance-pool': '/onboarding/social_insurance',
+  '/offboarding/social-insurance-resign-pool': '/onboarding/social_insurance_resign',
+  '/offboarding/social-suspend-pool': '/onboarding/data_entry_resign',
   '/work-order-pool': '/my-work/team',
   '/admin/logs': '/admin/audit-log',
   '/admin/ai-settings': '/admin',
@@ -255,12 +268,11 @@ function normalizePermissions(permissions?: string[]): Set<string> {
 
 const RESTRICTED_DYNAMIC_PERMISSION_ROUTES: Partial<Record<CanonicalRole, readonly VisibilityRoute[]>> = {
   [ROLE.BUSINESS_OWNER]: ['/dashboard', '/my-work/team', '/my-work/history', '/my-dispatched/:id'],
-  [ROLE.BUSINESS_GROUP_LEADER]: ['/dashboard', '/my-work/team', '/my-work/history', '/my-dispatched/:id'],
+  [ROLE.BUSINESS_GROUP_LEADER]: ['/dashboard', '/work-orders', '/work-orders/create', '/work-orders/import', '/work-orders/:id', '/my-work/initiated', '/my-work/returned', '/my-work/team', '/my-work/history', '/my-dispatched/:id'],
   [ROLE.SHARED_TEAM_OWNER]: [
     '/dashboard', '/notifications', '/my-work/pending', '/my-work/done', '/my-work/history', '/dispatched-orders', '/my-dispatched/:id',
-    '/onboarding', '/onboarding/onboarding_contact', '/onboarding/contract', '/onboarding/renewal_contract',
+    '/onboarding', '/onboarding/onboarding_contact', '/onboarding/contract',
     '/onboarding/resignation_contact', '/onboarding/resignation_cert',
-    '/in-service', '/in-service/contract-renewal',
     '/offboarding', '/offboarding/contact-pool', '/offboarding/proof-pool',
   ],
 };
@@ -277,7 +289,7 @@ function allowsDynamicPermissionWithinRoleScope(route: VisibilityRoute, userRole
 function hasDynamicPermissionForPath(pathname: string, permissions?: string[], userRoles?: { code?: string }[]): boolean {
   const route = resolveVisibilityRoute(pathname);
   const permissionSet = normalizePermissions(permissions);
-  if (!route || permissionSet.size === 0 || !allowsDynamicPermissionWithinRoleScope(route, userRoles)) return false;
+  if (!route || PHASE1_HIDDEN_ROUTES.has(route) || permissionSet.size === 0 || !allowsDynamicPermissionWithinRoleScope(route, userRoles)) return false;
   if (permissionSet.has('*') || permissionSet.has('all') || permissionSet.has('work_order.*')) return true;
   if (route === '/my-work/team') {
     return permissionSet.has('work_order.view_team')
