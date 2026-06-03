@@ -251,4 +251,21 @@ describe('MyDispatchedDetail readonly and creator repair actions', () => {
     expect(screen.queryByRole('button', { name: /^撤回$/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^作废$/ })).not.toBeInTheDocument();
   });
+
+  it('locks resignation social insurance child when backend returns accepted status alias', async () => {
+    mocks.getDispatchedOrder.mockResolvedValue({
+      ...baseOrder,
+      module_code: 'resignation_social_insurance',
+      module_name: '社保公积金减员',
+      status: 'accepted',
+      accepted_at: '2026-06-01T09:00:00Z',
+    });
+
+    renderDetail('/my-dispatched/d-1');
+
+    expect(await screen.findByText('社保公积金子工单已接单/已受理')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /修改需后道同意/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /撤回需审批/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /作废需审批/ })).toBeDisabled();
+  });
 });

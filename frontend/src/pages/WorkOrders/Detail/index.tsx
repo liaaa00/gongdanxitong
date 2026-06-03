@@ -12,17 +12,9 @@ import { getWorkOrder, updateWorkOrder, resubmitWorkOrder, voidWorkOrder } from 
 import type { WorkOrderItem } from '@/services/workOrders';
 import { getFields } from '@/services/fields';
 import { getStatusColor, getStatusText } from '@/constants/dictionaries';
+import { getModuleLabel } from '@/constants/modules';
 
-const FLOW_LABELS: Record<string, string> = {
-  data_entry: '数据录入',
-  contract: '劳动合同签约',
-  onboarding_contact: '入职联系',
-  social_insurance: '社保公积金办理',
-  renewal_contract: '续签合同',
-  resignation_contact: '离职联系',
-  resignation_cert: '离职证明',
-  benefit_apply: '待遇申报',
-};
+// 子工单名称统一由 constants/modules.ts 处理。
 
 const FIELD_GROUPS: Array<{ title: string; codes: string[] }> = [
   {
@@ -182,7 +174,7 @@ const WorkOrdersDetail: React.FC = () => {
         <Card>
           <Descriptions column={3} bordered size="small">
             <Descriptions.Item label="工单编号"><Tag color="blue">{order.order_no}</Tag></Descriptions.Item>
-            <Descriptions.Item label="订单类型"><Tag>{order.order_type === 'onboarding' ? '入职' : order.order_type}</Tag></Descriptions.Item>
+            <Descriptions.Item label="订单类型"><Tag>{order.order_type === 'onboarding' ? '入职' : order.order_type === 'resignation' || order.order_type === 'offboarding' || order.order_type === 'leave' ? '离职' : order.order_type}</Tag></Descriptions.Item>
             <Descriptions.Item label="状态">
               <Tag color={getStatusColor(order.status)}>
                 {getStatusText(order.status)}
@@ -224,7 +216,7 @@ const WorkOrdersDetail: React.FC = () => {
                   <span>被退回的子工单：</span>
                   {order.dispatched_orders?.filter((d) => d.status === 'returned').map((d) => {
                     const reason = getSubOrderReturnReason(d);
-                    return <Tag key={d.id} color="warning">{FLOW_LABELS[d.module_code] || '未知子工单'}{reason ? ': ' + reason : ''}</Tag>;
+                    return <Tag key={d.id} color="warning">{getModuleLabel(d.module_code, order.order_type)}{reason ? ': ' + reason : ''}</Tag>;
                   })}
                 </Space>
               } type="warning" showIcon />

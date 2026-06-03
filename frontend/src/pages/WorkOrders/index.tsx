@@ -11,6 +11,8 @@ import { getMyRoleActions, type RoleActionCode } from '@/services/roleActionPerm
 import type { PageParams } from '@/services/mock';
 import { useAuth } from '@/hooks/useAuth';
 import { ROLE } from '@/constants/roles';
+import { getModuleLabel } from '@/constants/modules';
+import { isPhase1VisibleOrderType } from '@/utils/moduleAccess';
 
 const RefButton = forwardRef<HTMLButtonElement, React.ComponentProps<typeof Button>>((props, ref) => (
   <Button ref={ref} {...props} />
@@ -29,25 +31,11 @@ const STATUS_OPTIONS = [
 const STATUS_MAP = Object.fromEntries(STATUS_OPTIONS.map((item) => [item.value, item]));
 const STATUS_SEARCH_OPTIONS = STATUS_OPTIONS.map(({ value, label }) => ({ value, label }));
 
-const MODULE_LABEL: Record<string, string> = {
-  contract: '劳动合同签订',
-  contract_signing: '劳动合同签订',
-  onboarding_contact: '入职联系',
-  data_entry: '数据录入',
-  social_insurance: '社保公积金办理',
-  renewal_contract: '续签合同',
-  resignation_contact: '离职联系',
-  resignation_cert: '离职证明',
-  data_entry_resign: '社保停保',
-  benefit: '待遇申报',
-  benefit_apply: '待遇申报',
-};
+// 子工单名称统一由 constants/modules.ts 处理，兼容同一模块码在入职/离职下的不同展示。
 
 const ORDER_TYPE_OPTIONS = [
   { value: 'onboarding', label: '入职' },
-  { value: 'renewal', label: '续签' },
   { value: 'resignation', label: '离职' },
-  { value: 'benefit', label: '待遇申报' },
 ];
 const ORDER_TYPE_MAP = Object.fromEntries(ORDER_TYPE_OPTIONS.map((item) => [item.value, item.label]));
 
@@ -185,8 +173,9 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
   const isBackendOnly = isBackendProcessor && !isAdmin && !isBusinessOwner && !isGroupLeader && !isGroupMember;
   const isInitiatedPage = mode === 'initiated' || location.pathname.includes('/my-work/initiated');
   const canDelete = !isInitiatedPage && isAdmin;
-  const canCreateWorkOrder = !isInitiatedPage && (isAdmin || allowedActions.includes('work_order.create') || (!allowedActions.length && (isGroupMember || isGroupLeader)));
-  const canImportWorkOrder = !isInitiatedPage && (isAdmin || allowedActions.includes('work_order.import') || (!allowedActions.length && (isGroupMember || isGroupLeader)));
+  const canBusinessUserCreateOrImport = isGroupMember || isGroupLeader;
+  const canCreateWorkOrder = !isInitiatedPage && (isAdmin || canBusinessUserCreateOrImport || allowedActions.includes('work_order.create'));
+  const canImportWorkOrder = !isInitiatedPage && (isAdmin || canBusinessUserCreateOrImport || allowedActions.includes('work_order.import'));
   const pageTitle = isInitiatedPage ? '我发起的工单' : '主工单列表';
 
   const urlFilters = useMemo(() => {
@@ -321,7 +310,7 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
           <Space size={[4, 4]} wrap>
             {children.map((child) => {
               const moduleKey = String(child.module_code || child.module_name || '');
-              const moduleLabel = MODULE_LABEL[moduleKey] || child.module_name || '未知子工单';
+              const moduleLabel = getModuleLabel(child.module_code || moduleKey, record.order_type);
               const meta = getDispatchedProgressMeta(child);
               const details = [
                 `${moduleLabel}：${meta.label}`,
@@ -395,7 +384,8 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
       if (query[key] === undefined || query[key] === '') delete query[key];
     });
     const result = await getWorkOrders(query as PageParams);
-    return { data: result.list, success: true, total: result.total };
+    const list = result.list.filter((item) => isPhase1VisibleOrderType(item.order_type));
+    return { data: list, success: true, total: list.length };
   };
 
   return (
@@ -418,7 +408,7 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
           ),
           canImportWorkOrder && (
             <RefButton key="import" icon={<ImportOutlined />} onClick={() => navigate('/work-orders/import')}>
-              批量导入
+              入职导入
             </RefButton>
           ),
           <RefButton key="export" icon={<ExportOutlined />} onClick={handleBatchExport}>

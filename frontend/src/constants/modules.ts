@@ -97,7 +97,11 @@ export const ONBOARDING_SPLIT_MODULES: ModuleMeta[] = [
   MODULE_META.social_insurance,
 ];
 
-export const MODULE_GROUPS = [
+export const MODULE_GROUPS: Array<{
+  label: string;
+  value: 'onboarding' | 'resignation';
+  options: Array<{ label: string; value: string }>;
+}> = [
   {
     label: '入职管理',
     value: 'onboarding',
@@ -106,15 +110,6 @@ export const MODULE_GROUPS = [
       { label: MODULE_META.contract.label, value: 'contract' },
       { label: MODULE_META.data_entry.label, value: 'data_entry' },
       { label: MODULE_META.social_insurance.label, value: 'social_insurance' },
-    ],
-  },
-  {
-    label: '在职管理',
-    value: 'in_service',
-    options: [
-      { label: MODULE_META.renewal_contract.label, value: 'renewal_contract' },
-      { label: MODULE_META.benefit_apply.label, value: 'benefit_apply' },
-      { label: MODULE_META.social_insurance_change.label, value: 'social_insurance_change' },
     ],
   },
   {
@@ -129,8 +124,8 @@ export const MODULE_GROUPS = [
   },
 ];
 
-export const ALL_MODULE_OPTIONS = MODULE_GROUPS.flatMap((g) => g.options);
-export const PHASE_ONE_MODULE_OPTIONS = ALL_MODULE_OPTIONS.filter((option) => PHASE_ONE_VISIBLE_MODULE_CODES.has(option.value));
+export const ALL_MODULE_OPTIONS: Array<{ label: string; value: string }> = MODULE_GROUPS.flatMap((g) => g.options);
+export const PHASE_ONE_MODULE_OPTIONS: Array<{ label: string; value: string }> = ALL_MODULE_OPTIONS;
 
 const RESIGNATION_ORDER_TYPES = new Set(['resignation', 'offboarding', 'leave']);
 const CHANGE_ORDER_TYPES = new Set(['renewal', 'benefit', 'in_service', 'change']);

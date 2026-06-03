@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ROLE } from '@/constants/roles';
-import { canAccessModuleCode, getAccessibleModuleCodes, getPhase1ModuleDisplayName, isPhase1VisibleModule } from './moduleAccess';
+import { canAccessModuleCode, getAccessibleModuleCodes, getPhase1ModuleDisplayName, isPhase1VisibleModule, isPhase1VisibleOrderType } from './moduleAccess';
 
 const roles = (codes: string[]) => codes.map((code) => ({ code }));
 
@@ -18,6 +18,13 @@ describe('moduleAccess phase-1 visibility', () => {
     expect(isPhase1VisibleModule('renewal_contract')).toBe(false);
     expect(isPhase1VisibleModule('benefit_apply')).toBe(false);
     expect(isPhase1VisibleModule('social_insurance_change')).toBe(false);
+  });
+
+  it('keeps resignation order-type aliases visible for legacy and backend routes', () => {
+    expect(isPhase1VisibleOrderType('resignation')).toBe(true);
+    expect(isPhase1VisibleOrderType('offboarding')).toBe(true);
+    expect(isPhase1VisibleOrderType('leave')).toBe(true);
+    expect(isPhase1VisibleOrderType('in_service')).toBe(false);
   });
 
   it('maps social insurance specialist to increase/decrease only', () => {

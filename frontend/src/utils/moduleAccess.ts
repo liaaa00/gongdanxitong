@@ -10,7 +10,7 @@ export const PHASE1_ENABLED_MODULE_CODES = [
   'social_insurance_resign',
 ] as const;
 
-export const PHASE1_ENABLED_ORDER_TYPES = ['onboarding', 'resignation'] as const;
+export const PHASE1_ENABLED_ORDER_TYPES = ['onboarding', 'resignation', 'offboarding', 'leave'] as const;
 
 export const HIDDEN_PHASE1_MODULE_CODES = new Set([
   'renewal_contract',

@@ -239,7 +239,7 @@ const MyDispatchedDetail: React.FC = () => {
   const isVoided = Boolean(order?.void_at || order?.voidAt || order?.status === 'void');
   const isResubmittableStatus = Boolean(order && (['returned', 'withdrawn', 'void'].includes(order.status) || isVoided));
   const isSocialInsuranceOrder = isSocialInsuranceModule(order?.module_code);
-  const isAcceptedByBackend = Boolean(order?.accepted_at) || order?.status === 'processing';
+  const isAcceptedByBackend = Boolean(order?.accepted_at) || order?.status === 'accepted' || order?.status === 'processing';
   const isSocialInsuranceUnaccepted = Boolean(isSocialInsuranceOrder && order?.status === 'pending' && !order?.accepted_at);
   const canAccept = canBackendOperate && !isVoided && order?.status === 'pending';
   const canComplete = canBackendOperate && !isVoided && order?.status === 'processing';
@@ -411,7 +411,7 @@ const MyDispatchedDetail: React.FC = () => {
   const handleCompleteOk = async () => {
     const values = await completeForm.validateFields();
     const payload: Record<string, unknown> = { ...values };
-    if (order.module_code === 'social_insurance') {
+    if (isSocialInsuranceOrder) {
       const remark = String(values.social_insurance_remark || '').trim();
       if (!remark) {
         message.warning('请填写办理备注，不能只输入空格');
@@ -884,9 +884,9 @@ const MyDispatchedDetail: React.FC = () => {
           onCancel={() => setCompleteModalOpen(false)} confirmLoading={actionLoading} destroyOnHidden>
           <Form form={completeForm} layout="vertical">
             <Form.Item name={FEEDBACK_FIELD_MAP[order.module_code] || 'feedback'}
-              label={order.module_code === 'social_insurance' ? `${getModuleLabel(order.module_code, order.order_type)}结果` : '反馈状态'}
+              label={isSocialInsuranceOrder ? `${getModuleLabel(order.module_code, order.order_type)}结果` : '反馈状态'}
               rules={[{ required: true, message: '请选择反馈状态' }]}>
-              <Select getPopupContainer={(triggerNode) => triggerNode.parentElement || document.body} options={order.module_code === 'social_insurance' ? [
+              <Select getPopupContainer={(triggerNode) => triggerNode.parentElement || document.body} options={isSocialInsuranceOrder ? [
                 { label: '处理中', value: '处理中' },
                 { label: '退回', value: '退回' },
                 { label: '完成', value: '完成' },
@@ -896,7 +896,7 @@ const MyDispatchedDetail: React.FC = () => {
                 { label: '未办', value: '未办' },
               ]} />
             </Form.Item>
-            {order.module_code === 'social_insurance' && (
+            {isSocialInsuranceOrder && (
               <Form.Item
                 name="social_insurance_remark"
                 label="办理备注"

@@ -94,7 +94,7 @@ describe('WorkOrders initiated read-only view', () => {
 
     expect(screen.queryByRole('button', { name: /详情/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /新建工单/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /批量导入/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /入职导入/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /批量导出/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /批量删除/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /取消选择/ })).not.toBeInTheDocument();
@@ -126,9 +126,33 @@ describe('WorkOrders initiated read-only view', () => {
     expect(getColumn('actions')).toBeDefined();
 
     await waitFor(() => expect(screen.getByRole('button', { name: /新建工单/ })).toBeInTheDocument());
-    expect(screen.getByRole('button', { name: /批量导入/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /入职导入/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /批量导出/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /详情/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^删除$/ })).toBeInTheDocument();
+  });
+
+  it('loads onboarding and resignation work orders by default without forcing onboarding filter', async () => {
+    mocks.pathname = '/work-orders';
+    mocks.search = '';
+    mocks.roles = new Set<string>(['business_group_member']);
+    mocks.getMyRoleActions.mockResolvedValue(['work_order.view_own']);
+    mocks.getWorkOrders.mockResolvedValue({
+      list: [
+        { id: 'wo-on', order_type: 'onboarding' },
+        { id: 'wo-re', order_type: 'resignation' },
+      ],
+      total: 2,
+    });
+
+    render(<WorkOrders />);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /新建工单/ })).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /入职导入/ })).toBeInTheDocument();
+
+    const result = await mocks.latestTableProps.request({ current: 1, pageSize: 20 });
+
+    expect(mocks.getWorkOrders).toHaveBeenCalledWith(expect.not.objectContaining({ orderType: 'onboarding' }));
+    expect(result.data).toHaveLength(2);
   });
 });
