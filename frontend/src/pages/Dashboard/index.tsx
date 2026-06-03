@@ -20,6 +20,13 @@ import {
 } from '@/services/dashboard';
 import { getModuleConfigs } from '@/services/moduleConfigs';
 import type { ModuleConfigItem } from '@/services/moduleConfigs';
+import {
+  canAccessModuleCode,
+  getAccessibleModuleCodes,
+  getPhase1ModuleDisplayName,
+  isPhase1VisibleModule,
+  normalizeModuleCode,
+} from '@/utils/moduleAccess';
 
 const { Text } = Typography;
 
@@ -35,7 +42,6 @@ const EMPTY_CARDS: DashboardCards = {
 
 const TREND_ORDER_TYPES: Array<{ label: string; value: DashboardOrderType; color: string }> = [
   { label: '入职', value: 'onboarding', color: '#1677ff' },
-  { label: '在职', value: 'renewal', color: '#722ed1' },
   { label: '离职', value: 'resignation', color: '#fa8c16' },
 ];
 
@@ -134,20 +140,10 @@ const DASHBOARD_MATRIX_GROUPS: Array<{
     orderType: 'onboarding',
     routePath: '/work-orders?orderType=onboarding',
     modules: [
-      { moduleCode: 'data_entry', label: '数据录入', routePath: '/onboarding/data_entry' },
-      { moduleCode: 'social_insurance', label: '社保公积金办理', routePath: '/onboarding/social_insurance' },
-      { moduleCode: 'onboarding_contact', label: '入职联系', routePath: '/onboarding/onboarding_contact' },
-      { moduleCode: 'contract', label: '劳动合同签订', routePath: '/onboarding/contract' },
-    ],
-  },
-  {
-    key: 'in_service',
-    label: '在职管理',
-    orderType: 'renewal',
-    routePath: '/renewal',
-    modules: [
-      { moduleCode: 'renewal_contract', label: '续签合同', routePath: '/onboarding/renewal_contract' },
-      { moduleCode: 'benefit_apply', label: '待遇申报', routePath: '/onboarding/benefit_apply' },
+      { moduleCode: 'onboarding_contact', label: getPhase1ModuleDisplayName('onboarding_contact'), routePath: '/onboarding/onboarding_contact' },
+      { moduleCode: 'contract', label: getPhase1ModuleDisplayName('contract'), routePath: '/onboarding/contract' },
+      { moduleCode: 'data_entry', label: getPhase1ModuleDisplayName('data_entry'), routePath: '/onboarding/data_entry' },
+      { moduleCode: 'social_insurance', label: getPhase1ModuleDisplayName('social_insurance'), routePath: '/onboarding/social_insurance' },
     ],
   },
   {
@@ -156,9 +152,9 @@ const DASHBOARD_MATRIX_GROUPS: Array<{
     orderType: 'resignation',
     routePath: '/resignation',
     modules: [
-      { moduleCode: 'resignation_contact', label: '离职联系', routePath: '/onboarding/resignation_contact' },
-      { moduleCode: 'resignation_cert', label: '离职证明', routePath: '/onboarding/resignation_cert' },
-      { moduleCode: 'data_entry_resign', label: '社保停保', routePath: '/onboarding/data_entry_resign' },
+      { moduleCode: 'resignation_contact', label: getPhase1ModuleDisplayName('resignation_contact'), routePath: '/onboarding/resignation_contact' },
+      { moduleCode: 'data_entry_resign', label: getPhase1ModuleDisplayName('data_entry_resign'), routePath: '/onboarding/data_entry_resign' },
+      { moduleCode: 'social_insurance_resign', label: getPhase1ModuleDisplayName('social_insurance_resign'), routePath: '/onboarding/social_insurance_resign' },
     ],
   },
 ];
@@ -214,29 +210,51 @@ function flattenMatrixRows(rows: DashboardMatrixTreeRow[]): DashboardMatrixTreeR
   return rows.flatMap((row) => [row, ...(row.children ? flattenMatrixRows(row.children) : [])]);
 }
 
-function buildMatrixTreeRows(rows: OrderTypeMatrixRow[]): DashboardMatrixTreeRow[] {
+function normalizeDashboardMatrixModuleCode(row: Pick<OrderTypeMatrixRow, 'moduleCode' | 'orderType'>): string {
+  const code = normalizeModuleCode(row.moduleCode);
+  if (code === 'social_insurance' && row.orderType === 'resignation') return 'social_insurance_resign';
+  if (code === 'social_insurance' && (row.orderType === 'renewal' || row.orderType === 'benefit')) return 'social_insurance_change';
+  return code;
+}
+
+function buildMatrixTreeRows(
+  rows: OrderTypeMatrixRow[],
+  userRoles: { code?: string }[] | undefined,
+  permissions?: string[],
+): DashboardMatrixTreeRow[] {
+  const accessibleModules = getAccessibleModuleCodes(userRoles, permissions);
+  if (!accessibleModules || accessibleModules.size === 0) return [];
+
   const rowsByModule = new Map<string, OrderTypeMatrixRow>();
   rows.forEach((row) => {
-    if (row.moduleCode) rowsByModule.set(row.moduleCode, row);
+    const moduleCode = normalizeDashboardMatrixModuleCode(row);
+    if (moduleCode && isPhase1VisibleModule(moduleCode) && accessibleModules.has(moduleCode)) {
+      rowsByModule.set(moduleCode, { ...row, moduleCode });
+    }
   });
 
   return DASHBOARD_MATRIX_GROUPS.map((group) => {
-    const children = group.modules.map<DashboardMatrixTreeRow>((module) => {
-      const matched = rowsByModule.get(module.moduleCode);
-      return normalizeStatsTotal({
-        rowKey: `${group.key}:${module.moduleCode}`,
-        orderType: group.orderType,
-        moduleCode: module.moduleCode,
-        dimension: 'node',
-        label: module.label,
-        routePath: module.routePath,
-        total: matched?.total || 0,
-        processing: matched?.processing || 0,
-        completed: matched?.completed || 0,
-        voided: matched?.voided || 0,
-        completionRate: clampRate(matched?.completionRate || 0),
-      }, { preserveCompletionRate: true });
-    });
+    const children = group.modules
+      .filter((module) => accessibleModules.has(normalizeModuleCode(module.moduleCode)))
+      .map<DashboardMatrixTreeRow>((module) => {
+        const moduleCode = normalizeModuleCode(module.moduleCode);
+        const matched = rowsByModule.get(moduleCode);
+        return normalizeStatsTotal({
+          rowKey: `${group.key}:${moduleCode}`,
+          orderType: group.orderType,
+          moduleCode,
+          dimension: 'node',
+          label: matched?.label ? getPhase1ModuleDisplayName(moduleCode) : module.label,
+          routePath: module.routePath,
+          total: matched?.total || 0,
+          processing: matched?.processing || 0,
+          completed: matched?.completed || 0,
+          voided: matched?.voided || 0,
+          completionRate: clampRate(matched?.completionRate || 0),
+        }, { preserveCompletionRate: true });
+      })
+      .filter((row) => row.total > 0 || row.processing > 0 || row.completed > 0 || row.voided > 0 || canAccessModuleCode(row.moduleCode, userRoles, permissions));
+    if (children.length === 0) return null;
     const summary = summarizeMatrixRows(children);
     return {
       rowKey: group.key,
@@ -248,7 +266,7 @@ function buildMatrixTreeRows(rows: OrderTypeMatrixRow[]): DashboardMatrixTreeRow
       ...summary,
       children,
     };
-  });
+  }).filter(Boolean) as DashboardMatrixTreeRow[];
 }
 
 
@@ -429,7 +447,7 @@ const Dashboard: React.FC = () => {
     voided: Math.max(0, cards.voided ?? 0),
   }), [cards.completed, cards.monthPending, cards.processing, cards.totalPending, cards.totalThisMonth, cards.voided]);
 
-  // 仪表盘总表按实际子工单模块展示：入职主工单提交后会拆成数据录入、社保公积金、入职联系、劳动合同签订等子工单。
+  // 仪表盘总表按实际子工单模块展示：入职主工单提交后会拆成增员报岗录入、社保公积金增员、入职联系、劳动合同新签等子工单。
   const matrixDimension = 'node';
   const matrixTitle = roleMeta.matrixTitle;
 
@@ -508,21 +526,30 @@ const Dashboard: React.FC = () => {
       .then(([cardResult, matrixResult, moduleResult]) => {
         if (!mounted) return;
         setCards(cardResult.status === 'fulfilled' ? cardResult.value : EMPTY_CARDS);
-        const nextMatrixRows = matrixResult.status === 'fulfilled' ? buildMatrixTreeRows(matrixResult.value.rows || []) : buildMatrixTreeRows([]);
+        const nextMatrixRows = matrixResult.status === 'fulfilled'
+          ? buildMatrixTreeRows(matrixResult.value.rows || [], user?.roles, user?.permissions)
+          : buildMatrixTreeRows([], user?.roles, user?.permissions);
         setMatrixRows(nextMatrixRows);
         setSelectedMatrixRow((prev) => {
           const flatRows = flattenMatrixRows(nextMatrixRows);
           return flatRows.find((row) => row.rowKey === prev?.rowKey) || flatRows[0] || null;
         });
         if (moduleResult.status === 'fulfilled') {
-          setModuleOptions(moduleResult.value.filter((item) => item.module_type === 'sub' || item.moduleType === 'sub'));
+          setModuleOptions(moduleResult.value
+            .filter((item) => item.module_type === 'sub' || item.moduleType === 'sub')
+            .filter((item) => canAccessModuleCode(item.module_code || item.moduleCode, user?.roles, user?.permissions))
+            .map((item) => ({
+              ...item,
+              module_code: normalizeModuleCode(item.module_code || item.moduleCode),
+              module_name: getPhase1ModuleDisplayName(item.module_code || item.moduleCode || item.module_name),
+            })));
         }
       })
       .finally(() => {
         if (mounted) setLoading(false);
       });
     return () => { mounted = false; };
-  }, [dashboardAudience, effectiveScope, matrixDimension, canViewLeaderTrend, selectedMonthValue]);
+  }, [dashboardAudience, effectiveScope, matrixDimension, canViewLeaderTrend, selectedMonthValue, user?.permissions, user?.roles]);
 
   return (
     <PageContainer header={{

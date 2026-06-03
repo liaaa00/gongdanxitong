@@ -51,15 +51,17 @@ const RAW_MENU: MenuItem[] = [
     icon: <FileTextOutlined />,
     // 子菜单由 routeVisibility.ts 决定是否显示。
     children: [
-      { path: '/work-orders', name: '主工单列表', key: 'work-orders-main' },
-      { path: '/onboarding/contract', name: '劳动合同签订子工单' },
+      { path: '/work-orders?orderType=onboarding', name: '入职主工单列表', key: 'work-orders-main' },
+      { path: '/work-orders/import', name: '入职导入', key: 'work-orders-import' },
+      { path: '/onboarding/contract', name: '劳动合同新签子工单' },
       { path: '/onboarding/onboarding_contact', name: '入职联系子工单' },
-      { path: '/onboarding/data_entry', name: '入职数据录入子工单' },
-      { path: '/onboarding/social_insurance', name: '入职社保公积金办理子工单' },
+      { path: '/onboarding/data_entry', name: '增员报岗录入子工单' },
+      { path: '/onboarding/social_insurance', name: '社保公积金增员子工单' },
     ],
   },
   {
     path: '/in-service-group',
+    menuVisible: false,
     name: '在职管理',
     icon: <FileTextOutlined />,
     children: [
@@ -76,9 +78,10 @@ const RAW_MENU: MenuItem[] = [
     children: [
       { path: '/resignation', name: '离职主工单列表', key: 'resignation-list' },
       { path: '/onboarding/resignation_contact', name: '离职材料收集子工单', key: 'resignation-contact-sub-list' },
-      { path: '/onboarding/resignation_cert', name: '离职证明子工单', key: 'resignation-cert-sub-list' },
-      { path: '/onboarding/data_entry_resign', name: '离职数据录入子工单', key: 'data-entry-resign-sub-list' },
-      { path: '/resignation/:id/cert', name: '离职证明', key: 'resignation-cert', menuVisible: false },
+      { path: '/onboarding/resignation_cert', name: '离职材料收集子工单', key: 'resignation-cert-sub-list', menuVisible: false },
+      { path: '/onboarding/data_entry_resign', name: '减员报岗录入子工单', key: 'data-entry-resign-sub-list' },
+      { path: '/onboarding/social_insurance_resign', name: '社保公积金减员子工单', key: 'social-insurance-resign-sub-list' },
+      { path: '/resignation/:id/cert', name: '离职材料收集', key: 'resignation-cert', menuVisible: false },
     ],
   },
   {

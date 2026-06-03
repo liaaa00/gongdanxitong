@@ -152,51 +152,73 @@ describe('BasicLayout menu visibility', () => {
     expect(text).not.toContain('消息通知');
   });
 
-  it('keeps salesperson initiated, returned and history without team switch', () => {
+  it('restores salesperson onboarding import entry and my-work views without team switch', () => {
     mockUserState.user = mockUserState.makeUser(['business_group_member']);
 
     renderLayout();
 
     const text = menuText();
+    expect(text).toContain('入职管理');
+    expect(text).toContain('入职主工单列表');
+    expect(text).toContain('入职导入');
     expect(text).toContain('我发起的');
     expect(text).toContain('我的退回');
     expect(text).toContain('历史工单');
     expect(text).not.toContain('团队工单');
     expect(text).not.toContain('我的待办');
-    expect(text).not.toContain('入职管理');
+    expect(text).not.toContain('在职管理');
+    expect(text).not.toContain('劳动合同续签子工单');
+    expect(text).not.toContain('待遇申报子工单');
   });
 
-  it('keeps business group leader on team and history work only', () => {
+  it('restores business group leader onboarding import entry plus team view', () => {
     mockUserState.user = mockUserState.makeUser(['business_group_leader']);
     mockUserState.user.permissions = ['*', 'work_order.*', 'data_scope.all'];
 
     renderLayout();
 
     const text = menuText();
-    expect(text).not.toContain('我发起的');
-    expect(text).not.toContain('我的退回');
+    expect(text).toContain('入职管理');
+    expect(text).toContain('入职导入');
+    expect(text).toContain('我发起的');
+    expect(text).toContain('我的退回');
     expect(text).toContain('历史工单');
     expect(text).toContain('团队工单');
     expect(text).not.toContain('我的待办');
-    expect(text).not.toContain('入职管理');
+    expect(text).not.toContain('在职管理');
   });
 
-  it('keeps shared team owner on Yang Chun plus Mao Yani modules only', () => {
+  it('keeps shared team owner on Yang Chun plus Mao Yani phase-1 modules only', () => {
     mockUserState.user = mockUserState.makeUser(['shared_team_owner']);
     mockUserState.user.permissions = ['*', 'work_order.*', 'data_scope.all'];
 
     renderLayout();
 
     const text = menuText();
-    expect(text).toContain('劳动合同签订子工单');
-    expect(text).toContain('劳动合同续签子工单');
+    expect(text).toContain('劳动合同新签子工单');
     expect(text).toContain('入职联系子工单');
     expect(text).toContain('离职材料收集子工单');
-    expect(text).toContain('离职证明子工单');
-    expect(text).not.toContain('入职数据录入子工单');
-    expect(text).not.toContain('离职数据录入子工单');
+    expect(text).not.toContain('劳动合同续签子工单');
+    expect(text).not.toContain('增员报岗录入子工单');
+    expect(text).not.toContain('减员报岗录入子工单');
     expect(text).not.toContain('待遇申报子工单');
-    expect(text).not.toContain('入职社保公积金办理子工单');
+    expect(text).not.toContain('社保公积金增员子工单');
+    expect(text).not.toContain('社保公积金减员子工单');
+  });
+
+  it('keeps social insurance specialist menu to social insurance increase/decrease only', () => {
+    mockUserState.user = mockUserState.makeUser(['social_insurance_specialist']);
+
+    renderLayout();
+
+    const text = menuText();
+    expect(text).toContain('社保公积金增员子工单');
+    expect(text).toContain('社保公积金减员子工单');
+    expect(text).not.toContain('入职联系子工单');
+    expect(text).not.toContain('劳动合同新签子工单');
+    expect(text).not.toContain('增员报岗录入子工单');
+    expect(text).not.toContain('减员报岗录入子工单');
+    expect(text).not.toContain('在职管理');
   });
 });
 
@@ -220,8 +242,8 @@ describe('BasicLayout notification dropdown', () => {
     fireEvent.click(container.querySelector('.anticon-bell') as Element);
 
     await waitFor(() => {
-      expect(screen.getByText('劳动合同签订反馈 更新')).toBeTruthy();
-      expect(document.body.textContent).toContain('杨纯 修改了【子工单】：【劳动合同签订反馈】由【待确认】改为【已完成签订】');
+      expect(screen.getByText('劳动合同新签反馈 更新')).toBeTruthy();
+      expect(document.body.textContent).toContain('杨纯 修改了【子工单】：【劳动合同新签反馈】由【待确认】改为【已完成签订】');
     });
     expect(document.body.textContent).not.toContain('contract_feedback');
   });

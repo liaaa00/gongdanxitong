@@ -148,7 +148,7 @@ describe('Dashboard display behavior', () => {
         {
           orderType: 'onboarding',
           moduleCode: 'contract',
-          label: '劳动合同签订',
+          label: '劳动合同新签',
           total: 100,
           processing: 1,
           completed: 97,
@@ -167,7 +167,68 @@ describe('Dashboard display behavior', () => {
 
     await waitFor(() => {
       expect(getByText('入职联系:100')).toBeTruthy();
-      expect(getByText('劳动合同签订:99')).toBeTruthy();
+      expect(getByText('劳动合同新签:99')).toBeTruthy();
     });
+  });
+
+  it('hides in-service matrix rows even when backend returns renewal or benefit data', async () => {
+    mockedGetOrderTypeMatrix.mockResolvedValue({
+      rows: [
+        { orderType: 'renewal', moduleCode: 'renewal_contract', label: '劳动合同续签', total: 5, processing: 5, completed: 0, voided: 0, completionRate: 0 },
+        { orderType: 'benefit', moduleCode: 'benefit_apply', label: '待遇申报', total: 4, processing: 1, completed: 3, voided: 0, completionRate: 75 },
+        { orderType: 'onboarding', moduleCode: 'social_insurance', label: '社保公积金增员', total: 2, processing: 1, completed: 1, voided: 0, completionRate: 50 },
+      ],
+      total: 3,
+    });
+
+    const { container, getByText } = render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(getByText('社保公积金增员:50')).toBeTruthy());
+    expect(container.textContent).not.toContain('劳动合同续签');
+    expect(container.textContent).not.toContain('待遇申报');
+    expect(container.textContent).not.toContain('在职管理');
+  });
+
+  it('filters backend dashboard rows to social insurance increase/decrease for social specialist', async () => {
+    useUserStore.setState({
+      user: {
+        id: 'fuqianwen-1',
+        username: 'fuqianwen',
+        real_name: '傅倩雯',
+        email: '',
+        phone: '',
+        avatar_url: null,
+        is_active: true,
+        permissions: [],
+        roles: [{ id: 'r-social', code: ROLE.SOCIAL_INSURANCE_SPECIALIST, name: '福保负责人', level: 'member' }],
+      },
+    });
+    mockedGetOrderTypeMatrix.mockResolvedValue({
+      rows: [
+        { orderType: 'onboarding', moduleCode: 'onboarding_contact', label: '入职联系', total: 7, processing: 7, completed: 0, voided: 0, completionRate: 0 },
+        { orderType: 'onboarding', moduleCode: 'contract', label: '劳动合同新签', total: 6, processing: 3, completed: 3, voided: 0, completionRate: 50 },
+        { orderType: 'onboarding', moduleCode: 'social_insurance', label: '社保公积金增员', total: 5, processing: 2, completed: 3, voided: 0, completionRate: 60 },
+        { orderType: 'resignation', moduleCode: 'social_insurance_resign', label: '社保公积金减员', total: 4, processing: 1, completed: 3, voided: 0, completionRate: 75 },
+      ],
+      total: 4,
+    });
+
+    const { container, getByText } = render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(getByText('社保公积金增员:60')).toBeTruthy();
+      expect(getByText('社保公积金减员:75')).toBeTruthy();
+    });
+    expect(container.textContent).not.toContain('入职联系');
+    expect(container.textContent).not.toContain('劳动合同新签');
+    expect(container.textContent).not.toContain('增员报岗录入');
   });
 });
