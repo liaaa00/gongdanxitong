@@ -122,7 +122,6 @@ describe('five control-flow regression coverage', () => {
   const creator: JwtUserPayload = { sub: 'creator-1', username: 'creator', roles: ['biz_member'] };
   const handler: JwtUserPayload = { sub: 'handler-1', username: 'handler', roles: ['data_entry_team'] };
 
-  // 0602 E-5/目标-6：处理中/待处理/已退回作废仍走 VOID_PENDING 后道审批；已撤回作废改为直接终态（见下一用例）。
   it('creator void from RETURNED must stay approval-bound and never direct void', async () => {
     const order = makeChild({ status: DispatchedOrderStatus.RETURNED, parentOrder: makeParent({ status: WorkOrderStatus.RETURNED }) });
     const dispatchedRepo = repoMock<DispatchedOrder>({ findOne: jest.fn(async () => order) });
@@ -140,7 +139,6 @@ describe('five control-flow regression coverage', () => {
     ]));
   });
 
-  // 0602 E-5：已撤回子单作废 → 直接进入 VOID 终态，无需后道二次审批（合并撤销作废语义）。
   it('creator void from WITHDRAWN goes straight to VOID terminal without downstream approval', async () => {
     const order = makeChild({ status: DispatchedOrderStatus.WITHDRAWN, parentOrder: makeParent({ status: WorkOrderStatus.WITHDRAWN }) });
     const dispatchedRepo = repoMock<DispatchedOrder>({ findOne: jest.fn(async () => order) });
@@ -153,7 +151,6 @@ describe('five control-flow regression coverage', () => {
     expect(order.status).toBe(DispatchedOrderStatus.VOID);
     expect(order.voidAt).toBeInstanceOf(Date);
     expect(operationLogRepo.save).toHaveBeenCalledWith(expect.objectContaining({ actionType: 'creator_void_direct' }));
-    // 通知发起人作废完成（void_approved），不生成后道审批待办（creator_void_request）。
     expect(notificationRepo.save).toHaveBeenCalledWith(expect.objectContaining({ bizType: 'void_approved' }));
     expect(notificationRepo.save).not.toHaveBeenCalledWith(expect.arrayContaining([
       expect.objectContaining({ bizType: 'creator_void_request' }),
@@ -202,21 +199,23 @@ describe('five control-flow regression coverage', () => {
 
     await service.findAll({ page: 1, pageSize: 20 } as never, { sub: userId, username: userId, roles: [roleCode] });
 
-    const bracket = qb.andWhere.mock.calls[0][0] as { whereFactory: (scope: { where: jest.Mock; orWhere: jest.Mock }) => void };
+    const bracket = qb.andWhere.mock.calls
+      .map(([clause]) => clause)
+      .find((clause) => typeof clause === 'object' && clause !== null && typeof (clause as { whereFactory?: unknown }).whereFactory === 'function') as { whereFactory: (scope: { where: jest.Mock; orWhere: jest.Mock }) => void } | undefined;
+    expect(bracket).toBeDefined();
     const scope = { where: jest.fn(), orWhere: jest.fn() };
-    bracket.whereFactory(scope);
-    expect(scope.orWhere).toHaveBeenCalledWith('d.handler_id IS NULL AND d.module_code IN (:...modules)', { modules: [moduleCode] });
+    bracket!.whereFactory(scope);
+    const moduleScopeCall = scope.orWhere.mock.calls.find(([clause]) => clause === 'd.handler_id IS NULL AND d.module_code IN (:...modules)');
+    expect(moduleScopeCall).toBeDefined();
+    expect((moduleScopeCall![1] as { modules: string[] }).modules).toContain(moduleCode);
   });
 
-  // 0603：江璐是杨纯（劳动合同新签/续签）+ 毛雅妮（入职联系/离职材料收集）的合集。
-  // 第一阶段界面/接口隐藏在职模块，因此实际列表 scope 只应保留入职/离职可见模块，不含数据录入、社保公积金或待遇申报。
-  it('shared leader 江璐 module scope is Yang Chun plus Mao Yani phase-1 modules only', async () => {
+  it('shared leader jianglu module scope is Yang Chun plus Mao Yani phase-1 modules only', async () => {
     const jianglu: JwtUserPayload = {
       sub: 'jianglu',
       username: 'jianglu',
       roles: ['shared_leader', 'contract_specialist', 'onboarding_specialist'],
     };
-    // 江璐 seed 中保留合同续签配置，但第一阶段列表 scope 会过滤掉在职模块 renewal_contract。
     const jiangluHandlerModules = ['contract', 'renewal_contract', 'onboarding_contact', 'resignation_contact'];
     const expectedPhase1Modules = ['contract', 'onboarding_contact', 'resignation_contact'];
     const forbiddenModules = ['data_entry', 'data_entry_resign', 'social_insurance', 'onboarding_social_insurance', 'resignation_social_insurance', 'benefit_apply', 'renewal_contract'];
@@ -247,7 +246,6 @@ describe('five control-flow regression coverage', () => {
     const scope = { where: jest.fn(), orWhere: jest.fn() };
     bracket!.whereFactory(scope);
 
-    // 监督级可见本模块全部子单：scope 必须按 module_code 限定，且模块集合不含任何被禁模块。
     const moduleScopeCall = scope.orWhere.mock.calls.find(([clause]) => clause === 'd.module_code IN (:...modules)');
     expect(moduleScopeCall).toBeDefined();
     const scopedModules = (moduleScopeCall![1] as { modules: string[] }).modules;

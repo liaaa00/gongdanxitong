@@ -10,7 +10,13 @@ import {
   hasModuleSupervisorRole,
   isAdminRole,
 } from 'src/common/auth/role-permissions';
-import { DISPATCH_MODULE_LABELS, resolveDispatchModuleCode } from 'src/common/constants/dispatch-modules';
+import {
+  DISPATCH_MODULE_LABELS,
+  PHASE1_VISIBLE_DISPATCH_MODULE_CODES,
+  filterPhase1VisibleDispatchModules,
+  isPhase1VisibleDispatchModule,
+  resolveDispatchModuleCode,
+} from 'src/common/constants/dispatch-modules';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { RoleActionPermissionService } from 'src/modules/role-action-permissions/role-action-permission.service';
 import { WorkOrderValidationService } from 'src/modules/work-orders/work-order-validation.service';
@@ -53,6 +59,14 @@ interface DashboardCardsRow {
   voided?: number | string;
   voidCount?: number | string;
   void_count?: number | string;
+  pendingTotal?: number | string;
+  pending_total?: number | string;
+  totalPending?: number | string;
+  total_pending?: number | string;
+  pendingThisMonth?: number | string;
+  pending_this_month?: number | string;
+  monthPending?: number | string;
+  month_pending?: number | string;
 }
 
 interface BackendDashboardScope {
@@ -168,7 +182,13 @@ export class DashboardService {
 
   async getTeamMetrics(moduleCode: string, user: JwtUserPayload): Promise<unknown> {
     const normalizedModuleCode = resolveDispatchModuleCode(moduleCode) ?? moduleCode;
+    if (!isPhase1VisibleDispatchModule(normalizedModuleCode)) {
+      return this.emptyTeam(normalizedModuleCode, true);
+    }
     const canViewAll = await this.canViewBackendModuleAll(user, normalizedModuleCode);
+    if (!canViewAll && !(await this.hasModuleAccess(user.sub, normalizedModuleCode))) {
+      return this.emptyTeam(normalizedModuleCode, true);
+    }
     const rows = await this.dataSource.query(
       `
       WITH bounds AS (
@@ -178,8 +198,11 @@ export class DashboardService {
       ),
       cur_do AS (
         SELECT d.*
-          FROM dispatched_orders d, bounds b
+          FROM dispatched_orders d
+          JOIN work_orders wo ON wo.id = d.parent_order_id
+          CROSS JOIN bounds b
          WHERE d.module_code = $1
+           AND wo.order_type::text IN ('onboarding','resignation')
            AND COALESCE(d.dispatched_at, d.created_at) >= b.cur_start
            AND COALESCE(d.dispatched_at, d.created_at) < b.cur_end
            AND ($2::boolean = true OR d.handler_id = $3 OR d.handler_id IS NULL)
@@ -247,7 +270,7 @@ export class DashboardService {
 
     const departmentIds = scope.departmentIds;
     const hasDeptFilter = departmentIds !== null;
-    const params: unknown[] = [hasDeptFilter, departmentIds ?? []];
+    const params: unknown[] = [hasDeptFilter, departmentIds ?? [], [...PHASE1_VISIBLE_DISPATCH_MODULE_CODES]];
 
     const rows = await this.dataSource.query(
       `
@@ -261,6 +284,7 @@ export class DashboardService {
           FROM work_orders wo, bounds b
          WHERE COALESCE(wo.submitted_at, wo.created_at) >= b.cur_start
            AND COALESCE(wo.submitted_at, wo.created_at) < b.cur_end
+           AND wo.order_type::text IN ('onboarding','resignation')
            AND ($1::boolean = false OR wo.department_id = ANY($2::uuid[]))
       ),
       module_summary AS (
@@ -277,6 +301,7 @@ export class DashboardService {
         FROM dispatched_orders d, bounds b
         WHERE COALESCE(d.dispatched_at, d.created_at) >= b.cur_start
           AND COALESCE(d.dispatched_at, d.created_at) < b.cur_end
+          AND d.module_code = ANY($3::text[])
           AND ($1::boolean = false OR d.parent_order_id IN (SELECT id FROM scoped_wo))
         GROUP BY d.module_code
       ),
@@ -356,22 +381,29 @@ export class DashboardService {
            AND ($1::text IS NULL
              OR ($1::text = 'owner' AND wo.created_by = $2::uuid)
              OR ($1::text = 'department' AND wo.department_id = ANY($3::uuid[])))
-      ), scoped AS (
+      ), scoped_all AS (
         SELECT d.*
           FROM dispatched_orders d
           JOIN scoped_wo wo ON wo.id = d.parent_order_id
+         WHERE wo.order_type::text IN ('onboarding','resignation')
+           AND d.module_code = ANY($5::text[])
+      ), scoped_month AS (
+        SELECT d.*
+          FROM scoped_all d
           CROSS JOIN bounds b
          WHERE COALESCE(d.dispatched_at, d.created_at) >= b.cur_start
            AND COALESCE(d.dispatched_at, d.created_at) < b.cur_end
       )
       SELECT
-        COUNT(*)::int AS "totalThisMonth",
-        COUNT(*) FILTER (WHERE status::text NOT IN ('completed','void') AND void_at IS NULL)::int AS processing,
+        (SELECT COUNT(*)::int FROM scoped_month) AS "totalThisMonth",
+        (SELECT COUNT(*)::int FROM scoped_all WHERE status::text NOT IN ('completed','void','withdrawn') AND void_at IS NULL) AS processing,
+        (SELECT COUNT(*)::int FROM scoped_month WHERE status::text NOT IN ('completed','void','withdrawn') AND void_at IS NULL) AS "pendingThisMonth",
+        (SELECT COUNT(*)::int FROM scoped_all WHERE status::text NOT IN ('completed','void','withdrawn') AND void_at IS NULL) AS "pendingTotal",
         COUNT(*) FILTER (WHERE status = 'completed')::int AS completed,
         COUNT(*) FILTER (WHERE status = 'void' OR void_at IS NOT NULL)::int AS voided
-      FROM scoped
+      FROM scoped_month
       `,
-      [scope, scope === 'owner' ? value : null, scope === 'department' ? value : [], this.toMonthStart(month)],
+      [scope, scope === 'owner' ? value : null, scope === 'department' ? value : [], this.toMonthStart(month), [...PHASE1_VISIBLE_DISPATCH_MODULE_CODES]],
     ) as DashboardCardsRow[];
     return this.toCardsWithoutMessages(rows[0]);
   }
@@ -384,33 +416,42 @@ export class DashboardService {
           $2::timestamp AS cur_start,
           ($2::timestamp + interval '1 month') AS cur_end
       ), accessible_modules AS (
-        SELECT module_code FROM module_handlers WHERE handler_id = $1::uuid AND is_active = true
+        SELECT module_code FROM module_handlers WHERE handler_id = $1::uuid AND is_active = true AND module_code = ANY($3::text[])
         UNION
-        SELECT module_code FROM module_supervisors WHERE supervisor_id = $1::uuid AND is_active = true
+        SELECT module_code FROM module_supervisors WHERE supervisor_id = $1::uuid AND is_active = true AND module_code = ANY($3::text[])
       ), current_role_scope AS (
         SELECT COALESCE(bool_or(r.level IN ('supervisor','management','global')), false) AS can_view_module_all
           FROM user_roles ur
           JOIN roles r ON r.id = ur.role_id
          WHERE ur.user_id = $1::uuid
-      ), scoped AS (
+      ), scoped_all AS (
         SELECT d.*
-          FROM dispatched_orders d, bounds b, current_role_scope rs
-         WHERE COALESCE(d.dispatched_at, d.created_at) >= b.cur_start
-           AND COALESCE(d.dispatched_at, d.created_at) < b.cur_end
+          FROM dispatched_orders d
+          JOIN work_orders wo ON wo.id = d.parent_order_id
+          CROSS JOIN current_role_scope rs
+         WHERE wo.order_type::text IN ('onboarding','resignation')
+           AND d.module_code = ANY($3::text[])
            AND (
              d.handler_id = $1::uuid
              OR (d.handler_id IS NULL AND d.module_code IN (SELECT module_code FROM accessible_modules))
              OR (rs.can_view_module_all = true AND d.module_code IN (SELECT module_code FROM accessible_modules))
            )
+      ), scoped_month AS (
+        SELECT d.*
+          FROM scoped_all d, bounds b
+         WHERE COALESCE(d.dispatched_at, d.created_at) >= b.cur_start
+           AND COALESCE(d.dispatched_at, d.created_at) < b.cur_end
       )
       SELECT
-        COUNT(*)::int AS "totalThisMonth",
-        COUNT(*) FILTER (WHERE status::text NOT IN ('completed','void') AND void_at IS NULL)::int AS processing,
+        (SELECT COUNT(*)::int FROM scoped_month) AS "totalThisMonth",
+        (SELECT COUNT(*)::int FROM scoped_all WHERE status::text NOT IN ('completed','void','withdrawn') AND void_at IS NULL) AS processing,
+        (SELECT COUNT(*)::int FROM scoped_month WHERE status::text NOT IN ('completed','void','withdrawn') AND void_at IS NULL) AS "pendingThisMonth",
+        (SELECT COUNT(*)::int FROM scoped_all WHERE status::text NOT IN ('completed','void','withdrawn') AND void_at IS NULL) AS "pendingTotal",
         COUNT(*) FILTER (WHERE status = 'completed')::int AS completed,
         COUNT(*) FILTER (WHERE status = 'void' OR void_at IS NOT NULL)::int AS voided
-      FROM scoped
+      FROM scoped_month
       `,
-      [user.sub, this.toMonthStart(month)],
+      [user.sub, this.toMonthStart(month), [...PHASE1_VISIBLE_DISPATCH_MODULE_CODES]],
     ) as DashboardCardsRow[];
     return this.toCardsWithoutMessages(rows[0]);
   }
@@ -419,10 +460,20 @@ export class DashboardService {
     const totalThisMonth = Number(row?.totalThisMonth ?? 0);
     const completed = Number(row?.completed ?? 0);
     const voided = Number(row?.voided ?? row?.voidCount ?? row?.void_count ?? 0);
+    const pendingTotal = Number(row?.pendingTotal ?? row?.pending_total ?? row?.totalPending ?? row?.total_pending ?? row?.processing ?? 0);
+    const pendingThisMonth = Number(row?.pendingThisMonth ?? row?.pending_this_month ?? row?.monthPending ?? row?.month_pending ?? row?.processing ?? 0);
     const completionRate = this.calculateCompletionRate(completed, totalThisMonth, voided);
     return {
       totalThisMonth,
-      processing: Number(row?.processing ?? 0),
+      processing: pendingTotal,
+      pendingTotal,
+      pending_total: pendingTotal,
+      totalPending: pendingTotal,
+      total_pending: pendingTotal,
+      pendingThisMonth,
+      pending_this_month: pendingThisMonth,
+      monthPending: pendingThisMonth,
+      month_pending: pendingThisMonth,
       completed,
       completionRate,
       completion_rate: completionRate,
@@ -500,7 +551,7 @@ export class DashboardService {
       || hasManagementScopeRole(user.roles)
       || hasModuleSupervisorRole(user.roles)
       || await this.hasSupervisorLevel(user.sub);
-    return { modules, includeModuleAll };
+    return { modules: filterPhase1VisibleDispatchModules(modules), includeModuleAll };
   }
 
   private async getAccessibleModules(userId: string): Promise<string[]> {
@@ -512,7 +563,7 @@ export class DashboardService {
       `,
       [userId],
     ) as Array<{ module_code: string }>;
-    return Array.from(new Set(rows.map((row) => row.module_code).filter(Boolean)));
+    return filterPhase1VisibleDispatchModules(Array.from(new Set(rows.map((row) => row.module_code).filter(Boolean))));
   }
 
   private async hasModuleAccess(userId: string, moduleCode: string): Promise<boolean> {
@@ -552,15 +603,17 @@ export class DashboardService {
   }
 
   private emptyCards(): Omit<DashboardCardsDto, 'myMessages'> {
-    return { totalThisMonth: 0, processing: 0, completed: 0, completionRate: 0, completion_rate: 0, voided: 0, voidCount: 0, void_count: 0 };
+    return { totalThisMonth: 0, processing: 0, pendingTotal: 0, pending_total: 0, totalPending: 0, total_pending: 0, pendingThisMonth: 0, pending_this_month: 0, monthPending: 0, month_pending: 0, completed: 0, completionRate: 0, completion_rate: 0, voided: 0, voidCount: 0, void_count: 0 };
   }
 
   private emptySalesperson(): Record<string, unknown> {
     return { current: { created: 0, submitted: 0, completed: 0, returned: 0, withdrawn: 0 }, previous: { created: 0, submitted: 0, completed: 0 }, deltaPct: { submitted: null, completed: null }, trend: [] };
   }
 
-  private emptyTeam(moduleCode: string): Record<string, unknown> {
-    return { moduleCode, counts: { pending: 0, processing: 0, completed: 0, returned: 0, voided: 0, slaBreach: 0 }, pool: { poolPending: 0 }, top5: [], members: [] };
+  private emptyTeam(moduleCode: string, hidden = false): Record<string, unknown> {
+    return hidden
+      ? { moduleCode, hidden: true, counts: null, pool: null, top5: [], members: [] }
+      : { moduleCode, counts: { pending: 0, processing: 0, completed: 0, returned: 0, voided: 0, slaBreach: 0 }, pool: { poolPending: 0 }, top5: [], members: [] };
   }
 
   private emptyManager(): Record<string, unknown> {
@@ -584,6 +637,7 @@ export class DashboardService {
       scope.departmentIds ?? [],
       scope.ownerId ?? null,
       this.toMonthStart(selectedMonth),
+      [...PHASE1_VISIBLE_DISPATCH_MODULE_CODES],
     ];
 
     if (dimension === 'node') {
@@ -603,15 +657,14 @@ export class DashboardService {
       order_types AS (
         SELECT * FROM (VALUES
           ('onboarding', '入职工单', 1),
-          ('renewal', '续签工单', 2),
-          ('resignation', '离职工单', 3),
-          ('benefit', '待遇申报', 4)
+          ('resignation', '离职工单', 2)
         ) AS t(order_type, label, sort_order)
       ),
       scoped_wo AS (
         SELECT wo.*
           FROM work_orders wo
          WHERE wo.status::text <> 'draft'
+           AND wo.order_type::text IN ('onboarding','resignation')
            AND ($1::boolean = false
              OR ($2::uuid[] IS NOT NULL AND array_length($2::uuid[], 1) > 0 AND wo.department_id = ANY($2::uuid[]))
              OR ($3::uuid IS NOT NULL AND wo.created_by = $3::uuid))
@@ -622,6 +675,7 @@ export class DashboardService {
           CROSS JOIN bounds b
          WHERE COALESCE(d.dispatched_at, d.created_at) >= b.cur_start
            AND COALESCE(d.dispatched_at, d.created_at) < b.cur_end
+           AND d.module_code = ANY($5::text[])
       )
       SELECT
         ot.order_type AS "orderType",
@@ -657,9 +711,9 @@ export class DashboardService {
           $2::timestamp AS cur_start,
           ($2::timestamp + interval '1 month') AS cur_end
       ), accessible_modules AS (
-        SELECT module_code FROM module_handlers WHERE handler_id = $1::uuid AND is_active = true
+        SELECT module_code FROM module_handlers WHERE handler_id = $1::uuid AND is_active = true AND module_code = ANY($3::text[])
         UNION
-        SELECT module_code FROM module_supervisors WHERE supervisor_id = $1::uuid AND is_active = true
+        SELECT module_code FROM module_supervisors WHERE supervisor_id = $1::uuid AND is_active = true AND module_code = ANY($3::text[])
       ), current_role_scope AS (
         SELECT COALESCE(bool_or(r.level IN ('supervisor','management','global')), false) AS can_view_module_all
           FROM user_roles ur
@@ -667,9 +721,14 @@ export class DashboardService {
          WHERE ur.user_id = $1::uuid
       ), scoped_do AS (
         SELECT d.*
-          FROM dispatched_orders d, bounds b, current_role_scope rs
+          FROM dispatched_orders d
+          JOIN work_orders wo ON wo.id = d.parent_order_id
+          CROSS JOIN bounds b
+          CROSS JOIN current_role_scope rs
          WHERE COALESCE(d.dispatched_at, d.created_at) >= b.cur_start
            AND COALESCE(d.dispatched_at, d.created_at) < b.cur_end
+           AND wo.order_type::text IN ('onboarding','resignation')
+           AND d.module_code = ANY($3::text[])
            AND (
              d.handler_id = $1::uuid
              OR (d.handler_id IS NULL AND d.module_code IN (SELECT module_code FROM accessible_modules))
@@ -694,7 +753,7 @@ export class DashboardService {
       GROUP BY d.module_code
       ORDER BY d.module_code
       `,
-      [user.sub, this.toMonthStart(month)],
+      [user.sub, this.toMonthStart(month), [...PHASE1_VISIBLE_DISPATCH_MODULE_CODES]],
     ) as Array<Record<string, unknown> & { moduleCode: string }>;
 
     return rows.map((row) => ({
@@ -715,6 +774,7 @@ export class DashboardService {
         SELECT wo.*
           FROM work_orders wo
          WHERE wo.status <> 'draft'
+           AND wo.order_type::text IN ('onboarding','resignation')
            AND ($1::boolean = false
              OR ($2::uuid[] IS NOT NULL AND array_length($2::uuid[], 1) > 0 AND wo.department_id = ANY($2::uuid[]))
              OR ($3::uuid IS NOT NULL AND wo.created_by = $3::uuid))
@@ -726,6 +786,7 @@ export class DashboardService {
           CROSS JOIN bounds b
          WHERE COALESCE(d.dispatched_at, d.created_at) >= b.cur_start
            AND COALESCE(d.dispatched_at, d.created_at) < b.cur_end
+           AND d.module_code = ANY($5::text[])
       )
       SELECT
         d.module_code AS "moduleCode",
@@ -745,7 +806,7 @@ export class DashboardService {
       GROUP BY d.module_code
       ORDER BY d.module_code
       `,
-      [...params.slice(0, 3), this.toMonthStart(month)],
+      [...params.slice(0, 3), this.toMonthStart(month), params[4]],
     ) as Array<Record<string, unknown> & { moduleCode: string }>;
 
     return rows.map((row) => ({
@@ -756,8 +817,13 @@ export class DashboardService {
 
   async getLeaderTrend(orderType: string, user: JwtUserPayload, moduleCode?: string, requestedScope?: 'mine' | 'team', month?: string): Promise<unknown> {
     const normalizedOrderType = this.normalizeLeaderTrendOrderType(orderType);
-    const moduleFilter = resolveDispatchModuleCode(moduleCode) ?? null;
+    const resolvedModuleFilter = resolveDispatchModuleCode(moduleCode) ?? null;
+    const moduleFilter = resolvedModuleFilter && isPhase1VisibleDispatchModule(resolvedModuleFilter) ? resolvedModuleFilter : null;
     const selectedMonth = this.resolveDashboardMonth(month);
+
+    if (!['onboarding', 'resignation'].includes(normalizedOrderType)) {
+      return this.emptyLeaderTrend(normalizedOrderType, moduleFilter, selectedMonth);
+    }
 
     try {
       const scope = await this.resolveDashboardScope(user, requestedScope);
@@ -794,6 +860,7 @@ export class DashboardService {
       scope.ownerId ?? null,
       moduleFilter,
       this.toMonthStart(month),
+      [...PHASE1_VISIBLE_DISPATCH_MODULE_CODES],
     ];
 
     return this.dataSource.transaction(async (manager) => {
@@ -825,6 +892,7 @@ export class DashboardService {
         FROM dispatched_orders d
         JOIN scoped_wo wo ON wo.id = d.parent_order_id
         WHERE COALESCE(d.dispatched_at, d.created_at) >= (SELECT MIN(month_start) FROM months)
+          AND d.module_code = ANY($7::text[])
           AND ($5::text IS NULL OR d.module_code = $5::text)
       )
       SELECT
@@ -857,9 +925,10 @@ export class DashboardService {
     moduleFilter: string | null,
     month: string,
   ): Promise<Array<Record<string, unknown>>> {
+    const visibleScopeModules = filterPhase1VisibleDispatchModules(scope.modules);
     const moduleCodes = moduleFilter
-      ? (scope.modules.includes(moduleFilter) ? [moduleFilter] : [])
-      : scope.modules;
+      ? (visibleScopeModules.includes(moduleFilter) ? [moduleFilter] : [])
+      : visibleScopeModules;
     const params: unknown[] = [
       orderType,
       scope.includeModuleAll,
@@ -922,7 +991,8 @@ export class DashboardService {
   }
 
   private normalizeLeaderTrendOrderType(orderType: string): string {
-    return ['onboarding', 'renewal', 'resignation', 'benefit'].includes(orderType) ? orderType : 'onboarding';
+    const normalized = String(orderType || '').trim();
+    return normalized.length > 0 ? normalized : 'onboarding';
   }
 
   private normalizeLeaderTrendBuckets(rows: Array<Record<string, unknown>>): Array<Record<string, unknown>> {

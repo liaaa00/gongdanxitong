@@ -12,7 +12,12 @@ import {
   hasModuleSupervisorRole,
   isAdminRole,
 } from 'src/common/auth/role-permissions';
-import { resolveDispatchModuleCode } from 'src/common/constants/dispatch-modules';
+import {
+  filterPhase1VisibleDispatchModules,
+  isPhase1VisibleDispatchModule,
+  isSocialInsuranceDispatchModule,
+  resolveDispatchModuleCode,
+} from 'src/common/constants/dispatch-modules';
 import { businessException } from 'src/common/exceptions/business-exception';
 import { isUuidLike } from 'src/common/utils/uuid-param';
 import {
@@ -114,6 +119,7 @@ export class DispatchedOrderService {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
     const qb = this.baseListQuery();
+    this.applyPhase1VisibleModuleScope(qb);
 
     await this.applyUserScope(qb, user, query.onlyPool === true || query.onlyUnclaimed === true);
     this.applyCommonFilters(qb, { ...query, __currentUserId: user.sub } as ListDispatchedOrderQueryDto & { __currentUserId: string });
@@ -263,7 +269,7 @@ export class DispatchedOrderService {
     this.assertParentAllowsDispatchedHandling(order);
     await this.assertCanHandle(order, user);
     const remark = payload.remark?.trim() ?? '';
-    if (order.moduleCode === 'social_insurance' && remark.length === 0) {
+    if (isSocialInsuranceDispatchModule(order.moduleCode) && remark.length === 0) {
       throw businessException(4223, HttpStatus.BAD_REQUEST, '社保公积金办理完成备注必填，请填写月份、基数、操作类型等追溯信息');
     }
 
@@ -418,8 +424,8 @@ export class DispatchedOrderService {
     const uniqueIds = Array.from(new Set(payload.ids));
     for (const id of uniqueIds) {
       const order = await this.loadDispatchedOrder(id);
-      if (order.moduleCode !== 'social_insurance') {
-        skipped.push({ id, reason: '仅支持社保公积金办理子单' });
+      if (!isSocialInsuranceDispatchModule(order.moduleCode)) {
+        skipped.push({ id, reason: '仅支持社保公积金增员/减员子单' });
         continue;
       }
       if (order.status !== DispatchedOrderStatus.PROCESSING && order.status !== DispatchedOrderStatus.PENDING) {
@@ -455,7 +461,7 @@ export class DispatchedOrderService {
     let successRows = 0;
 
     if (payload.mode === 'status' && !payload.forceAction) {
-      throw businessException(4224, HttpStatus.BAD_REQUEST, '导入办理必须选择标准动作：批办理完成或批办理退回');
+      throw businessException(4224, HttpStatus.BAD_REQUEST, '导入办理必须选择标准动作：批办理完成、批办理退回或保持处理中');
     }
     await this.assertCanBatchImportModule(moduleCode, user);
 
@@ -466,16 +472,19 @@ export class DispatchedOrderService {
         const order = await this.resolveImportTarget(moduleCode, row);
         if (payload.mode === 'status') {
           const action = payload.forceAction ?? this.normalizeImportResult(row.result ?? row.status ?? row.raw?.['办理结果'] ?? row.raw?.['状态']);
-          if (!action) throw businessException(4224, HttpStatus.BAD_REQUEST, '导入办理必须选择标准动作：批办理完成或批办理退回');
+          if (!action) throw businessException(4224, HttpStatus.BAD_REQUEST, '导入办理必须选择标准动作：批办理完成、批办理退回或保持处理中');
           if (action === 'complete') {
             const remark = this.readImportString(row.remark ?? row.raw?.['办理备注'] ?? row.raw?.['备注'] ?? payload.defaultRemark) ?? '批量导入办理完成';
             await this.completeOrderByBatchImport(order, remark, user);
             details.push({ rowNumber, success: true, id: order.id, orderNo: order.parentOrder.orderNo, employeeIdCard: order.parentOrder.employeeIdCard, action: 'complete', message: '已更新为已完成' });
-          } else {
+          } else if (action === 'return') {
             const returnReason = this.readImportString(row.returnReason ?? row.raw?.['退回原因'] ?? row.raw?.['原因'] ?? payload.defaultReturnReason);
             if (!returnReason) throw businessException(4222, HttpStatus.BAD_REQUEST, '退回结果必须填写退回原因');
             await this.returnOrder(order.id, { returnReason, returnedFields: [] }, user);
             details.push({ rowNumber, success: true, id: order.id, orderNo: order.parentOrder.orderNo, employeeIdCard: order.parentOrder.employeeIdCard, action: 'return', message: '已更新为已退回' });
+          } else {
+            await this.keepProcessingByBatchImport(order, row, user);
+            details.push({ rowNumber, success: true, id: order.id, orderNo: order.parentOrder.orderNo, employeeIdCard: order.parentOrder.employeeIdCard, action: 'processing', message: '保持处理中' });
           }
         } else {
           const fields = this.extractAllowedImportFields(row);
@@ -523,6 +532,7 @@ export class DispatchedOrderService {
     const order = await this.loadDispatchedOrder(id);
     this.assertCanCreatorOperate(order, user, '修改');
     this.assertCreatorActionAllowed(order, '修改');
+    this.assertCreatorDirectChangeAllowed(order, '修改');
 
     const fields = payload.fields && typeof payload.fields === 'object' ? payload.fields : {};
     const entries = Object.entries(fields).filter(([key]) => key.trim().length > 0);
@@ -635,6 +645,20 @@ export class DispatchedOrderService {
 
     const before = this.snapshot(order);
     const previousStatus = order.status;
+    if (this.isUnacceptedSocialInsuranceOrder(order)) {
+      order.status = DispatchedOrderStatus.WITHDRAWN;
+      order.returnReason = `业务员未接单前直接撤回：${reason}`;
+      order.completedAt = order.completedAt ?? new Date();
+      await this.dispatchedOrderRepository.save(order);
+      await this.writeLog('dispatched_order', order.id, user.sub, 'creator_withdraw_direct_before_accept', before, {
+        reason,
+        previousStatus,
+        status: order.status,
+        approvalSkipped: true,
+      });
+      return this.findOne(order.id, user);
+    }
+
     order.status = DispatchedOrderStatus.WITHDRAW_PENDING;
     order.returnReason = `业务员撤回申请：${reason}`;
     order.completedAt = null;
@@ -685,6 +709,22 @@ export class DispatchedOrderService {
 
     const before = this.snapshot(order);
     const previousStatus = order.status;
+
+    if (this.isUnacceptedSocialInsuranceOrder(order)) {
+      order.status = DispatchedOrderStatus.VOID;
+      order.voidAt = new Date();
+      order.returnReason = `业务员未接单前直接作废：${reason}`;
+      order.completedAt = order.completedAt ?? new Date();
+      await this.dispatchedOrderRepository.save(order);
+      await this.writeLog('dispatched_order', order.id, user.sub, 'creator_void_direct_before_accept', before, {
+        reason,
+        previousStatus,
+        status: order.status,
+        voidAt: order.voidAt,
+        approvalSkipped: true,
+      });
+      return this.findOne(order.id, user);
+    }
 
     // 0602 E-5/目标-6：撤回成功后发起人作废，子单直接进入 VOID 终态，无需后道二次审批。
     // 其余状态（处理中/待处理/已退回）仍走 VOID_PENDING 审批流，避免越权直接作废在办子单。
@@ -1073,11 +1113,12 @@ export class DispatchedOrderService {
     return null;
   }
 
-  private normalizeImportResult(value: unknown): 'complete' | 'return' | null {
+  private normalizeImportResult(value: unknown): 'complete' | 'return' | 'processing' | null {
     const raw = this.readImportString(value)?.toLowerCase();
     if (!raw) return null;
-    if (['完成', '已完成', '办结', '已办结', 'complete', 'completed', 'done', 'success'].includes(raw)) return 'complete';
-    if (['退回', '已退回', '返回', '驳回', 'return', 'returned', 'reject', 'rejected'].includes(raw)) return 'return';
+    if (['完成', '已完成', '办结', '已办结', '成功', '办理成功', 'complete', 'completed', 'done', 'success'].includes(raw)) return 'complete';
+    if (['退回', '已退回', '返回', '驳回', '业务问题', '业务数据问题', '资料问题', '数据问题', 'return', 'returned', 'reject', 'rejected'].includes(raw)) return 'return';
+    if (['处理中', '办理中', '等待', '待复办', '复办等待', '需要复办', '暂缓', 'pending', 'processing', 'wait', 'waiting', 'retry'].includes(raw)) return 'processing';
     return null;
   }
 
@@ -1130,6 +1171,28 @@ export class DispatchedOrderService {
     await this.workOrderRepository.save(order.parentOrder);
     await this.writeLog('dispatched_order', order.id, user.sub, 'batch_import_field_update', this.snapshot(order), { fields: entries.map(([fieldCode]) => fieldCode), diff });
     await this.markAndNotifyAffectedDispatchedOrders(order, diff, user.sub, 'order.field_changed');
+  }
+
+  private async keepProcessingByBatchImport(order: DispatchedOrder, row: BatchImportDispatchedOrderRowDto, user: JwtUserPayload): Promise<void> {
+    this.assertParentAllowsDispatchedHandling(order);
+    await this.assertCanHandle(order, user);
+    if ([DispatchedOrderStatus.COMPLETED, DispatchedOrderStatus.WITHDRAW_PENDING, DispatchedOrderStatus.WITHDRAWN, DispatchedOrderStatus.VOID_PENDING, DispatchedOrderStatus.VOID].includes(order.status) || order.voidAt) {
+      throw businessException(4201, HttpStatus.CONFLICT, '已完成、审批中或已终止的子工单不允许导入保持处理中');
+    }
+    if (![DispatchedOrderStatus.PENDING, DispatchedOrderStatus.PROCESSING].includes(order.status)) {
+      throw businessException(4201, HttpStatus.CONFLICT, '当前状态不允许导入保持处理中');
+    }
+    const before = this.snapshot(order);
+    if (order.status === DispatchedOrderStatus.PENDING) {
+      order.status = DispatchedOrderStatus.PROCESSING;
+      order.acceptedAt = order.acceptedAt ?? new Date();
+      order.handlerId = order.handlerId ?? user.sub;
+      await this.dispatchedOrderRepository.save(order);
+    }
+    await this.writeLog('dispatched_order', order.id, user.sub, 'batch_import_keep_processing', before, {
+      remark: this.readImportString(row.remark ?? row.raw?.['办理备注'] ?? row.raw?.['备注']) ?? null,
+      status: order.status,
+    });
   }
 
   private async completeOrderByBatchImport(order: DispatchedOrder, remark: string, user: JwtUserPayload): Promise<void> {
@@ -1252,6 +1315,19 @@ export class DispatchedOrderService {
       .createQueryBuilder('d')
       .leftJoinAndSelect('d.parentOrder', 'w')
       .leftJoinAndSelect('d.handler', 'h');
+  }
+
+  private applyPhase1VisibleModuleScope(qb: SelectQueryBuilder<DispatchedOrder>): void {
+    qb.andWhere('d.module_code IN (:...phase1Modules)', { phase1Modules: filterPhase1VisibleDispatchModules([
+      'onboarding_contact',
+      'contract',
+      'data_entry',
+      'social_insurance',
+      'resignation_contact',
+      'data_entry_resign',
+      'resignation_social_insurance',
+    ]) });
+    qb.andWhere("w.order_type::text IN ('onboarding','resignation')");
   }
 
   private async applyUserScope(
@@ -1402,6 +1478,9 @@ export class DispatchedOrderService {
       this.rethrowInvalidIdAsNotFound(error, '子工单不存在');
     }
     if (!order) {
+      throw new NotFoundException('子工单不存在');
+    }
+    if (!isPhase1VisibleDispatchModule(order.moduleCode) || !['onboarding', 'resignation'].includes(String(order.parentOrder.orderType))) {
       throw new NotFoundException('子工单不存在');
     }
     return order;
@@ -1620,6 +1699,18 @@ export class DispatchedOrderService {
     }
   }
 
+  private isUnacceptedSocialInsuranceOrder(order: DispatchedOrder): boolean {
+    return isSocialInsuranceDispatchModule(order.moduleCode)
+      && order.status === DispatchedOrderStatus.PENDING
+      && !order.acceptedAt;
+  }
+
+  private assertCreatorDirectChangeAllowed(order: DispatchedOrder, actionLabel: string): void {
+    if (!isSocialInsuranceDispatchModule(order.moduleCode)) return;
+    if (this.isUnacceptedSocialInsuranceOrder(order)) return;
+    throw businessException(4201, HttpStatus.CONFLICT, `社保公积金子工单接单/已受理后，业务员${actionLabel}需后道同意或走审批`);
+  }
+
   private assertCreatorActionAllowed(order: DispatchedOrder, actionLabel: string): void {
     if (!([DispatchedOrderStatus.RETURNED, DispatchedOrderStatus.WITHDRAWN].includes(order.status) && ['作废', '修改'].includes(actionLabel))) {
       this.assertParentAllowsDispatchedHandling(order);
@@ -1698,20 +1789,20 @@ export class DispatchedOrderService {
       supervisorModules.push(...supervisorRows.map((row) => row.moduleCode));
     }
 
-    return Array.from(new Set([...handlerModules, ...supervisorModules, ...this.roleAccessibleModules(roles)]));
+    return filterPhase1VisibleDispatchModules([...handlerModules, ...supervisorModules, ...this.roleAccessibleModules(roles)]);
   }
 
   private roleAllowsModule(roles: readonly string[], moduleCode: string): boolean {
-    if (moduleCode === 'data_entry') return hasAnyRole(roles, DATA_ENTRY_MODULE_ROLES);
-    if (moduleCode === 'social_insurance') return hasAnyRole(roles, SOCIAL_INSURANCE_MODULE_ROLES);
+    if (moduleCode === 'data_entry' || moduleCode === 'data_entry_resign') return hasAnyRole(roles, DATA_ENTRY_MODULE_ROLES);
+    if (isSocialInsuranceDispatchModule(moduleCode)) return hasAnyRole(roles, SOCIAL_INSURANCE_MODULE_ROLES);
     return false;
   }
 
   private roleAccessibleModules(roles: readonly string[]): string[] {
     const modules: string[] = [];
-    if (hasAnyRole(roles, DATA_ENTRY_MODULE_ROLES)) modules.push('data_entry');
-    if (hasAnyRole(roles, SOCIAL_INSURANCE_MODULE_ROLES)) modules.push('social_insurance');
-    return modules;
+    if (hasAnyRole(roles, DATA_ENTRY_MODULE_ROLES)) modules.push('data_entry', 'data_entry_resign');
+    if (hasAnyRole(roles, SOCIAL_INSURANCE_MODULE_ROLES)) modules.push('social_insurance', 'resignation_social_insurance');
+    return filterPhase1VisibleDispatchModules(modules);
   }
 
   private isAdmin(user: JwtUserPayload): boolean {

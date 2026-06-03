@@ -1,4 +1,4 @@
-import { HttpException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import {
   DispatchedOrder,
@@ -64,7 +64,7 @@ function makeBenefitOrder(): DispatchedOrder {
   });
 }
 
-describe('P7 benefit state machine', () => {
+describe('P7 benefit state machine (phase-1 hidden)', () => {
   function makeService(orderStageRepo: Repository<OrderStage>) {
     const dispatchedOrderRepo = repoMock<DispatchedOrder>({ findOne: jest.fn(async () => makeBenefitOrder()) });
     const workOrderRepo = repoMock<WorkOrder>();
@@ -87,35 +87,17 @@ describe('P7 benefit state machine', () => {
 
   const user: JwtUserPayload = { sub: 'benefit-handler-1', username: 'benefit01', roles: ['data_entry_team'] } as JwtUserPayload;
 
-  it('moves draft to submitted and writes an order_stages row', async () => {
+  it('hides benefit_apply detail/transition in phase 1 instead of exposing the old state machine', async () => {
     const orderStageRepo = repoMock<OrderStage>({
       findOne: jest.fn(async () => null),
       save: jest.fn(async (input: OrderStage) => ({ ...input, id: 'stage-1', createdAt: new Date() } as OrderStage)),
     });
     const { service, workOrderRepo, operationLogRepo } = makeService(orderStageRepo);
 
-    const result = await service.transitionBenefitStage('do-benefit-1', { nextStage: 'submitted', payload: { channel: 'api' } }, user);
-
-    expect(result).toMatchObject({ success: true, previousStage: 'draft', currentStage: 'submitted' });
-    expect(orderStageRepo.create).toHaveBeenCalledWith(expect.objectContaining({
-      workOrderId: 'wo-benefit-1',
-      dispatchedOrderId: 'do-benefit-1',
-      stageCode: 'submitted',
-      operatorId: 'benefit-handler-1',
-      payload: { channel: 'api' },
-    }));
-    expect(workOrderRepo.save).toHaveBeenCalledWith(expect.objectContaining({
-      extraData: expect.objectContaining({ benefit_stage: 'submitted' }),
-    }));
-    expect(operationLogRepo.save).toHaveBeenCalledTimes(1);
-  });
-
-  it('rejects invalid state jumps', async () => {
-    const orderStageRepo = repoMock<OrderStage>({
-      findOne: jest.fn(async () => ({ stageCode: 'submitted', happenedAt: new Date(), createdAt: new Date() } as OrderStage)),
-    });
-    const { service } = makeService(orderStageRepo);
-
-    await expect(service.transitionBenefitStage('do-benefit-1', { nextStage: 'stamped' }, user)).rejects.toBeInstanceOf(HttpException);
+    await expect(service.transitionBenefitStage('do-benefit-1', { nextStage: 'submitted', payload: { channel: 'api' } }, user))
+      .rejects.toBeInstanceOf(NotFoundException);
+    expect(orderStageRepo.save).not.toHaveBeenCalled();
+    expect(workOrderRepo.save).not.toHaveBeenCalled();
+    expect(operationLogRepo.save).not.toHaveBeenCalled();
   });
 });

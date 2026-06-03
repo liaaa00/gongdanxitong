@@ -75,8 +75,8 @@ describe('P1 detail 404/403 normalization', () => {
     await expect(service.getSupplementLogs(DISPATCHED_ORDER_ID, { sub: 'u1', username: 'u1', roles: ['contract_specialist'] })).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it('dispatched-orders detail returns ForbiddenException when user has no module scope', async () => {
+  it('dispatched-orders detail returns NotFoundException when user has no module scope', async () => {
     const service = makeDispatchedOrderService(jest.fn(async () => ({ id: DISPATCHED_ORDER_ID, handlerId: 'handler', moduleCode: 'contract', parentOrder: { id: WORK_ORDER_ID } } as DispatchedOrder)));
-    await expect(service.findOne(DISPATCHED_ORDER_ID, { sub: 'u2', username: 'u2', roles: ['salesperson'] })).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.findOne(DISPATCHED_ORDER_ID, { sub: 'u2', username: 'u2', roles: ['salesperson'] })).rejects.toBeInstanceOf(NotFoundException);
   });
 });
