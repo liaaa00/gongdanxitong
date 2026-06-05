@@ -142,33 +142,38 @@ if ($pgProcess) {
     Write-Host '  PostgreSQL started.' -ForegroundColor Green
 }
 
-Write-Step '[3/7] Build latest backend dist...'
+Write-Step '[3/8] Build latest backend dist...'
 Push-Location $backendPath
 try {
     & $npmCmd run build
     Assert-LastExit 'npm run build'
+
+    Write-Step '[4/8] Run database migrations (includes enum/status upgrades)...'
+    & $npmCmd run migration:run
+    Assert-LastExit 'npm run migration:run'
+
     if ($runSeed) {
-        Write-Step '[4/7] Run idempotent seed (base data only, no business data cleanup)...'
+        Write-Step '[5/8] Run idempotent seed (base data only, no business data cleanup)...'
         & $npmCmd run seed
         Assert-LastExit 'npm run seed'
     } else {
-        Write-Step '[4/7] Seed skipped by script config.'
+        Write-Step '[5/8] Seed skipped by script config.'
     }
 } finally { Pop-Location }
 
-Write-Step '[5/7] Start backend on 0.0.0.0:3000...'
+Write-Step '[6/8] Start backend on 0.0.0.0:3000...'
 $backendOut = Join-Path $rootPath 'backend-run.out.log'
 $backendErr = Join-Path $rootPath 'backend-run.err.log'
 $env:HOST = '0.0.0.0'
 $env:PORT = [string]$backendPort
-# Seed has already run in step [4/7]; skip startup seed to avoid health-check timeout.
+# Migrations and seed have already run in steps [4/8]-[5/8]; skip startup seed to avoid health-check timeout.
 $env:AUTO_SEED = 'false'
 $backendProcess = Start-Process -FilePath (Join-Path $nodeDir 'node.exe') -ArgumentList @('dist\main.js') -WorkingDirectory $backendPath -PassThru -WindowStyle Hidden -RedirectStandardOutput $backendOut -RedirectStandardError $backendErr
 Start-Sleep -Seconds 3
 $backendPid = Assert-ServiceReady $backendPort "http://127.0.0.1:$backendPort/api/health" 'Backend'
 Write-Host "  Backend OK. PID=$backendPid StartedPID=$($backendProcess.Id) URL=http://127.0.0.1:$backendPort/api/health" -ForegroundColor Green
 
-Write-Step '[6/7] Start frontend on 0.0.0.0:5173 with relative /api proxy to 127.0.0.1:3000...'
+Write-Step '[7/8] Start frontend on 0.0.0.0:5173 with relative /api proxy to 127.0.0.1:3000...'
 $frontendOut = Join-Path $rootPath 'frontend-run.out.log'
 $frontendErr = Join-Path $rootPath 'frontend-run.err.log'
 $viteJs = Join-Path $frontendPath 'node_modules\vite\bin\vite.js'
@@ -179,7 +184,7 @@ Start-Sleep -Seconds 3
 $frontendPid = Assert-ServiceReady $frontendPort "http://127.0.0.1:$frontendPort" 'Frontend'
 Write-Host "  Frontend OK. PID=$frontendPid StartedPID=$($frontendProcess.Id) URL=http://127.0.0.1:$frontendPort" -ForegroundColor Green
 
-Write-Step '[7/7] Print access URLs...'
+Write-Step '[8/8] Print access URLs...'
 $localIP = Get-LanIP
 if (-not $NoBrowser) { Start-Process "http://localhost:$frontendPort" }
 Write-Host "`nSTARTED SUCCESSFULLY" -ForegroundColor Green
