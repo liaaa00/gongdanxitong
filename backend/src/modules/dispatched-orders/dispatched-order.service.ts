@@ -1453,13 +1453,18 @@ export class DispatchedOrderService {
     const canSeeModuleAll = hasManagementScopeRole(user.roles) || hasModuleSupervisorRole(user.roles) || (await this.hasSupervisorLevel(user.sub));
     const includeCreatorScope = this.shouldIncludeCreatorScope(user, modules);
     const restrictAssignedScope = this.shouldRestrictAssignedScope(user, modules);
-    const businessScopeDepartmentIds = !onlyPool && (hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES) || hasAnyRole(user.roles, BUSINESS_LEADER_ROLES))
+    const isBusinessManagementUser = hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES) || hasAnyRole(user.roles, BUSINESS_LEADER_ROLES);
+    const isBusinessMemberUser = hasAnyRole(user.roles, BUSINESS_MEMBER_ROLES);
+    const isBusinessSideUser = isBusinessManagementUser || isBusinessMemberUser;
+    const businessScopeDepartmentIds = !onlyPool && isBusinessManagementUser
       ? await this.validationService.resolveUserDepartmentIds(user.sub)
       : [];
     qb.andWhere(new Brackets((scope) => {
       if (!onlyPool) {
         if (businessScopeDepartmentIds.length > 0) {
           scope.where('w.department_id IN (:...businessScopeDepartmentIds)', { businessScopeDepartmentIds });
+        } else if (isBusinessSideUser) {
+          scope.where('w.created_by = :userId', { userId: user.sub });
         } else if (restrictAssignedScope && modules.length > 0) {
           scope.where('d.handler_id = :userId AND d.module_code IN (:...modules)', { userId: user.sub, modules });
         } else if (restrictAssignedScope) {
@@ -1467,13 +1472,13 @@ export class DispatchedOrderService {
         } else {
           scope.where('d.handler_id = :userId', { userId: user.sub });
         }
-        if (includeCreatorScope) {
+        if (includeCreatorScope && !isBusinessMemberUser) {
           scope.orWhere('w.created_by = :userId', { userId: user.sub });
         }
       } else {
         scope.where('1 = 0');
       }
-      if (modules.length > 0) {
+      if (!isBusinessSideUser && modules.length > 0) {
         if (canSeeModuleAll && !onlyPool) {
           // Module supervisors (for example 江璐 as shared_team_owner) must see every child order in their modules,
           // including orders already assigned to 杨纯/毛雅妮. Non-supervisor executors only see their own orders plus pool.

@@ -107,6 +107,28 @@ describe('DispatchedOrderService', () => {
 
     expect(scopeQb.where).toHaveBeenCalledWith('w.department_id IN (:...businessScopeDepartmentIds)', { businessScopeDepartmentIds: ['d1'] });
     expect(scopeQb.orWhere).toHaveBeenCalledWith('w.created_by = :userId', { userId: 'owner-1' });
+    expect(scopeQb.orWhere).not.toHaveBeenCalledWith('d.module_code IN (:...modules)', expect.anything());
+  });
+
+  it('scopes business member child-order history to own created orders only', async () => {
+    const { service, queryBuilder } = makeService({
+      find: jest.fn(async () => [
+        { moduleCode: 'data_entry', handlerId: 'sales-1', isActive: true } as unknown as ModuleHandler,
+      ]),
+    });
+    const user: JwtUserPayload = { sub: 'sales-1', username: 'sales', roles: ['business_group_member'] } as JwtUserPayload;
+
+    await service.findAll({ page: 1, pageSize: 20 } as never, user);
+
+    const scopeCallback = (queryBuilder.andWhere.mock.calls as Array<[unknown, unknown?]>)
+      .map(([condition]) => condition)
+      .find((condition) => typeof condition === 'object' && condition && condition.constructor?.name === 'Brackets');
+    expect(scopeCallback).toBeDefined();
+    const scopeQb = { where: jest.fn(), orWhere: jest.fn() };
+    (scopeCallback as { whereFactory: (qb: typeof scopeQb) => void }).whereFactory(scopeQb);
+
+    expect(scopeQb.where).toHaveBeenCalledWith('w.created_by = :userId', { userId: 'sales-1' });
+    expect(scopeQb.orWhere).not.toHaveBeenCalledWith('d.module_code IN (:...modules)', expect.anything());
   });
 
   it('does not leak unrelated creator child modules for Jiang Lu shared backend list scope', async () => {
