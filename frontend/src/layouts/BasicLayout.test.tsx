@@ -214,16 +214,23 @@ describe('BasicLayout menu visibility', () => {
     const text = menuText();
     expect(text).toContain('入职管理');
     expect(text).toContain('入职主工单列表');
+    expect(text).toContain('入职联系子工单');
+    expect(text).toContain('劳动合同新签子工单');
+    expect(text).toContain('增员报岗录入子工单');
+    expect(text).toContain('社保公积金增员子工单');
     expect(text).toContain('离职管理');
     expect(text).toContain('离职主工单列表');
+    expect(text).toContain('离职材料收集子工单');
+    expect(text).toContain('减员报岗录入子工单');
+    expect(text).toContain('社保公积金减员子工单');
     expect(text).not.toContain('入职导入');
     expect(text).not.toContain('离职导入');
-    expect(text).not.toContain('我发起的');
-    expect(text).not.toContain('我的退回');
+    expect(text).toContain('我发起的');
+    expect(text).toContain('我的退回');
     expect(text).toContain('历史工单');
     expect(text).toContain('团队工单');
     expect(text).not.toContain('我的待办');
-    expect(text).not.toContain('我的已办');
+    expect(text).toContain('我的已办');
     expect(text).not.toContain('在职管理');
   });
 

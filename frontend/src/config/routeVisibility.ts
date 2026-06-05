@@ -54,6 +54,7 @@ const OFFBOARDING_ROLES = [
 // 我的工单入口按角色分层：业务员不显示“我的待办”；业务负责人只保留团队/历史；后道不显示“我发起的/我的退回”。
 const BUSINESS_SELF_WORK_ROLES = [
   ROLE.ADMIN,
+  ROLE.BUSINESS_GROUP_LEADER,
   ROLE.BUSINESS_GROUP_MEMBER,
 ] as const satisfies readonly CanonicalRole[];
 
@@ -138,16 +139,16 @@ export const ROUTE_VISIBILITY = {
 
   // 入职管理：业务侧看主列表；后道只看授权子模块。
   '/onboarding': ONBOARDING_ROLES,
-  '/onboarding/onboarding_contact': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_MEMBER, ROLE.ONBOARDING_RESIGNATION_MEMBER, ROLE.SHARED_TEAM_OWNER],
-  '/onboarding/contract': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_MEMBER, ROLE.LABOR_CONTRACT_MEMBER, ROLE.SHARED_TEAM_OWNER],
-  '/onboarding/data_entry': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_MEMBER, ROLE.DATA_ENTRY_LEADER],
-  '/onboarding/social_insurance': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SOCIAL_INSURANCE_SPECIALIST],
+  '/onboarding/onboarding_contact': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.ONBOARDING_RESIGNATION_MEMBER, ROLE.SHARED_TEAM_OWNER],
+  '/onboarding/contract': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.LABOR_CONTRACT_MEMBER, ROLE.SHARED_TEAM_OWNER],
+  '/onboarding/data_entry': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.DATA_ENTRY_LEADER],
+  '/onboarding/social_insurance': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SOCIAL_INSURANCE_SPECIALIST],
   '/onboarding/renewal_contract': IN_SERVICE_ROLES,
   '/onboarding/benefit_apply': IN_SERVICE_ROLES,
-  '/onboarding/resignation_contact': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_MEMBER, ROLE.ONBOARDING_RESIGNATION_MEMBER, ROLE.SHARED_TEAM_OWNER],
+  '/onboarding/resignation_contact': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.ONBOARDING_RESIGNATION_MEMBER, ROLE.SHARED_TEAM_OWNER],
   '/onboarding/resignation_cert': [],
-  '/onboarding/data_entry_resign': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_MEMBER, ROLE.DATA_ENTRY_LEADER],
-  '/onboarding/social_insurance_resign': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SOCIAL_INSURANCE_SPECIALIST],
+  '/onboarding/data_entry_resign': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.DATA_ENTRY_LEADER],
+  '/onboarding/social_insurance_resign': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SOCIAL_INSURANCE_SPECIALIST],
 
   // 在职管理：第一阶段暂不开放，后台配置可保留但界面不可见。
   '/in-service': IN_SERVICE_ROLES,
@@ -261,7 +262,12 @@ const BACKEND_DYNAMIC_ROUTES: readonly VisibilityRoute[] = ['/my-work/pending', 
 
 const RESTRICTED_DYNAMIC_PERMISSION_ROUTES: Partial<Record<CanonicalRole, readonly VisibilityRoute[]>> = {
   [ROLE.BUSINESS_OWNER]: BUSINESS_OWNER_DYNAMIC_ROUTES,
-  [ROLE.BUSINESS_GROUP_LEADER]: ['/dashboard', '/work-orders', '/work-orders/create', '/work-orders/import', '/work-orders/:id', '/my-work/team', '/my-work/history', '/my-dispatched/:id'],
+  [ROLE.BUSINESS_GROUP_LEADER]: [
+    '/dashboard', '/work-orders', '/work-orders/create', '/work-orders/import', '/work-orders/:id',
+    '/my-work/initiated', '/my-work/returned', '/my-work/done', '/my-work/team', '/my-work/history', '/my-dispatched/:id',
+    '/onboarding', '/onboarding/onboarding_contact', '/onboarding/contract', '/onboarding/data_entry', '/onboarding/social_insurance',
+    '/offboarding', '/onboarding/resignation_contact', '/onboarding/data_entry_resign', '/onboarding/social_insurance_resign',
+  ],
   [ROLE.BUSINESS_GROUP_MEMBER]: BUSINESS_MEMBER_DYNAMIC_ROUTES,
   [ROLE.DATA_ENTRY_LEADER]: BACKEND_DYNAMIC_ROUTES,
   [ROLE.LABOR_CONTRACT_MEMBER]: BACKEND_DYNAMIC_ROUTES,
