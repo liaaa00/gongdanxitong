@@ -43,7 +43,6 @@ import {
 } from '@/utils/listPageState';
 import {
   DISPATCHED_NINE_STATUS_OPTIONS,
-  DISPATCHED_PROCESSING_STATUS_FILTER_VALUE,
   normalizeDispatchedStatusSearchParams,
 } from '@/utils/dispatchedStatusFilter';
 
@@ -61,6 +60,8 @@ interface MyDispatchedProps {
 }
 
 const ACTIVE_DISPATCHED_STATUSES = new Set(['pending', 'processing']);
+const TODO_DISPATCHED_STATUS_FILTER_VALUE = ['pending', 'processing', 'modify_pending', 'withdraw_pending', 'void_pending'].join(',');
+const TODO_VISIBLE_STATUSES = new Set(TODO_DISPATCHED_STATUS_FILTER_VALUE.split(','));
 const OPEN_DISPATCHED_STATUS_VALUES = new Set<string>(DISPATCHED_NINE_STATUS_OPTIONS.map((option) => option.value));
 
 const WORK_TYPE_OPTIONS = getPhaseOneModuleOptions().map((option) => ({
@@ -70,13 +71,6 @@ const WORK_TYPE_OPTIONS = getPhaseOneModuleOptions().map((option) => ({
 
 const DISPATCHED_STATUS_OPTIONS = DISPATCHED_NINE_STATUS_OPTIONS;
 
-function currentMonthCompletedRange(): { completedFrom: string; completedTo: string } {
-  const now = dayjs();
-  return {
-    completedFrom: now.startOf('month').toISOString(),
-    completedTo: now.endOf('month').toISOString(),
-  };
-}
 
 function getSlaStatus(status: string, dueAt?: string | null, reminderBeforeHours?: number | null): { label: string; color: string; overdue: boolean } | null {
   if (status === 'completed' || status === 'returned' || !dueAt) return null;
@@ -92,10 +86,10 @@ function getTeamCode(record?: DispatchedOrderItem | null) {
 }
 
 function getOperatorDisplay(record: DispatchedOrderItem) {
-  if (record.status === 'completed') return record.handler_name || '实际操作人未记录';
   const configured = record.configured_handler_names || record.configuredHandlerNames || [];
+  if (record.handler_name) return record.handler_name;
   if (configured.length > 0) return configured.join('、');
-  return record.handler_name || '负责人未配置';
+  return '负责人未配置';
 }
 
 function moduleAllowedByCurrentBackendRole(moduleCode: string | undefined | null, hasAnyRole: (roles: string[]) => boolean): boolean {
@@ -496,19 +490,9 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
       return true;
     });
 
-    // 已办模式：后道按“我处理完成”查询；业务侧按“我权限范围内已完成”查询，避免业务员看不到自己发起的已完成子工单。
+    // 已办模式：按工单流转月份（派发/创建月份）统计，不再按完成时间归属月份。
     if (isDoneMode) {
       const doneQuery: Record<string, unknown> = { ...query };
-      const selectedMonth = String(doneQuery.orderMonth || '');
-      delete doneQuery.orderMonth;
-      delete doneQuery.order_month;
-      if (selectedMonth && !doneQuery.completedFrom && !doneQuery.completedTo) {
-        const monthStart = dayjs(selectedMonth, 'YYYY-MM').startOf('month');
-        doneQuery.completedFrom = monthStart.toISOString();
-        doneQuery.completedTo = monthStart.endOf('month').toISOString();
-      } else if (!doneQuery.completedFrom && !doneQuery.completedTo) {
-        Object.assign(doneQuery, currentMonthCompletedRange());
-      }
       const result = await getDispatchedOrdersSafe({
         ...doneQuery,
         ...(isBusinessSideUser ? {} : { handlerId: 'current' }),
@@ -538,10 +522,12 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
       return { data: list, success: true, total: result.total };
     }
 
-    // 普通待办模式：默认显示 pending 和 processing；用户选择具体九状态时按单状态筛选。
+    // 普通待办模式：默认显示未接单、已接单和审批中状态；用户选择具体九状态时按单状态筛选。
     if (query.statuses) {
+      const selectedStatuses = new Set(String(query.statuses).split(',').map((status) => status.trim()).filter(Boolean));
+      const visibleStatuses = selectedStatuses.size > 0 ? selectedStatuses : TODO_VISIBLE_STATUSES;
       const result = await getDispatchedOrdersSafe({ ...query, statuses: String(query.statuses) });
-      const list = filterVisibleList(result.list.filter((d) => ACTIVE_DISPATCHED_STATUSES.has(d.status)));
+      const list = filterVisibleList(result.list.filter((d) => visibleStatuses.has(d.status)));
       setVisibleImportModuleCodes(Array.from(new Set(list.map((item) => item.module_code).filter(Boolean))));
       updateSlaCounts(list);
       return { data: list, success: true, total: result.total };
@@ -557,10 +543,10 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
       return { data: list, success: true, total: result.total };
     }
 
-    // 没有指定状态时，在后端用同一个查询完成 pending + processing 的筛选与分页。
-    // 不能分别请求两个状态再在前端拼接，否则每个状态都会各自分页，导致总数、页码和当前页数据不一致。
-    const result = await getDispatchedOrdersSafe({ ...query, statuses: DISPATCHED_PROCESSING_STATUS_FILTER_VALUE });
-    const list = filterVisibleList(result.list.filter((d) => ACTIVE_DISPATCHED_STATUSES.has(d.status)));
+    // 没有指定状态时，在后端用同一个查询完成待办状态集合的筛选与分页。
+    // 不能分别请求多个状态再在前端拼接，否则每个状态都会各自分页，导致总数、页码和当前页数据不一致。
+    const result = await getDispatchedOrdersSafe({ ...query, statuses: TODO_DISPATCHED_STATUS_FILTER_VALUE });
+    const list = filterVisibleList(result.list.filter((d) => TODO_VISIBLE_STATUSES.has(d.status)));
     setVisibleImportModuleCodes(Array.from(new Set(list.map((item) => item.module_code).filter(Boolean))));
     updateSlaCounts(list);
     return { data: list, success: true, total: result.total };

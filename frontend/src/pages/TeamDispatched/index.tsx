@@ -37,10 +37,10 @@ const TEAM_STATUS_OPTIONS = [
 const PAGE_STATE_KEY = 'team-work';
 
 function getOperatorDisplay(record: DispatchedOrderItem) {
-  if (record.status === 'completed') return record.handler_name || '实际操作人未记录';
   const configured = record.configured_handler_names || record.configuredHandlerNames || [];
+  if (record.handler_name) return record.handler_name;
   if (configured.length > 0) return configured.join('、');
-  return record.handler_name || '负责人未配置';
+  return '负责人未配置';
 }
 
 function normalizeQuery(params: PageParams & Record<string, unknown>, month: Dayjs | null): PageParams {

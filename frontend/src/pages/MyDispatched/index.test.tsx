@@ -97,7 +97,7 @@ describe('MyDispatched processing status filter', () => {
     expect(params.statuses).toBeUndefined();
   });
 
-  it('clears status search without reusing stale statuses and keeps default pending plus processing', async () => {
+  it('clears status search without reusing stale statuses and keeps default todo statuses', async () => {
     render(<MyDispatched mode="pending" />);
 
     await mocks.latestProTableProps.request({ current: 1, pageSize: 20, status: '', statuses: 'pending,processing' });
@@ -106,7 +106,7 @@ describe('MyDispatched processing status filter', () => {
       page: 1,
       pageSize: 20,
       orderMonth: expect.stringMatching(/^\d{4}-\d{2}$/),
-      statuses: 'pending,processing',
+      statuses: 'pending,processing,modify_pending,withdraw_pending,void_pending',
     })));
     const params = mocks.getDispatchedOrders.mock.calls.at(-1)?.[0] as Record<string, unknown>;
     expect(params.status).toBeUndefined();
@@ -127,8 +127,27 @@ describe('MyDispatched processing status filter', () => {
       moduleCode: 'contract',
       idCardNo: '3301',
       orderMonth: expect.stringMatching(/^\d{4}-\d{2}$/),
-      statuses: 'pending,processing',
+      statuses: 'pending,processing,modify_pending,withdraw_pending,void_pending',
     })));
+  });
+
+  it('includes approval-pending child orders in default my pending work', async () => {
+    mocks.getDispatchedOrders.mockResolvedValue({
+      list: [
+        { id: 'd-modify', status: 'modify_pending', module_code: 'contract', order_type: 'onboarding' },
+        { id: 'd-withdraw', status: 'withdraw_pending', module_code: 'contract', order_type: 'onboarding' },
+        { id: 'd-completed', status: 'completed', module_code: 'contract', order_type: 'onboarding' },
+      ],
+      total: 3,
+    });
+    render(<MyDispatched mode="pending" />);
+
+    const result = await mocks.latestProTableProps.request({ current: 1, pageSize: 20 });
+
+    await waitFor(() => expect(mocks.getDispatchedOrders).toHaveBeenCalledWith(expect.objectContaining({
+      statuses: 'pending,processing,modify_pending,withdraw_pending,void_pending',
+    })));
+    expect(result.data.map((row: { id: string }) => row.id)).toEqual(['d-modify', 'd-withdraw']);
   });
 
   it('opens pending my-work detail in editable mode and keeps row selection available', () => {
@@ -201,7 +220,7 @@ describe('MyDispatched processing status filter', () => {
     expect(params.statuses).toBeUndefined();
   });
 
-  it('shows business-side done work by completed month without handler=current filter', async () => {
+  it('shows business-side done work by dispatched/order month without handler=current filter', async () => {
     mocks.currentRoles = ['business_group_member'];
     render(<MyDispatched mode="done" />);
 
@@ -211,15 +230,15 @@ describe('MyDispatched processing status filter', () => {
       page: 1,
       pageSize: 20,
       status: 'completed',
-      completedFrom: expect.any(String),
-      completedTo: expect.any(String),
+      orderMonth: expect.stringMatching(/^\d{4}-\d{2}$/),
     })));
     const params = mocks.getDispatchedOrders.mock.calls.at(-1)?.[0] as Record<string, unknown>;
     expect(params.handlerId).toBeUndefined();
-    expect(params.orderMonth).toBeUndefined();
+    expect(params.completedFrom).toBeUndefined();
+    expect(params.completedTo).toBeUndefined();
   });
 
-  it('keeps backend done work scoped to current handler', async () => {
+  it('keeps backend done work scoped to current handler and dispatched/order month', async () => {
     mocks.currentRoles = ['labor_contract_member'];
     render(<MyDispatched mode="done" />);
 
@@ -228,9 +247,11 @@ describe('MyDispatched processing status filter', () => {
     await waitFor(() => expect(mocks.getDispatchedOrders).toHaveBeenCalledWith(expect.objectContaining({
       status: 'completed',
       handlerId: 'current',
-      completedFrom: expect.any(String),
-      completedTo: expect.any(String),
+      orderMonth: expect.stringMatching(/^\d{4}-\d{2}$/),
     })));
+    const params = mocks.getDispatchedOrders.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(params.completedFrom).toBeUndefined();
+    expect(params.completedTo).toBeUndefined();
   });
 
   it('offers batch accept for selected pending rows in pending mode', async () => {

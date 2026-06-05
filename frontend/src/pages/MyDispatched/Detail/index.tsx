@@ -77,10 +77,10 @@ function getDispatchedListPath(order?: DispatchedOrderItem | null) {
 }
 
 function getOperatorDisplay(order: DispatchedOrderItem) {
-  if (order.status === 'completed') return order.handler_name || '实际操作人未记录';
   const configured = order.configured_handler_names || order.configuredHandlerNames || [];
+  if (order.handler_name) return order.handler_name;
   if (configured.length > 0) return configured.join('、');
-  return order.handler_name || '负责人未配置';
+  return '负责人未配置';
 }
 
 const withRequiredLabel = (field: FieldConfig): FieldConfig => field;
