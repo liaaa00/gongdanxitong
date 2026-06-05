@@ -57,6 +57,7 @@ describe('HistoryWorkOrders editable unfinished rows', () => {
     render(<HistoryWorkOrders />);
 
     expect(mocks.latestProTableProps.pagination.defaultPageSize).toBe(50);
+    expect(mocks.latestProTableProps.scroll).toEqual({ x: 1620 });
     expect(getColumn('createdByName')?.title).toBe('发起人');
 
     await mocks.latestProTableProps.request(

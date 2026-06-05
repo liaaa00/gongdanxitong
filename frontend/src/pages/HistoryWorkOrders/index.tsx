@@ -123,6 +123,7 @@ const HistoryWorkOrders: React.FC = () => {
         search={false}
         options={false}
         pagination={{ defaultCurrent: cachedPageState.current || 1, defaultPageSize: cachedPageState.pageSize || 50, pageSizeOptions: ['20', '50', '100'], showSizeChanger: true }}
+        scroll={{ x: 1620 }}
         dateFormatter="string"
         request={async (params: PageParams & Record<string, unknown>, _sort, filters) => {
           updateCachedListPageState(pageStateKey, {
