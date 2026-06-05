@@ -26,7 +26,6 @@ const MODULE_GROUPS = [
     label: '离职管理',
     options: [
       { label: '离职材料收集', value: 'resignation_contact' },
-      { label: '离职材料收集（历史兼容）', value: 'resignation_cert' },
       { label: '减员报岗录入', value: 'data_entry_resign' },
       { label: '社保公积金减员', value: 'resignation_social_insurance' },
     ],

@@ -375,11 +375,11 @@ export class NotificationService {
       order: { createdAt: 'DESC' },
     });
 
-    // 按 bucket 过滤（与 countUnreadByBucket 口径一致）
-    const bucket = query.bucket;
+    // 按 bucket 过滤（与 countUnreadByBucket 口径一致）；逗号分隔表示合并页签。
+    const bucketSet = this.parseBucketFilter(query.bucket);
     const visibleRows = rows.filter((row) => !this.isCanceledUrgeFeedback(row.bizType));
-    const filteredRows = bucket
-      ? visibleRows.filter((row) => this.toNotificationBucket(row.bizType) === bucket)
+    const filteredRows = bucketSet.size > 0
+      ? visibleRows.filter((row) => bucketSet.has(this.toNotificationBucket(row.bizType)))
       : visibleRows;
 
     const actorNames = await this.resolveActorDisplayNames(filteredRows);
@@ -431,11 +431,11 @@ export class NotificationService {
     const rows = await this.notificationRepository.find({
       where: this.buildWhere(userId, { ...query, isRead: false }),
     });
-    // 按 bucket 过滤（与 list / countUnreadByBucket 口径一致）
-    const bucket = query.bucket;
+    // 按 bucket 过滤（与 list / countUnreadByBucket 口径一致）；逗号分隔表示合并页签。
+    const bucketSet = this.parseBucketFilter(query.bucket);
     const visibleRows = rows.filter((row) => !this.isCanceledUrgeFeedback(row.bizType));
-    const filteredRows = bucket
-      ? visibleRows.filter((row) => this.toNotificationBucket(row.bizType) === bucket)
+    const filteredRows = bucketSet.size > 0
+      ? visibleRows.filter((row) => bucketSet.has(this.toNotificationBucket(row.bizType)))
       : visibleRows;
     for (const row of filteredRows) {
       row.isRead = true;
@@ -593,6 +593,10 @@ export class NotificationService {
     return (CANCELED_URGE_FEEDBACK_BIZ_TYPES as readonly string[]).includes(normalized) || normalized.includes('urge_feedback');
   }
 
+  private parseBucketFilter(bucket: string | undefined): Set<NotificationBucket> {
+    return new Set(String(bucket || '').split(',').map((item) => item.trim()).filter(Boolean) as NotificationBucket[]);
+  }
+
   private toNotificationBucket(bizType: string): NotificationBucket {
     const normalized = bizType.toLowerCase().replace(/[.:]/g, '_');
     if (normalized.includes('system')) {
@@ -616,10 +620,13 @@ export class NotificationService {
     if (normalized.includes('withdraw_request') || normalized.includes('void_request')) {
       return 'withdraw_void_request';
     }
+    if (normalized.includes('modify_request')) {
+      return 'creator_modified';
+    }
     if (normalized.includes('withdraw_void_result') || normalized.includes('withdraw_approved') || normalized.includes('withdraw_rejected') || normalized.includes('void_approved') || normalized.includes('void_rejected')) {
       return 'withdraw_void_result';
     }
-    if (normalized.includes('order_field_changed') || normalized.includes('creator_modified') || normalized.includes('completed_modified') || normalized.includes('modified_by_creator')) {
+    if (normalized.includes('order_field_changed') || normalized.includes('creator_modified') || normalized.includes('completed_modified') || normalized.includes('modified_by_creator') || normalized.includes('modify_approved') || normalized.includes('modify_rejected')) {
       return 'creator_modified';
     }
     if (normalized.includes('order_supplement_filled') || normalized.includes('field_supplement') || normalized.includes('field_changed') || normalized.includes('field_change') || normalized.includes('supplement')) {

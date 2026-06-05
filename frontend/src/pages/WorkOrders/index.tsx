@@ -134,7 +134,7 @@ function getDispatchedProgressMeta(child: DispatchedOrderSummary): { label: stri
   if (status === 'void' || child.void_at || child.voidAt) return { label: '已作废', badge: 'default', color: 'default' };
   if (status === 'returned') return { label: '已退回', badge: 'warning', color: 'warning' };
   if (['processing', 'accepted', 'in_progress', 'pending', 'created', 'waiting_dispatch', 'to_dispatch'].includes(status)) {
-    return { label: '处理中', badge: 'processing', color: 'processing' };
+    return { label: '未办结', badge: 'processing', color: 'processing' };
   }
   return { label: getStatusMeta(status).label, badge: 'default', color: 'default' };
 }
@@ -172,11 +172,15 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
   ].some((role) => hasRole(role));
   const isBackendOnly = isBackendProcessor && !isAdmin && !isBusinessOwner && !isGroupLeader && !isGroupMember;
   const isInitiatedPage = mode === 'initiated' || location.pathname.includes('/my-work/initiated');
+  const currentOrderType = useMemo(() => new URLSearchParams(location.search).get('orderType') || undefined, [location.search]);
+  const currentOrderTypeLabel = currentOrderType === 'resignation' ? '离职' : currentOrderType === 'onboarding' ? '入职' : '';
+  const modulePrefix = currentOrderTypeLabel || '';
   const canDelete = !isInitiatedPage && isAdmin;
   const canBusinessUserCreateOrImport = isGroupMember || isGroupLeader;
   const canCreateWorkOrder = !isInitiatedPage && (isAdmin || canBusinessUserCreateOrImport || allowedActions.includes('work_order.create'));
   const canImportWorkOrder = !isInitiatedPage && (isAdmin || canBusinessUserCreateOrImport || allowedActions.includes('work_order.import'));
-  const pageTitle = isInitiatedPage ? '我发起的工单' : '主工单列表';
+  const pageTitle = isInitiatedPage ? '我发起的工单' : modulePrefix ? `${modulePrefix}主工单列表` : '主工单列表';
+
 
   const urlFilters = useMemo(() => {
     const params = new URLSearchParams(location.search);
@@ -385,7 +389,7 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
     });
     const result = await getWorkOrders(query as PageParams);
     const list = result.list.filter((item) => isPhase1VisibleOrderType(item.order_type));
-    return { data: list, success: true, total: list.length };
+    return { data: list, success: true, total: result.total };
   };
 
   return (
@@ -398,17 +402,27 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
         rowKey="id"
         headerTitle={pageTitle}
         search={false}
+        pagination={{ defaultPageSize: 50, pageSizeOptions: ['20', '50', '100'], showSizeChanger: true }}
         kanbanColumnKey="status"
         kanbanAllowedValues={STATUS_OPTIONS}
         toolBarRender={isInitiatedPage ? undefined : () => [
           canCreateWorkOrder && (
-            <RefButton key="new" type="primary" icon={<PlusOutlined />} onClick={() => navigate('/work-orders/new')}>
-              新建工单
+            <RefButton
+              key="new"
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => navigate(`/work-orders/new${currentOrderType ? `?orderType=${currentOrderType}` : ''}`)}
+            >
+              {modulePrefix ? `新建${modulePrefix}工单` : '新建工单'}
             </RefButton>
           ),
           canImportWorkOrder && (
-            <RefButton key="import" icon={<ImportOutlined />} onClick={() => navigate('/work-orders/import')}>
-              入职导入
+            <RefButton
+              key="import"
+              icon={<ImportOutlined />}
+              onClick={() => navigate(`/work-orders/import${currentOrderType ? `?orderType=${currentOrderType}` : ''}`)}
+            >
+              {modulePrefix ? `${modulePrefix}批量导入` : '工单批量导入'}
             </RefButton>
           ),
           <RefButton key="export" icon={<ExportOutlined />} onClick={handleBatchExport}>

@@ -11,6 +11,10 @@ export class DashboardScopeQueryDto extends DashboardMonthQueryDto {
   @IsOptional()
   @IsIn(['mine', 'team'])
   scope?: 'mine' | 'team';
+
+  @IsOptional()
+  @IsIn(['business', 'backend'])
+  audience?: 'business' | 'backend';
 }
 
 export class OrderTypeMatrixQueryDto extends DashboardScopeQueryDto {

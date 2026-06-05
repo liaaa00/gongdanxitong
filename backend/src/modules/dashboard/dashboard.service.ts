@@ -24,6 +24,24 @@ import { DashboardCardsDto } from './dto/dashboard-cards.dto';
 
 const LEADER_TREND_STATEMENT_TIMEOUT_MS = 7_000;
 const DASHBOARD_MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
+const DASHBOARD_COMPLETED_STATUS_SQL = "status::text = 'completed'";
+const DASHBOARD_COMPLETED_STATUS_SQL_D = "d.status::text = 'completed'";
+const DASHBOARD_VOID_STATUS_SQL = "status::text IN ('void','voided') OR void_at IS NOT NULL";
+const DASHBOARD_VOID_STATUS_SQL_D = "d.status::text IN ('void','voided') OR d.void_at IS NOT NULL";
+const DASHBOARD_WITHDRAW_STATUS_SQL = "status::text IN ('withdraw_pending','withdrawn') AND void_at IS NULL";
+const DASHBOARD_WITHDRAW_STATUS_SQL_D = "d.status::text IN ('withdraw_pending','withdrawn') AND d.void_at IS NULL";
+const DASHBOARD_OPEN_COUNT_SQL = `(COUNT(*)
+  - COUNT(*) FILTER (WHERE ${DASHBOARD_COMPLETED_STATUS_SQL})
+  - COUNT(*) FILTER (WHERE ${DASHBOARD_VOID_STATUS_SQL})
+  - COUNT(*) FILTER (WHERE ${DASHBOARD_WITHDRAW_STATUS_SQL}))`;
+const DASHBOARD_OPEN_COUNT_SQL_D = `(COUNT(*)
+  - COUNT(*) FILTER (WHERE ${DASHBOARD_COMPLETED_STATUS_SQL_D})
+  - COUNT(*) FILTER (WHERE ${DASHBOARD_VOID_STATUS_SQL_D})
+  - COUNT(*) FILTER (WHERE ${DASHBOARD_WITHDRAW_STATUS_SQL_D}))`;
+const DASHBOARD_OPEN_COUNT_SQL_D_ID = `(COUNT(d.id)
+  - COUNT(d.id) FILTER (WHERE ${DASHBOARD_COMPLETED_STATUS_SQL_D})
+  - COUNT(d.id) FILTER (WHERE ${DASHBOARD_VOID_STATUS_SQL_D})
+  - COUNT(d.id) FILTER (WHERE ${DASHBOARD_WITHDRAW_STATUS_SQL_D}))`;
 
 const BACKEND_HANDLER_ROLES = [
   'contract_specialist',
@@ -85,17 +103,22 @@ export class DashboardService {
     private readonly roleActionPermissionService?: RoleActionPermissionService,
   ) {}
 
-  async getDashboardCards(user: JwtUserPayload, requestedScope?: 'mine' | 'team', month?: string): Promise<DashboardCardsDto> {
+  async getDashboardCards(user: JwtUserPayload, requestedScope?: 'mine' | 'team', month?: string, audience?: 'business' | 'backend'): Promise<DashboardCardsDto> {
     const selectedMonth = this.resolveDashboardMonth(month);
     const myMessages = await this.countUnreadMessages(user.sub);
 
-    if (this.isBackendHandler(user)) {
+    if (audience === 'backend') {
       const backendScope = await this.resolveBackendDashboardScope(user);
       return { ...(await this.queryDispatchedOrderCards(user, selectedMonth, backendScope)), myMessages, scope: 'backend_module' };
     }
 
     if (requestedScope === 'mine') {
       return { ...(await this.queryWorkOrderCards('owner', user.sub, selectedMonth)), myMessages, scope: 'mine' };
+    }
+
+    if (audience !== 'business' && this.isBackendHandler(user)) {
+      const backendScope = await this.resolveBackendDashboardScope(user);
+      return { ...(await this.queryDispatchedOrderCards(user, selectedMonth, backendScope)), myMessages, scope: 'backend_module' };
     }
 
     if (requestedScope === 'team' && (hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES) || hasAnyRole(user.roles, BUSINESS_LEADER_ROLES))) {
@@ -397,11 +420,11 @@ export class DashboardService {
       )
       SELECT
         (SELECT COUNT(*)::int FROM scoped_month) AS "totalThisMonth",
-        (SELECT COUNT(*)::int FROM scoped_all WHERE status::text NOT IN ('completed','void','withdrawn') AND void_at IS NULL) AS processing,
-        (SELECT COUNT(*)::int FROM scoped_month WHERE status::text NOT IN ('completed','void','withdrawn') AND void_at IS NULL) AS "pendingThisMonth",
-        (SELECT COUNT(*)::int FROM scoped_all WHERE status::text NOT IN ('completed','void','withdrawn') AND void_at IS NULL) AS "pendingTotal",
-        COUNT(*) FILTER (WHERE status = 'completed')::int AS completed,
-        COUNT(*) FILTER (WHERE status = 'void' OR void_at IS NOT NULL)::int AS voided
+        (SELECT GREATEST(${DASHBOARD_OPEN_COUNT_SQL}, 0)::int FROM scoped_all) AS processing,
+        (SELECT GREATEST(${DASHBOARD_OPEN_COUNT_SQL}, 0)::int FROM scoped_month) AS "pendingThisMonth",
+        (SELECT GREATEST(${DASHBOARD_OPEN_COUNT_SQL}, 0)::int FROM scoped_all) AS "pendingTotal",
+        COUNT(*) FILTER (WHERE ${DASHBOARD_COMPLETED_STATUS_SQL})::int AS completed,
+        COUNT(*) FILTER (WHERE ${DASHBOARD_VOID_STATUS_SQL})::int AS voided
       FROM scoped_month
       `,
       [scope, scope === 'owner' ? value : null, scope === 'department' ? value : [], this.toMonthStart(month), [...PHASE1_VISIBLE_DISPATCH_MODULE_CODES]],
@@ -449,11 +472,11 @@ export class DashboardService {
       )
       SELECT
         (SELECT COUNT(*)::int FROM scoped_month) AS "totalThisMonth",
-        (SELECT COUNT(*)::int FROM scoped_all WHERE status::text NOT IN ('completed','void','withdrawn') AND void_at IS NULL) AS processing,
-        (SELECT COUNT(*)::int FROM scoped_month WHERE status::text NOT IN ('completed','void','withdrawn') AND void_at IS NULL) AS "pendingThisMonth",
-        (SELECT COUNT(*)::int FROM scoped_all WHERE status::text NOT IN ('completed','void','withdrawn') AND void_at IS NULL) AS "pendingTotal",
-        COUNT(*) FILTER (WHERE status = 'completed')::int AS completed,
-        COUNT(*) FILTER (WHERE status = 'void' OR void_at IS NOT NULL)::int AS voided
+        (SELECT GREATEST(${DASHBOARD_OPEN_COUNT_SQL}, 0)::int FROM scoped_all) AS processing,
+        (SELECT GREATEST(${DASHBOARD_OPEN_COUNT_SQL}, 0)::int FROM scoped_month) AS "pendingThisMonth",
+        (SELECT GREATEST(${DASHBOARD_OPEN_COUNT_SQL}, 0)::int FROM scoped_all) AS "pendingTotal",
+        COUNT(*) FILTER (WHERE ${DASHBOARD_COMPLETED_STATUS_SQL})::int AS completed,
+        COUNT(*) FILTER (WHERE ${DASHBOARD_VOID_STATUS_SQL})::int AS voided
       FROM scoped_month
       `,
       [user.sub, this.toMonthStart(month), moduleCodes],
@@ -530,7 +553,7 @@ export class DashboardService {
   }
 
   private isGlobalBusinessOverview(user: JwtUserPayload): boolean {
-    return isAdminRole(user.roles) || user.roles.includes('business_owner') || user.roles.includes('manager');
+    return isAdminRole(user.roles) || hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES);
   }
 
   private async canViewAllWorkOrders(user: JwtUserPayload): Promise<boolean> {
@@ -649,9 +672,10 @@ export class DashboardService {
     return { modules: [], topCustomers: [], ratios: { totalSubmitted: 0, returnRatio: null, withdrawRatio: null, avgCloseHours: null }, trend: [] };
   }
 
-  async getOrderTypeMatrix(user: JwtUserPayload, dimension: 'orderType' | 'node' = 'orderType', requestedScope?: 'mine' | 'team', month?: string): Promise<unknown> {
+  async getOrderTypeMatrix(user: JwtUserPayload, dimension: 'orderType' | 'node' = 'orderType', requestedScope?: 'mine' | 'team', month?: string, audience?: 'business' | 'backend'): Promise<unknown> {
     const selectedMonth = this.resolveDashboardMonth(month);
-    if (dimension === 'node' && this.isBackendHandler(user) && !this.isGlobalBusinessOverview(user)) {
+    const useBackendAudience = audience === 'backend' || (audience !== 'business' && this.isBackendHandler(user) && !this.isGlobalBusinessOverview(user));
+    if (dimension === 'node' && useBackendAudience) {
       const backendScope = await this.resolveBackendDashboardScope(user);
       return { rows: await this.queryBackendNodeMatrixRows(user, selectedMonth, backendScope) };
     }
@@ -671,7 +695,7 @@ export class DashboardService {
     ];
 
     if (dimension === 'node') {
-      if (this.isBackendHandler(user) && !this.isGlobalBusinessOverview(user)) {
+      if (useBackendAudience) {
         const backendScope = await this.resolveBackendDashboardScope(user);
         return { rows: await this.queryBackendNodeMatrixRows(user, selectedMonth, backendScope) };
       }
@@ -712,14 +736,19 @@ export class DashboardService {
         ot.order_type AS "orderType",
         ot.label,
         COALESCE(COUNT(d.id), 0)::int AS total,
-        COALESCE(COUNT(d.id) FILTER (WHERE d.status::text NOT IN ('completed','void') AND d.void_at IS NULL), 0)::int AS processing,
-        COALESCE(COUNT(d.id) FILTER (WHERE d.status::text = 'completed'), 0)::int AS completed,
-        COALESCE(COUNT(d.id) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL), 0)::int AS voided,
+        COALESCE(GREATEST(${DASHBOARD_OPEN_COUNT_SQL_D_ID}, 0), 0)::int AS processing,
+        COALESCE(COUNT(d.id) FILTER (WHERE ${DASHBOARD_COMPLETED_STATUS_SQL_D}), 0)::int AS completed,
+        COALESCE(COUNT(d.id) FILTER (WHERE ${DASHBOARD_VOID_STATUS_SQL_D}), 0)::int AS voided,
+        COALESCE(COUNT(d.id) FILTER (WHERE ${DASHBOARD_WITHDRAW_STATUS_SQL_D}), 0)::int AS withdrawn,
         CASE
-          WHEN (COUNT(d.id) - COUNT(d.id) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)) <= 0 THEN 0
+          WHEN (COUNT(d.id)
+            - COUNT(d.id) FILTER (WHERE ${DASHBOARD_VOID_STATUS_SQL_D})
+            - COUNT(d.id) FILTER (WHERE ${DASHBOARD_WITHDRAW_STATUS_SQL_D})) <= 0 THEN 0
           ELSE ROUND(
-            COUNT(d.id) FILTER (WHERE d.status::text = 'completed')::numeric * 100
-            / (COUNT(d.id) - COUNT(d.id) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)),
+            COUNT(d.id) FILTER (WHERE ${DASHBOARD_COMPLETED_STATUS_SQL_D})::numeric * 100
+            / (COUNT(d.id)
+              - COUNT(d.id) FILTER (WHERE ${DASHBOARD_VOID_STATUS_SQL_D})
+              - COUNT(d.id) FILTER (WHERE ${DASHBOARD_WITHDRAW_STATUS_SQL_D})),
             1
           )
         END AS "completionRate"
@@ -773,14 +802,19 @@ export class DashboardService {
       SELECT
         d.module_code AS "moduleCode",
         COUNT(*)::int AS total,
-        COUNT(*) FILTER (WHERE d.status::text NOT IN ('completed','void') AND d.void_at IS NULL)::int AS processing,
-        COUNT(*) FILTER (WHERE d.status::text = 'completed')::int AS completed,
-        COUNT(*) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)::int AS voided,
+        GREATEST(${DASHBOARD_OPEN_COUNT_SQL_D}, 0)::int AS processing,
+        COUNT(*) FILTER (WHERE ${DASHBOARD_COMPLETED_STATUS_SQL_D})::int AS completed,
+        COUNT(*) FILTER (WHERE ${DASHBOARD_VOID_STATUS_SQL_D})::int AS voided,
+        COUNT(*) FILTER (WHERE ${DASHBOARD_WITHDRAW_STATUS_SQL_D})::int AS withdrawn,
         CASE
-          WHEN (COUNT(*) - COUNT(*) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)) <= 0 THEN 0
+          WHEN (COUNT(*)
+            - COUNT(*) FILTER (WHERE ${DASHBOARD_VOID_STATUS_SQL_D})
+            - COUNT(*) FILTER (WHERE ${DASHBOARD_WITHDRAW_STATUS_SQL_D})) <= 0 THEN 0
           ELSE ROUND(
-            COUNT(*) FILTER (WHERE d.status::text = 'completed')::numeric * 100
-            / (COUNT(*) - COUNT(*) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)),
+            COUNT(*) FILTER (WHERE ${DASHBOARD_COMPLETED_STATUS_SQL_D})::numeric * 100
+            / (COUNT(*)
+              - COUNT(*) FILTER (WHERE ${DASHBOARD_VOID_STATUS_SQL_D})
+              - COUNT(*) FILTER (WHERE ${DASHBOARD_WITHDRAW_STATUS_SQL_D})),
             1
           )
         END AS "completionRate"
@@ -826,14 +860,19 @@ export class DashboardService {
       SELECT
         d.module_code AS "moduleCode",
         COUNT(*)::int AS total,
-        COUNT(*) FILTER (WHERE d.status::text NOT IN ('completed','void') AND d.void_at IS NULL)::int AS processing,
-        COUNT(*) FILTER (WHERE d.status::text = 'completed')::int AS completed,
-        COUNT(*) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)::int AS voided,
+        GREATEST(${DASHBOARD_OPEN_COUNT_SQL_D}, 0)::int AS processing,
+        COUNT(*) FILTER (WHERE ${DASHBOARD_COMPLETED_STATUS_SQL_D})::int AS completed,
+        COUNT(*) FILTER (WHERE ${DASHBOARD_VOID_STATUS_SQL_D})::int AS voided,
+        COUNT(*) FILTER (WHERE ${DASHBOARD_WITHDRAW_STATUS_SQL_D})::int AS withdrawn,
         CASE
-          WHEN (COUNT(*) - COUNT(*) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)) <= 0 THEN 0
+          WHEN (COUNT(*)
+            - COUNT(*) FILTER (WHERE ${DASHBOARD_VOID_STATUS_SQL_D})
+            - COUNT(*) FILTER (WHERE ${DASHBOARD_WITHDRAW_STATUS_SQL_D})) <= 0 THEN 0
           ELSE ROUND(
-            COUNT(*) FILTER (WHERE d.status::text = 'completed')::numeric * 100
-            / (COUNT(*) - COUNT(*) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)),
+            COUNT(*) FILTER (WHERE ${DASHBOARD_COMPLETED_STATUS_SQL_D})::numeric * 100
+            / (COUNT(*)
+              - COUNT(*) FILTER (WHERE ${DASHBOARD_VOID_STATUS_SQL_D})
+              - COUNT(*) FILTER (WHERE ${DASHBOARD_WITHDRAW_STATUS_SQL_D})),
             1
           )
         END AS "completionRate"

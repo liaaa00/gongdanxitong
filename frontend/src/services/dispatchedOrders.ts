@@ -43,6 +43,14 @@ export interface DispatchedOrderItem {
   void_at?: string | null;
   voidAt?: string | null;
   extra_data?: Record<string, unknown>;
+  pending_modify?: {
+    fields: Record<string, unknown>;
+    reason?: string | null;
+    requestedBy?: string | null;
+    requestedAt?: string | null;
+    previousStatus?: string | null;
+  } | null;
+  pendingModify?: DispatchedOrderItem['pending_modify'];
   supplementable_fields?: string[];
   dirty_fields?: DirtyFieldMark[];
   dirty_count?: number;
@@ -211,6 +219,8 @@ function normalizeDispatchedOrderItem(raw: unknown): DispatchedOrderItem {
     void_at: (row.void_at ?? row.voidAt ?? null) as string | null,
     voidAt: (row.voidAt ?? row.void_at ?? null) as string | null,
     extra_data: extraData,
+    pending_modify: (row.pending_modify ?? row.pendingModify ?? null) as DispatchedOrderItem['pending_modify'],
+    pendingModify: (row.pendingModify ?? row.pending_modify ?? null) as DispatchedOrderItem['pending_modify'],
     supplementable_fields: mergedSupplementableFields.length > 0 ? mergedSupplementableFields : meta.supplementable_fields,
     dirty_fields: (row.dirty_fields ?? row.dirtyFields ?? []) as DirtyFieldMark[],
     dirty_count: (row.dirty_count ?? row.dirtyCount) as number | undefined,
@@ -362,6 +372,8 @@ const DISPATCHED_ORDER_QUERY_KEYS = new Set([
   'department',
   'handlerId',
   'handler_id',
+  'handlerName',
+  'handler_name',
   'assignee',
   'assigneeId',
   'assignee_id',
@@ -418,6 +430,8 @@ export type DispatchedOrdersListParams = PageParams & {
   order_type?: string;
   handlerId?: string;
   handler_id?: string;
+  handlerName?: string;
+  handler_name?: string;
   status?: string;
   statuses?: string;
   statusIn?: string;
@@ -575,6 +589,10 @@ export async function completeDispatchedOrder(id: string, data?: Record<string, 
   return request.post(`/dispatched-orders/${id}/complete`, body) as Promise<DispatchedOrderItem>;
 }
 
+export function isDispatchedAcceptedByBackend(order?: Pick<DispatchedOrderItem, 'status' | 'accepted_at'> | null): boolean {
+  return Boolean(order?.accepted_at) || order?.status === 'processing' || order?.status === 'accepted';
+}
+
 export async function returnDispatchedOrder(id: string, reason: string, fields?: string[]): Promise<DispatchedOrderItem> {
   if (isMockMode) {
     const updated = updateChildInParent(id, (c) => {
@@ -632,12 +650,18 @@ export async function creatorUpdateDispatchedOrderFields(id: string, fields: Rec
     for (const parent of parents) {
       const child = (parent.dispatched_orders || []).find((item) => item.id === id);
       if (!child) continue;
-      parent.extra_data = { ...(parent.extra_data || {}), ...fields };
-      if (fields.customer_name !== undefined) parent.customer_name = String(fields.customer_name || '');
-      if (fields.customer_code !== undefined) parent.customer_code = String(fields.customer_code || '');
-      if (fields.employee_name !== undefined) parent.employee_name = String(fields.employee_name || '');
-      if (fields.id_card_no !== undefined || fields.employee_id_card !== undefined) {
-        parent.employee_id_card = String(fields.id_card_no ?? fields.employee_id_card ?? '');
+      const accepted = child.status === 'processing' || Boolean(child.accepted_at);
+      if (accepted) {
+        child.status = 'modify_pending';
+        child.return_reason = reason ? `业务员修改申请：${reason}` : '业务员修改申请';
+      } else {
+        parent.extra_data = { ...(parent.extra_data || {}), ...fields };
+        if (fields.customer_name !== undefined) parent.customer_name = String(fields.customer_name || '');
+        if (fields.customer_code !== undefined) parent.customer_code = String(fields.customer_code || '');
+        if (fields.employee_name !== undefined) parent.employee_name = String(fields.employee_name || '');
+        if (fields.id_card_no !== undefined || fields.employee_id_card !== undefined) {
+          parent.employee_id_card = String(fields.id_card_no ?? fields.employee_id_card ?? '');
+        }
       }
       break;
     }
@@ -676,14 +700,25 @@ export async function urgeDispatchedOrder(id: string, reason?: string): Promise<
   return normalizeDispatchedOrderItem(raw);
 }
 
+export async function approveModifyDispatchedOrder(id: string, approved: boolean, comment?: string): Promise<DispatchedOrderItem> {
+  if (isMockMode) {
+    const updated = updateChildInParent(id, (c) => {
+      c.status = 'processing';
+      c.return_reason = approved ? null : (comment ? `修改审批已拒绝：${comment}` : null);
+    });
+    return mockDelay(updated || ({} as DispatchedOrderItem));
+  }
+  const raw = await request.post(`/dispatched-orders/${id}/modify/approve`, { approved, comment });
+  return normalizeDispatchedOrderItem(raw);
+}
+
 export async function withdrawDispatchedOrder(id: string, reason: string, moduleCode?: string | null): Promise<DispatchedOrderItem> {
   if (isMockMode) {
     const updated = updateChildInParent(id, (c) => {
-      const isSocial = moduleCode === 'social_insurance' || moduleCode === 'social_insurance_resign' || moduleCode === 'resignation_social_insurance';
       const isUnaccepted = c.status === 'pending' && !c.accepted_at;
-      c.status = isSocial && isUnaccepted ? 'withdrawn' : 'withdraw_pending';
-      c.return_reason = isSocial && isUnaccepted ? `业务员直接撤回：${reason}` : `业务员撤回申请：${reason}`;
-      c.completed_at = isSocial && isUnaccepted ? new Date().toISOString() : null;
+      c.status = isUnaccepted ? 'withdrawn' : 'withdraw_pending';
+      c.return_reason = isUnaccepted ? `业务员未接单前直接撤回：${reason}` : `业务员撤回申请：${reason}`;
+      c.completed_at = isUnaccepted ? new Date().toISOString() : null;
     });
     return mockDelay(updated || ({} as DispatchedOrderItem));
   }
@@ -708,12 +743,11 @@ export async function voidDispatchedOrder(id: string, reason: string, moduleCode
   if (isMockMode) {
     const now = new Date().toISOString();
     const updated = updateChildInParent(id, (c) => {
-      const isSocial = moduleCode === 'social_insurance' || moduleCode === 'social_insurance_resign' || moduleCode === 'resignation_social_insurance';
       const isUnaccepted = c.status === 'pending' && !c.accepted_at;
-      c.status = isSocial && isUnaccepted ? 'void' : 'void_pending';
-      c.void_at = isSocial && isUnaccepted ? now : null;
-      c.return_reason = isSocial && isUnaccepted ? `业务员直接作废：${reason}` : `业务员作废申请：${reason}`;
-      c.completed_at = isSocial && isUnaccepted ? now : null;
+      c.status = isUnaccepted ? 'void' : 'void_pending';
+      c.void_at = isUnaccepted ? now : null;
+      c.return_reason = isUnaccepted ? `业务员未接单前直接作废：${reason}` : `业务员作废申请：${reason}`;
+      c.completed_at = isUnaccepted ? now : null;
     });
     return mockDelay(updated ? { ...updated, void_at: updated.void_at || null, voidAt: updated.void_at || null } : ({} as DispatchedOrderItem));
   }
@@ -739,7 +773,7 @@ export async function approveVoidDispatchedOrder(id: string, approved: boolean, 
 export async function resubmitDispatchedOrder(id: string, payload?: { fields?: Record<string, unknown>; reason?: string; moduleCode?: string | null }): Promise<DispatchedOrderItem> {
   if (isMockMode) {
     const updated = updateChildInParent(id, (c) => {
-      c.status = 'processing';
+      c.status = 'pending';
       c.return_reason = null;
       c.returned_fields = [];
       c.completed_at = null;
@@ -750,6 +784,7 @@ export async function resubmitDispatchedOrder(id: string, payload?: { fields?: R
   }
   const body = {
     fields: payload?.fields,
+    extraData: payload?.fields,
     reason: payload?.reason,
     moduleCode: payload?.moduleCode,
     module_code: payload?.moduleCode,

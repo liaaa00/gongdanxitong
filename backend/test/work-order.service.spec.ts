@@ -362,12 +362,42 @@ describe('WorkOrderService unit tests', () => {
     expect(result).toMatchObject({ total: 1, page: 1, pageSize: 10 });
   });
 
-  it('removes a work order and writes an operation log', async () => {
-    workOrderRepository.findOne.mockResolvedValue(makeWorkOrder({ id: 'wo-delete', dispatchedOrders: [] }));
+  it('removes a work order, clears related unread reminders, and writes an operation log', async () => {
+    workOrderRepository.findOne.mockResolvedValue(makeWorkOrder({ id: 'wo-delete', orderNo: 'ON-DELETE', dispatchedOrders: [] }));
+    dispatchedOrderRepository.find.mockResolvedValue([
+      makeDispatched({ id: 'do-delete-1', parentOrderId: 'wo-delete' }),
+    ]);
+    const relatedByWorkOrder = Object.assign(new Notification(), {
+      id: 'n-work-order',
+      isRead: false,
+      readAt: null,
+      payload: { workOrderId: 'wo-delete' },
+      link: '/work-orders/wo-delete',
+    });
+    const relatedByChild = Object.assign(new Notification(), {
+      id: 'n-child',
+      isRead: false,
+      readAt: null,
+      payload: { dispatchedOrderId: 'do-delete-1' },
+      link: '/my-dispatched/do-delete-1',
+    });
+    const unrelated = Object.assign(new Notification(), {
+      id: 'n-other',
+      isRead: false,
+      readAt: null,
+      payload: { workOrderId: 'wo-other' },
+      link: '/work-orders/wo-other',
+    });
+    notificationRepository.find.mockResolvedValue([relatedByWorkOrder, relatedByChild, unrelated]);
 
     const result = await service.remove('wo-delete', makeUser({ sub: 'admin-1', roles: ['admin'] }));
 
     expect(workOrderRepository.delete).toHaveBeenCalledWith('wo-delete');
+    expect(notificationRepository.save).toHaveBeenCalledWith(expect.arrayContaining([
+      expect.objectContaining({ id: 'n-work-order', isRead: true, readAt: expect.any(Date) }),
+      expect.objectContaining({ id: 'n-child', isRead: true, readAt: expect.any(Date) }),
+    ]));
+    expect(unrelated.isRead).toBe(false);
     expect(operationLogRepository.save).toHaveBeenCalledWith(expect.objectContaining({ entityType: 'work_order', entityId: 'wo-delete', actionType: 'delete' }));
     expect(result).toEqual({ success: true, id: 'wo-delete' });
   });

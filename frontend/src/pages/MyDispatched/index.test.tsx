@@ -69,7 +69,7 @@ describe('MyDispatched processing status filter', () => {
     render(<MyDispatched mode="pending" />);
 
     const statusColumn = getColumn('status');
-    expect(statusColumn.fieldProps.options).toEqual([{ label: '未办结', value: 'pending,processing' }]);
+    expect(statusColumn.fieldProps.options).toEqual([{ label: '未接单/已接单', value: 'pending,processing' }]);
 
     await mocks.latestProTableProps.request({ current: 1, pageSize: 20, status: 'pending,processing', moduleCode: 'contract' });
 
@@ -77,6 +77,7 @@ describe('MyDispatched processing status filter', () => {
       page: 1,
       pageSize: 20,
       moduleCode: 'contract',
+      orderMonth: expect.stringMatching(/^\d{4}-\d{2}$/),
       statuses: 'pending,processing',
     })));
     const params = mocks.getDispatchedOrders.mock.calls.at(-1)?.[0] as Record<string, unknown>;
@@ -91,24 +92,43 @@ describe('MyDispatched processing status filter', () => {
     await waitFor(() => expect(mocks.getDispatchedOrders).toHaveBeenCalledWith(expect.objectContaining({
       page: 1,
       pageSize: 20,
+      orderMonth: expect.stringMatching(/^\d{4}-\d{2}$/),
       statuses: 'pending,processing',
     })));
     const params = mocks.getDispatchedOrders.mock.calls.at(-1)?.[0] as Record<string, unknown>;
     expect(params.status).toBeUndefined();
   });
 
-  it('opens pending my-work detail in readonly mode and hides batch operation toolbar', () => {
+  it('merges table header filters into my-work request params', async () => {
     render(<MyDispatched mode="pending" />);
 
-    expect(mocks.latestProTableProps.toolBarRender).toBe(false);
-    expect(mocks.latestProTableProps.rowSelection).toBe(false);
-    expect(mocks.latestProTableProps.tableAlertRender).toBe(false);
+    await mocks.latestProTableProps.request(
+      { current: 1, pageSize: 20 },
+      {},
+      { employee_id_card: ['3301'], moduleCode: ['contract'] },
+    );
+
+    await waitFor(() => expect(mocks.getDispatchedOrders).toHaveBeenCalledWith(expect.objectContaining({
+      page: 1,
+      pageSize: 20,
+      moduleCode: 'contract',
+      idCardNo: '3301',
+      orderMonth: expect.stringMatching(/^\d{4}-\d{2}$/),
+      statuses: 'pending,processing',
+    })));
+  });
+
+  it('opens pending my-work detail in editable mode and keeps row selection available', () => {
+    render(<MyDispatched mode="pending" />);
+
+    expect(mocks.latestProTableProps.rowSelection).toEqual(expect.objectContaining({ preserveSelectedRowKeys: true }));
+    expect(mocks.latestProTableProps.tableAlertRender).not.toBe(false);
     const actionColumn = getColumn('actions');
     const actionCell = actionColumn?.render?.(null, { id: 'd-pending', status: 'pending' }) as React.ReactElement;
     const detailButton = Array.isArray(actionCell.props.children) ? actionCell.props.children[0] : actionCell.props.children;
     detailButton.props.onClick();
 
-    expect(mocks.navigate).toHaveBeenCalledWith('/my-dispatched/d-pending?readonly=1&from=my-work');
+    expect(mocks.navigate).toHaveBeenCalledWith('/my-dispatched/d-pending');
   });
 
   it('uses new phase-one child module names and hides in-service module filters', () => {
@@ -127,7 +147,7 @@ describe('MyDispatched processing status filter', () => {
     expect(labels).not.toContain('待遇申报子工单');
   });
 
-  it('front-end filters readonly backend my-work rows to the current backend owner modules', async () => {
+  it('does not front-end filter editable my-work rows by backend owner modules and keeps backend total', async () => {
     mocks.currentRoles = ['social_insurance_specialist'];
     mocks.getDispatchedOrders.mockResolvedValue({
       list: [
@@ -144,8 +164,8 @@ describe('MyDispatched processing status filter', () => {
     render(<MyDispatched mode="pending" />);
     const result = await mocks.latestProTableProps.request({ current: 1, pageSize: 20 });
 
-    expect(result.data.map((row: { id: string }) => row.id)).toEqual(['social-add', 'social-minus']);
-    expect(result.total).toBe(2);
+    expect(result.data.map((row: { id: string }) => row.id)).toEqual(['social-add', 'social-minus', 'contact', 'contract', 'data-entry']);
+    expect(result.total).toBe(6);
   });
 
   it('shows initiated work as child-order rows without forcing returned status', async () => {
@@ -160,6 +180,7 @@ describe('MyDispatched processing status filter', () => {
       page: 1,
       pageSize: 20,
       employeeName: '张三',
+      orderMonth: expect.stringMatching(/^\d{4}-\d{2}$/),
       includeReturned: true,
     })));
     const params = mocks.getDispatchedOrders.mock.calls.at(-1)?.[0] as Record<string, unknown>;
@@ -184,6 +205,7 @@ describe('MyDispatched processing status filter', () => {
 
     await waitFor(() => expect(mocks.getDispatchedOrders).toHaveBeenCalledWith(expect.objectContaining({
       status: 'returned',
+      orderMonth: expect.stringMatching(/^\d{4}-\d{2}$/),
       includeReturned: true,
     })));
     expect(result.data).toEqual([{ id: 'd-returned', status: 'returned', module_code: 'contract', order_type: 'onboarding' }]);

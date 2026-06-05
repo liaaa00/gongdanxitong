@@ -44,7 +44,7 @@ function KanbanView<T extends Record<string, unknown>>({
           }
           extra={<Badge count={dataSource.filter((i) => String(i[columnKey as string]) === col.value).length} style={{ backgroundColor: getColumnColor(col.color) }} />}
           style={{ minWidth: 260, flex: '0 0 auto', maxHeight: '70vh', overflow: 'auto' }}
-          bodyStyle={{ padding: '4px 8px' }}
+          styles={{ body: { padding: '4px 8px' } }}
         >
           {col.items.length === 0 ? (
             <Empty description="无数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
@@ -53,7 +53,7 @@ function KanbanView<T extends Record<string, unknown>>({
               {col.items.map((item) => (
                 <Card key={String(item[rowKey as string] || '')} size="small"
                   hoverable
-                  bodyStyle={{ padding: '6px 10px' }}
+                  styles={{ body: { padding: '6px 10px' } }}
                   style={{ borderLeft: '3px solid ' + getColumnColor(col.color) }}>
                   {renderItem ? renderItem(item) : <span style={{ color: '#999' }}>暂无卡片视图，需配置 renderItem</span>}
                 </Card>

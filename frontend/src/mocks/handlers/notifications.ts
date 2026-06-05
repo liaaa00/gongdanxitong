@@ -3,6 +3,29 @@ import { ok } from '../utils';
 
 const now = new Date().toISOString();
 
+function normalizeBizType(value: string | undefined | null): string {
+  return String(value || '').toLowerCase().replace(/[.:]/g, '_');
+}
+
+function getNotificationBucket(item: { biz_type?: string; type?: string; title?: string; content?: string }): string {
+  const raw = `${normalizeBizType(item.biz_type)} ${normalizeBizType(item.type)} ${item.title || ''} ${item.content || ''}`.toLowerCase();
+  if (raw.includes('system')) return 'system';
+  if (raw.includes('withdraw_request') || raw.includes('void_request')) return 'withdraw_void_request';
+  if (raw.includes('modify_request')) return 'creator_modified';
+  if (raw.includes('withdraw_approved') || raw.includes('withdraw_rejected') || raw.includes('void_approved') || raw.includes('void_rejected') || raw.includes('withdraw_void_result')) return 'withdraw_void_result';
+  if (raw.includes('dispatched_returned') || raw.includes('returned') || raw.includes('return') || raw.includes('退回')) return 'returned';
+  if (raw.includes('order_field_changed') || raw.includes('creator_modified') || raw.includes('completed_modified') || raw.includes('modified_by_creator') || raw.includes('modify_approved') || raw.includes('modify_rejected')) return 'creator_modified';
+  if (raw.includes('field_changed') || raw.includes('field_change') || raw.includes('field_supplement') || raw.includes('supplement') || raw.includes('补充')) return 'field_changed';
+  if (raw.includes('sla') || raw.includes('dispatch') || raw.includes('dispatched') || raw.includes('task') || raw.includes('todo') || raw.includes('claim')) return 'todo';
+  return 'system';
+}
+
+function matchesBucketFilter(item: { biz_type?: string; type?: string; title?: string; content?: string }, bucket: string | null): boolean {
+  const buckets = new Set(String(bucket || '').split(',').map((value) => value.trim()).filter(Boolean));
+  if (!buckets.size) return true;
+  return buckets.has(getNotificationBucket(item));
+}
+
 const NOTIFICATIONS = [
   { id: 'n-1', type: 'dispatched', biz_type: 'task', priority: 'normal', title: '新子工单', content: '您有一个新的增员报岗录入子工单待处理', entity_type: 'dispatched_order', entity_id: 'd1', link: '/my-dispatched/d1', is_read: false, created_at: now },
   { id: 'n-2', type: 'returned', biz_type: 'task', priority: 'urgent', title: '工单退回', content: '工单 ON20260507005 已被退回', entity_type: 'work_order', entity_id: '4', link: '/work-orders/4', is_read: false, created_at: new Date(Date.now() - 3600000).toISOString() },
@@ -24,6 +47,8 @@ export const notificationHandlers = [
     }
     const priority = url.searchParams.get('priority');
     if (priority) list = list.filter((n) => n.priority === priority);
+    const bucket = url.searchParams.get('bucket');
+    if (bucket) list = list.filter((n) => matchesBucketFilter(n, bucket));
     return ok({ list, page: 1, pageSize: 20, total: list.length, totalPages: 1, success: true });
   }),
 

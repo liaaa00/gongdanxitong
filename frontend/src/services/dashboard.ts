@@ -29,6 +29,7 @@ export interface OrderTypeMatrixRow {
   processing: number;
   completed: number;
   voided: number;
+  withdrawn: number;
   completionRate: number;
 }
 
@@ -147,16 +148,20 @@ function isCurrentMonthValue(iso: string | null | undefined, month = currentMont
   return String(iso).slice(0, 7) === month || isSameMonth(iso, new Date(`${month}-01T00:00:00`));
 }
 
-function isTerminalStatus(status: string | undefined): boolean {
-  return ['completed', 'withdrawn', 'void', 'voided', 'cancelled', 'canceled'].includes(String(status || '').toLowerCase());
+function normalizeStatus(status: string | undefined): string {
+  return String(status || '').toLowerCase();
+}
+
+function isWithdrawStatus(status: string | undefined): boolean {
+  return ['withdraw_pending', 'withdrawn'].includes(normalizeStatus(status));
 }
 
 function isVoidStatus(status: string | undefined): boolean {
-  return ['void', 'voided', 'cancelled', 'canceled'].includes(String(status || '').toLowerCase());
+  return ['void', 'voided', 'cancelled', 'canceled'].includes(normalizeStatus(status));
 }
 
 function isOpenStatus(status: string | undefined): boolean {
-  return !isTerminalStatus(status);
+  return ['pending', 'processing', 'returned', 'modify_pending'].includes(normalizeStatus(status));
 }
 
 // Dashboard production fallback must not call /dispatched-orders during app initialization.
@@ -205,15 +210,16 @@ function isCompletedStatus(status: string | undefined): boolean {
 
 function buildMatrixRows(parents: ParentOrderLite[], dimension: DashboardMatrixDimension): OrderTypeMatrixRow[] {
   if (dimension === 'node') {
-    const map = new Map<string, { total: number; processing: number; completed: number; voided: number }>();
+    const map = new Map<string, { total: number; processing: number; completed: number; voided: number; withdrawn: number }>();
     parents.forEach((parent) => {
       (parent.dispatched_orders || []).forEach((child) => {
         const code = child.module_code || 'unknown';
-        const current = map.get(code) || { total: 0, processing: 0, completed: 0, voided: 0 };
+        const current = map.get(code) || { total: 0, processing: 0, completed: 0, voided: 0, withdrawn: 0 };
         current.total += 1;
         if (isVoidStatus(child.status)) current.voided += 1;
+        else if (isWithdrawStatus(child.status)) current.withdrawn += 1;
         else if (isCompletedStatus(child.status)) current.completed += 1;
-        else if (isProcessingStatus(child.status) || child.status === 'pending') current.processing += 1;
+        else if (isOpenStatus(child.status)) current.processing += 1;
         map.set(code, current);
       });
     });
@@ -226,7 +232,8 @@ function buildMatrixRows(parents: ParentOrderLite[], dimension: DashboardMatrixD
       processing: item.processing,
       completed: item.completed,
       voided: item.voided,
-      completionRate: calculateCompletionRate(item.completed, item.total, item.voided),
+      withdrawn: item.withdrawn,
+      completionRate: calculateCompletionRate(item.completed, item.total - item.withdrawn, item.voided),
     }));
   }
 
@@ -243,7 +250,8 @@ function buildOrderTypeRow(orderType: DashboardOrderType, statuses: Array<string
   const total = statuses.length;
   const completed = statuses.filter(isCompletedStatus).length;
   const voided = statuses.filter(isVoidStatus).length;
-  const processing = statuses.filter((status) => !isCompletedStatus(status) && !isVoidStatus(status) && (isProcessingStatus(status) || Boolean(status))).length;
+  const withdrawn = statuses.filter(isWithdrawStatus).length;
+  const processing = statuses.filter(isOpenStatus).length;
   return {
     orderType,
     dimension,
@@ -252,7 +260,8 @@ function buildOrderTypeRow(orderType: DashboardOrderType, statuses: Array<string
     processing,
     completed,
     voided,
-    completionRate: calculateCompletionRate(completed, total, voided),
+    withdrawn,
+    completionRate: calculateCompletionRate(completed, total - withdrawn, voided),
   };
 }
 
@@ -295,6 +304,7 @@ function normalizeOrderTypeMatrix(raw: unknown, fallbackDimension: DashboardMatr
     const completed = num(item.completed ?? item.completed_count);
     const processing = num(item.processing ?? item.processing_count);
     const voided = num(item.voided ?? item.void_count ?? item.voidCount ?? item.cancelled ?? item.canceled);
+    const withdrawn = num(item.withdrawn ?? item.withdrawn_count ?? item.withdrawCount ?? item.withdraw_count);
     const rateValue = item.completionRate ?? item.completion_rate ?? item.rate;
     return {
       orderType,
@@ -305,8 +315,9 @@ function normalizeOrderTypeMatrix(raw: unknown, fallbackDimension: DashboardMatr
       processing,
       completed,
       voided,
+      withdrawn,
       completionRate: rateValue === undefined || rateValue === null
-        ? calculateCompletionRate(completed, total, voided)
+        ? calculateCompletionRate(completed, total - withdrawn, voided)
         : normalizePercent(rateValue),
     };
   });
@@ -367,11 +378,23 @@ export async function getDashboardCards(audience: DashboardAudience = 'business'
     });
   }
 
-  const result = await request.get('/dashboard/cards', {
-    params: { month: selectedMonth, ...(scope ? { scope } : {}) },
-    silentError: true,
-  } as any);
-  return normalizeDashboardCards(result);
+  const modernParams = { audience, month: selectedMonth, ...(scope ? { scope } : {}) };
+  try {
+    const result = await request.get('/dashboard/cards', {
+      params: modernParams,
+      silentError: true,
+    } as any);
+    return normalizeDashboardCards(result);
+  } catch (error) {
+    // 兼容仍在运行的旧后端：旧 DTO 不认识 audience/month 时会被白名单校验拦截。
+    // 不能静默返回空卡片，否则业务员/管理员会误以为没有数据。
+    console.warn('[dashboard] cards endpoint failed, retrying legacy params', error);
+    const legacyResult = await request.get('/dashboard/cards', {
+      params: scope ? { scope } : {},
+      silentError: true,
+    } as any);
+    return normalizeDashboardCards(legacyResult);
+  }
 }
 
 export async function getOrderTypeMatrix(params: { dimension?: DashboardMatrixDimension; audience?: DashboardAudience; scope?: DashboardScopeMode; month?: string } = {}): Promise<OrderTypeMatrixResult> {
@@ -382,11 +405,18 @@ export async function getOrderTypeMatrix(params: { dimension?: DashboardMatrixDi
     return mockDelay({ rows, total: rows.length });
   }
 
+  const modernParams = { dimension, ...(params.audience ? { audience: params.audience } : {}), month: selectedMonth, ...(params.scope ? { scope: params.scope } : {}) };
   try {
-    const result = await request.get('/dashboard/order-type-matrix', { params: { dimension, month: selectedMonth, ...(params.scope ? { scope: params.scope } : {}) }, silentError: true } as any);
+    const result = await request.get('/dashboard/order-type-matrix', { params: modernParams, silentError: true } as any);
     return normalizeOrderTypeMatrix(result, dimension);
-  } catch {
-    return emptyMatrixResult();
+  } catch (error) {
+    console.warn('[dashboard] matrix endpoint failed, retrying legacy params', error);
+    try {
+      const legacyResult = await request.get('/dashboard/order-type-matrix', { params: { dimension, ...(params.scope ? { scope: params.scope } : {}) }, silentError: true } as any);
+      return normalizeOrderTypeMatrix(legacyResult, dimension);
+    } catch {
+      return emptyMatrixResult();
+    }
   }
 }
 

@@ -70,7 +70,7 @@ function MultiViewTable<T extends Record<string, unknown>>(props: MultiViewTable
     kanbanColumnKey, kanbanAllowedValues, onKanbanDragEnd,
     groupByOptions, editableKeys = [], onInlineEdit,
     toolBarRender, headerTitle, batchActions,
-    search = false, proTableOptions, proTableToolBarRender,
+    search = false, pagination = { defaultPageSize: 20, showSizeChanger: true }, proTableOptions, proTableToolBarRender,
     showViewSwitcher = false, showFilterViews = false, showColumnsConfig = false,
   } = props;
 
@@ -198,7 +198,7 @@ function MultiViewTable<T extends Record<string, unknown>>(props: MultiViewTable
           rowKey={rowKey}
           search={search}
           headerTitle={headerTitle}
-          pagination={{ defaultPageSize: 20, showSizeChanger: true }}
+          pagination={pagination}
           scroll={{ x: 1280 }}
           dateFormatter="string"
           options={proTableOptions === false ? false : { reload: () => actionRef.current?.reload() }}

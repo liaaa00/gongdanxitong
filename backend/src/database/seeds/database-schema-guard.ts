@@ -8,6 +8,7 @@ export const REQUIRED_WORK_ORDER_STATUS_ENUM_VALUES = [
 ] as const;
 
 export const REQUIRED_DISPATCHED_ORDER_STATUS_ENUM_VALUES = [
+  'modify_pending',
   'withdraw_pending',
   'withdrawn',
   'void_pending',

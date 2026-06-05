@@ -712,6 +712,16 @@ export class WorkOrderService {
           },
           ipAddress: null,
         }));
+        await notificationRepo.save(notificationRepo.create({
+          userId: workOrder.createdBy,
+          bizType: 'void_approved',
+          title: '工单已作废',
+          content: `工单 ${workOrder.orderNo} 撤回通过后已作废。`,
+          link: `/work-orders/${workOrder.id}`,
+          payload: { workOrderId: workOrder.id, orderNo: workOrder.orderNo, approved: true, reason, previousStatus },
+          isRead: false,
+          readAt: null,
+        }));
         return { id: workOrder.id, status: WorkOrderStatus.VOID };
       }
 
@@ -998,7 +1008,12 @@ export class WorkOrderService {
 
   async remove(id: string, user: JwtUserPayload): Promise<{ success: boolean; id: string }> {
     const workOrder = await this.loadWorkOrder(id);
+    const childIds = (await this.dispatchedOrderRepository.find({
+      where: { parentOrderId: id },
+      select: { id: true },
+    })).map((child) => child.id);
     await this.workOrderRepository.delete(id);
+    await this.markRelatedNotificationsReadAfterWorkOrderEnd(id, workOrder.orderNo, childIds);
     await this.writeOperationLog('work_order', id, user.sub, 'delete', snapshotWorkOrder(workOrder), { id, deleted: true });
     return { success: true, id };
   }
@@ -1114,6 +1129,38 @@ export class WorkOrderService {
     }
     const text = String(value ?? '').trim().toLowerCase();
     return ['是', 'yes', 'y', 'true', '1'].includes(text);
+  }
+
+  private async markRelatedNotificationsReadAfterWorkOrderEnd(workOrderId: string, orderNo: string | null | undefined, childIds: string[]): Promise<void> {
+    const rows = await this.notificationRepository.find({ where: { isRead: false } });
+    const childIdSet = new Set(childIds);
+    const readAt = new Date();
+    const matched = rows.filter((row) => {
+      const payload = (row.payload ?? {}) as Record<string, unknown>;
+      const payloadWorkOrderId = this.readNotificationPayloadText(payload.workOrderId ?? payload.work_order_id ?? payload.parentOrderId ?? payload.parent_order_id);
+      if (payloadWorkOrderId === workOrderId) return true;
+
+      const payloadDispatchedOrderId = this.readNotificationPayloadText(payload.dispatchedOrderId ?? payload.dispatched_order_id ?? payload.entityId ?? payload.entity_id);
+      if (payloadDispatchedOrderId && childIdSet.has(payloadDispatchedOrderId)) return true;
+
+      const payloadOrderNo = this.readNotificationPayloadText(payload.orderNo ?? payload.order_no ?? payload.refOrderNo ?? payload.ref_order_no);
+      if (orderNo && payloadOrderNo === orderNo) return true;
+
+      const link = row.link ?? '';
+      return link.includes(workOrderId) || childIds.some((childId) => link.includes(childId));
+    });
+    if (matched.length === 0) return;
+    for (const row of matched) {
+      row.isRead = true;
+      row.readAt = readAt;
+    }
+    await this.notificationRepository.save(matched);
+  }
+
+  private readNotificationPayloadText(value: unknown): string | null {
+    if (value === undefined || value === null) return null;
+    const text = String(value).trim();
+    return text.length > 0 ? text : null;
   }
 
   private async loadWorkOrder(id: string): Promise<WorkOrder> {

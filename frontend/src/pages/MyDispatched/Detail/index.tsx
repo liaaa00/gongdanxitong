@@ -3,15 +3,15 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { PageContainer } from '@ant-design/pro-components';
 import {
   Card, Descriptions, Tag, Button, Space, App, Modal, Input, Select,
-  Empty, Alert, Form, Checkbox, Timeline, Badge, Tooltip, Upload,
+  Empty, Alert, Form, Checkbox, Timeline, Badge, Tooltip,
 } from 'antd';
 import {
   CheckCircleOutlined, RollbackOutlined, PlusCircleOutlined,
   HistoryOutlined,
   WarningOutlined, EyeOutlined, EditOutlined, BellOutlined, StopOutlined,
-  UploadOutlined,
 } from '@ant-design/icons';
 import DynamicForm from '@/components/DynamicForm';
+import MaterialsUpload from '@/components/MaterialsUpload';
 import type { FieldConfig } from '@/components/DynamicForm';
 import { useFieldPermissions } from '@/hooks/useFieldPermissions';
 import { useDispatchedActions } from '@/hooks/useDispatchedActions';
@@ -22,14 +22,13 @@ import {
 } from '@/services/dispatchedOrders';
 import type { DirtyFieldMark, DispatchedOrderItem } from '@/services/dispatchedOrders';
 import { getFallbackFields, getFields } from '@/services/fields';
- import { getSupplementLogs } from '@/services/supplementLogs';
+import { getSupplementLogs } from '@/services/supplementLogs';
 import type { SupplementLogItem } from '@/services/supplementLogs';
 import { getModuleColor, getModuleLabel, isSocialInsuranceModule } from '@/constants/modules';
 import { getStatusColor, getStatusText } from '@/constants/dictionaries';
 import { useAuth } from '@/hooks/useAuth';
 import { getUsersByTeam } from '@/services/users';
 import type { UserItem } from '@/services/users';
-import { uploadOrderAttachment } from '@/services/upload';
 
 const FIELD_GROUPS: Array<{ title: string; codes: string[] }> = [
   {
@@ -53,8 +52,12 @@ const FIELD_GROUPS: Array<{ title: string; codes: string[] }> = [
     codes: ['bank_name', 'bank_account', 'remark', 'special_remark'],
   },
   {
+    title: '离职信息',
+    codes: ['resignation_type', 'resignation_reason', 'last_work_date', 'contract_terminate_date', 'handover_person', 'need_resignation_cert', 'cert_delivery_address'],
+  },
+  {
     title: '后道反馈',
-    codes: ['need_onboarding_contact', 'onboarding_feedback', 'data_entry_feedback'],
+    codes: ['need_onboarding_contact', 'onboarding_feedback', 'data_entry_feedback', 'resignation_contact_feedback', 'resignation_cert_status', 'social_handover_done', 'final_salary_settled', 'resignation_remark'],
   },
 ];
 
@@ -80,10 +83,7 @@ function getOperatorDisplay(order: DispatchedOrderItem) {
   return order.handler_name || '负责人未配置';
 }
 
-const withRequiredLabel = (field: FieldConfig): FieldConfig => ({
-  ...field,
-  field_name: `${field.field_name}（${field.is_required ? '必填' : '选填'}）`,
-});
+const withRequiredLabel = (field: FieldConfig): FieldConfig => field;
 
 const filterByVisibleFields = (allFields: FieldConfig[], visibleFields?: string[]) => {
   const visibleSet = new Set((visibleFields || []).filter(Boolean));
@@ -107,8 +107,6 @@ const MyDispatchedDetail: React.FC = () => {
   const [supplementLogs, setSupplementLogs] = useState<SupplementLogItem[]>([]);
   const [dirtyCleared, setDirtyCleared] = useState(false);
   const [confirmReadLoading, setConfirmReadLoading] = useState(false);
-  const [attachmentUploading, setAttachmentUploading] = useState(false);
-  const [uploadedAttachments, setUploadedAttachments] = useState<Array<{ id?: string; name: string; url?: string }>>([]);
 
   const [returnModalOpen, setReturnModalOpen] = useState(false);
   const [returnForm] = Form.useForm();
@@ -136,7 +134,7 @@ const MyDispatchedDetail: React.FC = () => {
   const [voidOpen, setVoidOpen] = useState(false);
   const [voidForm] = Form.useForm<{ reason: string }>();
   const [approvalOpen, setApprovalOpen] = useState(false);
-  const [approvalType, setApprovalType] = useState<'withdraw' | 'void'>('withdraw');
+  const [approvalType, setApprovalType] = useState<'modify' | 'withdraw' | 'void'>('withdraw');
   const [approvalApproved, setApprovalApproved] = useState(true);
   const [approvalForm] = Form.useForm<{ comment: string }>();
 
@@ -145,15 +143,16 @@ const MyDispatchedDetail: React.FC = () => {
   const { actionLoading, handleAccept, handleComplete, handleReturn,
     handleSupplement, handleReassign,
     handleCreatorUpdate, handleUrge, handleResubmit, handleWithdraw, handleVoid,
-    handleApproveWithdraw, handleApproveVoid }
+    handleApproveModify, handleApproveWithdraw, handleApproveVoid }
     = useDispatchedActions({ orderId: effectiveOrderId, order, onOrderUpdated: setOrder });
 
   const loadDetail = useCallback(async () => {
     if (!id) return;
     setLoading(true);
     try {
-      const fieldLoader = hasRole('admin') ? getFields('onboarding') : Promise.resolve(getFallbackFields('onboarding'));
-      const [orderData, fieldList, logs] = await Promise.all([getDispatchedOrder(id), fieldLoader, getSupplementLogs(id)]);
+      const [orderData, logs] = await Promise.all([getDispatchedOrder(id), getSupplementLogs(id)]);
+      const orderType = orderData.order_type || 'onboarding';
+      const fieldList = hasRole('admin') ? await getFields(orderType) : getFallbackFields(orderType);
       setOrder(orderData);
       setFields(fieldList);
       setSupplementLogs(logs);
@@ -227,9 +226,11 @@ const MyDispatchedDetail: React.FC = () => {
   );
   const searchParams = new URLSearchParams(location.search);
   const readonlyFrom = searchParams.get('from');
-  const isReadOnlyView = searchParams.get('readonly') === '1' || readonlyFrom === 'team' || readonlyFrom === 'my-work';
-  const isTeamReadOnlyView = readonlyFrom === 'team';
-  const isMyWorkReadOnlyView = readonlyFrom === 'my-work';
+  // 我的待办/我的已办/我的退回/我发起的/历史工单/团队工单入口都允许直接操作。
+  // 仅保留显式 readonly=1 的兼容只读模式，避免旧链接或特殊审计入口误开放。
+  const isReadOnlyView = searchParams.get('readonly') === '1';
+  const isTeamReadOnlyView = isReadOnlyView && readonlyFrom === 'team';
+  const isMyWorkReadOnlyView = isReadOnlyView && readonlyFrom === 'my-work';
   const isAdminUser = hasRole('admin');
   const canBackendOperateByRole = isAdminUser || hasRole('data_entry_leader') || hasRole('shared_team_owner')
     || hasRole('labor_contract_member') || hasRole('onboarding_resignation_member') || hasRole('social_insurance_specialist');
@@ -240,23 +241,23 @@ const MyDispatchedDetail: React.FC = () => {
   const isResubmittableStatus = Boolean(order && (['returned', 'withdrawn', 'void'].includes(order.status) || isVoided));
   const isSocialInsuranceOrder = isSocialInsuranceModule(order?.module_code);
   const isAcceptedByBackend = Boolean(order?.accepted_at) || order?.status === 'accepted' || order?.status === 'processing';
-  const isSocialInsuranceUnaccepted = Boolean(isSocialInsuranceOrder && order?.status === 'pending' && !order?.accepted_at);
   const canAccept = canBackendOperate && !isVoided && order?.status === 'pending';
   const canComplete = canBackendOperate && !isVoided && order?.status === 'processing';
   const canReturn = canBackendOperate && !isVoided && (order?.status === 'processing' || order?.status === 'pending');
   const canSupplement = canBackendOperate && !isVoided && order?.status === 'processing' && supplementableFields.length > 0;
   const isRepairableStatus = isResubmittableStatus;
-  const isTerminalStatus = Boolean(order && ['completed', 'withdraw_pending', 'void_pending', 'void'].includes(order.status));
+  const isApprovalStatus = Boolean(order && ['modify_pending', 'withdraw_pending', 'void_pending'].includes(order.status));
+  const isTerminalStatus = Boolean(order && ['completed', 'modify_pending', 'withdraw_pending', 'void_pending', 'void'].includes(order.status));
   const isTerminal = isVoided || (isTerminalStatus && !isRepairableStatus);
   const canCreatorOperate = Boolean(order && isCreator && !isReadOnlyView && (!isTerminalStatus || isRepairableStatus));
-  const socialInsuranceOperationLocked = Boolean(isSocialInsuranceOrder && isAcceptedByBackend && !isResubmittableStatus);
-  const canCreatorUpdate = canCreatorOperate && !socialInsuranceOperationLocked && (isResubmittableStatus || isSocialInsuranceUnaccepted);
+  const canCreatorUpdate = canCreatorOperate && !isApprovalStatus && !isVoided && order?.status !== 'completed';
   const canCreatorResubmit = canCreatorOperate && isResubmittableStatus;
-  const canCreatorUrge = canCreatorOperate && !isResubmittableStatus;
-  const canShowCreatorWithdraw = canCreatorOperate && !isResubmittableStatus && !isVoided && order?.status !== 'completed';
-  const canShowCreatorVoid = canCreatorOperate && !isVoided && order?.status !== 'completed';
-  const canCreatorWithdraw = canShowCreatorWithdraw && !socialInsuranceOperationLocked;
-  const canCreatorVoid = canShowCreatorVoid && !socialInsuranceOperationLocked;
+  const canCreatorUrge = canCreatorOperate && !isResubmittableStatus && !isApprovalStatus;
+  const canShowCreatorWithdraw = canCreatorOperate && !isApprovalStatus && !isResubmittableStatus && !isVoided && order?.status !== 'completed';
+  const canShowCreatorVoid = canCreatorOperate && !isApprovalStatus && !isVoided && order?.status !== 'completed';
+  const canCreatorWithdraw = canShowCreatorWithdraw;
+  const canCreatorVoid = canShowCreatorVoid;
+  const canApproveModify = canBackendOperate && order?.status === 'modify_pending' && (isAdminUser || !isOrderCreator);
   const canApproveWithdraw = canBackendOperate && order?.status === 'withdraw_pending' && (isAdminUser || !isOrderCreator);
   const canApproveVoid = canBackendOperate && order?.status === 'void_pending' && (isAdminUser || !isOrderCreator);
   const canReturnCompleted = canBackendOperate && !isVoided && order?.status === 'completed' && (
@@ -292,10 +293,6 @@ const MyDispatchedDetail: React.FC = () => {
   if (!order) return <PageContainer header={{ title: '子工单详情' }}><Empty description="子工单不存在" /></PageContainer>;
 
   const openCreatorEdit = () => {
-    if (socialInsuranceOperationLocked) {
-      message.info('社保公积金子工单已接单/已受理，业务员如需修改请先联系后道同意后再处理。');
-      return;
-    }
     fillCreatorEditForm();
     setCreatorEditOpen(true);
   };
@@ -328,10 +325,6 @@ const MyDispatchedDetail: React.FC = () => {
   };
 
   const handleCreatorWithdrawOk = async () => {
-    if (socialInsuranceOperationLocked) {
-      message.info('社保公积金子工单已接单/已受理，业务员撤回需后道同意或走审批。');
-      return;
-    }
     const values = await withdrawForm.validateFields();
     const reason = String(values.reason || '').trim();
     const updated = await handleWithdraw(reason);
@@ -342,10 +335,6 @@ const MyDispatchedDetail: React.FC = () => {
   };
 
   const handleCreatorVoidOk = async () => {
-    if (socialInsuranceOperationLocked) {
-      message.info('社保公积金子工单已接单/已受理，业务员作废需后道同意或走审批。');
-      return;
-    }
     const values = await voidForm.validateFields();
     const reason = String(values.reason || '').trim();
     const updated = await handleVoid(reason);
@@ -358,14 +347,14 @@ const MyDispatchedDetail: React.FC = () => {
   const handleCreatorResubmitClick = () => {
     modal.confirm({
       title: '确认重新提交该子工单？',
-      content: '重新提交按子工单维度执行，修改字段不会自动重新提交；确认后该子工单将重新进入对应后道待处理流程。',
+
       okText: '重新提交',
       cancelText: '取消',
       onOk: () => handleResubmit(),
     });
   };
 
-  const openApproval = (type: 'withdraw' | 'void', approved: boolean) => {
+  const openApproval = (type: 'modify' | 'withdraw' | 'void', approved: boolean) => {
     setApprovalType(type);
     setApprovalApproved(approved);
     approvalForm.resetFields();
@@ -375,9 +364,11 @@ const MyDispatchedDetail: React.FC = () => {
   const handleApprovalOk = async () => {
     const values = await approvalForm.validateFields();
     const comment = String(values.comment || '').trim();
-    const updated = approvalType === 'withdraw'
-      ? await handleApproveWithdraw(approvalApproved, comment)
-      : await handleApproveVoid(approvalApproved, comment);
+    const updated = approvalType === 'modify'
+      ? await handleApproveModify(approvalApproved, comment)
+      : approvalType === 'withdraw'
+        ? await handleApproveWithdraw(approvalApproved, comment)
+        : await handleApproveVoid(approvalApproved, comment);
     if (updated) setApprovalOpen(false);
   };
 
@@ -461,29 +452,6 @@ const MyDispatchedDetail: React.FC = () => {
   const isResignationModule = Boolean(order?.order_type === 'resignation' || order?.module_code?.startsWith('resignation') || order?.module_code === 'data_entry_resign');
   const canUploadResignationAttachment = Boolean(order && !isReadOnlyView && isResignationModule && (canBackendOperate || isCreator));
 
-  const handleResignationAttachmentUpload = async (file: File) => {
-    if (!order) return Upload.LIST_IGNORE;
-    setAttachmentUploading(true);
-    try {
-      const result = await uploadOrderAttachment(file, {
-        work_order_id: order.parent_order_id,
-        dispatched_order_id: order.id,
-        biz_purpose: 'resignation_material',
-        metadata: { module_code: order.module_code, order_no: order.order_no },
-      });
-      setUploadedAttachments((prev) => [...prev, {
-        id: result.id || result.fileId,
-        name: result.original_name || result.originalName || result.filename || result.fileName || file.name,
-        url: result.downloadUrl || result.url,
-      }]);
-      message.success('离职附件已上传');
-    } catch {
-      message.error('离职附件上传失败');
-    } finally {
-      setAttachmentUploading(false);
-    }
-    return Upload.LIST_IGNORE;
-  };
 
   return (
     <PageContainer header={{
@@ -492,30 +460,6 @@ const MyDispatchedDetail: React.FC = () => {
       ghost: false,
     }}>
       <Space direction="vertical" size="large" style={{ width: '100%' }}>
-        {isTeamReadOnlyView && (
-          <Alert
-            type="info"
-            showIcon
-            message="团队工单只读详情"
-            description="当前从团队工单进入，仅允许查看，不展示接单、完成、退回、修改、作废、重新提交等操作按钮。"
-          />
-        )}
-        {isMyWorkReadOnlyView && (
-          <Alert
-            type="info"
-            showIcon
-            message="我的工单只读详情"
-            description="后道在“我的待办/我的已办”中仅允许查看；如需接单、完成、退回等操作，请返回对应负责的子工单列表执行。"
-          />
-        )}
-        {socialInsuranceOperationLocked && !isReadOnlyView && (
-          <Alert
-            type="warning"
-            showIcon
-            message="社保公积金子工单已接单/已受理"
-            description="按当前一期规则，未接单前业务员可直接修改、撤回、作废；接单或已受理后，需要后道同意或走审批流程，已完成则不可直接操作。"
-          />
-        )}
         {hasUnreadDirty && (
           <Alert
             type="warning"
@@ -523,7 +467,6 @@ const MyDispatchedDetail: React.FC = () => {
             message={`业务员更新了 ${dirtyCount || dirtyFields.length || 1} 个字段，请优先核对红色标记内容。`}
             description={
               <Space direction="vertical" size={6} style={{ width: '100%' }}>
-                <span>打开详情后系统会尝试自动标记为已阅；如自动清除失败，可点击“确认已阅”重试。</span>
                 {dirtySummary.length > 0 && (
                   <Space wrap>
                     {dirtySummary.map((mark) => <Tag color="red" key={mark.field_code}>{mark.field_label || fields.find((f) => f.field_code === mark.field_code)?.field_name || '已变更字段'}</Tag>)}
@@ -548,6 +491,7 @@ const MyDispatchedDetail: React.FC = () => {
             </Descriptions.Item>
             <Descriptions.Item label="员工">{order.employee_name || '-'}</Descriptions.Item>
             <Descriptions.Item label="客户">{order.customer_name || '-'}</Descriptions.Item>
+            <Descriptions.Item label="工单发起人">{order.created_by_name || order.createdByName || order.created_by || order.createdBy || '-'}</Descriptions.Item>
             <Descriptions.Item label="实际操作人/配置负责人">
               {order.status === 'completed'
                 ? getOperatorDisplay(order)
@@ -570,16 +514,18 @@ const MyDispatchedDetail: React.FC = () => {
                 </Space>
               </Descriptions.Item>
             )}
+            {(order.pending_modify || order.pendingModify) && (
+              <Descriptions.Item label="待审批修改" span={3}>
+                <Space wrap>
+                  {Object.keys((order.pending_modify || order.pendingModify)?.fields || {}).map((fieldCode) => (
+                    <Tag color="gold" key={fieldCode}>{fields.find((ff) => ff.field_code === fieldCode)?.field_name || fieldCode}</Tag>
+                  ))}
+                </Space>
+              </Descriptions.Item>
+            )}
           </Descriptions>
 
           <Space style={{ marginTop: 16 }} wrap>
-            {socialInsuranceOperationLocked && isCreator && !isReadOnlyView && (
-              <>
-                <Button disabled icon={<EditOutlined />}>修改需后道同意</Button>
-                <Button disabled icon={<RollbackOutlined />}>撤回需审批</Button>
-                <Button disabled danger icon={<StopOutlined />}>作废需审批</Button>
-              </>
-            )}
             {canCreatorUpdate && (
               <Button icon={<EditOutlined />} onClick={openCreatorEdit}>修改</Button>
             )}
@@ -594,6 +540,12 @@ const MyDispatchedDetail: React.FC = () => {
             )}
             {canCreatorUrge && (
               <Button icon={<BellOutlined />} onClick={handleCreatorUrgeClick}>催办</Button>
+            )}
+            {canApproveModify && (
+              <>
+                <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => openApproval('modify', true)}>同意修改</Button>
+                <Button danger icon={<RollbackOutlined />} onClick={() => openApproval('modify', false)}>拒绝修改</Button>
+              </>
             )}
             {canApproveWithdraw && (
               <>
@@ -634,20 +586,8 @@ const MyDispatchedDetail: React.FC = () => {
           </Space>
         </Card>
 
-        {canUploadResignationAttachment && (
-          <Card title="离职附件上传">
-            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-              <Alert type="info" showIcon message="支持单条离职工单上传材料附件；批量按姓名+材料类型匹配后续单独实现。" />
-              <Upload beforeUpload={handleResignationAttachmentUpload} showUploadList={false} disabled={attachmentUploading}>
-                <Button icon={<UploadOutlined />} loading={attachmentUploading}>上传离职材料</Button>
-              </Upload>
-              {uploadedAttachments.length > 0 && (
-                <Space wrap>
-                  {uploadedAttachments.map((file) => <Tag color="blue" key={file.id || file.name}>{file.name}</Tag>)}
-                </Space>
-              )}
-            </Space>
-          </Card>
+        {canUploadResignationAttachment && order && (
+          <MaterialsUpload workOrderId={order.parent_order_id} bizPurpose="resignation_material" />
         )}
 
         {canSupplement && emptySupplementFields.length > 0 && (
@@ -668,13 +608,6 @@ const MyDispatchedDetail: React.FC = () => {
 
         <Card title="工单信息">
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-            <Alert
-              type={visibleFields.length > 0 ? 'info' : 'warning'}
-              showIcon
-              message={visibleFields.length > 0
-                ? `当前节点仅展示后端 visible_fields 配置的 ${visibleFields.length} 个字段`
-                : '后端未返回 visible_fields，已回退为原始字段定义'}
-            />
             {FIELD_GROUPS.map((group) => {
               const groupFields = visibleDetailFields.filter((f) => group.codes.includes(f.field_code));
               if (groupFields.length === 0) return null;
@@ -692,7 +625,7 @@ const MyDispatchedDetail: React.FC = () => {
                           label={
                             <Space size={4}>
                               <span>{f.field_name}</span>
-                              <Tag color={f.is_required ? 'red' : 'default'}>{f.is_required ? '必填' : '选填'}</Tag>
+                              {f.is_required && <span style={{ color: '#ff4d4f', fontWeight: 600 }}>*</span>}
                               {dirty && <Tag color="red">已变更</Tag>}
                             </Space>
                           }
@@ -720,7 +653,7 @@ const MyDispatchedDetail: React.FC = () => {
                 <DynamicForm
                   fields={dynamicVisibleFields}
                   fieldPermissions={visibleFieldPermissions}
-                  orderType="onboarding"
+                  orderType={order.order_type || 'onboarding'}
                   initialValues={order.extra_data || {}}
                   readOnly={false}
                 />
@@ -755,13 +688,6 @@ const MyDispatchedDetail: React.FC = () => {
         <Modal title="修改子工单字段" open={creatorEditOpen} onOk={handleCreatorEditOk}
           onCancel={() => setCreatorEditOpen(false)} confirmLoading={actionLoading}
           width={760} destroyOnHidden>
-          <Alert
-            type="info"
-            showIcon
-            style={{ marginBottom: 12 }}
-            message="修改仅保存当前子工单字段，不会自动重新提交。"
-            description="如需让已退回/已撤回/已作废子工单重新进入办理流，请保存修改后再点击“重新提交”。"
-          />
           <Form form={creatorEditForm} layout="vertical">
             {visibleDetailFields.map((field) => (
               <Form.Item
@@ -808,14 +734,16 @@ const MyDispatchedDetail: React.FC = () => {
           </Form>
         </Modal>
 
-        <Modal title={`${approvalApproved ? '同意' : '拒绝'}${approvalType === 'withdraw' ? '撤回' : '作废'}申请`} open={approvalOpen} onOk={handleApprovalOk}
+        <Modal title={`${approvalApproved ? '同意' : '拒绝'}${approvalType === 'modify' ? '修改' : approvalType === 'withdraw' ? '撤回' : '作废'}申请`} open={approvalOpen} onOk={handleApprovalOk}
           onCancel={() => setApprovalOpen(false)} confirmLoading={actionLoading}
           okButtonProps={{ danger: !approvalApproved }} destroyOnHidden>
           <Alert
             type={approvalApproved ? 'info' : 'warning'}
             showIcon
             style={{ marginBottom: 12 }}
-            message={approvalApproved ? '确认后该子工单会进入终态。' : '拒绝后该子工单会恢复到申请前状态。'}
+            message={approvalType === 'modify'
+              ? (approvalApproved ? '确认后会应用业务员提交的字段修改。' : '拒绝后该子工单会恢复到申请前状态，字段不变。')
+              : (approvalApproved ? '确认后该子工单会进入终态。' : '拒绝后该子工单会恢复到申请前状态。')}
           />
           <Form form={approvalForm} layout="vertical">
             <Form.Item name="comment" label="审批意见"
@@ -843,7 +771,7 @@ const MyDispatchedDetail: React.FC = () => {
                 maxLength={500} showCount />
             </Form.Item>
             {supplementableFields.length > 0 && (
-              <Form.Item name="fields" label="需补充字段（选填）">
+              <Form.Item name="fields" label="需补充字段">
                 <Checkbox.Group>
                   <Space direction="vertical">
                     {supplementableFields.map((f) => (
@@ -913,13 +841,6 @@ const MyDispatchedDetail: React.FC = () => {
 
         <Modal title="补充/修改暂存字段" open={supplementModalOpen} onOk={handleSupplementOk}
           onCancel={() => setSupplementModalOpen(false)} confirmLoading={actionLoading} destroyOnHidden>
-          <Alert
-            style={{ marginBottom: 12 }}
-            type="info"
-            showIcon
-            message="可查看并再次修改暂存字段"
-            description="批量导入银行卡字段后会暂存在这里；后道人员可再次修正，保存后不会自动变更工单状态。"
-          />
           <Form form={supplementForm} layout="vertical">
             {supplementableFields.map((field) => {
               const isEmpty = !order?.extra_data?.[field.field_code] ||
@@ -970,7 +891,7 @@ const MyDispatchedDetail: React.FC = () => {
                 { validator: (_, value) => hasText(value) ? Promise.resolve() : Promise.reject(new Error('转交原因不能只填空格')) },
               ]}
             >
-              <Input.TextArea rows={3} maxLength={200} showCount placeholder="例如：办理人请假，交由备用同事代办" />
+              <Input.TextArea rows={3} maxLength={200} showCount placeholder="请输入转交备注" />
             </Form.Item>
           </Form>
         </Modal>

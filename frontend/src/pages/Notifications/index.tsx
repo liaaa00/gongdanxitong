@@ -47,7 +47,7 @@ const TAB_BUCKET_MAP: Record<NotificationTabKey, string | undefined> = {
   all: undefined,
   todo: 'todo',
   returned: 'returned',
-  field_changed: 'field_changed',
+  field_changed: 'field_changed,creator_modified',
   withdraw_void: undefined,
   system: 'system',
 };
@@ -88,7 +88,9 @@ function classifyNotification(item: Pick<NotificationItem, 'biz_type' | 'type' |
 }
 
 function normalizeJumpLink(link: string, notificationId: string): string {
-  const normalized = link.replace(/^\/dispatched\//, '/my-dispatched/');
+  const normalized = link
+    .replace(/^\/dispatched\//, '/my-dispatched/')
+    .replace(/^\/dispatched-orders\//, '/my-dispatched/');
   return `${normalized}${normalized.includes('?') ? '&' : '?'}fromNotification=${notificationId}`;
 }
 
@@ -304,7 +306,6 @@ const NotificationsPage: React.FC = () => {
     <PageContainer
       header={{
         title: '消息通知',
-        subTitle: '保留“已读”和“处理”：已读只消除提醒；处理需进入关联业务完成状态变化后提醒消失，已处理消息仍保留在全部消息。',
         extra: [
           <Badge key="total" count={unreadTotal}><BellOutlined style={{ fontSize: 16 }} /></Badge>,
         ],

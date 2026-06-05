@@ -50,6 +50,14 @@ export class ListDispatchedOrderQueryDto extends PaginationQueryDto {
   @IsOptional()
   handler_id?: MultiQueryValue;
 
+  @IsOptional()
+  @IsString()
+  handlerName?: string;
+
+  @IsOptional()
+  @IsString()
+  handler_name?: string;
+
   /** Alias used by some table filters for handler/assignee multi-select. */
   @IsOptional()
   assignee?: MultiQueryValue;
@@ -127,6 +135,22 @@ export class ListDispatchedOrderQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsString()
   employee_name?: string;
+
+  @IsOptional()
+  @IsString()
+  createdByName?: string;
+
+  @IsOptional()
+  @IsString()
+  created_by_name?: string;
+
+  @IsOptional()
+  @IsString()
+  created_by?: string;
+
+  @IsOptional()
+  @IsString()
+  creatorName?: string;
 
   @IsOptional()
   @IsString()

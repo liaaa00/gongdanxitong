@@ -1,22 +1,35 @@
-import { useNavigate } from 'react-router-dom';
+import { useMemo } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { PageContainer } from '@ant-design/pro-components';
-import { Card, Alert, Button, Space, App } from 'antd';
+import { Card, Button, Space, App } from 'antd';
 import { DownloadOutlined } from '@ant-design/icons';
 import ExcelUploader from '@/components/ExcelUploader';
 import type { FieldMappingResult, ImportJobResult, NewFieldDraft } from '@/components/ExcelUploader';
 import { previewImport, confirmImport, getImportJob, downloadImportErrorReport, downloadCurrentImportTemplate } from '@/services/workOrders';
 
+const ORDER_TYPE_LABEL: Record<string, string> = {
+  onboarding: '入职',
+  resignation: '离职',
+};
+
 const WorkOrdersImport: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { message } = App.useApp();
+
+  const orderType = useMemo(() => {
+    const value = new URLSearchParams(location.search).get('orderType');
+    return value === 'resignation' ? 'resignation' : 'onboarding';
+  }, [location.search]);
+  const moduleLabel = ORDER_TYPE_LABEL[orderType];
 
   const handleDownloadTemplate = async () => {
     try {
-      const result = await downloadCurrentImportTemplate('onboarding');
-      message.success(`已按当前字段配置生成模板（${result.fieldCount} 个字段）`);
+      const result = await downloadCurrentImportTemplate(orderType);
+      message.success(`已按当前字段配置生成${moduleLabel}模板（${result.fieldCount} 个字段）`);
     } catch (error) {
       if ((error as Error)?.message === 'NO_FIELDS') {
-        message.warning('当前没有可用字段配置，无法生成导入模板');
+        message.warning(`当前没有可用${moduleLabel}字段配置，无法生成导入模板`);
         return;
       }
       message.error('下载模板失败，请稍后重试或联系管理员检查字段配置');
@@ -28,7 +41,7 @@ const WorkOrdersImport: React.FC = () => {
   };
 
   const handlePreview = async (file: File): Promise<FieldMappingResult> => {
-    return await previewImport(file);
+    return await previewImport(file, orderType);
   };
 
   const handleConfirm = async (
@@ -37,7 +50,7 @@ const WorkOrdersImport: React.FC = () => {
     previewResult?: FieldMappingResult,
     newFields?: NewFieldDraft[],
   ): Promise<ImportJobResult> => {
-    const job = await confirmImport(mapping, rows, previewResult?.fileId, newFields);
+    const job = await confirmImport(mapping, rows, previewResult?.fileId, newFields, orderType);
     return {
       id: job.id,
       totalRows: job.total_rows,
@@ -79,22 +92,8 @@ const WorkOrdersImport: React.FC = () => {
   };
 
   return (
-    <PageContainer header={{ title: '入职导入' }}>
+    <PageContainer header={{ title: `${moduleLabel}导入` }}>
       <Card>
-        <Alert
-          message="导入前请确认"
-          description={(
-            <Space direction="vertical" size={4}>
-              <span>只允许导入你名下客户的入职工单。</span>
-              <span>身份证 + 入职月份不可重复，重复行会在错行报告中标出。</span>
-              <span>上传后系统会按规则拆为入职联系、劳动合同新签、增员报岗录入、社保公积金增员等子工单。</span>
-              <span>模板按当前字段配置生成；管理员调整字段后，请重新下载最新模板。</span>
-            </Space>
-          )}
-          type="info"
-          showIcon
-          style={{ marginBottom: 16 }}
-        />
         <Space style={{ marginBottom: 16 }}>
           <Button icon={<DownloadOutlined />} onClick={handleDownloadTemplate}>下载当前字段模板</Button>
         </Space>
@@ -105,7 +104,7 @@ const WorkOrdersImport: React.FC = () => {
           onDownloadErrorReport={handleDownloadErrorReport}
         />
         <Space style={{ marginTop: 16 }}>
-          <Button onClick={() => navigate('/work-orders')}>返回工单列表</Button>
+          <Button onClick={() => navigate(`/work-orders?orderType=${orderType}`)}>返回{moduleLabel}主工单列表</Button>
         </Space>
       </Card>
     </PageContainer>

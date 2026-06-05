@@ -11,6 +11,11 @@ import { getModuleConfigs } from '@/services/moduleConfigs';
 type MatrixTestRow = {
   rowKey?: string;
   label?: string;
+  total?: number;
+  processing?: number;
+  completed?: number;
+  voided?: number;
+  withdrawn?: number;
   completionRate?: number;
   children?: MatrixTestRow[];
 };
@@ -20,7 +25,7 @@ vi.mock('@ant-design/pro-components', () => ({
   ProTable: ({ dataSource = [] }: { dataSource?: MatrixTestRow[] }) => (
     <div data-testid="dashboard-matrix">
       {dataSource.flatMap((row) => [row, ...(row.children || [])]).map((row) => (
-        <div key={row.rowKey || row.label}>{row.label}:{row.completionRate}</div>
+        <div key={row.rowKey || row.label}>{row.label}:{row.completionRate}:total={row.total}:processing={row.processing}:completed={row.completed}:voided={row.voided}:withdrawn={row.withdrawn}</div>
       ))}
     </div>
   ),
@@ -100,7 +105,10 @@ describe('Dashboard display behavior', () => {
       expect(mockedGetDashboardCards).toHaveBeenCalledWith('business', undefined, expect.stringMatching(/^\d{4}-\d{2}$/));
       expect(getByText('总待处理')).toBeTruthy();
       expect(getByText('单月待处理')).toBeTruthy();
-      expect(container.textContent).toContain('总待处理=当前可见范围内全部未办结子工单');
+      expect(getByText('本月全量工单')).toBeTruthy();
+      expect(getByText('本月已完成')).toBeTruthy();
+      expect(getByText('本月已作废')).toBeTruthy();
+      expect(container.textContent).not.toContain('总待处理=当前可见范围内全部未办结子工单');
     });
 
     expect(container.textContent).toContain('12');
@@ -169,8 +177,39 @@ describe('Dashboard display behavior', () => {
     );
 
     await waitFor(() => {
-      expect(getByText('入职联系:100')).toBeTruthy();
-      expect(getByText('劳动合同新签:99')).toBeTruthy();
+      expect(getByText(/入职联系:100:/)).toBeTruthy();
+      expect(getByText(/劳动合同新签:99:/)).toBeTruthy();
+    });
+  });
+
+  it('shows withdrawn separately and keeps matrix processing equal to pending count', async () => {
+    mockedGetDashboardCards.mockResolvedValue({ totalPending: 144, monthPending: 144, totalThisMonth: 179, processing: 144, completed: 28, voided: 5, myMessages: 0 });
+    mockedGetOrderTypeMatrix.mockResolvedValue({
+      rows: [
+        {
+          orderType: 'onboarding',
+          moduleCode: 'onboarding_contact',
+          label: '入职联系',
+          total: 179,
+          processing: 144,
+          completed: 28,
+          voided: 5,
+          withdrawn: 2,
+          completionRate: 16.5,
+        },
+      ],
+      total: 1,
+    });
+
+    const { getByText } = render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(getByText(/入职联系:16\.5:total=179:processing=144:completed=28:voided=5:withdrawn=2/)).toBeTruthy();
+      expect(getByText(/入职管理:16\.3:total=179:processing=144:completed=28:voided=5:withdrawn=2/)).toBeTruthy();
     });
   });
 
@@ -190,7 +229,7 @@ describe('Dashboard display behavior', () => {
       </MemoryRouter>,
     );
 
-    await waitFor(() => expect(getByText('社保公积金增员:50')).toBeTruthy());
+    await waitFor(() => expect(getByText(/社保公积金增员:50:/)).toBeTruthy());
     expect(container.textContent).not.toContain('劳动合同续签');
     expect(container.textContent).not.toContain('待遇申报');
     expect(container.textContent).not.toContain('在职管理');
@@ -256,8 +295,8 @@ describe('Dashboard display behavior', () => {
     );
 
     await waitFor(() => {
-      expect(getByText('社保公积金增员:60')).toBeTruthy();
-      expect(getByText('社保公积金减员:75')).toBeTruthy();
+      expect(getByText(/社保公积金增员:60:/)).toBeTruthy();
+      expect(getByText(/社保公积金减员:75:/)).toBeTruthy();
     });
     expect(container.textContent).not.toContain('入职联系');
     expect(container.textContent).not.toContain('劳动合同新签');

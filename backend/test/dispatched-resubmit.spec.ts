@@ -131,6 +131,31 @@ describe('sub-order level resubmit (0602 E)', () => {
     expect(notificationRepo.save).toHaveBeenCalled();
   });
 
+  it('E-1b: 已退回子单先保存字段仍保持 returned，再重新提交后 pending 且后道看到新字段', async () => {
+    const order = makeOrder(DispatchedOrderStatus.RETURNED, WorkOrderStatus.RETURNED);
+    const { service, dispatchedOrderRepo, workOrderRepo } = buildService(order, [
+      { moduleCode: 'contract', handlerId: 'handler-old', isActive: true },
+    ]);
+    (service as unknown as { fieldChangeHook: { buildDiff: () => Array<{ field: string; before: unknown; after: unknown }> } }).fieldChangeHook = {
+      buildDiff: () => [{ field: 'employee_name', before: '张三', after: '李四' }],
+    };
+
+    await service.creatorUpdateFields(ORDER_ID, { fields: { employee_name: '李四' } }, creator);
+
+    expect(order.status).toBe(DispatchedOrderStatus.RETURNED);
+    expect(order.parentOrder.extraData).toEqual(expect.objectContaining({ employee_name: '李四' }));
+    expect(dispatchedOrderRepo.save).not.toHaveBeenCalled();
+
+    jest.clearAllMocks();
+    await service.resubmitDispatched(ORDER_ID, {}, creator);
+
+    expect(dispatchedOrderRepo.save).toHaveBeenCalledWith(expect.objectContaining({ status: DispatchedOrderStatus.PENDING }));
+    expect(workOrderRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+      status: WorkOrderStatus.PROCESSING,
+      extraData: expect.objectContaining({ employee_name: '李四' }),
+    }));
+  });
+
   it('E-2: 已撤回子单可重新提交，回到 pending', async () => {
     const order = makeOrder(DispatchedOrderStatus.WITHDRAWN, WorkOrderStatus.WITHDRAWN);
     const { service, dispatchedOrderRepo, workOrderRepo } = buildService(order, [

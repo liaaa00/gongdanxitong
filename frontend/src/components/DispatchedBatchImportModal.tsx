@@ -18,15 +18,14 @@ interface Props {
   mode: DispatchedBatchImportMode;
   moduleOptions: ModuleOption[];
   defaultModuleCode?: string;
+  hideModuleSelect?: boolean;
   onClose: () => void;
   onImported?: () => void;
 }
 
-const STATUS_TIP = '导入办理必须先选择标准动作：批办理完成或批办理退回；Excel 不再允许手工填写非标准动作。系统按工单号优先匹配，没有工单号时按员工证件号匹配。';
-const FIELD_TIP = '字段修改导入目前仅支持“入职联系子工单”的开户银行信息、银行借记卡帐号；导入后只更新字段，不自动完成工单。';
 
-const ORDER_NO_ALIASES = ['工单编号', '工单号', '主工单号', '子工单号', 'order_no', 'orderNo'];
-const EMPLOYEE_ID_ALIASES = ['员工证件号', '证件号', '身份证号', '身份证号码', 'employee_id_card', 'employeeIdCard', 'id_card_no', 'idCardNo'];
+const ORDER_NO_ALIASES = ['工单编号', '工单编码', '工单号', '编号', '主工单号', '主工单编号', '子工单号', '子工单编号', 'order_no', 'orderNo'];
+const EMPLOYEE_ID_ALIASES = ['员工证件号', '证件号', '证件号码', '身份证号', '身份证号码', '员工身份证号', '员工身份证号码', 'employee_id_card', 'employeeIdCard', 'id_card_no', 'idCardNo'];
 const RESULT_ALIASES = ['办理结果', '结果', '状态', 'result', 'status'];
 const RETURN_REASON_ALIASES = ['退回原因', '原因', 'returnReason', 'return_reason'];
 const REMARK_ALIASES = ['办理备注', '完成备注', '备注', 'remark'];
@@ -34,7 +33,11 @@ const BANK_NAME_ALIASES = ['开户银行信息', '开户银行', '开户行', '�
 const BANK_ACCOUNT_ALIASES = ['银行借记卡帐号', '银行借记卡账号', '银行账号', '银行卡号', '银行卡账号', '工资卡号', 'bank_account', 'bankAccount'];
 
 function normalizeHeader(value: string): string {
-  return value.replace(/\s+/g, '').replace(/[：:]/g, '').toLowerCase();
+  return String(value || '')
+    .replace(/^\ufeff/, '')
+    .replace(/[\s\u00a0\u3000]+/g, '')
+    .replace(/[：:（）()\[\]【】]/g, '')
+    .toLowerCase();
 }
 
 function normalizeRawRow(row: Record<string, unknown>): Record<string, unknown> {
@@ -70,6 +73,18 @@ function normalizeRow(row: Record<string, unknown>): DispatchedBatchImportRow {
   return { orderNo, employeeIdCard, idCardNo: employeeIdCard, result, status: result, returnReason, remark, fields, raw: row };
 }
 
+function normalizeSheetName(value: string): string {
+  return normalizeHeader(value).replace(/子工单|列表|导出/g, '');
+}
+
+function pickSheetNames(workbook: XLSX.WorkBook, selectedModuleLabel?: string): string[] {
+  const names = workbook.SheetNames || [];
+  if (!selectedModuleLabel) return names;
+  const target = normalizeSheetName(selectedModuleLabel);
+  const preferred = names.filter((name) => normalizeSheetName(name).includes(target) || target.includes(normalizeSheetName(name)));
+  return preferred.length > 0 ? preferred : names;
+}
+
 function resultActionText(action?: string) {
   if (action === 'complete') return '完成';
   if (action === 'return') return '退回';
@@ -97,14 +112,14 @@ function buildStatusRows(rows: DispatchedBatchImportRow[], action: BatchStatusAc
   return rows.map((row) => ({ ...row, result: label, status: label }));
 }
 
-const DispatchedBatchImportModal: React.FC<Props> = ({ open, mode, moduleOptions, defaultModuleCode, onClose, onImported }) => {
+const DispatchedBatchImportModal: React.FC<Props> = ({ open, mode, moduleOptions, defaultModuleCode, hideModuleSelect = false, onClose, onImported }) => {
   const { message } = App.useApp();
   const [moduleCode, setModuleCode] = useState(defaultModuleCode || moduleOptions[0]?.value || '');
   const [statusAction, setStatusAction] = useState<BatchStatusAction>('complete');
   const [rows, setRows] = useState<DispatchedBatchImportRow[]>([]);
   const [result, setResult] = useState<DispatchedBatchImportResult | null>(null);
   const [loading, setLoading] = useState(false);
-  const [defaultRemark, setDefaultRemark] = useState('批量导入办理完成');
+  const defaultRemark = '批量导入办理完成';
   const [defaultReturnReason, setDefaultReturnReason] = useState('批量导入退回');
   const wasOpenRef = useRef(false);
   const lastModeRef = useRef<DispatchedBatchImportMode>(mode);
@@ -124,7 +139,6 @@ const DispatchedBatchImportModal: React.FC<Props> = ({ open, mode, moduleOptions
     setRows([]);
     setResult(null);
     setStatusAction('complete');
-    setDefaultRemark('批量导入办理完成');
     setDefaultReturnReason('批量导入退回');
     const preferred = mode === 'fields' ? 'onboarding_contact' : defaultModuleCode;
     const nextModule = options.some((item) => item.value === preferred) ? preferred : options[0]?.value;
@@ -144,12 +158,18 @@ const DispatchedBatchImportModal: React.FC<Props> = ({ open, mode, moduleOptions
     try {
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: 'array' });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      if (!sheet) {
-        message.warning('未读取到工作表，请检查 Excel 文件');
+      const selectedModuleLabel = options.find((item) => item.value === moduleCode)?.label;
+      const records = pickSheetNames(workbook, selectedModuleLabel)
+        .flatMap((sheetName) => {
+          const sheet = workbook.Sheets[sheetName];
+          if (!sheet) return [];
+          return XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '', raw: false })
+            .filter(hasAnyCell);
+        });
+      if (records.length === 0) {
+        message.warning('未读取到工作表数据，请检查 Excel 文件');
         return;
       }
-      const records = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '', raw: false }).filter(hasAnyCell);
       const normalized = records.map(normalizeRow).filter((row) => hasImportIdentity(row) || Object.keys(row.fields || {}).length > 0);
       const missingMatch = normalized.filter((row) => !hasImportIdentity(row)).length;
       setRows(normalized);
@@ -187,9 +207,17 @@ const DispatchedBatchImportModal: React.FC<Props> = ({ open, mode, moduleOptions
         ...(mode === 'status' ? { forceAction: statusAction } : {}),
       });
       setResult(res);
-      if (res.failRows > 0) message.warning(`导入完成：成功 ${res.successRows} 行，失败 ${res.failRows} 行`);
-      else message.success(`导入成功：${res.successRows} 行`);
-      onImported?.();
+      if (res.failRows > 0) {
+        const voidBlocked = res.rows.some((item) => !item.success && String(item.message || '').includes('已作废'));
+        message.warning(voidBlocked
+          ? `导入完成：成功 ${res.successRows} 行，失败 ${res.failRows} 行；其中包含已作废工单，系统已拦截未导入`
+          : `导入完成：成功 ${res.successRows} 行，失败 ${res.failRows} 行`);
+      } else message.success(`导入成功：${res.successRows} 行`);
+      try {
+        onImported?.();
+      } catch {
+        // 刷新列表失败不应覆盖导入本身的成功结果。
+      }
     } catch {
       message.error('批量导入失败');
     } finally {
@@ -213,18 +241,19 @@ const DispatchedBatchImportModal: React.FC<Props> = ({ open, mode, moduleOptions
       destroyOnHidden
     >
       <Space direction="vertical" style={{ width: '100%' }} size="middle">
-        <Alert type={mode === 'status' ? 'info' : 'warning'} showIcon message={mode === 'status' ? STATUS_TIP : FIELD_TIP} />
-        <Space wrap>
-          <span>子工单模块：</span>
-          <Select
-            style={{ width: 260 }}
-            value={moduleCode || undefined}
-            onChange={setModuleCode}
-            disabled={mode === 'fields'}
-            options={options}
-            placeholder={options.length === 0 ? '当前无可导入模块' : '请选择子工单模块'}
-          />
-        </Space>
+        {!hideModuleSelect && (
+          <Space wrap>
+            <span>子工单模块：</span>
+            <Select
+              style={{ width: 260 }}
+              value={moduleCode || undefined}
+              onChange={setModuleCode}
+              disabled={mode === 'fields'}
+              options={options}
+              placeholder={options.length === 0 ? '当前无可导入模块' : '请选择子工单模块'}
+            />
+          </Space>
+        )}
         {mode === 'status' && (
           <Space direction="vertical" style={{ width: '100%' }} size="small">
             <span>批量办理动作：</span>
@@ -241,16 +270,16 @@ const DispatchedBatchImportModal: React.FC<Props> = ({ open, mode, moduleOptions
                 { label: '批办理退回', value: 'return' },
               ]}
             />
-            <Alert
-              type={statusAction === 'complete' ? 'success' : 'warning'}
-              showIcon
-              message={`当前选择：${selectedActionLabel}`}
-              description={statusAction === 'complete' ? '导入后匹配到的子工单将执行办理完成，Excel 中的“办理结果/状态”列会被忽略。' : '导入后匹配到的子工单将执行退回，退回原因优先读取 Excel，缺省时使用下方默认原因。'}
-            />
-            <Space wrap style={{ width: '100%' }}>
-              <Input style={{ width: 260 }} value={defaultRemark} onChange={(e) => setDefaultRemark(e.target.value)} placeholder="完成时默认备注" />
-              <Input style={{ width: 260 }} value={defaultReturnReason} onChange={(e) => setDefaultReturnReason(e.target.value)} placeholder="退回时默认原因" />
-            </Space>
+            {statusAction === 'return' && (
+              <Input.TextArea
+                rows={3}
+                value={defaultReturnReason}
+                onChange={(e) => setDefaultReturnReason(e.target.value)}
+                placeholder="请后道人员填写批量退回原因"
+                maxLength={500}
+                showCount
+              />
+            )}
           </Space>
         )}
         <Upload.Dragger
@@ -261,11 +290,10 @@ const DispatchedBatchImportModal: React.FC<Props> = ({ open, mode, moduleOptions
         >
           <p className="ant-upload-drag-icon"><InboxOutlined /></p>
           <p className="ant-upload-text">点击或拖拽 Excel 到这里</p>
-          <p className="ant-upload-hint">建议表头包含：工单号/员工证件号、退回原因、办理备注；字段修改另需开户银行信息、银行借记卡帐号。系统导出的“工单编号/证件号”列可直接再导入。</p>
         </Upload.Dragger>
         {rows.length > 0 && !result && (
           <>
-            <Alert type="success" showIcon message={`已读取 ${rows.length} 行待导入数据，${mode === 'status' ? `将执行“${selectedActionLabel}”` : '请核对字段修改预览'}。`} />
+
             <Table
               size="small"
               rowKey={(_, index) => `preview-${index}`}
@@ -283,7 +311,11 @@ const DispatchedBatchImportModal: React.FC<Props> = ({ open, mode, moduleOptions
         )}
         {result && (
           <>
-            <Alert type={result.failRows > 0 ? 'warning' : 'success'} showIcon message={`导入结果：成功 ${result.successRows} 行，失败 ${result.failRows} 行`} />
+            <Alert
+              type={result.failRows > 0 ? 'warning' : 'success'}
+              showIcon
+              message={`导入结果：成功 ${result.successRows} 行，失败 ${result.failRows} 行`}
+            />
             <Table
               size="small"
               rowKey="rowNumber"
@@ -295,7 +327,7 @@ const DispatchedBatchImportModal: React.FC<Props> = ({ open, mode, moduleOptions
                 { title: '工单号', dataIndex: 'orderNo', width: 160 },
                 { title: '员工证件号', dataIndex: 'employeeIdCard', width: 180 },
                 { title: '动作', dataIndex: 'action', width: 100, render: resultActionText },
-                { title: '说明', dataIndex: 'message' },
+                { title: '原因', dataIndex: 'message' },
               ]}
             />
           </>

@@ -899,7 +899,8 @@ export async function createWorkOrder(data: Record<string, unknown>): Promise<Wo
         { id: `d-n1`, module_code: 'renewal_contract', module_name: '劳动合同续签', status: 'pending', handler_name: null, dispatched_at: new Date().toISOString(), accepted_at: null, completed_at: null },
       ] : orderTypeValue === 'resignation' ? [
         { id: `d-n1`, module_code: 'resignation_contact', module_name: '离职材料收集', status: 'pending', handler_name: null, dispatched_at: new Date().toISOString(), accepted_at: null, completed_at: null },
-        ...(mergedExtra.need_resignation_cert === '是' ? [{ id: `d-n2`, module_code: 'resignation_cert', module_name: '离职材料收集', status: 'pending', handler_name: null, dispatched_at: new Date().toISOString(), accepted_at: null, completed_at: null }] : []),
+        { id: `d-n2`, module_code: 'data_entry_resign', module_name: '减员报岗录入', status: 'pending', handler_name: '安娜祎', dispatched_at: new Date().toISOString(), accepted_at: null, completed_at: null },
+        { id: `d-n3`, module_code: 'resignation_social_insurance', module_name: '社保公积金减员', status: 'pending', handler_name: '傅倩雯', dispatched_at: new Date().toISOString(), accepted_at: null, completed_at: null },
       ] : orderTypeValue === 'benefit' ? [
         { id: `d-n1`, module_code: 'benefit_apply', module_name: '待遇申报', status: 'pending', handler_name: null, dispatched_at: new Date().toISOString(), accepted_at: null, completed_at: null },
       ] : [
@@ -1285,7 +1286,7 @@ function normalizeImportPreviewResult(raw: RawImportPreviewResult, fallbackFileI
   };
 }
 
-export async function previewImport(file: File): Promise<ImportPreviewResult> {
+export async function previewImport(file: File, orderType = 'onboarding'): Promise<ImportPreviewResult> {
   if (isMockMode) {
     const { headers, rows } = await readExcelFile(file);
     if (headers.length === 0) {
@@ -1323,7 +1324,7 @@ export async function previewImport(file: File): Promise<ImportPreviewResult> {
   }
   const result = await request.post('/work-orders/import/preview', {
     fileId,
-    orderType: 'onboarding',
+    orderType,
     sampleRows: 10,
   }) as RawImportPreviewResult;
   return normalizeImportPreviewResult(result, fileId);
@@ -1341,6 +1342,7 @@ export async function confirmImport(
   rows?: Record<string, unknown>[],
   fileId?: string,
   newFields?: ImportNewFieldPayload[],
+  orderType = 'onboarding',
 ): Promise<ImportJob> {
   if (isMockMode) {
     const jobId = `job-${importJobCounter++}-${Date.now()}`;
@@ -1367,7 +1369,7 @@ export async function confirmImport(
   }
   const result = await request.post('/work-orders/import/confirm', {
     fileId: fileId.trim(),
-    orderType: 'onboarding',
+    orderType,
     mapping: sanitizedMapping,
     autoSubmit: true,
     ...(newFields && newFields.length > 0 ? { newFields } : {}),
@@ -1376,7 +1378,10 @@ export async function confirmImport(
 }
 
 const IMPORT_TEMPLATE_SHEET_NAME = '当前字段配置';
-const IMPORT_TEMPLATE_FILE_NAME = '工单管理系统-入职导入模板.xlsx';
+function getImportTemplateFileName(orderType: string): string {
+  const label = orderType === 'resignation' ? '离职' : '入职';
+  return `工单管理系统-${label}导入模板.xlsx`;
+}
 
 function buildImportTemplateExample(fieldCode: string, fieldType?: string): string | number {
   const normalized = fieldCode.toLowerCase();
@@ -1406,8 +1411,9 @@ export async function downloadCurrentImportTemplate(orderType = 'onboarding'): P
   worksheet['!cols'] = headers.map((header) => ({ wch: Math.max(12, Math.min(28, String(header).length + 4)) }));
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, IMPORT_TEMPLATE_SHEET_NAME);
-  XLSX.writeFile(workbook, IMPORT_TEMPLATE_FILE_NAME);
-  return { fieldCount: fields.length, fileName: IMPORT_TEMPLATE_FILE_NAME };
+  const fileName = getImportTemplateFileName(orderType);
+  XLSX.writeFile(workbook, fileName);
+  return { fieldCount: fields.length, fileName };
 }
 
 export function downloadImportErrorReport(jobId: string) {

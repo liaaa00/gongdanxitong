@@ -21,6 +21,14 @@ export interface DispatchedOrderListItem {
   handler_id?: string | null;
   handlerName?: string | null;
   handler_name?: string | null;
+  creatorId?: string | null;
+  creator_id?: string | null;
+  createdBy?: string | null;
+  created_by?: string | null;
+  creatorName?: string | null;
+  creator_name?: string | null;
+  createdByName?: string | null;
+  created_by_name?: string | null;
   employeeName: string;
   employee_name?: string;
   employeeIdCard?: string;
@@ -76,6 +84,14 @@ export interface DispatchedOrderDetailItem extends DispatchedOrderListItem {
   };
   extraData: Record<string, unknown>;
   extra_data?: Record<string, unknown>;
+  pendingModify?: {
+    fields: Record<string, unknown>;
+    reason?: string | null;
+    requestedBy?: string | null;
+    requestedAt?: Date | null;
+    previousStatus?: DispatchedOrderStatus | null;
+  } | null;
+  pending_modify?: DispatchedOrderDetailItem['pendingModify'];
   readonlyFields?: string[];
   fields: Array<FieldViewItem & { dirty?: boolean; dirtyInfo?: unknown; dirty_info?: unknown }>;
   visibleFields: string[] | null;

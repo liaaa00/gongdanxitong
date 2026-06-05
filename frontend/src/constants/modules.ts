@@ -119,7 +119,6 @@ export const MODULE_GROUPS: Array<{
       { label: MODULE_META.resignation_contact.label, value: 'resignation_contact' },
       { label: MODULE_META.data_entry_resign.label, value: 'data_entry_resign' },
       { label: MODULE_META.social_insurance_resign.label, value: 'social_insurance_resign' },
-      { label: MODULE_META.resignation_cert.label, value: 'resignation_cert' },
     ],
   },
 ];

@@ -115,7 +115,7 @@ const BenefitDetail: React.FC = () => {
             {Object.entries(BENEFIT_STAGE_MAP).map(([code, info]) => (
               <Col key={code} xs={24} sm={12} md={6} lg={3}>
                 <Card size="small" hoverable style={{ textAlign: 'center' }}
-                  bodyStyle={{ padding: '8px 4px' }}>
+                  styles={{ body: { padding: '8px 4px' } }}>
                   <div style={{ fontSize: 18, color: info.color }}>{info.icon}</div>
                   <div style={{ fontSize: 11, marginTop: 4, color: '#666' }}>{info.label}</div>
                 </Card>

@@ -107,6 +107,13 @@ export class AttachmentsService {
     return this.toResponse(saved);
   }
 
+  async remove(id: string, user: JwtUserPayload): Promise<{ success: boolean; id: string }> {
+    const row = await this.load(id);
+    await this.uploadsService.resolveForUser(row.fileId, user);
+    await this.repository.delete(id);
+    return { success: true, id };
+  }
+
   private async load(id: string): Promise<OrderAttachment> {
     const row = await this.repository.findOne({ where: { id } });
     if (!row) {

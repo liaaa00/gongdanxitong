@@ -89,6 +89,16 @@ function normalizeBizType(value: string | undefined | null): string {
   return String(value || '').toLowerCase().replace(/[.:]/g, '_');
 }
 
+function parseBucketFilter(bucket: string | undefined | null): Set<string> {
+  return new Set(String(bucket || '').split(',').map((item) => item.trim()).filter(Boolean));
+}
+
+function matchesBucketFilter(item: Pick<NotificationItem, 'biz_type' | 'type' | 'title' | 'content'>, bucket: string | undefined | null): boolean {
+  const buckets = parseBucketFilter(bucket);
+  if (!buckets.size) return true;
+  return buckets.has(getNotificationBucket(item));
+}
+
 export function getNotificationBucket(item: Pick<NotificationItem, 'biz_type' | 'type' | 'title' | 'content'>): NotificationBucketKey {
   const raw = `${normalizeBizType(item.biz_type)} ${normalizeBizType(item.type)} ${item.title || ''} ${item.content || ''}`.toLowerCase();
   if (raw.includes('system')) return 'system';
@@ -97,10 +107,11 @@ export function getNotificationBucket(item: Pick<NotificationItem, 'biz_type' | 
   if (raw.includes('urge_replied') || raw.includes('urge_result')) return 'todo';
   if (raw.includes('urge_received') || raw.includes('urge') || raw.includes('催办')) return 'todo';
   if (raw.includes('withdraw_request') || raw.includes('void_request') || raw.includes('creator_withdraw') || raw.includes('creator_void') || raw.includes('撤回申请') || raw.includes('作废申请')) return 'withdraw_void_request';
+  if (raw.includes('modify_request')) return 'creator_modified';
   if (raw.includes('withdraw_approved') || raw.includes('withdraw_rejected') || raw.includes('void_approved') || raw.includes('void_rejected') || raw.includes('withdraw_void_result')) return 'withdraw_void_result';
   if (raw.includes('dispatched_returned') || raw.includes('returned') || raw.includes('return') || raw.includes('退回')) return 'returned';
   if (raw.includes('dispatched_accepted') || raw.includes('dispatched_completed') || raw.includes('order_supplement_filled') || raw.includes('field_supplement') || raw.includes('field_supplemented') || raw.includes('backend_supplemented') || raw.includes('补充')) return 'field_changed';
-  if (raw.includes('order_field_changed') || raw.includes('creator_modified') || raw.includes('completed_modified') || raw.includes('modified_by_creator') || raw.includes('field_changed_by_creator') || raw.includes('initiator_modified') || raw.includes('业务员') && raw.includes('修改')) return 'creator_modified';
+  if (raw.includes('order_field_changed') || raw.includes('creator_modified') || raw.includes('completed_modified') || raw.includes('modified_by_creator') || raw.includes('field_changed_by_creator') || raw.includes('initiator_modified') || raw.includes('modify_approved') || raw.includes('modify_rejected') || raw.includes('业务员') && raw.includes('修改')) return 'creator_modified';
   if (raw.includes('dispatch') || raw.includes('dispatched') || raw.includes('claim') || raw.includes('todo') || raw.includes('task')) return 'todo';
   if (raw.includes('field_changed') || raw.includes('field_change')) return 'field_changed';
   return 'system';
@@ -202,7 +213,7 @@ export async function getNotifications(params: { unread?: boolean; isRead?: bool
     let list = mockNotifications;
     if (safeParams.unread) list = list.filter((n) => !n.is_read);
     if (typeof safeParams.isRead === 'boolean') list = list.filter((n) => n.is_read === safeParams.isRead);
-    if (safeParams.bucket) list = list.filter((n) => getNotificationBucket(n) === safeParams.bucket);
+    if (safeParams.bucket) list = list.filter((n) => matchesBucketFilter(n, safeParams.bucket));
     if (safeParams.biz_type) {
       const bizTypes = safeParams.biz_type.split(',').map((item) => item.trim()).filter(Boolean);
       list = list.filter((n) => bizTypes.includes(n.biz_type) || bizTypes.includes(n.type));
@@ -238,7 +249,7 @@ export async function markAllRead(): Promise<void> {
 export async function markNotificationsReadByQuery(params: { biz_type?: string; bucket?: string; includeDispatch?: boolean }): Promise<{ success: boolean; affected: number; unread_count: number } | void> {
   if (isMockMode) {
     let list = mockNotifications.filter((n) => !n.is_read);
-    if (params.bucket) list = list.filter((n) => getNotificationBucket(n) === params.bucket);
+    if (params.bucket) list = list.filter((n) => matchesBucketFilter(n, params.bucket));
     if (params.biz_type) {
       const bizTypes = params.biz_type.split(',').map((item) => item.trim()).filter(Boolean);
       list = list.filter((n) => bizTypes.includes(n.biz_type) || bizTypes.includes(n.type));

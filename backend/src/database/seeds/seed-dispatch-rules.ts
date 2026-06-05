@@ -63,12 +63,20 @@ const dispatchRuleSeeds: Array<{
     priority: 10,
   },
   {
-    name: 'resignation-cert-when-needed',
+    name: 'resignation-default-data-entry',
     orderType: OrderType.RESIGNATION,
-    triggerConditions: yesCondition('need_resignation_cert'),
-    targetModule: 'resignation_cert',
+    triggerConditions: null,
+    targetModule: 'data_entry_resign',
     strategy: DispatchStrategy.FIXED,
     priority: 20,
+  },
+  {
+    name: 'resignation-default-social-insurance',
+    orderType: OrderType.RESIGNATION,
+    triggerConditions: null,
+    targetModule: 'resignation_social_insurance',
+    strategy: DispatchStrategy.FIXED,
+    priority: 30,
   },
   {
     name: 'benefit-default-apply',
@@ -115,5 +123,14 @@ export async function seedDispatchRules(dataSource: DataSource): Promise<void> {
     .update(DispatchRule)
     .set({ isActive: false })
     .where('target_module = :moduleCode', { moduleCode: 'social_security' })
+    .execute();
+
+  // 第一期离职流程按会议口径固定生成：离职材料收集、减员报岗录入、社保公积金减员。
+  // 旧的“是否需要离职证明”独立子单只保留历史兼容，不再参与自动派发，避免多生成一个离职材料子单。
+  await repository
+    .createQueryBuilder()
+    .update(DispatchRule)
+    .set({ isActive: false })
+    .where('rule_name = :ruleName', { ruleName: 'resignation-cert-when-needed' })
     .execute();
 }

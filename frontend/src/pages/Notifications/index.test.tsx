@@ -101,12 +101,12 @@ describe('Notifications Page', () => {
     await waitFor(() => expect(getNotifications).toHaveBeenCalledWith(expect.objectContaining({ isRead: true, includeDispatch: true })));
   });
 
-  it('uses field_changed bucket for the simplified field-change tab', async () => {
+  it('uses both field_changed and creator_modified buckets for the simplified field-change tab', async () => {
     render(<MemoryRouter><NotificationsPage /></MemoryRouter>);
 
     fireEvent.click(await screen.findByText('字段变更'));
     await waitFor(() => {
-      expect(getNotifications).toHaveBeenCalledWith(expect.objectContaining({ bucket: 'field_changed' }));
+      expect(getNotifications).toHaveBeenCalledWith(expect.objectContaining({ bucket: 'field_changed,creator_modified' }));
     }, { timeout: 5000 });
   });
 

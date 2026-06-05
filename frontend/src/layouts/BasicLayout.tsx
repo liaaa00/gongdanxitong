@@ -1,5 +1,11 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Outlet, useNavigate, useLocation } from 'react-router-dom';
+import {
+  UNSAFE_LocationContext,
+  useLocation,
+  useNavigate,
+  useNavigationType,
+  useOutlet,
+} from 'react-router-dom';
 import { ProLayout } from '@ant-design/pro-components';
 import { App, Badge, Popover, List, Button, Empty, Tabs, Tag, Space } from 'antd';
 import {
@@ -16,9 +22,69 @@ import { useUserStore } from '@/stores/userStore';
 import { logout as logoutApi } from '@/services/auth';
 import { canAccessPath } from '@/config/routeVisibility';
 import { ROLE, userHasAnyCanonicalRole, type CanonicalRole } from '@/constants/roles';
-import { getNotifications, getUnreadCountByBucket, getNotificationBucket } from '@/services/notifications';
+import { getNotifications, getUnreadCountByBucket, getNotificationBucket, markNotificationRead } from '@/services/notifications';
 import type { NotificationBucketKey, NotificationItem, UnreadCountByBucket } from '@/services/notifications';
 import { getNotificationDisplayContent, getNotificationDisplayTitle } from '@/utils/notificationDisplay';
+
+const MAX_KEEP_ALIVE_PAGES = 12;
+
+function isKeepAlivePath(pathname: string): boolean {
+  if (pathname === '/' || pathname === '/login' || pathname === '/change-password' || pathname === '/403' || pathname === '/404') return false;
+  if (/^\/work-orders\/(new|import|[^/]+)$/.test(pathname)) return false;
+  if (/^\/renewal\/(new|[^/]+)$/.test(pathname)) return false;
+  if (/^\/resignation\/(new|[^/]+)(\/cert)?$/.test(pathname)) return false;
+  if (/^\/benefit\/(new|[^/]+)$/.test(pathname)) return false;
+  if (/^\/my-dispatched\/[^/]+$/.test(pathname)) return false;
+  if (/^\/admin\/workflows\/[^/]+$/.test(pathname)) return false;
+  return true;
+}
+
+const KeepAliveOutlet: React.FC = () => {
+  const outlet = useOutlet();
+  const location = useLocation();
+  const navigationType = useNavigationType();
+  const cacheKey = `${location.pathname}${location.search}`;
+  const shouldKeepAlive = isKeepAlivePath(location.pathname);
+  const [cacheKeys, setCacheKeys] = useState<string[]>(() => (shouldKeepAlive ? [cacheKey] : []));
+  const cacheRef = useRef<Record<string, { outlet: React.ReactElement; location: typeof location }>>({});
+
+  if (shouldKeepAlive && outlet && !cacheRef.current[cacheKey]) {
+    cacheRef.current[cacheKey] = { outlet, location };
+  }
+
+  useEffect(() => {
+    if (!shouldKeepAlive) return;
+    setCacheKeys((prev) => {
+      const next = prev.includes(cacheKey) ? [...prev.filter((key) => key !== cacheKey), cacheKey] : [...prev, cacheKey];
+      const overflow = next.length - MAX_KEEP_ALIVE_PAGES;
+      if (overflow > 0) {
+        next.slice(0, overflow).forEach((key) => { delete cacheRef.current[key]; });
+        return next.slice(overflow);
+      }
+      return next;
+    });
+  }, [cacheKey, shouldKeepAlive]);
+
+  const renderKeys = shouldKeepAlive && !cacheKeys.includes(cacheKey) ? [...cacheKeys, cacheKey] : cacheKeys;
+
+  return (
+    <>
+      {renderKeys.map((key) => {
+        const cached = cacheRef.current[key];
+        if (!cached) return null;
+        const active = shouldKeepAlive && key === cacheKey;
+        return (
+          <div key={key} style={{ display: active ? 'block' : 'none' }} aria-hidden={!active}>
+            <UNSAFE_LocationContext.Provider value={{ location: cached.location, navigationType }}>
+              {cached.outlet}
+            </UNSAFE_LocationContext.Provider>
+          </div>
+        );
+      })}
+      {!shouldKeepAlive ? outlet : null}
+    </>
+  );
+};
 
 // 菜单项只描述展示结构；可见性统一由 routeVisibility.ts 判定。
 type MenuItem = {
@@ -52,9 +118,8 @@ const RAW_MENU: MenuItem[] = [
     // 子菜单由 routeVisibility.ts 决定是否显示。
     children: [
       { path: '/work-orders?orderType=onboarding', name: '入职主工单列表', key: 'work-orders-main' },
-      { path: '/work-orders/import', name: '入职导入', key: 'work-orders-import' },
-      { path: '/onboarding/contract', name: '劳动合同新签子工单' },
       { path: '/onboarding/onboarding_contact', name: '入职联系子工单' },
+      { path: '/onboarding/contract', name: '劳动合同新签子工单' },
       { path: '/onboarding/data_entry', name: '增员报岗录入子工单' },
       { path: '/onboarding/social_insurance', name: '社保公积金增员子工单' },
     ],
@@ -76,7 +141,7 @@ const RAW_MENU: MenuItem[] = [
     name: '离职管理',
     icon: <FileTextOutlined />,
     children: [
-      { path: '/resignation', name: '离职主工单列表', key: 'resignation-list' },
+      { path: '/work-orders?orderType=resignation', name: '离职主工单列表', key: 'resignation-list' },
       { path: '/onboarding/resignation_contact', name: '离职材料收集子工单', key: 'resignation-contact-sub-list' },
       { path: '/onboarding/resignation_cert', name: '离职材料收集子工单', key: 'resignation-cert-sub-list', menuVisible: false },
       { path: '/onboarding/data_entry_resign', name: '减员报岗录入子工单', key: 'data-entry-resign-sub-list' },
@@ -119,11 +184,11 @@ const RAW_MENU: MenuItem[] = [
         key: 'admin-workflow',
         icon: <NodeIndexOutlined />,
         children: [
-          { path: '/admin/module-config', name: '模块化配置', icon: <BranchesOutlined /> },
-          { path: '/admin/fields', name: '表单字段管理', icon: <FieldStringOutlined /> },
-          { path: '/admin/field-permissions', name: '字段填写权限', icon: <LockOutlined /> },
-          { path: '/admin/dispatch-config', name: '派发配置', icon: <UserSwitchOutlined /> },
-          { path: '/admin/workflows', name: '工单流程配置', key: 'admin-workflows' },
+          { path: '/admin/module-config', name: '办理环节设置', icon: <BranchesOutlined /> },
+          { path: '/admin/fields', name: '表单字段库', icon: <FieldStringOutlined /> },
+          { path: '/admin/field-permissions', name: '字段可填设置', icon: <LockOutlined /> },
+          { path: '/admin/dispatch-config', name: '负责人派发设置', icon: <UserSwitchOutlined /> },
+          { path: '/admin/workflows', name: '流程版本配置', key: 'admin-workflows' },
           { path: '/admin/export-templates', name: '导出模板配置', key: 'admin-export-templates' },
         ],
       },
@@ -153,6 +218,24 @@ function filterMenuByRoles(items: MenuItem[], userRoles: { code?: string }[] | u
     next.push({ ...it, children: filteredChildren });
   }
   return next;
+}
+
+function getMenuItemKey(item: MenuItem): string {
+  return item.key || item.path;
+}
+
+function normalizeMenuUrl(value: string): { fullPath: string; pathname: string; hasQuery: boolean } {
+  const fullPath = value.split('#')[0].replace(/\/$/, '') || '/';
+  const pathname = fullPath.split('?')[0] || '/';
+  return { fullPath, pathname, hasQuery: fullPath.includes('?') };
+}
+
+function menuPathMatchesLocation(itemPath: string, currentPath: string, nested = false): boolean {
+  const item = normalizeMenuUrl(itemPath);
+  const current = normalizeMenuUrl(currentPath);
+  if (item.hasQuery) return current.fullPath === item.fullPath;
+  if (current.pathname === item.pathname) return true;
+  return nested && current.pathname.startsWith(`${item.pathname}/`);
 }
 
 const OPEN_KEYS_STORAGE = 'menu_open_keys_v1';
@@ -244,6 +327,26 @@ const BasicLayout: React.FC = () => {
     return collect(filteredMenu);
   }, [filteredMenu]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    let title = '工单管理系统';
+
+    if (location.pathname === '/dashboard') title = '仪表盘 - 工单管理系统';
+    if (location.pathname === '/notifications') title = '消息通知 - 工单管理系统';
+    if (location.pathname === '/admin/users') title = '用户管理 - 工单管理系统';
+    if (location.pathname === '/admin/module-config') title = '办理环节设置 - 工单管理系统';
+    if (location.pathname === '/admin/fields') title = '表单字段库 - 工单管理系统';
+    if (location.pathname === '/admin/dispatch-config') title = '负责人派发设置 - 工单管理系统';
+    if (location.pathname === '/work-orders') {
+      const orderType = params.get('orderType');
+      if (orderType === 'onboarding') title = '入职主工单列表 - 工单管理系统';
+      else if (orderType === 'resignation') title = '离职主工单列表 - 工单管理系统';
+      else title = '主工单列表 - 工单管理系统';
+    }
+
+    document.title = title;
+  }, [location.pathname, location.search]);
+
   const canViewNotifications = useMemo(
     () => userHasAnyCanonicalRole(user?.roles, [...NOTIFICATION_ROLES]),
     [user?.roles],
@@ -277,31 +380,48 @@ const BasicLayout: React.FC = () => {
     return [];
   });
 
-  // ★ 计算当前路径应有的父级菜单 keys
-  const computeParentKeys = useCallback((menu: MenuItem[], pathname: string): string[] => {
+  // ★ 计算当前路径应有的父级菜单 keys。
+  // 入职/离职主列表共用 /work-orders，必须用完整 pathname + search 区分 orderType。
+  const computeParentKeys = useCallback((menu: MenuItem[], currentPath: string): string[] => {
     const visit = (items: MenuItem[], ancestors: string[]): string[] | null => {
       for (const item of items) {
         const nextAncestors = item.children?.length ? [...ancestors, item.path] : ancestors;
-        if (pathname === item.path || pathname.startsWith(item.path + '/')) return ancestors;
         if (item.children?.length) {
           const matched = visit(item.children, nextAncestors);
           if (matched) return matched;
         }
+        if (menuPathMatchesLocation(item.path, currentPath, true)) return ancestors;
       }
       return null;
     };
     return visit(menu, []) || [];
   }, []);
 
+  const selectedKeys = useMemo(() => {
+    const currentPath = `${location.pathname}${location.search}`;
+    const visit = (items: MenuItem[]): MenuItem | null => {
+      for (const item of items) {
+        if (item.children?.length) {
+          const matched = visit(item.children);
+          if (matched) return matched;
+        }
+        if (menuPathMatchesLocation(item.path, currentPath, true)) return item;
+      }
+      return null;
+    };
+    const selected = visit(filteredMenu);
+    return selected ? Array.from(new Set([getMenuItemKey(selected), selected.path])) : [];
+  }, [filteredMenu, location.pathname, location.search]);
+
   // ★ 每次路径变化时，只保留当前路由所属父菜单，避免点其他父菜单后旧父菜单还展开。
   useEffect(() => {
-    const parents = computeParentKeys(filteredMenu, location.pathname);
+    const parents = computeParentKeys(filteredMenu, `${location.pathname}${location.search}`);
     if (parents.length === 0) return;
     setOpenKeys((prev) => {
       const next = parents;
       return prev.length === next.length && prev.every((key, index) => key === next[index]) ? prev : next;
     });
-  }, [location.pathname, filteredMenu, computeParentKeys]);
+  }, [location.pathname, location.search, filteredMenu, computeParentKeys]);
 
   // ★ openKeys 变化时同步到 localStorage
   useEffect(() => {
@@ -338,7 +458,7 @@ const BasicLayout: React.FC = () => {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [canViewNotifications, fetchAll]);
 
-  // 通知红点与办结生命周期绑定：顶部铃铛不再提供手动已读入口。
+  // 已读按钮可手动消除提醒；处理按钮仅跳转，提醒仍由办结/作废/删除等生命周期清理。
 
   const buildNotificationLink = (item: NotificationItem): string | null => {
     const query = new URLSearchParams();
@@ -363,6 +483,17 @@ const BasicLayout: React.FC = () => {
       return `${normalized}${normalized.includes('?') ? '&' : '?'}${suffix}`;
     }
     return null;
+  };
+
+  const handleNotifRead = async (item: NotificationItem) => {
+    if (item.is_read) return;
+    try {
+      await markNotificationRead(item.id);
+      message.success('已读已确认，提醒已消除');
+      await fetchAll();
+    } catch {
+      message.error('标记已读失败');
+    }
   };
 
   const handleNotifProcess = (item: NotificationItem) => {
@@ -421,6 +552,7 @@ const BasicLayout: React.FC = () => {
                       {new Date(item.created_at).toLocaleString('zh-CN')}
                     </div>
                     <Space size={8} style={{ marginTop: 6 }}>
+                      <Button size="small" disabled={item.is_read} onClick={() => handleNotifRead(item)}>已读</Button>
                       <Button size="small" type="primary" onClick={() => handleNotifProcess(item)}>处理</Button>
                     </Space>
                   </>
@@ -460,8 +592,10 @@ const BasicLayout: React.FC = () => {
     <ProLayout
       title="工单管理系统" logo={null} location={location}
       route={{ children: filteredMenu }}
+      pageTitleRender={false}
   menuProps={{
         openKeys,
+        selectedKeys,
         onOpenChange: (keys) => {
           const incoming = keys as string[];
           setOpenKeys(incoming);
@@ -470,6 +604,9 @@ const BasicLayout: React.FC = () => {
       menuItemRender={(item, dom) => (
         <button
           type="button"
+          data-menu-path={item.path}
+          data-menu-name={item.name}
+          aria-label={item.name}
           onClick={() => handleMenuClick(item as MenuItem)}
           style={{ all: 'unset', display: 'block', width: '100%', cursor: 'pointer' }}
         >
@@ -477,7 +614,7 @@ const BasicLayout: React.FC = () => {
         </button>
       )}
       actionsRender={() => [
-        <Space key="top-actions" size={8} align="center" style={{ flexWrap: 'nowrap', marginRight: 8 }}>
+        <Space key="top-actions" size={8} align="center" style={{ flexWrap: 'nowrap', marginRight: 0 }}>
           <span
             title={user?.real_name || user?.username || '当前用户'}
             style={{
@@ -505,12 +642,12 @@ const BasicLayout: React.FC = () => {
               </Badge>
             </Popover>
           ) : null}
-          <Button size="small" icon={<LogoutOutlined />} onClick={handleLogout}>退出</Button>
+          <Button size="small" icon={<LogoutOutlined />} onClick={handleLogout} style={{ marginLeft: 10 }}>退出</Button>
         </Space>,
       ]}
       menuHeaderRender={undefined}
     >
-      <Outlet />
+      <KeepAliveOutlet />
     </ProLayout>
   );
 };

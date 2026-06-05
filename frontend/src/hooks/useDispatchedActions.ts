@@ -4,7 +4,8 @@ import {
   acceptDispatchedOrder, completeDispatchedOrder, returnDispatchedOrder,
   supplementField, exportDispatchedOrder, downloadDispatchedExport, reassignDispatchedOrder, getDispatchedOrder,
   creatorUpdateDispatchedOrderFields, resubmitDispatchedOrder, urgeDispatchedOrder, withdrawDispatchedOrder, voidDispatchedOrder,
-  approveWithdrawDispatchedOrder, approveVoidDispatchedOrder,
+  approveModifyDispatchedOrder, approveWithdrawDispatchedOrder, approveVoidDispatchedOrder,
+  isDispatchedAcceptedByBackend,
 } from '@/services/dispatchedOrders';
 import type { DispatchedOrderItem } from '@/services/dispatchedOrders';
 
@@ -23,6 +24,8 @@ export function useDispatchedActions({ orderId, order, onOrderUpdated }: UseDisp
     try {
       const updated = await acceptDispatchedOrder(orderId);
       onOrderUpdated(updated);
+      const latest = await getDispatchedOrder(orderId).catch(() => null);
+      if (latest) onOrderUpdated(latest);
       message.success('已接单');
     } catch { message.error('接单失败'); }
     finally { setActionLoading(false); }
@@ -91,14 +94,17 @@ export function useDispatchedActions({ orderId, order, onOrderUpdated }: UseDisp
   const handleCreatorUpdate = useCallback(async (fields: Record<string, unknown>, reason?: string) => {
     setActionLoading(true);
     try {
+      const wasAccepted = isDispatchedAcceptedByBackend(order);
       const updated = await creatorUpdateDispatchedOrderFields(orderId, fields, reason);
       onOrderUpdated(updated);
-      message.success('修改已保存，并已通知相关办理人');
+      message.success(updated.status === 'modify_pending' || wasAccepted
+        ? '修改申请已提交，等待后道审批'
+        : '修改已保存，并已通知后道');
       return updated;
     } catch { message.error('修改失败'); }
     finally { setActionLoading(false); }
     return null;
-  }, [orderId, onOrderUpdated]);
+  }, [order, orderId, onOrderUpdated]);
 
   const handleUrge = useCallback(async (reason?: string) => {
     setActionLoading(true);
@@ -132,7 +138,7 @@ export function useDispatchedActions({ orderId, order, onOrderUpdated }: UseDisp
     try {
       const updated = await withdrawDispatchedOrder(orderId, reason, order?.module_code);
       onOrderUpdated(updated);
-      message.success('已撤回该子工单');
+      message.success(updated.status === 'withdraw_pending' ? '撤回申请已提交，等待后道审批' : '已撤回该子工单，并已通知后道');
       return updated;
     } catch { message.error('撤回失败'); }
     finally { setActionLoading(false); }
@@ -144,9 +150,21 @@ export function useDispatchedActions({ orderId, order, onOrderUpdated }: UseDisp
     try {
       const updated = await voidDispatchedOrder(orderId, reason, order?.module_code);
       onOrderUpdated(updated);
-      message.success('作废申请已提交，等待后道审批');
+      message.success(updated.status === 'void_pending' ? '作废申请已提交，等待后道审批' : '已作废该子工单，并已通知后道');
       return updated;
     } catch { message.error('作废失败'); }
+    finally { setActionLoading(false); }
+    return null;
+  }, [orderId, onOrderUpdated]);
+
+  const handleApproveModify = useCallback(async (approved: boolean, comment?: string) => {
+    setActionLoading(true);
+    try {
+      const updated = await approveModifyDispatchedOrder(orderId, approved, comment);
+      onOrderUpdated(updated);
+      message.success(approved ? '已同意修改申请' : '已拒绝修改申请');
+      return updated;
+    } catch { message.error('修改审批失败'); }
     finally { setActionLoading(false); }
     return null;
   }, [orderId, onOrderUpdated]);
@@ -188,6 +206,7 @@ export function useDispatchedActions({ orderId, order, onOrderUpdated }: UseDisp
     handleResubmit,
     handleWithdraw,
     handleVoid,
+    handleApproveModify,
     handleApproveWithdraw,
     handleApproveVoid,
   };

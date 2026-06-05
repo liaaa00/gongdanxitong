@@ -6,6 +6,7 @@ import {
   Empty, Modal, Input,
 } from 'antd';
 import DynamicForm from '@/components/DynamicForm';
+import MaterialsUpload from '@/components/MaterialsUpload';
 import type { FieldConfig } from '@/components/DynamicForm';
 import { useFieldPermissions } from '@/hooks/useFieldPermissions';
 import { getWorkOrder, updateWorkOrder, resubmitWorkOrder, voidWorkOrder } from '@/services/workOrders';
@@ -38,8 +39,12 @@ const FIELD_GROUPS: Array<{ title: string; codes: string[] }> = [
     codes: ['bank_name', 'bank_account', 'remark', 'special_remark'],
   },
   {
+    title: '离职信息',
+    codes: ['resignation_type', 'resignation_reason', 'last_work_date', 'contract_terminate_date', 'handover_person', 'need_resignation_cert', 'cert_delivery_address'],
+  },
+  {
     title: '后道反馈',
-    codes: ['need_onboarding_contact', 'onboarding_feedback', 'data_entry_feedback'],
+    codes: ['need_onboarding_contact', 'onboarding_feedback', 'data_entry_feedback', 'resignation_contact_feedback', 'resignation_cert_status', 'social_handover_done', 'final_salary_settled', 'resignation_remark'],
   },
 ];
 
@@ -65,19 +70,15 @@ const WorkOrdersDetail: React.FC = () => {
 
     const loadDetail = async () => {
       try {
-        const [orderData, fieldList] = await Promise.all([
-          getWorkOrder(id),
-          getFields('onboarding').catch((err) => {
-            console.warn('[工单详情] 字段配置加载失败，降级为空字段列表：', err);
-            return [] as FieldConfig[];
-          }),
-        ]);
+        const orderData = await getWorkOrder(id);
+        const orderType = orderData.order_type || 'onboarding';
+        const fieldList = await getFields(orderType).catch((err) => {
+          console.warn('[工单详情] 字段配置加载失败，降级为空字段列表：', err);
+          return [] as FieldConfig[];
+        });
         if (cancelled) return;
         setOrder(orderData);
         setFields(fieldList);
-        if (searchParams.get('edit') === '1' && !['returned', 'withdrawn'].includes(orderData.status)) {
-          message.info('主工单仅支持查看，请到对应子工单中进行修改、撤回、作废或催办。');
-        }
       } catch (err) {
         console.error('[工单详情] 主详情加载失败：', err);
         if (!cancelled) {
@@ -93,6 +94,10 @@ const WorkOrdersDetail: React.FC = () => {
     return () => { cancelled = true; };
   }, [id, message, searchParams]);
 
+  const currentOrderType = order?.order_type || 'onboarding';
+  const isResignationOrder = currentOrderType === 'resignation' || currentOrderType === 'offboarding' || currentOrderType === 'leave';
+  const currentOrderTypeLabel = isResignationOrder ? '离职' : currentOrderType === 'onboarding' ? '入职' : '';
+  const listPath = currentOrderTypeLabel ? `/work-orders?orderType=${currentOrderType === 'onboarding' ? 'onboarding' : 'resignation'}` : '/work-orders';
   const isRepairable = order?.status === 'returned' || order?.status === 'withdrawn';
   const isReturned = order?.status === 'returned';
 
@@ -159,6 +164,11 @@ const WorkOrdersDetail: React.FC = () => {
   const highlightedFieldSet = useMemo(() => new Set(highlightedFields), [highlightedFields]);
   const focusField = searchParams.get('focus') || highlightedFields[0] || null;
 
+  useEffect(() => {
+    if (searchParams.get('focus') !== 'materials') return;
+    window.setTimeout(() => document.getElementById('materials')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+  }, [searchParams]);
+
   const getSubOrderReturnReason = (subOrder: unknown): string | null => {
     const row = subOrder as { return_reason?: unknown; returnReason?: unknown };
     return (row.return_reason ?? row.returnReason ?? null) as string | null;
@@ -168,7 +178,7 @@ const WorkOrdersDetail: React.FC = () => {
   if (!order) return <PageContainer header={{ title: '工单详情' }}><Empty description="工单不存在" /></PageContainer>;
 
   return (
-    <PageContainer header={{ title: '工单详情', extra: [<Button key="back" onClick={() => navigate('/work-orders')}>返回列表</Button>] }}>
+    <PageContainer header={{ title: '工单详情', extra: [<Button key="back" onClick={() => navigate(listPath)}>返回{currentOrderTypeLabel || ''}主工单列表</Button>] }}>
       <Space direction="vertical" size="large" style={{ width: '100%' }}>
         {/* 基本信息 + 操作按钮 */}
         <Card>
@@ -188,13 +198,7 @@ const WorkOrdersDetail: React.FC = () => {
             <Descriptions.Item label="更新时间">{order.updated_at}</Descriptions.Item>
           </Descriptions>
 
-          <Alert
-            style={{ marginTop: 16 }}
-            type={isRepairable ? 'warning' : 'info'}
-            showIcon
-            message={isRepairable ? '当前工单为可返修状态' : '主工单仅用于查看汇总信息'}
-            description={isRepairable ? '已撤回/已退回工单允许修改后重新提交，或发起一键作废申请；作废仍需后道审批同意后才会终结。' : '修改、撤回、作废、催办等操作请进入下方对应子工单处理，避免影响其他正常子工单。'}
-          />
+
           {isRepairable && (
             <Space style={{ marginTop: 12 }} wrap>
               <Button type="primary" loading={submitting} onClick={() => document.getElementById('repairable-main-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>修改重新提交</Button>
@@ -254,7 +258,7 @@ const WorkOrdersDetail: React.FC = () => {
             <DynamicForm
               fields={fields}
               fieldPermissions={permissions}
-              orderType="onboarding"
+              orderType={currentOrderType}
               initialValues={order.extra_data}
               readOnly={!isRepairable}
               onFinish={isRepairable ? handleResubmit : undefined}
@@ -262,9 +266,16 @@ const WorkOrdersDetail: React.FC = () => {
               highlightedFields={highlightedFields}
               focusField={focusField}
             />
-            {isRepairable && <Alert style={{ marginTop: 12 }} type="info" showIcon message="修改完成后点击表单底部“修改重新提交”按钮，流程会重新激活。" />}
+
           </Card>
         </Space>
+
+        {isResignationOrder && order?.id && (
+          <div id="materials">
+            <MaterialsUpload workOrderId={order.id} bizPurpose="resignation_material" />
+          </div>
+        )}
+
         <Modal
           title="一键作废申请"
           open={voidOpen}
@@ -274,7 +285,7 @@ const WorkOrdersDetail: React.FC = () => {
           onCancel={() => { setVoidOpen(false); setVoidReason(''); }}
         >
           <Space direction="vertical" style={{ width: '100%' }}>
-            <Alert type="warning" showIcon message="非草稿工单作废必须提交后道审批，同意后才会流转至已作废。" />
+
             <span>作废原因（必填）：</span>
             <Input.TextArea rows={4} value={voidReason} onChange={(e) => setVoidReason(e.target.value)} maxLength={512} showCount placeholder="请填写作废原因" />
           </Space>

@@ -49,7 +49,7 @@ describe('dashboard services', () => {
     });
     expect(requestGet).toHaveBeenCalledTimes(1);
     expect(requestGet).toHaveBeenCalledWith('/dashboard/cards', {
-      params: { month: expect.stringMatching(/^\d{4}-\d{2}$/) },
+      params: { audience: 'business', month: expect.stringMatching(/^\d{4}-\d{2}$/) },
       silentError: true,
     });
     expect(requestGet).not.toHaveBeenCalledWith('/work-orders', expect.anything());
@@ -62,7 +62,7 @@ describe('dashboard services', () => {
     await getDashboardCards('business', 'team');
 
     expect(requestGet).toHaveBeenCalledWith('/dashboard/cards', {
-      params: { month: expect.stringMatching(/^\d{4}-\d{2}$/), scope: 'team' },
+      params: { audience: 'business', month: expect.stringMatching(/^\d{4}-\d{2}$/), scope: 'team' },
       silentError: true,
     });
   });
@@ -78,7 +78,28 @@ describe('dashboard services', () => {
     });
   });
 
-  it('prefers real order-type matrix endpoint before frontend aggregation and does not pass audience', async () => {
+  it('retries dashboard cards with legacy params when the upgraded query params are rejected', async () => {
+    requestGet
+      .mockRejectedValueOnce(new Error('property audience should not exist'))
+      .mockResolvedValueOnce({ totalPending: 5, monthPending: 2, totalThisMonth: 3, completed: 1, voided: 0, myMessages: 0 });
+
+    await expect(getDashboardCards('business', 'mine', '2026-06')).resolves.toMatchObject({
+      totalPending: 5,
+      monthPending: 2,
+      totalThisMonth: 3,
+    });
+
+    expect(requestGet).toHaveBeenNthCalledWith(1, '/dashboard/cards', {
+      params: { audience: 'business', month: '2026-06', scope: 'mine' },
+      silentError: true,
+    });
+    expect(requestGet).toHaveBeenNthCalledWith(2, '/dashboard/cards', {
+      params: { scope: 'mine' },
+      silentError: true,
+    });
+  });
+
+  it('prefers real order-type matrix endpoint before frontend aggregation and passes audience', async () => {
     requestGet.mockResolvedValueOnce({
       rows: [
         { orderType: 'onboarding', label: '入职', total: 3, processing: 1, completed: 2, completionRate: 66.7 },
@@ -92,8 +113,28 @@ describe('dashboard services', () => {
     });
 
     expect(requestGet).toHaveBeenCalledTimes(1);
-    expect(requestGet).toHaveBeenCalledWith('/dashboard/order-type-matrix', { params: { dimension: 'orderType', month: expect.stringMatching(/^\d{4}-\d{2}$/), scope: 'team' }, silentError: true });
-    expect(requestGet.mock.calls[0][1].params).not.toHaveProperty('audience');
+    expect(requestGet).toHaveBeenCalledWith('/dashboard/order-type-matrix', { params: { dimension: 'orderType', audience: 'backend', month: expect.stringMatching(/^\d{4}-\d{2}$/), scope: 'team' }, silentError: true });
+    expect(requestGet.mock.calls[0][1].params).toHaveProperty('audience', 'backend');
+  });
+
+  it('retries order matrix with legacy params when upgraded query params are rejected', async () => {
+    requestGet
+      .mockRejectedValueOnce(new Error('property audience should not exist'))
+      .mockResolvedValueOnce({ rows: [{ orderType: 'onboarding', label: '入职', total: 4, processing: 2, completed: 2, voided: 0 }], total: 1 });
+
+    await expect(getOrderTypeMatrix({ dimension: 'node', audience: 'business', scope: 'mine', month: '2026-06' })).resolves.toMatchObject({
+      rows: [expect.objectContaining({ orderType: 'onboarding', total: 4, processing: 2, completed: 2 })],
+      total: 1,
+    });
+
+    expect(requestGet).toHaveBeenNthCalledWith(1, '/dashboard/order-type-matrix', {
+      params: { dimension: 'node', audience: 'business', month: '2026-06', scope: 'mine' },
+      silentError: true,
+    });
+    expect(requestGet).toHaveBeenNthCalledWith(2, '/dashboard/order-type-matrix', {
+      params: { dimension: 'node', scope: 'mine' },
+      silentError: true,
+    });
   });
 
   it('calculates matrix completion rate with voided orders excluded from denominator when backend omits rate', async () => {
@@ -136,24 +177,26 @@ describe('dashboard services', () => {
     expect(result.rows[0]).toMatchObject({ total: 2, completed: 0, voided: 2, completionRate: 0 });
   });
 
-  it('returns an empty node matrix and does not call dispatched-orders when real matrix endpoint is unavailable', async () => {
-    requestGet.mockRejectedValueOnce(new Error('not found'));
+  it('returns an empty node matrix and does not call dispatched-orders when real and legacy matrix endpoints are unavailable', async () => {
+    requestGet.mockRejectedValueOnce(new Error('not found')).mockRejectedValueOnce(new Error('not found'));
 
     const result = await getOrderTypeMatrix({ dimension: 'node' });
 
-    expect(requestGet).toHaveBeenCalledTimes(1);
+    expect(requestGet).toHaveBeenCalledTimes(2);
     expect(requestGet).toHaveBeenNthCalledWith(1, '/dashboard/order-type-matrix', { params: { dimension: 'node', month: expect.stringMatching(/^\d{4}-\d{2}$/) }, silentError: true });
+    expect(requestGet).toHaveBeenNthCalledWith(2, '/dashboard/order-type-matrix', { params: { dimension: 'node' }, silentError: true });
     expect(requestGet).not.toHaveBeenCalledWith('/dispatched-orders', expect.anything());
     expect(result).toEqual({ rows: [], total: 0 });
   });
 
-  it('returns an empty order matrix and does not call dispatched-orders when real matrix endpoint is unavailable', async () => {
-    requestGet.mockRejectedValueOnce(new Error('not found'));
+  it('returns an empty order matrix and does not call dispatched-orders when real and legacy matrix endpoints are unavailable', async () => {
+    requestGet.mockRejectedValueOnce(new Error('not found')).mockRejectedValueOnce(new Error('not found'));
 
     const result = await getOrderTypeMatrix({ dimension: 'orderType' });
 
-    expect(requestGet).toHaveBeenCalledTimes(1);
+    expect(requestGet).toHaveBeenCalledTimes(2);
     expect(requestGet).toHaveBeenNthCalledWith(1, '/dashboard/order-type-matrix', { params: { dimension: 'orderType', month: expect.stringMatching(/^\d{4}-\d{2}$/) }, silentError: true });
+    expect(requestGet).toHaveBeenNthCalledWith(2, '/dashboard/order-type-matrix', { params: { dimension: 'orderType' }, silentError: true });
     expect(requestGet).not.toHaveBeenCalledWith('/dispatched-orders', expect.anything());
     expect(result).toEqual({ rows: [], total: 0 });
   });
@@ -231,12 +274,13 @@ describe('dashboard services', () => {
       response: { status: 400, data: { message: 'invalid dashboard params' } },
       config: { silentError: true },
     });
-    requestGet.mockRejectedValueOnce(badRequest);
+    requestGet.mockRejectedValueOnce(badRequest).mockRejectedValueOnce(badRequest);
 
     const result = await getOrderTypeMatrix({ dimension: 'node', scope: 'team' });
 
-    expect(requestGet).toHaveBeenCalledTimes(1);
+    expect(requestGet).toHaveBeenCalledTimes(2);
     expect(requestGet).toHaveBeenNthCalledWith(1, '/dashboard/order-type-matrix', { params: { dimension: 'node', month: expect.stringMatching(/^\d{4}-\d{2}$/), scope: 'team' }, silentError: true });
+    expect(requestGet).toHaveBeenNthCalledWith(2, '/dashboard/order-type-matrix', { params: { dimension: 'node', scope: 'team' }, silentError: true });
     expect(requestGet).not.toHaveBeenCalledWith('/dispatched-orders', expect.anything());
     expect(result).toEqual({ rows: [], total: 0 });
   });

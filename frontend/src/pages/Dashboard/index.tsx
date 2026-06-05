@@ -90,31 +90,31 @@ const DASHBOARD_ROLE_META: Record<DashboardRoleView, {
 }> = {
   admin: {
     title: '全局运营看板',
-    subtitle: '面向管理员展示全系统工单、后道办理和消息概览。',
+    subtitle: '',
     matrixTitle: '本月全系统节点总表',
     cardTitles: { totalPending: '总待处理', monthPending: '单月待处理', monthTotal: '本月全量工单', completed: '本月已完成', voided: '本月已作废', messages: '待关注消息' },
   },
   businessOwner: {
     title: '业务负责人看板',
-    subtitle: '聚焦团队整体发起量、办理结果和异常消息，不展示后道操作入口。',
+    subtitle: '',
     matrixTitle: '本月业务工单总表',
     cardTitles: { totalPending: '总待处理', monthPending: '单月待处理', monthTotal: '本月业务工单', completed: '本月已完成反馈', voided: '本月已作废', messages: '业务反馈消息' },
   },
   businessLeader: {
     title: '业务组长看板',
-    subtitle: '默认关注本人/本组工单进展，便于跟进退回、撤回作废结果和字段变更反馈。',
+    subtitle: '',
     matrixTitle: '本月本组工单总表',
     cardTitles: { totalPending: '总待处理', monthPending: '单月待处理', monthTotal: '本月工单', completed: '本月已完成', voided: '本月已作废', messages: '待查看消息' },
   },
   businessMember: {
     title: '业务员看板',
-    subtitle: '展示本人发起工单的进展和后道反馈，减少与团队管理数据混在一起。',
+    subtitle: '',
     matrixTitle: '本月本人工单总表',
     cardTitles: { totalPending: '总待处理', monthPending: '单月待处理', monthTotal: '本人本月工单', completed: '本月已完成', voided: '本月已作废', messages: '我的消息' },
   },
   backend: {
     title: '后道办理看板',
-    subtitle: '聚焦已派发到后道节点的待处理、完成和异常消息。',
+    subtitle: '',
     matrixTitle: '本月办理节点总表',
     cardTitles: { totalPending: '总待处理', monthPending: '单月待处理', monthTotal: '本月派发节点', completed: '本月已办结', voided: '本月已作废', messages: '待处理消息' },
   },
@@ -150,7 +150,7 @@ const DASHBOARD_MATRIX_GROUPS: Array<{
     key: 'resignation',
     label: '离职管理',
     orderType: 'resignation',
-    routePath: '/resignation',
+    routePath: '/work-orders?orderType=resignation',
     modules: [
       { moduleCode: 'resignation_contact', label: getPhase1ModuleDisplayName('resignation_contact'), routePath: '/onboarding/resignation_contact' },
       { moduleCode: 'data_entry_resign', label: getPhase1ModuleDisplayName('data_entry_resign'), routePath: '/onboarding/data_entry_resign' },
@@ -164,45 +164,48 @@ function clampRate(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value * 10) / 10));
 }
 
-function calculateCompletionRate(completed: number, total: number, voided: number): number {
-  const denominator = Math.max(0, total - Math.max(0, voided || 0));
+function calculateCompletionRate(completed: number, total: number, voided: number, withdrawn = 0): number {
+  const denominator = Math.max(0, total - Math.max(0, voided || 0) - Math.max(0, withdrawn || 0));
   return denominator > 0 ? clampRate((Math.max(0, completed || 0) / denominator) * 100) : 0;
 }
 
-function normalizeStatsTotal<T extends Pick<OrderTypeMatrixRow, 'total' | 'processing' | 'completed' | 'voided' | 'completionRate'>>(
+function normalizeStatsTotal<T extends Pick<OrderTypeMatrixRow, 'total' | 'processing' | 'completed' | 'voided' | 'withdrawn' | 'completionRate'>>(
   row: T,
   options: { preserveCompletionRate?: boolean } = {},
 ): T {
   const completed = Math.max(0, row.completed || 0);
   const voided = Math.max(0, row.voided || 0);
-  const rawTotal = Math.max(0, row.total || 0);
+  const withdrawn = Math.max(0, row.withdrawn || 0);
   const rawProcessing = Math.max(0, row.processing || 0);
-  const processing = Math.max(rawProcessing, rawTotal - completed - voided);
-  const total = processing + completed + voided;
+  const processing = rawProcessing;
+  const total = processing + completed + voided + withdrawn;
   return {
     ...row,
     total,
     processing,
     completed,
     voided,
+    withdrawn,
     completionRate: options.preserveCompletionRate
       ? clampRate(row.completionRate)
-      : calculateCompletionRate(completed, total, voided),
+      : calculateCompletionRate(completed, total, voided, withdrawn),
   };
 }
 
-function summarizeMatrixRows(rows: Array<Pick<OrderTypeMatrixRow, 'total' | 'processing' | 'completed' | 'voided'>>): Pick<OrderTypeMatrixRow, 'total' | 'processing' | 'completed' | 'voided' | 'completionRate'> {
+function summarizeMatrixRows(rows: Array<Pick<OrderTypeMatrixRow, 'total' | 'processing' | 'completed' | 'voided' | 'withdrawn'>>): Pick<OrderTypeMatrixRow, 'total' | 'processing' | 'completed' | 'voided' | 'withdrawn' | 'completionRate'> {
   const normalizedRows = rows.map((row) => normalizeStatsTotal({ ...row, completionRate: 0 }));
   const processing = normalizedRows.reduce((sum, row) => sum + (row.processing || 0), 0);
   const completed = normalizedRows.reduce((sum, row) => sum + (row.completed || 0), 0);
   const voided = normalizedRows.reduce((sum, row) => sum + (row.voided || 0), 0);
-  const total = processing + completed + voided;
+  const withdrawn = normalizedRows.reduce((sum, row) => sum + (row.withdrawn || 0), 0);
+  const total = processing + completed + voided + withdrawn;
   return {
     total,
     processing,
     completed,
     voided,
-    completionRate: calculateCompletionRate(completed, total, voided),
+    withdrawn,
+    completionRate: calculateCompletionRate(completed, total, voided, withdrawn),
   };
 }
 
@@ -250,10 +253,11 @@ function buildMatrixTreeRows(
           processing: matched?.processing || 0,
           completed: matched?.completed || 0,
           voided: matched?.voided || 0,
+          withdrawn: matched?.withdrawn || 0,
           completionRate: clampRate(matched?.completionRate || 0),
         }, { preserveCompletionRate: true });
       })
-      .filter((row) => row.total > 0 || row.processing > 0 || row.completed > 0 || row.voided > 0 || canAccessModuleCode(row.moduleCode, userRoles, permissions));
+      .filter((row) => row.total > 0 || row.processing > 0 || row.completed > 0 || row.voided > 0 || row.withdrawn > 0 || canAccessModuleCode(row.moduleCode, userRoles, permissions));
     if (children.length === 0) return null;
     const summary = summarizeMatrixRows(children);
     return {
@@ -421,24 +425,23 @@ const Dashboard: React.FC = () => {
   const roles = useMemo(() => canonicalRoleCodes(user?.roles), [user?.roles]);
   const canViewLeaderTrend = roles.includes(ROLE.ADMIN) || roles.includes(ROLE.BUSINESS_OWNER);
   const canViewNotifications = roles.some((role) => NOTIFICATION_ROLES.includes(role as typeof NOTIFICATION_ROLES[number]));
+  const hasBackendRole = useMemo(() => roles.some((role) => BACKEND_ROLES.includes(role as typeof BACKEND_ROLES[number])), [roles]);
   const roleView = useMemo<DashboardRoleView>(() => {
-    const hasBackendRole = roles.some((role) => BACKEND_ROLES.includes(role as typeof BACKEND_ROLES[number]));
-    const hasBusinessRole = roles.some((role) => BUSINESS_ROLES.includes(role as typeof BUSINESS_ROLES[number]));
     if (roles.includes(ROLE.ADMIN)) return 'admin';
+    if (hasBackendRole) return 'backend';
     if (roles.includes(ROLE.BUSINESS_OWNER)) return 'businessOwner';
     if (roles.includes(ROLE.BUSINESS_GROUP_LEADER)) return 'businessLeader';
     if (roles.includes(ROLE.BUSINESS_GROUP_MEMBER)) return 'businessMember';
-    if (hasBackendRole && !hasBusinessRole) return 'backend';
-    return hasBackendRole ? 'backend' : 'businessMember';
-  }, [roles]);
+    return 'businessMember';
+  }, [hasBackendRole, roles]);
   const roleMeta = DASHBOARD_ROLE_META[roleView];
-  const dashboardAudience = useMemo<DashboardAudience>(() => {
-    const hasBackendRole = roles.some((role) => BACKEND_ROLES.includes(role as typeof BACKEND_ROLES[number]));
-    const hasBusinessRole = roles.some((role) => BUSINESS_ROLES.includes(role as typeof BUSINESS_ROLES[number]));
-    return hasBackendRole && !hasBusinessRole ? 'backend' : 'business';
-  }, [roles]);
+  const dashboardAudience: DashboardAudience = roleView === 'backend' ? 'backend' : 'business';
   const canSwitchDashboardScope = dashboardAudience === 'business' && roles.includes(ROLE.BUSINESS_GROUP_LEADER);
-  const effectiveScope: DashboardScopeMode | undefined = canSwitchDashboardScope ? scopeMode : undefined;
+  const effectiveScope: DashboardScopeMode | undefined = canSwitchDashboardScope
+    ? scopeMode
+    : roleView === 'businessMember'
+      ? 'mine'
+      : undefined;
   const dashboardCardValues = useMemo(() => ({
     totalPending: Math.max(0, cards.totalPending ?? cards.processing ?? 0),
     monthPending: Math.max(0, cards.monthPending ?? cards.processing ?? 0),
@@ -500,6 +503,14 @@ const Dashboard: React.FC = () => {
       sorter: (a, b) => (a.voided || 0) - (b.voided || 0),
     },
     {
+      title: '已撤回',
+      dataIndex: 'withdrawn',
+      key: 'withdrawn',
+      align: 'right',
+      render: (_, record) => <Text type="secondary">{record.withdrawn || 0}</Text>,
+      sorter: (a, b) => (a.withdrawn || 0) - (b.withdrawn || 0),
+    },
+    {
       title: '完成率',
       dataIndex: 'completionRate',
       key: 'completionRate',
@@ -554,7 +565,7 @@ const Dashboard: React.FC = () => {
   return (
     <PageContainer header={{
       title: roleMeta.title,
-      subTitle: roleMeta.subtitle,
+      ...(roleMeta.subtitle ? { subTitle: roleMeta.subtitle } : {}),
       extra: [
         canSwitchDashboardScope ? (
           <Space key="scope-switch" align="center">
@@ -583,13 +594,7 @@ const Dashboard: React.FC = () => {
       ],
     }}>
       <Space direction="vertical" size="large" style={{ width: '100%' }}>
-        <Card size="small" style={{ width: '100%' }}>
-          <Space direction="horizontal" align="center" style={{ width: '100%', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-            <Text strong>{selectedMonthLabel}仪表盘</Text>
-            <Text type="secondary">总待处理=当前可见范围内全部未办结子工单，不受月份影响；单月待处理/已完成/作废/总量按所选月份统计。</Text>
-          </Space>
-        </Card>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 16 }}>
+        <div data-testid="dashboard-metric-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', gap: 16, overflowX: 'auto' }}>
           <Card loading={loading} styles={{ body: CARD_BODY_STYLE }}>
             <Statistic title={roleMeta.cardTitles.totalPending} value={dashboardCardValues.totalPending} prefix={<ClockCircleOutlined />} valueStyle={{ color: '#fa8c16' }} />
           </Card>
@@ -646,7 +651,6 @@ const Dashboard: React.FC = () => {
                 <Tag color={selectedMatrixRow.isGroup ? 'blue' : 'purple'}>{selectedMatrixRow.isGroup ? '整体分类' : '明细节点'}</Tag>
               </Space>
             )}
-            extra={<Text type="secondary">点击上方大类或子类可在本页切换查看</Text>}
           >
             <Space direction="vertical" size="middle" style={{ width: '100%' }}>
               <Row gutter={[16, 16]}>
@@ -665,6 +669,9 @@ const Dashboard: React.FC = () => {
                 <Col xs={8} md={4}>
                   <Statistic title="已作废" value={selectedMatrixRow.voided || 0} valueStyle={{ color: '#8c8c8c' }} />
                 </Col>
+                <Col xs={8} md={4}>
+                  <Statistic title="已撤回" value={selectedMatrixRow.withdrawn || 0} valueStyle={{ color: '#8c8c8c' }} />
+                </Col>
                 <Col xs={24} md={6}>
                   <Text type="secondary">完成率</Text>
                   <Progress percent={clampRate(selectedMatrixRow.completionRate)} size="small" />
@@ -678,7 +685,7 @@ const Dashboard: React.FC = () => {
                       <Card size="small" hoverable onClick={() => setSelectedMatrixRow(child)}>
                         <Space direction="vertical" size={4} style={{ width: '100%' }}>
                           <Text strong>{child.label}</Text>
-                          <Text type="secondary">总数 {child.total} ｜ 未办结 {child.processing} ｜ 已完成 {child.completed} ｜ 已作废 {child.voided || 0}</Text>
+                          <Text type="secondary">总数 {child.total} ｜ 未办结 {child.processing} ｜ 已完成 {child.completed} ｜ 已作废 {child.voided || 0} ｜ 已撤回 {child.withdrawn || 0}</Text>
                           <Progress percent={clampRate(child.completionRate)} size="small" />
                         </Space>
                       </Card>

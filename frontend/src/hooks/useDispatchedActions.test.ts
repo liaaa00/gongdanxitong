@@ -14,6 +14,7 @@ const mockComplete = vi.fn();
 const mockReturn = vi.fn();
 const mockSupplement = vi.fn();
 const mockGetDispatchedOrder = vi.fn();
+const mockCreatorUpdate = vi.fn();
 const mockResubmit = vi.fn();
 
 vi.mock('@/services/dispatchedOrders', () => ({
@@ -25,13 +26,14 @@ vi.mock('@/services/dispatchedOrders', () => ({
   exportDispatchedOrder: vi.fn(),
   downloadDispatchedExport: vi.fn(),
   reassignDispatchedOrder: vi.fn(),
-  creatorUpdateDispatchedOrderFields: vi.fn(),
+  creatorUpdateDispatchedOrderFields: (...args: unknown[]) => mockCreatorUpdate(...args),
   urgeDispatchedOrder: vi.fn(),
   resubmitDispatchedOrder: (...args: unknown[]) => mockResubmit(...args),
   withdrawDispatchedOrder: vi.fn(),
   voidDispatchedOrder: vi.fn(),
   approveWithdrawDispatchedOrder: vi.fn(),
   approveVoidDispatchedOrder: vi.fn(),
+  isDispatchedAcceptedByBackend: (order?: { status?: string; accepted_at?: string | null } | null) => Boolean(order?.accepted_at) || order?.status === 'processing' || order?.status === 'accepted',
 }));
 
 import { useDispatchedActions } from './useDispatchedActions';
@@ -48,15 +50,17 @@ describe('useDispatchedActions', () => {
     dispatched_at: null, accepted_at: null, completed_at: null, created_at: '',
   };
 
-  it('accept succeeds and updates order', async () => {
+  it('accept succeeds and refreshes latest order', async () => {
     mockAccept.mockResolvedValue({ ...baseOrder, status: 'processing', accepted_at: new Date().toISOString() });
+    mockGetDispatchedOrder.mockResolvedValue({ ...baseOrder, status: 'processing', accepted_at: '2026-06-04T09:00:00Z' });
     const onUpdated = vi.fn();
     const { result } = renderHook(() =>
       useDispatchedActions({ orderId: 'd1', order: baseOrder, onOrderUpdated: onUpdated }),
     );
     await act(async () => { await result.current.handleAccept(); });
     expect(mockAccept).toHaveBeenCalledWith('d1');
-    await waitFor(() => expect(onUpdated).toHaveBeenCalled());
+    expect(mockGetDispatchedOrder).toHaveBeenCalledWith('d1');
+    await waitFor(() => expect(onUpdated).toHaveBeenCalledTimes(2));
   });
 
   it('accept fails gracefully', async () => {
@@ -82,6 +86,21 @@ describe('useDispatchedActions', () => {
     });
     expect(mockSupplement).toHaveBeenCalledWith('d1', { bank_name: '工行' });
     await waitFor(() => expect(onUpdated).toHaveBeenCalled());
+  });
+
+  it('saves creator field edits without auto-resubmitting returned child order', async () => {
+    mockCreatorUpdate.mockResolvedValue({ ...baseOrder, status: 'returned', extra_data: { employee_name: '李四' } });
+    const onUpdated = vi.fn();
+    const returnedOrder = { ...baseOrder, status: 'returned', extra_data: { employee_name: '张三' } };
+    const { result } = renderHook(() =>
+      useDispatchedActions({ orderId: 'd1', order: returnedOrder, onOrderUpdated: onUpdated }),
+    );
+
+    await act(async () => { await result.current.handleCreatorUpdate({ employee_name: '李四' }, '业务员修改字段'); });
+
+    expect(mockCreatorUpdate).toHaveBeenCalledWith('d1', { employee_name: '李四' }, '业务员修改字段');
+    expect(mockResubmit).not.toHaveBeenCalled();
+    await waitFor(() => expect(onUpdated).toHaveBeenCalledWith(expect.objectContaining({ status: 'returned' })));
   });
 
   it('resubmits the current child order without sending edit fields', async () => {

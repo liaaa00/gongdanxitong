@@ -78,20 +78,20 @@ describe('WorkOrdersDetail main order readonly mode', () => {
     voidWorkOrderMock.mockResolvedValue({ ...baseOrder, status: 'void_pending' });
   });
 
-  it('renders main work order as readonly and guides users to operate child orders', async () => {
+  it('renders main work order as readonly without extra guidance copy', async () => {
     renderDetail();
 
-    expect(await screen.findByText('主工单仅用于查看汇总信息')).toBeInTheDocument();
-    expect(screen.getByText('修改、撤回、作废、催办等操作请进入下方对应子工单处理，避免影响其他正常子工单。')).toBeInTheDocument();
-    expect(screen.getByText('工单数据（只读）')).toBeInTheDocument();
+    expect(await screen.findByText('工单数据（只读）')).toBeInTheDocument();
+    expect(screen.queryByText('主工单仅用于查看汇总信息')).not.toBeInTheDocument();
+    expect(screen.queryByText('修改、撤回、作废、催办等操作请进入下方对应子工单处理，避免影响其他正常子工单。')).not.toBeInTheDocument();
     expect(screen.getByTestId('dynamic-form')).toHaveAttribute('data-readonly', 'true');
-    expect(messageInfoMock).toHaveBeenCalledWith('主工单仅支持查看，请到对应子工单中进行修改、撤回、作废或催办。');
+    expect(messageInfoMock).not.toHaveBeenCalled();
   });
 
   it('does not expose legacy edit-resubmit actions on main work order detail', async () => {
     renderDetail();
 
-    await screen.findByText('主工单仅用于查看汇总信息');
+    await screen.findByText('工单数据（只读）');
 
     expect(screen.queryByText('编辑后必须重新提交，原审批将被重置')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /保存并重新提交/ })).not.toBeInTheDocument();
@@ -110,7 +110,7 @@ describe('WorkOrdersDetail main order readonly mode', () => {
 
     renderDetail('/work-orders/wo-1');
 
-    expect(await screen.findByText('当前工单为可返修状态')).toBeInTheDocument();
+    expect(await screen.findByText('工单数据（可返修）')).toBeInTheDocument();
     expect(screen.getByText('劳动合同新签: 合同信息需修正')).toBeInTheDocument();
     expect(screen.getByTestId('dynamic-form')).toHaveAttribute('data-readonly', 'false');
     expect(screen.getAllByRole('button', { name: /修改重新提交/ }).length).toBeGreaterThan(0);
@@ -122,7 +122,7 @@ describe('WorkOrdersDetail main order readonly mode', () => {
 
     renderDetail('/work-orders/wo-1');
 
-    expect(await screen.findByText('当前工单为可返修状态')).toBeInTheDocument();
+    expect(await screen.findByText('工单数据（可返修）')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /一键作废/ }));
     fireEvent.change(await screen.findByPlaceholderText('请填写作废原因'), { target: { value: '客户取消' } });
     fireEvent.click(screen.getByRole('button', { name: '确 定' }));
@@ -130,7 +130,7 @@ describe('WorkOrdersDetail main order readonly mode', () => {
 
     getWorkOrderMock.mockResolvedValueOnce({ ...baseOrder, status: 'withdrawn' });
     renderDetail('/work-orders/wo-1');
-    expect(await screen.findByText('当前工单为可返修状态')).toBeInTheDocument();
+    expect(await screen.findByText('工单数据（可返修）')).toBeInTheDocument();
     fireEvent.click(screen.getAllByRole('button', { name: '修改重新提交' }).at(-1)!);
     await waitFor(() => expect(updateWorkOrderMock).toHaveBeenCalledWith('wo-1', { employee_name: '修改后员工' }));
     expect(resubmitWorkOrderMock).toHaveBeenCalledWith('wo-1', { employee_name: '修改后员工' });

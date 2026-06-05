@@ -25,7 +25,7 @@ const RefButton = forwardRef<HTMLButtonElement, React.ComponentProps<typeof Butt
 ));
 RefButton.displayName = 'RefButton';
 
-const SOCIAL_REMARK_PLACEHOLDER = '例如：2026年5月社保新增，社保基数5000，公积金基数5000，操作类型：新增，无异常。';
+const SOCIAL_REMARK_PLACEHOLDER = '请输入办理备注';
 const ACTIVE_DISPATCHED_STATUSES = new Set(['pending', 'processing']);
 const DISPATCHED_PROCESSING_FILTER_STATUSES = ['pending', 'processing'] as const;
 
@@ -222,7 +222,7 @@ const OnboardingModule: React.FC = () => {
   const isSocialModule = ['social_insurance', 'social_insurance_resign', 'resignation_social_insurance'].includes(currentModule);
   const canOperateCurrentModule = hasRole('admin')
     || (['contract', 'renewal_contract'].includes(currentModule) && (hasRole('labor_contract_member') || hasRole('shared_team_owner')))
-    || (['onboarding_contact', 'resignation_contact', 'resignation_cert'].includes(currentModule) && (hasRole('onboarding_resignation_member') || hasRole('shared_team_owner')))
+    || (['onboarding_contact', 'resignation_contact'].includes(currentModule) && (hasRole('onboarding_resignation_member') || hasRole('shared_team_owner')))
     || (['data_entry', 'data_entry_resign'].includes(currentModule) && hasRole('data_entry_leader'))
     || (['social_insurance', 'social_insurance_resign', 'resignation_social_insurance'].includes(currentModule) && hasRole('social_insurance_specialist'));
   const canBackendOperate = canOperateCurrentModule;
@@ -476,13 +476,7 @@ const OnboardingModule: React.FC = () => {
         okText="确认完成"
         destroyOnHidden
       >
-        <Alert
-          type="warning"
-          showIcon
-          style={{ marginBottom: 12 }}
-          message={`已选择 ${selectedRows.length} 条子工单`}
-          description={isSocialModule ? '备注必填，请填写办理月份、社保基数、公积金基数、操作类型（新增/调整/停缴等）和异常说明。' : '备注必填，请填写本次批量完成的处理说明，便于后续追溯。'}
-        />
+
         <Form form={batchForm} layout="vertical">
           <Form.Item
             name="remark"
@@ -492,7 +486,7 @@ const OnboardingModule: React.FC = () => {
               { validator: (_, value) => String(value || '').trim() ? Promise.resolve() : Promise.reject(new Error('办理备注不能只填空格')) },
             ]}
           >
-            <Input.TextArea rows={4} maxLength={500} showCount placeholder={isSocialModule ? SOCIAL_REMARK_PLACEHOLDER : '请填写本次批量完成的处理说明'} />
+            <Input.TextArea rows={4} maxLength={500} showCount placeholder={isSocialModule ? SOCIAL_REMARK_PLACEHOLDER : '请输入办理备注'} />
           </Form.Item>
         </Form>
       </Modal>
@@ -502,6 +496,7 @@ const OnboardingModule: React.FC = () => {
         mode={batchImportMode || 'status'}
         moduleOptions={[{ label: moduleLabel, value: currentModule }]}
         defaultModuleCode={currentModule}
+        hideModuleSelect
         onClose={() => setBatchImportMode(null)}
         onImported={() => actionRef.current?.reload()}
       />

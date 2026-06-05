@@ -1,7 +1,7 @@
 export const DISPATCHED_PROCESSING_STATUSES = ['pending', 'processing'] as const;
 export const DISPATCHED_PROCESSING_STATUS_FILTER_VALUE = DISPATCHED_PROCESSING_STATUSES.join(',');
 export const DISPATCHED_PROCESSING_STATUS_OPTION = {
-  label: '未办结',
+  label: '未接单/已接单',
   value: DISPATCHED_PROCESSING_STATUS_FILTER_VALUE,
 };
 

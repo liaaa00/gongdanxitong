@@ -1,29 +1,66 @@
-import { useMemo } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import dayjs, { type Dayjs } from 'dayjs';
 import { PageContainer, ProTable } from '@ant-design/pro-components';
-import type { ProColumns } from '@ant-design/pro-components';
-import { Space, Tag } from 'antd';
+import type { ActionType, ProColumns } from '@ant-design/pro-components';
+import { DatePicker, Space, Tag } from 'antd';
 import { EyeOutlined } from '@ant-design/icons';
 import { getDispatchedOrdersSafe } from '@/services/dispatchedOrders';
 import type { DispatchedOrderItem } from '@/services/dispatchedOrders';
 import type { PageParams } from '@/services/mock';
-import { getModuleLabel } from '@/constants/modules';
+import { getModuleLabel, getPhaseOneModuleOptions } from '@/constants/modules';
 import { getStatusColor, getStatusText } from '@/constants/dictionaries';
 import { isPhase1VisibleModule, isPhase1VisibleOrderType } from '@/utils/moduleAccess';
+import { mergeProTableFiltersIntoParams, selectHeaderFilter, textHeaderFilter } from '@/utils/proTableFilters';
+import {
+  applyCachedColumnFilters,
+  getCachedListPageState,
+  getCachedMonth,
+  normalizeCachedFilters,
+  toMonthKey,
+  updateCachedListPageState,
+} from '@/utils/listPageState';
+import {
+  DISPATCHED_PROCESSING_STATUS_OPTION,
+  normalizeDispatchedStatusSearchParams,
+} from '@/utils/dispatchedStatusFilter';
 
-const ORDER_TYPE_OPTIONS = [
-  { value: 'onboarding', label: '入职' },
-  { value: 'resignation', label: '离职' },
+const WORK_TYPE_OPTIONS = getPhaseOneModuleOptions().map((option) => ({
+  label: `${option.label}子工单`,
+  value: option.value,
+}));
+
+const TEAM_STATUS_OPTIONS = [
+  DISPATCHED_PROCESSING_STATUS_OPTION,
+  { value: 'completed', label: '已完成' },
+  { value: 'returned', label: '已退回' },
+  { value: 'withdrawn', label: '已撤回' },
+  { value: 'void', label: '已作废' },
+  { value: 'modify_pending', label: '修改审批中' },
+  { value: 'withdraw_pending', label: '撤回审批中' },
+  { value: 'void_pending', label: '作废审批中' },
 ];
-const ORDER_TYPE_MAP = Object.fromEntries(ORDER_TYPE_OPTIONS.map((item) => [item.value, item.label]));
 
-function normalizeQuery(params: PageParams & Record<string, unknown>): PageParams {
+const PAGE_STATE_KEY = 'team-work';
+
+function getOperatorDisplay(record: DispatchedOrderItem) {
+  if (record.status === 'completed') return record.handler_name || '实际操作人未记录';
+  const configured = record.configured_handler_names || record.configuredHandlerNames || [];
+  if (configured.length > 0) return configured.join('、');
+  return record.handler_name || '负责人未配置';
+}
+
+function normalizeQuery(params: PageParams & Record<string, unknown>, month: Dayjs | null): PageParams {
   const readString = (...values: unknown[]) => {
     const value = values.find((item) => item !== undefined && item !== null && String(item).trim() !== '');
     return value === undefined ? undefined : String(value);
   };
+  const orderMonthRaw = params.orderMonth;
+  const orderMonth = orderMonthRaw && typeof (orderMonthRaw as { format?: unknown }).format === 'function'
+    ? (orderMonthRaw as { format: (format: string) => string }).format('YYYY-MM')
+    : String(orderMonthRaw || '');
 
-  return {
+  return normalizeDispatchedStatusSearchParams({
     ...params,
     page: Number(params.page ?? (params as { current?: number }).current ?? 1) || 1,
     pageSize: params.pageSize ? Number(params.pageSize) : undefined,
@@ -35,51 +72,61 @@ function normalizeQuery(params: PageParams & Record<string, unknown>): PageParam
     employeeName: readString(params.employeeName, params.employee_name),
     idCardNo: readString(params.idCardNo, params.employee_id_card, params.employeeIdCard),
     createdByName: readString(params.createdByName, params.created_by, params.created_by_name),
-    orderType: readString(params.orderType, params.order_type),
+    handlerName: readString(params.handlerName, params.handler_name),
+    moduleCode: readString(params.moduleCode, params.module_code),
     status: readString(params.status),
+    orderMonth: orderMonth || (month || dayjs()).format('YYYY-MM'),
     scope: 'team',
-  };
+  });
 }
 
 const TeamDispatched: React.FC = () => {
   const navigate = useNavigate();
+  const actionRef = useRef<ActionType>();
+  const cachedPageState = getCachedListPageState(PAGE_STATE_KEY);
+  const [month, setMonth] = useState<Dayjs | null>(() => getCachedMonth(PAGE_STATE_KEY));
 
-  const columns: ProColumns<DispatchedOrderItem>[] = useMemo(() => [
+  const columns: ProColumns<DispatchedOrderItem>[] = useMemo(() => applyCachedColumnFilters<DispatchedOrderItem>([
     {
-      title: '子工单编号',
+      title: '操作',
+      key: 'actions',
+      width: 120,
+      fixed: 'left',
+      hideInSearch: true,
+      render: (_, record) => (
+        <a onClick={() => navigate(`/my-dispatched/${record.id}`)}>
+          <Space size={4}><EyeOutlined />详情</Space>
+        </a>
+      ),
+    },
+    {
+      title: '编号',
       dataIndex: 'order_no',
-      key: 'order_no',
-      width: 160,
+      key: 'orderNo',
+      width: 150,
       copyable: true,
-      search: { transform: (value) => ({ orderNo: value }) },
+      ...textHeaderFilter('输入编号'),
     },
     {
       title: '工单类型',
-      dataIndex: 'order_type',
-      key: 'order_type',
-      width: 110,
-      valueType: 'select',
-      fieldProps: { options: ORDER_TYPE_OPTIONS },
-      search: { transform: (value) => ({ orderType: value }) },
-      renderText: (value) => ORDER_TYPE_MAP[String(value || '')] || String(value || '-'),
-    },
-    {
-      title: '子工单模块',
       dataIndex: 'module_code',
-      key: 'module_code',
-      width: 170,
+      key: 'moduleCode',
+      width: 160,
+      valueType: 'select',
+      fieldProps: { options: WORK_TYPE_OPTIONS, placeholder: '下拉选择' },
+      ...selectHeaderFilter('选择工单类型', WORK_TYPE_OPTIONS),
       render: (_, record) => <Tag color="blue">{getModuleLabel(record.module_code, record.order_type)}</Tag>,
     },
-    { title: '客户代码', dataIndex: 'customer_code', key: 'customer_code', width: 120, search: { transform: (value) => ({ customerCode: value }) }, renderText: (value) => value || '-' },
-    { title: '客户名称', dataIndex: 'customer_name', key: 'customer_name', width: 170, ellipsis: true, search: { transform: (value) => ({ customerName: value }) } },
-    { title: '员工姓名', dataIndex: 'employee_name', key: 'employee_name', width: 110, search: { transform: (value) => ({ employeeName: value }) } },
-    { title: '证件号', dataIndex: 'employee_id_card', key: 'employee_id_card', width: 180, ellipsis: true, search: { transform: (value) => ({ idCardNo: value }) } },
+    { title: '客户代码', dataIndex: 'customer_code', key: 'customerCode', width: 110, ...textHeaderFilter('输入客户代码'), renderText: (value) => value || '-' },
+    { title: '客户名称', dataIndex: 'customer_name', key: 'customerName', width: 150, ellipsis: true, ...textHeaderFilter('输入客户名称') },
+    { title: '员工姓名', dataIndex: 'employee_name', key: 'employeeName', width: 100, ...textHeaderFilter('输入员工姓名') },
+    { title: '证件号', dataIndex: 'employee_id_card', key: 'idCardNo', width: 170, ellipsis: true, ...textHeaderFilter('输入证件号') },
     {
       title: '发起人',
       dataIndex: 'created_by_name',
-      key: 'created_by_name',
+      key: 'createdByName',
       width: 120,
-      search: { transform: (value) => ({ createdByName: value }) },
+      ...textHeaderFilter('输入发起人'),
       renderText: (value, record) => value || record.created_by || '-',
     },
     {
@@ -88,53 +135,64 @@ const TeamDispatched: React.FC = () => {
       key: 'status',
       width: 120,
       valueType: 'select',
-      fieldProps: {
-        options: [
-          { value: 'pending', label: '待处理' },
-          { value: 'processing', label: '处理中' },
-          { value: 'completed', label: '已完成' },
-          { value: 'returned', label: '已退回' },
-          { value: 'withdrawn', label: '已撤回' },
-          { value: 'void', label: '已作废' },
-          { value: 'withdraw_pending', label: '撤回审批中' },
-          { value: 'void_pending', label: '作废审批中' },
-        ],
-      },
+      fieldProps: { options: TEAM_STATUS_OPTIONS, placeholder: '请选择状态' },
+      ...selectHeaderFilter('选择状态', TEAM_STATUS_OPTIONS),
       render: (_, record) => <Tag color={getStatusColor(record.void_at ? 'void' : record.status)}>{getStatusText(record.void_at ? 'void' : record.status)}</Tag>,
     },
-    { title: '派发时间', dataIndex: 'dispatched_at', key: 'dispatched_at', width: 170, valueType: 'dateTime', hideInSearch: true },
-    { title: '完成时间', dataIndex: 'completed_at', key: 'completed_at', width: 170, valueType: 'dateTime', hideInSearch: true },
-    {
-      title: '操作',
-      key: 'actions',
-      width: 120,
-      hideInSearch: true,
-      render: (_, record) => (
-        <a onClick={() => navigate(`/my-dispatched/${record.id}?readonly=1&from=team`)}>
-          <Space size={4}><EyeOutlined />只读详情</Space>
-        </a>
-      ),
+    { title: '实际操作人/配置负责人', dataIndex: 'handler_name', key: 'handlerName', width: 190, hideInSearch: true, ...textHeaderFilter('输入负责人'),
+      render: (_, record) => {
+        const text = getOperatorDisplay(record);
+        return record.status === 'completed' ? text : <Tag color={text === '负责人未配置' ? 'orange' : 'blue'}>{text}</Tag>;
+      },
     },
-  ], [navigate]);
+    { title: '工单所属月份', dataIndex: 'orderMonth', key: 'orderMonth', valueType: 'dateMonth', hideInTable: true, hideInSearch: true },
+    { title: '派发时间', dataIndex: 'dispatched_at', key: 'dispatched_at', width: 150, valueType: 'dateTime', hideInSearch: true },
+    { title: '完成时间', dataIndex: 'completed_at', key: 'completed_at', width: 150, valueType: 'dateTime', hideInSearch: true },
+  ], cachedPageState.filters || {}), [navigate, cachedPageState.filters]);
 
   return (
     <PageContainer
       header={{
         title: '团队工单',
-        subTitle: '团队工单按子工单逐条展示，可查看详情但不可执行接单、完成、退回等操作。',
+        extra: [
+          <Space key="month">
+            <span>工单月份：</span>
+            <DatePicker
+              picker="month"
+              allowClear={false}
+              value={month}
+              onChange={(value) => {
+                const nextMonth = value || dayjs();
+                setMonth(nextMonth);
+                updateCachedListPageState(PAGE_STATE_KEY, { month: toMonthKey(nextMonth), current: 1 });
+                actionRef.current?.reload();
+              }}
+            />
+          </Space>,
+        ],
       }}
     >
       <ProTable<DispatchedOrderItem>
+        actionRef={actionRef}
         columns={columns}
-        request={async (params: PageParams & Record<string, unknown>) => {
-          const result = await getDispatchedOrdersSafe(normalizeQuery(params));
+        request={async (params: PageParams & Record<string, unknown>, _sort, filters) => {
+          updateCachedListPageState(PAGE_STATE_KEY, {
+            current: Number((params as { current?: number }).current || params.page || cachedPageState.current || 1),
+            pageSize: Number(params.pageSize || cachedPageState.pageSize || 20),
+            filters: normalizeCachedFilters(filters),
+          });
+          const mergedParams = mergeProTableFiltersIntoParams(params, filters);
+          const result = await getDispatchedOrdersSafe(normalizeQuery({
+            ...mergedParams,
+            page: (params as { current?: number }).current || params.page || 1,
+          } as PageParams & Record<string, unknown>, month));
           const list = result.list.filter((row) => isPhase1VisibleModule(row.module_code) && (!row.order_type || isPhase1VisibleOrderType(row.order_type)));
-          return { data: list, success: true, total: list.length };
+          return { data: list, success: true, total: result.total };
         }}
         rowKey="id"
-        search={{ labelWidth: 'auto' }}
+        search={false}
         headerTitle="授权团队范围内子工单"
-        pagination={{ defaultPageSize: 20, showSizeChanger: true }}
+        pagination={{ defaultCurrent: cachedPageState.current || 1, defaultPageSize: cachedPageState.pageSize || 20, showSizeChanger: true }}
         dateFormatter="string"
         options={false}
         toolBarRender={false}

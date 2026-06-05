@@ -442,23 +442,7 @@ function ExcelUploader({ onPreview, onConfirm, onPollJob, onDownloadErrorReport 
   const unmatchedHeaders = mappingResult ? (mappingResult.unmatchedHeaders || mappingResult.unmatched || []) : [];
   const missingRequiredFields = filterDeprecatedFields(mappingResult?.missingRequired);
   const requiresMappingReview = unmatchedHeaders.length > 0 || missingRequiredFields.length > 0;
-  const modelUsed = mappingResult?.modelUsed;
-  const isFallbackMapping = Boolean(modelUsed?.startsWith('fallback:'));
-  const modelLabelMap: Record<string, string> = {
-    openai: '默认智能服务', qwen: '通义千问服务', deepseek: '深度求索服务',
-  };
-  const getModelLabel = (raw: string | undefined) => {
-    if (!raw) return '未知';
-    if (raw.startsWith('fallback:')) return '本地规则';
-    return modelLabelMap[raw] || raw;
-  };
-  const fallbackReasonText: Record<string, string> = {
-    no_api_key: '未配置接口密钥，未启用外部智能服务',
-    provider_error: '智能服务不可用或返回异常，已退回本地规则',
-    timeout: '智能服务超时，已退回本地规则',
-    rate_limit: '智能服务限流，已退回本地规则',
-    schema_invalid: '智能服务返回格式不符合要求，已退回本地规则',
-  };
+
 
   return (
     <Card title="批量导入工单">
@@ -483,7 +467,7 @@ function ExcelUploader({ onPreview, onConfirm, onPollJob, onDownloadErrorReport 
         <Dragger accept=".xlsx,.xls" beforeUpload={handleUpload} showUploadList={false} disabled={loading}>
           <p className="ant-upload-drag-icon"><InboxOutlined /></p>
           <p className="ant-upload-text">点击或拖拽表格文件到此处上传</p>
-          <p className="ant-upload-hint">支持 .xlsx 和 .xls 格式；使用系统标准模板时无需人工映射，异常表头才需要确认</p>
+
         </Dragger>
       )}
 
@@ -498,23 +482,6 @@ function ExcelUploader({ onPreview, onConfirm, onPollJob, onDownloadErrorReport 
 
       {step === 2 && mappingResult && (
         <>
-          <Alert
-            message={unmatchedHeaders.length === 0 ? '表头已按系统标准模板自动匹配，无需逐项人工映射' : (isFallbackMapping ? '当前使用本地规则匹配，未使用外部智能服务' : '当前使用智能匹配')}
-            description={(
-              <Space direction="vertical" size={4}>
-                <span>匹配来源：<Tag color={isFallbackMapping ? 'orange' : 'green'}>{getModelLabel(modelUsed)}</Tag></span>
-                {mappingResult.fallbackReason && (
-                  <span>原因：{fallbackReasonText[mappingResult.fallbackReason] || mappingResult.fallbackReason}</span>
-                )}
-                {isFallbackMapping && (
-                  <span>系统优先按管理员发布的标准模板/本地规则自动匹配；只有复杂表头、多行表头或非标准叫法才需要人工复核。</span>
-                )}
-              </Space>
-            )}
-            type={isFallbackMapping ? 'warning' : 'success'}
-            showIcon
-            style={{ marginBottom: 16 }}
-          />
 
           {unmatchedHeaders.length > 0 && (
             <Alert
@@ -524,7 +491,6 @@ function ExcelUploader({ onPreview, onConfirm, onPollJob, onDownloadErrorReport 
                   {unmatchedHeaders.map((header) => (
                     <Tag key={header} color="default" style={{ marginBottom: 4 }}>{header}</Tag>
                   ))}
-                  请在下方表格中手动选择对应系统字段，或检查表格表头是否为多行、合并单元格或带示例值格式。
                 </span>
               )}
               type="warning"
@@ -538,12 +504,10 @@ function ExcelUploader({ onPreview, onConfirm, onPollJob, onDownloadErrorReport 
               message="缺少必填字段"
               description={
                 <span>
-                  表格中未找到以下必填字段的对应列：
                   {missingRequiredFields.map((code) => {
                     const name = mappingResult.availableFields.find((f) => f.field_code === code)?.field_name || code;
                     return <Tag key={code} color="red" style={{ marginLeft: 4 }}>{name}</Tag>;
                   })}
-                  ，请手动补充或确认。
                 </span>
               }
               type="warning" showIcon icon={<WarningOutlined />}
@@ -680,7 +644,7 @@ function ExcelUploader({ onPreview, onConfirm, onPollJob, onDownloadErrorReport 
               type="warning"
               showIcon
               style={{ marginBottom: 16 }}
-              message="系统兼容与警告提示"
+              message="导入警告"
               description={(
                 <Space direction="vertical" size={4}>
                   {importWarnings.map((item, index) => <div key={`warn-${index}`}>{item}</div>)}
@@ -696,7 +660,7 @@ function ExcelUploader({ onPreview, onConfirm, onPollJob, onDownloadErrorReport 
                 columns={[
                   { title: '行号', dataIndex: 'row', key: 'row', width: 80, render: (v: number | undefined) => v ? `第 ${v} 行` : '—' },
                   { title: '字段', dataIndex: 'field', key: 'field', width: 160, render: (v: string | undefined) => v || '整行' },
-                  { title: '提示信息', dataIndex: 'message', key: 'message', render: (v: string) => v || '系统警告' },
+                  { title: '内容', dataIndex: 'message', key: 'message', render: (v: string) => v || '系统警告' },
                   { title: '默认值', dataIndex: 'normalizedValue', key: 'normalizedValue', width: 180, render: (v: unknown) => {
                     if (v === undefined || v === null || v === '') return <Text type="secondary">-</Text>;
                     return <Text>{String(v)}</Text>;
@@ -742,11 +706,11 @@ function ExcelUploader({ onPreview, onConfirm, onPollJob, onDownloadErrorReport 
                     if (v === undefined || v === null || v === '') return <Text type="secondary">未填写</Text>;
                     return <Text>{String(v)}</Text>;
                   } },
-                  { title: '建议修正/系统提示', dataIndex: 'suggestion', key: 'suggestion', render: (v: string | undefined, record: ValidationErrorItem) => {
+                  { title: '处理', dataIndex: 'suggestion', key: 'suggestion', render: (v: string | undefined, record: ValidationErrorItem) => {
                     if (record.autoFixed) {
-                      return <Text type="success">系统已自动兼容{record.autoFixedValue !== undefined ? `为“${String(record.autoFixedValue)}”` : ''}，请复核后重新导入。</Text>;
+                      return <Text type="success">已自动兼容{record.autoFixedValue !== undefined ? `为“${String(record.autoFixedValue)}”` : ''}</Text>;
                     }
-                    return v ? <Text>{v}</Text> : <Text type="secondary">请按原因修正该单元格后重新导入。</Text>;
+                    return v ? <Text>{v}</Text> : <Text type="secondary">-</Text>;
                   } },
                 ]}
                 pagination={false}
@@ -754,14 +718,7 @@ function ExcelUploader({ onPreview, onConfirm, onPollJob, onDownloadErrorReport 
                 bordered
                 scroll={{ x: 'max-content' }}
               />
-              {importErrorDetails.length > 20 && !showAllImportErrors && (
-                <Alert
-                  type="info"
-                  showIcon
-                  style={{ marginTop: 12 }}
-                  message={`错误较多，当前仅展示前 20 条；还有 ${importErrorDetails.length - 20} 条可点击“展开全部错误”查看。`}
-                />
-              )}
+
             </Card>
           )}
 
@@ -772,7 +729,6 @@ function ExcelUploader({ onPreview, onConfirm, onPollJob, onDownloadErrorReport 
             {importResult.failRows > 0 && (
               <Alert
                 message={`${importResult.failRows} 行导入失败`}
-                description="失败原因已在页面直接展示，请根据行号、字段、原始值和建议修正后重新导入；错误报告仅作为辅助下载。"
                 type="warning" showIcon style={{ flex: 1 }}
                 action={
                   <Button size="small" icon={<DownloadOutlined />} onClick={handleDownloadError}

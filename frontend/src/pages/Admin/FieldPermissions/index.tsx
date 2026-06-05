@@ -295,15 +295,7 @@ const AdminFieldPermissions: React.FC = () => {
       const k = dirtyKey(roleId, fieldCode);
       const prevValue = prev[k] ?? fromBackendPermission(original);
       const hasChange = toBackendPermission(perm) !== toBackendPermission(original);
-      // 按 QA 要求保留调试日志：用于确认 Select onChange 已进入、前后值和 diff 是否成立。
-      console.log('[字段权限] 单元格变更', {
-        roleId,
-        fieldCode,
-        prev: prevValue,
-        next: perm,
-        original,
-        hasChange,
-      });
+      // 字段权限调整会立即写入本地状态，保存时统一提交。
       if (!hasChange) {
         delete next[k];
       } else {
@@ -485,7 +477,7 @@ const AdminFieldPermissions: React.FC = () => {
         type={isAdmin ? 'info' : 'warning'}
         message={
           <span>
-            当前查看：{selectedRoleName}。选择上方“填写场景”，再设置该角色对每个字段是 <Tag color="green">可编辑</Tag><Tag>只读</Tag><Tag color="red">隐藏</Tag>。
+            当前查看：{selectedRoleName}。选择上方“填写场景”，再设置该角色对每个字段是 <Tag color="green">可编辑</Tag><Tag>只读</Tag><Tag color="red">隐藏</Tag>。字段最终文件确认前，不确定的字段权限可以先保持默认。
             {isAdmin ? ' 修改后点击右上角保存。' : ' 当前账号仅可查看。'}
           </span>
         }

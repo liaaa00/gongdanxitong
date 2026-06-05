@@ -57,6 +57,7 @@ export const WORK_ORDER_TERMINAL_STATUSES = [
 export enum DispatchedOrderStatus {
   PENDING = 'pending',
   PROCESSING = 'processing',
+  MODIFY_PENDING = 'modify_pending',
   COMPLETED = 'completed',
   RETURNED = 'returned',
   WITHDRAW_PENDING = 'withdraw_pending',

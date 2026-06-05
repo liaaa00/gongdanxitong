@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { IsIn, IsObject, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class UploadOrderAttachmentDto {
@@ -17,6 +17,10 @@ export class UploadOrderAttachmentDto {
   status?: string;
 
   @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value !== 'string') return value;
+    try { return JSON.parse(value) as Record<string, unknown>; } catch { return {}; }
+  })
   @IsObject()
   @Type(() => Object)
   metadata?: Record<string, unknown>;

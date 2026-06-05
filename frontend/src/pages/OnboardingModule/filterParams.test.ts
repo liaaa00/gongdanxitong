@@ -3,7 +3,7 @@ import { DISPATCHED_STATUS_FILTER_OPTIONS, buildEffectiveHeaderFilterParams, bui
 
 describe('OnboardingModule table header filter params', () => {
   it('maps the visible processing filter option to both pending and processing backend statuses', () => {
-    const processingOption = DISPATCHED_STATUS_FILTER_OPTIONS.find((option) => option.label === '未办结');
+    const processingOption = DISPATCHED_STATUS_FILTER_OPTIONS.find((option) => option.label === '未接单/已接单');
 
     expect(processingOption).toMatchObject({ value: 'pending,processing' });
     expect(buildHeaderFilterParams({ status: [processingOption?.value || ''] })).toMatchObject({

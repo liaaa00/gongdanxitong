@@ -46,7 +46,7 @@ export class DashboardController {
 
   @Get('cards')
   cards(@Query() query: DashboardScopeQueryDto, @CurrentUser() user: JwtUserPayload) {
-    return this.dashboardService.getDashboardCards(user, query.scope, query.month);
+    return this.dashboardService.getDashboardCards(user, query.scope, query.month, query.audience);
   }
 
   /** @Deprecated retained for compatibility; use GET /dashboard/cards. */
@@ -83,7 +83,7 @@ export class DashboardController {
 
   @Get('order-type-matrix')
   orderTypeMatrix(@Query() query: OrderTypeMatrixQueryDto, @CurrentUser() user: JwtUserPayload) {
-    return this.dashboardService.getOrderTypeMatrix(user, query.dimension ?? 'orderType', query.scope, query.month);
+    return this.dashboardService.getOrderTypeMatrix(user, query.dimension ?? 'orderType', query.scope, query.month, query.audience);
   }
 
   @Get('leader-trend')

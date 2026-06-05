@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
@@ -54,5 +54,10 @@ export class AttachmentsController {
   @Post(':id/receive')
   receive(@Param('id') id: string) {
     return this.service.receive(id);
+  }
+
+  @Delete(':id')
+  remove(@Param('id') id: string, @CurrentUser() user: JwtUserPayload) {
+    return this.service.remove(id, user);
   }
 }

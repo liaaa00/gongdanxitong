@@ -94,7 +94,7 @@ describe('WorkOrders initiated read-only view', () => {
 
     expect(screen.queryByRole('button', { name: /详情/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /新建工单/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /入职导入/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /入职批量导入/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /批量导出/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /批量删除/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /取消选择/ })).not.toBeInTheDocument();
@@ -123,10 +123,11 @@ describe('WorkOrders initiated read-only view', () => {
     expect(screen.getByTestId('multi-view-table')).toHaveAttribute('data-view-id', 'work-orders-main');
     expect(mocks.latestTableProps.toolBarRender).toBeTypeOf('function');
     expect(mocks.latestTableProps.batchActions).toBeTypeOf('function');
+    expect(mocks.latestTableProps.pagination).toEqual(expect.objectContaining({ defaultPageSize: 50, showSizeChanger: true }));
     expect(getColumn('actions')).toBeDefined();
 
     await waitFor(() => expect(screen.getByRole('button', { name: /新建工单/ })).toBeInTheDocument());
-    expect(screen.getByRole('button', { name: /入职导入/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /工单批量导入/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /批量导出/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /详情/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^删除$/ })).toBeInTheDocument();
@@ -148,11 +149,29 @@ describe('WorkOrders initiated read-only view', () => {
     render(<WorkOrders />);
 
     await waitFor(() => expect(screen.getByRole('button', { name: /新建工单/ })).toBeInTheDocument());
-    expect(screen.getByRole('button', { name: /入职导入/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /工单批量导入/ })).toBeInTheDocument();
 
     const result = await mocks.latestTableProps.request({ current: 1, pageSize: 20 });
 
     expect(mocks.getWorkOrders).toHaveBeenCalledWith(expect.not.objectContaining({ orderType: 'onboarding' }));
     expect(result.data).toHaveLength(2);
+  });
+
+  it('shows resignation-specific create and import actions when opened from resignation menu', async () => {
+    mocks.pathname = '/work-orders';
+    mocks.search = '?orderType=resignation';
+    mocks.roles = new Set<string>(['business_group_member']);
+    mocks.getMyRoleActions.mockResolvedValue(['work_order.view_own']);
+    mocks.getWorkOrders.mockResolvedValue({ list: [], total: 0 });
+
+    render(<WorkOrders />);
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: '离职主工单列表' })).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /新建离职工单/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /离职批量导入/ })).toBeInTheDocument();
+
+    await mocks.latestTableProps.request({ current: 1, pageSize: 20 });
+
+    expect(mocks.getWorkOrders).toHaveBeenCalledWith(expect.objectContaining({ orderType: 'resignation' }));
   });
 });

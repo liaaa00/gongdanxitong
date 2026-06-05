@@ -17,8 +17,8 @@ function qbChain(result: unknown) {
   return qb;
 }
 
-describe('BE-A4 duplicate id-card in month', () => {
-  it('builds month range and excludes withdrawn/order id', async () => {
+describe('BE-A4 duplicate id-card global check', () => {
+  it('checks duplicate id-card globally and excludes current order id', async () => {
     const qb = qbChain({ orderNo: 'ON202605001' });
     const repo = { createQueryBuilder: jest.fn(() => qb) } as unknown as Repository<WorkOrder>;
     const row = await findDuplicateIdCardInMonth(repo, {
@@ -28,9 +28,10 @@ describe('BE-A4 duplicate id-card in month', () => {
       excludeId: 'current',
     });
     expect(row?.orderNo).toBe('ON202605001');
-    expect(qb.andWhere).toHaveBeenCalledWith('w.createdAt >= :monthStart', { monthStart: new Date(2026, 4, 1) });
-    expect(qb.andWhere).toHaveBeenCalledWith('w.createdAt < :monthEnd', { monthEnd: new Date(2026, 5, 1) });
+    expect(qb.andWhere).toHaveBeenCalledWith('w.employeeIdCard = :employeeIdCard', { employeeIdCard: '3301' });
     expect(qb.andWhere).toHaveBeenCalledWith('w.id <> :excludeId', { excludeId: 'current' });
+    expect(qb.andWhere).not.toHaveBeenCalledWith(expect.stringContaining('createdAt >='), expect.anything());
+    expect(qb.andWhere).not.toHaveBeenCalledWith(expect.stringContaining('createdAt <'), expect.anything());
   });
 
   it('throws structured DUPLICATE_ID_CARD_IN_MONTH error', () => {

@@ -167,7 +167,7 @@ describe('MyDispatchedDetail readonly and creator repair actions', () => {
     renderDetail('/my-dispatched/d-1?readonly=1&from=team&action=edit');
 
     await waitFor(() => expect(mocks.getDispatchedOrder).toHaveBeenCalledWith('d-1'));
-    expect(await screen.findByText('团队工单只读详情')).toBeInTheDocument();
+    expect(screen.queryByText('团队工单只读详情')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /修改/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /重新提交/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /作废/ })).not.toBeInTheDocument();
@@ -176,7 +176,7 @@ describe('MyDispatchedDetail readonly and creator repair actions', () => {
     expect(mocks.confirm).not.toHaveBeenCalled();
   });
 
-  it('hides all operation buttons when backend opens from my-work readonly view', async () => {
+  it('hides all operation buttons only when my-work link explicitly requests readonly', async () => {
     mocks.currentUser = {
       id: 'handler-1',
       username: 'handler',
@@ -193,10 +193,32 @@ describe('MyDispatchedDetail readonly and creator repair actions', () => {
 
     renderDetail('/my-dispatched/d-1?readonly=1&from=my-work');
 
-    expect(await screen.findByText('我的工单只读详情')).toBeInTheDocument();
+    await waitFor(() => expect(mocks.getDispatchedOrder).toHaveBeenCalledWith('d-1'));
+    expect(screen.queryByText('我的工单只读详情')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /接单/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /完成/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /退回/ })).not.toBeInTheDocument();
+  });
+
+  it('allows backend user to operate when opened from my-work without readonly flag', async () => {
+    mocks.currentUser = {
+      id: 'handler-1',
+      username: 'handler',
+      real_name: '后道',
+      roles: [{ code: 'social_insurance_specialist' }],
+    };
+    mocks.getDispatchedOrder.mockResolvedValue({
+      ...baseOrder,
+      module_code: 'social_insurance',
+      module_name: '社保公积金增员',
+      status: 'pending',
+      handler_id: 'handler-1',
+    });
+
+    renderDetail('/my-dispatched/d-1?from=my-work');
+
+    expect(await screen.findByRole('button', { name: /接单/ })).toBeInTheDocument();
+    expect(screen.queryByText('我的工单只读详情')).not.toBeInTheDocument();
   });
 
   it('shows child-level modify and resubmit actions for creator on void child order', async () => {
@@ -209,8 +231,7 @@ describe('MyDispatchedDetail readonly and creator repair actions', () => {
     renderDetail('/my-dispatched/d-1');
 
     await waitFor(() => expect(mocks.getDispatchedOrder).toHaveBeenCalledWith('d-1'));
-    expect(await screen.findByRole('button', { name: /修改/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /重新提交/ })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /重新提交/ })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /撤回/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /催办/ })).not.toBeInTheDocument();
   });
@@ -232,7 +253,7 @@ describe('MyDispatchedDetail readonly and creator repair actions', () => {
     expect(screen.queryByText('社保公积金子工单已接单/已受理')).not.toBeInTheDocument();
   });
 
-  it('locks direct creator operations on social insurance child after accepted or processing', async () => {
+  it('allows creator to submit approval actions after backend accepted the child order', async () => {
     mocks.getDispatchedOrder.mockResolvedValue({
       ...baseOrder,
       module_code: 'social_insurance',
@@ -243,16 +264,13 @@ describe('MyDispatchedDetail readonly and creator repair actions', () => {
 
     renderDetail('/my-dispatched/d-1');
 
-    expect(await screen.findByText('社保公积金子工单已接单/已受理')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /修改需后道同意/ })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /撤回需审批/ })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /作废需审批/ })).toBeDisabled();
-    expect(screen.queryByRole('button', { name: /^修改$/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^撤回$/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^作废$/ })).not.toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /修改/ })).toBeInTheDocument();
+    expect(screen.queryByText('该子工单已接单')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /撤回/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /作废/ })).toBeInTheDocument();
   });
 
-  it('locks resignation social insurance child when backend returns accepted status alias', async () => {
+  it('uses global accepted approval rule when backend returns accepted status alias', async () => {
     mocks.getDispatchedOrder.mockResolvedValue({
       ...baseOrder,
       module_code: 'resignation_social_insurance',
@@ -263,9 +281,9 @@ describe('MyDispatchedDetail readonly and creator repair actions', () => {
 
     renderDetail('/my-dispatched/d-1');
 
-    expect(await screen.findByText('社保公积金子工单已接单/已受理')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /修改需后道同意/ })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /撤回需审批/ })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /作废需审批/ })).toBeDisabled();
+    expect(await screen.findByText('已接单')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /修改/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /撤回/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /作废/ })).toBeInTheDocument();
   });
 });

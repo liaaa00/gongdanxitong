@@ -37,6 +37,8 @@ export interface MultiViewTableProps<T extends Record<string, unknown>> {
   batchActions?: (selectedRowKeys: React.Key[], clearSelection: () => void) => React.ReactNode;
   /** ProTable 内置搜索表单配置；false 表示关闭 */
   search?: ProTableProps<T, Record<string, unknown>>['search'];
+  /** ProTable 分页配置，默认 20 条/页，可由页面覆盖 */
+  pagination?: ProTableProps<T, Record<string, unknown>>['pagination'];
   /** 关闭 ProTable 内置 options，避免默认工具栏 Tooltip 链路触发 findDOMNode */
   proTableOptions?: false;
   /** 关闭 ProTable 内置 toolBarRender，仅保留 MultiViewTable 自定义工具栏 */

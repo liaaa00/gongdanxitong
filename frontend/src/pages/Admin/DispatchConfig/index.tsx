@@ -69,7 +69,6 @@ const SUB_MODULES: Array<Option & { orderType: string }> = [
   { label: '待遇申报', value: 'benefit', orderType: 'benefit' },
   { label: '待遇申报', value: 'benefit_apply', orderType: 'benefit' },
   { label: '离职材料收集', value: 'resignation_contact', orderType: 'resignation' },
-  { label: '离职材料收集（历史兼容）', value: 'resignation_cert', orderType: 'resignation' },
   { label: '减员报岗录入', value: 'data_entry_resign', orderType: 'resignation' },
   { label: '社保公积金减员', value: 'resignation_social_insurance', orderType: 'resignation' },
 ];

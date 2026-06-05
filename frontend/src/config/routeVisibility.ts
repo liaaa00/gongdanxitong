@@ -51,35 +51,11 @@ const OFFBOARDING_ROLES = [
   ROLE.DATA_ENTRY_LEADER,
 ] as const satisfies readonly CanonicalRole[];
 
-const INITIATED_WORK_ROLES = [
-  ROLE.ADMIN,
-  ROLE.BUSINESS_GROUP_LEADER,
-  ROLE.BUSINESS_GROUP_MEMBER,
-] as const satisfies readonly CanonicalRole[];
-
-const RETURNED_WORK_ROLES = [
-  ROLE.ADMIN,
-  ROLE.BUSINESS_GROUP_LEADER,
-  ROLE.BUSINESS_GROUP_MEMBER,
-] as const satisfies readonly CanonicalRole[];
-
-const PENDING_WORK_ROLES = [
-  ROLE.ADMIN,
-  ROLE.DATA_ENTRY_LEADER,
-  ROLE.SHARED_TEAM_OWNER,
-  ROLE.LABOR_CONTRACT_MEMBER,
-  ROLE.ONBOARDING_RESIGNATION_MEMBER,
-  ROLE.SOCIAL_INSURANCE_SPECIALIST,
-] as const satisfies readonly CanonicalRole[];
-
-const DONE_WORK_ROLES = [
-  ROLE.ADMIN,
-  ROLE.DATA_ENTRY_LEADER,
-  ROLE.SHARED_TEAM_OWNER,
-  ROLE.LABOR_CONTRACT_MEMBER,
-  ROLE.ONBOARDING_RESIGNATION_MEMBER,
-  ROLE.SOCIAL_INSURANCE_SPECIALIST,
-] as const satisfies readonly CanonicalRole[];
+// 我的工单各入口统一开放给业务员和后道人员；数据范围与可操作动作由列表接口/详情接口按当前用户兜底控制。
+const INITIATED_WORK_ROLES = ALL_ROLES;
+const RETURNED_WORK_ROLES = ALL_ROLES;
+const PENDING_WORK_ROLES = ALL_ROLES;
+const DONE_WORK_ROLES = ALL_ROLES;
 
 const NOTIFICATION_ROLES = [
   ROLE.ADMIN,
@@ -149,16 +125,16 @@ export const ROUTE_VISIBILITY = {
 
   // 入职管理：业务侧看主列表；后道只看授权子模块。
   '/onboarding': ONBOARDING_ROLES,
-  '/onboarding/onboarding_contact': [ROLE.ADMIN, ROLE.ONBOARDING_RESIGNATION_MEMBER, ROLE.SHARED_TEAM_OWNER],
-  '/onboarding/contract': [ROLE.ADMIN, ROLE.LABOR_CONTRACT_MEMBER, ROLE.SHARED_TEAM_OWNER],
-  '/onboarding/data_entry': [ROLE.ADMIN, ROLE.DATA_ENTRY_LEADER],
-  '/onboarding/social_insurance': [ROLE.ADMIN, ROLE.SOCIAL_INSURANCE_SPECIALIST],
+  '/onboarding/onboarding_contact': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_MEMBER, ROLE.ONBOARDING_RESIGNATION_MEMBER, ROLE.SHARED_TEAM_OWNER],
+  '/onboarding/contract': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_MEMBER, ROLE.LABOR_CONTRACT_MEMBER, ROLE.SHARED_TEAM_OWNER],
+  '/onboarding/data_entry': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_MEMBER, ROLE.DATA_ENTRY_LEADER],
+  '/onboarding/social_insurance': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SOCIAL_INSURANCE_SPECIALIST],
   '/onboarding/renewal_contract': IN_SERVICE_ROLES,
   '/onboarding/benefit_apply': IN_SERVICE_ROLES,
-  '/onboarding/resignation_contact': [ROLE.ADMIN, ROLE.ONBOARDING_RESIGNATION_MEMBER, ROLE.SHARED_TEAM_OWNER],
-  '/onboarding/resignation_cert': [ROLE.ADMIN, ROLE.ONBOARDING_RESIGNATION_MEMBER, ROLE.SHARED_TEAM_OWNER],
-  '/onboarding/data_entry_resign': [ROLE.ADMIN, ROLE.DATA_ENTRY_LEADER],
-  '/onboarding/social_insurance_resign': [ROLE.ADMIN, ROLE.SOCIAL_INSURANCE_SPECIALIST],
+  '/onboarding/resignation_contact': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_MEMBER, ROLE.ONBOARDING_RESIGNATION_MEMBER, ROLE.SHARED_TEAM_OWNER],
+  '/onboarding/resignation_cert': [],
+  '/onboarding/data_entry_resign': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_MEMBER, ROLE.DATA_ENTRY_LEADER],
+  '/onboarding/social_insurance_resign': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SOCIAL_INSURANCE_SPECIALIST],
 
   // 在职管理：第一阶段暂不开放，后台配置可保留但界面不可见。
   '/in-service': IN_SERVICE_ROLES,
@@ -168,7 +144,7 @@ export const ROUTE_VISIBILITY = {
   // 离职管理：离职材料收集由入离职岗负责，减员报岗录入由报岗录入岗负责。
   '/offboarding': OFFBOARDING_ROLES,
   '/offboarding/contact-pool': [ROLE.ADMIN, ROLE.ONBOARDING_RESIGNATION_MEMBER, ROLE.SHARED_TEAM_OWNER],
-  '/offboarding/proof-pool': [ROLE.ADMIN, ROLE.ONBOARDING_RESIGNATION_MEMBER, ROLE.SHARED_TEAM_OWNER],
+  '/offboarding/proof-pool': [],
   '/offboarding/social-suspend-pool': [ROLE.ADMIN, ROLE.DATA_ENTRY_LEADER],
 
   '/dashboards/leader': [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.DATA_ENTRY_LEADER, ROLE.SHARED_TEAM_OWNER],
@@ -220,8 +196,8 @@ const LEGACY_ROUTE_ALIASES: Record<string, VisibilityRoute> = {
   '/renewal/:id': '/in-service/contract-renewal',
   '/resignation': '/work-orders',
   '/resignation/new': '/work-orders/create',
-  '/resignation/:id': '/offboarding',
-  '/resignation/:id/cert': '/offboarding/proof-pool',
+  '/resignation/:id': '/work-orders/:id',
+  '/resignation/:id/cert': '/work-orders/:id',
   '/benefit': '/in-service',
   '/benefit/new': '/in-service',
   '/benefit/:id': '/in-service/benefit-claim',
@@ -266,14 +242,16 @@ function normalizePermissions(permissions?: string[]): Set<string> {
   return new Set((permissions || []).map((item) => String(item || '').trim()).filter(Boolean));
 }
 
+const MY_WORK_ACTIONABLE_ROUTES: readonly VisibilityRoute[] = ['/my-work/initiated', '/my-work/returned', '/my-work/pending', '/my-work/done', '/my-work/history', '/my-dispatched/:id'];
+
 const RESTRICTED_DYNAMIC_PERMISSION_ROUTES: Partial<Record<CanonicalRole, readonly VisibilityRoute[]>> = {
-  [ROLE.BUSINESS_OWNER]: ['/dashboard', '/my-work/team', '/my-work/history', '/my-dispatched/:id'],
-  [ROLE.BUSINESS_GROUP_LEADER]: ['/dashboard', '/work-orders', '/work-orders/create', '/work-orders/import', '/work-orders/:id', '/my-work/initiated', '/my-work/returned', '/my-work/team', '/my-work/history', '/my-dispatched/:id'],
+  [ROLE.BUSINESS_OWNER]: ['/dashboard', '/my-work/team', ...MY_WORK_ACTIONABLE_ROUTES],
+  [ROLE.BUSINESS_GROUP_LEADER]: ['/dashboard', '/work-orders', '/work-orders/create', '/work-orders/import', '/work-orders/:id', '/my-work/team', ...MY_WORK_ACTIONABLE_ROUTES],
   [ROLE.SHARED_TEAM_OWNER]: [
-    '/dashboard', '/notifications', '/my-work/pending', '/my-work/done', '/my-work/history', '/dispatched-orders', '/my-dispatched/:id',
+    '/dashboard', '/notifications', ...MY_WORK_ACTIONABLE_ROUTES, '/dispatched-orders',
     '/onboarding', '/onboarding/onboarding_contact', '/onboarding/contract',
-    '/onboarding/resignation_contact', '/onboarding/resignation_cert',
-    '/offboarding', '/offboarding/contact-pool', '/offboarding/proof-pool',
+    '/onboarding/resignation_contact',
+    '/offboarding', '/offboarding/contact-pool',
   ],
 };
 

@@ -39,7 +39,6 @@ const MODULE_OPTIONS = [
   { label: '社保公积金增员', value: 'social_insurance' },
   { label: '劳动合同续签', value: 'renewal_contract' },
   { label: '离职材料收集', value: 'resignation_contact' },
-  { label: '离职材料收集（历史兼容）', value: 'resignation_cert' },
   { label: '减员报岗录入', value: 'data_entry_resign' },
   { label: '社保公积金减员', value: 'resignation_social_insurance' },
   { label: '待遇申报', value: 'benefit_apply' },
@@ -577,7 +576,7 @@ const AdminWorkflowEditor: React.FC = () => {
         <Card
           title="流程步骤"
           extra={!readOnly && <Button size="small" type="link" icon={<PlusOutlined />} onClick={() => openNodeModal()}>新增</Button>}
-          bodyStyle={{ maxHeight: 720, overflowY: 'auto' }}
+          styles={{ body: { maxHeight: 720, overflowY: 'auto' } }}
         >
           <Space direction="vertical" size={10} style={{ width: '100%' }}>
             {nodes.map((node, index) => {
@@ -590,7 +589,7 @@ const AdminWorkflowEditor: React.FC = () => {
                   hoverable
                   onClick={() => { setSelectedNodeId(node.id); setSelectedEdgeId(undefined); }}
                   style={{ borderColor: active ? '#1677ff' : undefined, background: active ? '#f0f7ff' : undefined }}
-                  bodyStyle={{ padding: 12 }}
+                  styles={{ body: { padding: 12 } }}
                 >
                   <Space direction="vertical" size={4} style={{ width: '100%' }}>
                     <Space style={{ width: '100%', justifyContent: 'space-between' }}>
@@ -610,7 +609,7 @@ const AdminWorkflowEditor: React.FC = () => {
           </Space>
         </Card>
 
-        <Card title="流程预览" bodyStyle={{ padding: 0 }}>
+        <Card title="流程预览" styles={{ body: { padding: 0 } }}>
           <div style={{ height: 720 }} data-testid="workflow-canvas">
             <ReactFlow
               nodes={nodes.map((node) => ({ ...node, data: { ...node.data, label: (
@@ -644,7 +643,7 @@ const AdminWorkflowEditor: React.FC = () => {
         <Card
           title={selectedNode ? '节点配置详情' : selectedEdge ? '流转条件详情' : '配置详情'}
           style={{ width: 460 }}
-          bodyStyle={{ maxHeight: 720, overflowY: 'auto' }}
+          styles={{ body: { maxHeight: 720, overflowY: 'auto' } }}
         >
           <Spin spinning={saving}>
             {selectedNode && (
@@ -946,7 +945,7 @@ const AdminWorkflowEditor: React.FC = () => {
             <Space direction="vertical" style={{ width: '100%' }} size="small">
               {groupedFields.length === 0 && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无字段配置" />}
               {groupedFields.map(([groupName, groupFields]) => (
-                <Card key={groupName} size="small" title={groupName} bodyStyle={{ padding: 12 }}>
+                <Card key={groupName} size="small" title={groupName} styles={{ body: { padding: 12 } }}>
                   <Form.Item name="visible_fields" label="本环节需要展示的信息" style={{ marginBottom: 12 }}>
                     <Checkbox.Group
                       options={groupFields.map((field) => ({ label: `${field.field_name}（${field.field_code}）`, value: field.field_code }))}

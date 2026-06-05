@@ -56,7 +56,7 @@ const SEED: ModuleConfigItem[] = [
   { id: '6', module_code: 'renewal_contract', module_name: '劳动合同续签', module_type: 'sub', display_order: 20, is_active: true, created_at: new Date().toISOString() },
   { id: '7', module_code: 'benefit', module_name: '待遇申报', module_type: 'sub', display_order: 30, is_active: true, created_at: new Date().toISOString() },
   { id: '8', module_code: 'resignation_contact', module_name: '离职材料收集', module_type: 'sub', display_order: 40, is_active: true, created_at: new Date().toISOString() },
-  { id: '9', module_code: 'resignation_cert', module_name: '离职材料收集', module_type: 'sub', display_order: 41, is_active: true, created_at: new Date().toISOString() },
+  { id: '9', module_code: 'resignation_cert', module_name: '离职材料收集（历史兼容）', module_type: 'sub', display_order: 99, is_active: false, created_at: new Date().toISOString() },
   { id: '10', module_code: 'data_entry_resign', module_name: '减员报岗录入', module_type: 'sub', display_order: 42, is_active: true, created_at: new Date().toISOString() },
   { id: '11', module_code: 'social_insurance_resign', module_name: '社保公积金减员', module_type: 'sub', display_order: 43, is_active: true, created_at: new Date().toISOString() },
 ];

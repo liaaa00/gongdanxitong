@@ -186,6 +186,16 @@ export class DispatchedOrderController {
     return this.dispatchedOrderService.creatorUpdateFields(assertUuidParam(id, '子工单不存在'), payload, user);
   }
 
+  @Post(':id/modify/approve')
+  @FieldPermissionScenario('dispatched:auto')
+  approveModify(
+    @Param('id') id: string,
+    @Body() payload: { approved?: boolean; comment?: string },
+    @CurrentUser() user: JwtUserPayload,
+  ) {
+    return this.dispatchedOrderService.approveModify(assertUuidParam(id, '子工单不存在'), payload, user);
+  }
+
   @Post(':id/urge')
   @FieldPermissionScenario('dispatched:auto')
   urge(

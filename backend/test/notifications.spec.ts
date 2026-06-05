@@ -137,6 +137,22 @@ describe('NotificationService read response and filters', () => {
     expect(where.bizType).toBeDefined();
   });
 
+  it('list supports comma-separated bucket filters for merged tabs', async () => {
+    const repo = repoMock<Notification>({
+      find: jest.fn(async () => [
+        makeNotification({ id: 'field-1', bizType: 'order.field_changed' }),
+        makeNotification({ id: 'creator-1', bizType: 'order.completed_modified' }),
+        makeNotification({ id: 'todo-1', bizType: 'sla_warning' }),
+      ]),
+    });
+    const service = makeService(repo as unknown as Partial<Repository<Notification>>);
+
+    const result = await service.list('user-1', { includeDispatch: true, bucket: 'field_changed,creator_modified', page: 1, pageSize: 20 });
+
+    expect(result.items.map((item) => item.id)).toEqual(['field-1', 'creator-1']);
+    expect(result.total).toBe(2);
+  });
+
   it('normalizes legacy field-change actor placeholders in list response', async () => {
     const row = makeNotification({
       bizType: 'order.field_changed',

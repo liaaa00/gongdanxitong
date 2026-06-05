@@ -12,6 +12,8 @@
     "coverage": "vitest run --coverage",
     "e2e": "playwright test",
     "e2e:headed": "playwright test --headed",
+    "e2e:visual": "playwright test e2e/visual-smoke.spec.ts",
+    "e2e:smoke": "playwright test e2e/role-menu.spec.ts e2e/import-smoke.spec.ts",
     "lint": "eslint src --ext .ts,.tsx --max-warnings 10",
     "smoke:live": "node scripts/smoke-live.mjs",
     "verify:phase56": "node scripts/verify-phase5-6.mjs"

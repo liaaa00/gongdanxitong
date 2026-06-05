@@ -325,7 +325,7 @@ const AdminRoles: React.FC = () => {
           message="一行是一个角色，一列是一个操作权限，勾上就是允许。"
           description="建议普通业务员不要勾选“查看全部数据”和“删除工单”；后道角色一般只需要查看、导出，以及后续专属办理权限。"
         />
-        <Card size="small" bodyStyle={{ padding: 0 }}>
+        <Card size="small" styles={{ body: { padding: 0 } }}>
           <Table<RoleItem>
             size="small"
             rowKey="id"

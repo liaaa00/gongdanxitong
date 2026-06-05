@@ -283,10 +283,8 @@ describe('DispatchedOrderService', () => {
     expect(validateSync(dto).some((error) => error.property === 'ids')).toBe(true);
   });
 
-  it('removes a dispatched order and writes an operation log', async () => {
-    const parentOrder = { id: 'wo-1', orderNo: 'ON20260511001', orderType: OrderType.ONBOARDING, status: WorkOrderStatus.PROCESSING, createdBy: 'u1', departmentId: 'd1', customerId: 'c1', employeeName: 'employee', employeeIdCard: '330102199001010011', extraData: {}, submittedAt: null, completedAt: null, createdAt: new Date(), updatedAt: new Date() } as unknown as WorkOrder;
-    const order = { id: 'do-1', parentOrderId: 'wo-1', parentOrder, moduleCode: 'data_entry', status: DispatchedOrderStatus.PENDING, handlerId: 'handler-1', visibleFields: ['employee_name'], returnReason: null, dispatchedAt: new Date(), acceptedAt: null, completedAt: null, createdAt: new Date(), updatedAt: new Date() } as unknown as DispatchedOrder;
-    const dispatchedOrderRepo = repoMock<DispatchedOrder>({ findOne: jest.fn(async () => order) });
+  it('forbids deleting a dispatched order directly', async () => {
+    const dispatchedOrderRepo = repoMock<DispatchedOrder>();
     const workOrderRepo = repoMock<WorkOrder>();
     const moduleHandlerRepo = repoMock<ModuleHandler>();
     const userRoleRepo = repoMock<UserRole>();
@@ -298,18 +296,16 @@ describe('DispatchedOrderService', () => {
     const exportTemplatesService = { exportSingleDispatchedOrder: jest.fn() };
     const service = new DispatchedOrderService(dispatchedOrderRepo, workOrderRepo, moduleHandlerRepo, userRoleRepo, fieldConfigRepo, notificationRepo, operationLogRepo, fieldPermissionService, fieldSupplementService, exportTemplatesService as never);
 
-    const result = await service.remove('do-1', { sub: 'admin-1', username: 'admin', roles: ['admin'] } as JwtUserPayload);
-
-    expect(dispatchedOrderRepo.delete).toHaveBeenCalledWith('do-1');
-    expect(operationLogRepo.save).toHaveBeenCalledWith(expect.objectContaining({ entityType: 'dispatched_order', entityId: 'do-1', actionType: 'delete' }));
-    expect(result).toEqual({ success: true, id: 'do-1' });
+    await expect(service.remove('do-1', { sub: 'admin-1', username: 'admin', roles: ['admin'] } as JwtUserPayload)).rejects.toMatchObject({ status: HttpStatus.FORBIDDEN });
+    expect(dispatchedOrderRepo.delete).not.toHaveBeenCalled();
+    expect(operationLogRepo.save).not.toHaveBeenCalled();
   });
 
-  it('throws NotFoundException when removing a missing dispatched order', async () => {
-    const dispatchedOrderRepo = repoMock<DispatchedOrder>({ findOne: jest.fn(async () => null) });
+  it('forbids batch deleting dispatched orders directly', async () => {
+    const dispatchedOrderRepo = repoMock<DispatchedOrder>();
     const service = new DispatchedOrderService(dispatchedOrderRepo, repoMock<WorkOrder>(), repoMock<ModuleHandler>(), repoMock<UserRole>(), repoMock<FieldConfig>(), repoMock<Notification>(), repoMock<OperationLog>(), {} as FieldPermissionService, { getLogs: jest.fn() } as unknown as FieldSupplementService, { exportSingleDispatchedOrder: jest.fn() } as never);
 
-    await expect(service.remove('missing-id', { sub: 'admin-1', username: 'admin', roles: ['admin'] } as JwtUserPayload)).rejects.toMatchObject({ status: 404 });
+    await expect(service.batchRemove(['do-1'], { sub: 'admin-1', username: 'admin', roles: ['admin'] } as JwtUserPayload)).rejects.toMatchObject({ status: HttpStatus.FORBIDDEN });
     expect(dispatchedOrderRepo.delete).not.toHaveBeenCalled();
   });
 
@@ -395,7 +391,7 @@ describe('DispatchedOrderService', () => {
     }, businessUser)).rejects.toMatchObject({ status: HttpStatus.FORBIDDEN });
   });
 
-  it('matches exported template rows using database column names and identity aliases', async () => {
+  it('matches exported template rows using short identity aliases and normalized headers', async () => {
     const order = makeDispatchedOrder(DispatchedOrderStatus.PENDING);
     const qb = {
       leftJoinAndSelect: jest.fn(),
@@ -429,7 +425,7 @@ describe('DispatchedOrderService', () => {
       moduleCode: '数据录入',
       mode: 'status',
       forceAction: 'complete',
-      rows: [{ raw: { 工单编号: order.parentOrder.orderNo, 员工证件号: order.parentOrder.employeeIdCard } }],
+      rows: [{ raw: { 编号: order.parentOrder.orderNo, '\ufeff 证件号 ': order.parentOrder.employeeIdCard } }],
       defaultRemark: 'done',
     }, { sub: 'user-1', username: 'processor01', roles: ['data_entry_team'] } as JwtUserPayload);
 
@@ -438,6 +434,49 @@ describe('DispatchedOrderService', () => {
     expect(qb.andWhere).toHaveBeenCalledWith('w.employee_id_card = :employeeIdCard', { employeeIdCard: order.parentOrder.employeeIdCard });
     expect(qb.orderBy).toHaveBeenCalledWith('d.created_at', 'DESC');
   });
+
+  it('reports voided child rows clearly during batch import complete', async () => {
+    const order = makeDispatchedOrder(DispatchedOrderStatus.VOID);
+    order.voidAt = new Date('2026-06-04T00:00:00.000Z');
+    const qb = {
+      leftJoinAndSelect: jest.fn(),
+      where: jest.fn(),
+      andWhere: jest.fn(),
+      orderBy: jest.fn(),
+      getMany: jest.fn(async () => [order]),
+    };
+    qb.leftJoinAndSelect.mockReturnValue(qb);
+    qb.where.mockReturnValue(qb);
+    qb.andWhere.mockReturnValue(qb);
+    qb.orderBy.mockReturnValue(qb);
+    const dispatchedOrderRepo = repoMock<DispatchedOrder>({ createQueryBuilder: jest.fn(() => qb), save: jest.fn(async (input) => input) });
+    const service = new DispatchedOrderService(
+      dispatchedOrderRepo,
+      repoMock<WorkOrder>(),
+      repoMock<ModuleHandler>({ count: jest.fn(async () => 1) }),
+      repoMock<UserRole>(),
+      repoMock<FieldConfig>(),
+      repoMock<Notification>(),
+      repoMock<OperationLog>(),
+      {} as FieldPermissionService,
+      { getLogs: jest.fn() } as unknown as FieldSupplementService,
+      { exportSingleDispatchedOrder: jest.fn() } as never,
+    );
+
+    const result = await service.batchImport({
+      moduleCode: '数据录入',
+      mode: 'status',
+      forceAction: 'complete',
+      rows: [{ orderNo: order.parentOrder.orderNo }],
+      defaultRemark: 'done',
+    }, { sub: 'user-1', username: 'processor01', roles: ['data_entry_team'] } as JwtUserPayload);
+
+    expect(result.successRows).toBe(0);
+    expect(result.failRows).toBe(1);
+    expect(result.rows[0].message).toBe('该子工单已作废，不能批量导入办理完成');
+    expect(dispatchedOrderRepo.save).not.toHaveBeenCalled();
+  });
+
   it('rejects accept/claim/complete/return when parent work order is void, void_pending, withdraw_pending, withdrawn, or child has voidAt', async () => {
     const makeParent = (status: WorkOrderStatus) => ({
       id: 'wo-1',
