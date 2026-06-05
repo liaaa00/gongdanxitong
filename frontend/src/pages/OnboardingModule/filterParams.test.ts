@@ -29,9 +29,10 @@ describe('OnboardingModule table header filter params', () => {
     });
   });
 
-  it('builds request params with all selected statuses', () => {
-    expect(buildHeaderFilterParams({ status: ['pending', 'processing'] })).toMatchObject({
+  it('builds request params with all selected statuses and creator name filter', () => {
+    expect(buildHeaderFilterParams({ status: ['pending', 'processing'], created_by_name: ['张三'] })).toMatchObject({
       statuses: 'pending,processing',
+      createdByName: '张三',
     });
   });
 

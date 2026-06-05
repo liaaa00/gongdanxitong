@@ -161,7 +161,7 @@ function isVoidStatus(status: string | undefined): boolean {
 }
 
 function isOpenStatus(status: string | undefined): boolean {
-  return ['pending', 'processing', 'returned', 'modify_pending'].includes(normalizeStatus(status));
+  return ['pending', 'processing', 'accepted', 'in_progress', 'returned', 'modify_pending', 'withdraw_pending', 'withdrawn', 'void_pending'].includes(normalizeStatus(status));
 }
 
 // Dashboard production fallback must not call /dispatched-orders during app initialization.
@@ -216,8 +216,8 @@ function buildMatrixRows(parents: ParentOrderLite[], dimension: DashboardMatrixD
         const code = child.module_code || 'unknown';
         const current = map.get(code) || { total: 0, processing: 0, completed: 0, voided: 0, withdrawn: 0 };
         current.total += 1;
+        if (isWithdrawStatus(child.status)) current.withdrawn += 1;
         if (isVoidStatus(child.status)) current.voided += 1;
-        else if (isWithdrawStatus(child.status)) current.withdrawn += 1;
         else if (isCompletedStatus(child.status)) current.completed += 1;
         else if (isOpenStatus(child.status)) current.processing += 1;
         map.set(code, current);
@@ -233,7 +233,7 @@ function buildMatrixRows(parents: ParentOrderLite[], dimension: DashboardMatrixD
       completed: item.completed,
       voided: item.voided,
       withdrawn: item.withdrawn,
-      completionRate: calculateCompletionRate(item.completed, item.total - item.withdrawn, item.voided),
+      completionRate: calculateCompletionRate(item.completed, item.total, item.voided),
     }));
   }
 
@@ -261,7 +261,7 @@ function buildOrderTypeRow(orderType: DashboardOrderType, statuses: Array<string
     completed,
     voided,
     withdrawn,
-    completionRate: calculateCompletionRate(completed, total - withdrawn, voided),
+    completionRate: calculateCompletionRate(completed, total, voided),
   };
 }
 
@@ -317,7 +317,7 @@ function normalizeOrderTypeMatrix(raw: unknown, fallbackDimension: DashboardMatr
       voided,
       withdrawn,
       completionRate: rateValue === undefined || rateValue === null
-        ? calculateCompletionRate(completed, total - withdrawn, voided)
+        ? calculateCompletionRate(completed, total, voided)
         : normalizePercent(rateValue),
     };
   });

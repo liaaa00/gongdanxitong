@@ -182,8 +182,8 @@ describe('Dashboard display behavior', () => {
     });
   });
 
-  it('shows withdrawn separately and keeps matrix processing equal to pending count', async () => {
-    mockedGetDashboardCards.mockResolvedValue({ totalPending: 144, monthPending: 144, totalThisMonth: 179, processing: 144, completed: 28, voided: 5, myMessages: 0 });
+  it('counts withdrawn statuses as unfinished while still showing withdrawn separately', async () => {
+    mockedGetDashboardCards.mockResolvedValue({ totalPending: 146, monthPending: 146, totalThisMonth: 179, processing: 146, completed: 28, voided: 5, myMessages: 0 });
     mockedGetOrderTypeMatrix.mockResolvedValue({
       rows: [
         {
@@ -191,11 +191,11 @@ describe('Dashboard display behavior', () => {
           moduleCode: 'onboarding_contact',
           label: '入职联系',
           total: 179,
-          processing: 144,
+          processing: 146,
           completed: 28,
           voided: 5,
           withdrawn: 2,
-          completionRate: 16.5,
+          completionRate: 16.1,
         },
       ],
       total: 1,
@@ -208,8 +208,8 @@ describe('Dashboard display behavior', () => {
     );
 
     await waitFor(() => {
-      expect(getByText(/入职联系:16\.5:total=179:processing=144:completed=28:voided=5:withdrawn=2/)).toBeTruthy();
-      expect(getByText(/入职管理:16\.3:total=179:processing=144:completed=28:voided=5:withdrawn=2/)).toBeTruthy();
+      expect(getByText(/入职联系:16\.1:total=179:processing=146:completed=28:voided=5:withdrawn=2/)).toBeTruthy();
+      expect(getByText(/入职管理:16\.1:total=179:processing=146:completed=28:voided=5:withdrawn=2/)).toBeTruthy();
     });
   });
 

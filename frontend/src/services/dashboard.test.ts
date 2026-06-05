@@ -177,6 +177,19 @@ describe('dashboard services', () => {
     expect(result.rows[0]).toMatchObject({ total: 2, completed: 0, voided: 2, completionRate: 0 });
   });
 
+  it('keeps withdrawn statuses in unfinished totals when backend omits completion rate', async () => {
+    requestGet.mockResolvedValueOnce({
+      rows: [
+        { orderType: 'onboarding', label: '入职', total: 179, processing: 146, completed: 28, voided: 5, withdrawn: 2 },
+      ],
+      total: 1,
+    });
+
+    const result = await getOrderTypeMatrix({ dimension: 'orderType' });
+
+    expect(result.rows[0]).toMatchObject({ total: 179, processing: 146, completed: 28, voided: 5, withdrawn: 2, completionRate: 16.1 });
+  });
+
   it('returns an empty node matrix and does not call dispatched-orders when real and legacy matrix endpoints are unavailable', async () => {
     requestGet.mockRejectedValueOnce(new Error('not found')).mockRejectedValueOnce(new Error('not found'));
 

@@ -37,7 +37,9 @@ describe('DashboardService', () => {
     expect(result).toEqual({ totalThisMonth: 45, processing: 12, ...pendingFields(12), completed: 30, ...rateFields(66.7), ...zeroVoided, myMessages: 8, scope: 'global' });
     expect(dataSource.query).toHaveBeenNthCalledWith(1, expect.stringContaining('notifications'), ['admin-1']);
     expect(dataSource.query).toHaveBeenNthCalledWith(2, expect.stringContaining('FROM dispatched_orders'), [null, null, [], expect.any(String), phase1Modules]);
-    expect(dataSource.query.mock.calls[1][0]).toContain("status::text NOT IN ('completed','void','withdrawn') AND void_at IS NULL");
+    expect(dataSource.query.mock.calls[1][0]).toContain("- COUNT(*) FILTER (WHERE status::text = 'completed')");
+    expect(dataSource.query.mock.calls[1][0]).toContain("- COUNT(*) FILTER (WHERE status::text IN ('void','voided') OR void_at IS NOT NULL)");
+    expect(dataSource.query.mock.calls[1][0]).not.toContain("- COUNT(*) FILTER (WHERE status::text IN ('withdraw_pending','withdrawn') AND void_at IS NULL)");
     expect(dataSource.query.mock.calls[1][0]).toContain('AS voided');
   });
 
@@ -95,7 +97,9 @@ describe('DashboardService', () => {
     const cardsCall = (query.mock.calls as unknown[][]).find(([sql]) => String(sql).includes('FROM dispatched_orders'));
     expect(cardsCall).toBeDefined();
     expect(cardsCall![1]).toEqual(['handler-1', expect.any(String), ['contract']]);
-    expect(String(cardsCall![0])).toContain("status::text NOT IN ('completed','void','withdrawn') AND void_at IS NULL");
+    expect(String(cardsCall![0])).toContain("- COUNT(*) FILTER (WHERE status::text = 'completed')");
+    expect(String(cardsCall![0])).toContain("- COUNT(*) FILTER (WHERE status::text IN ('void','voided') OR void_at IS NOT NULL)");
+    expect(String(cardsCall![0])).not.toContain("- COUNT(*) FILTER (WHERE status::text IN ('withdraw_pending','withdrawn') AND void_at IS NULL)");
     expect(String(cardsCall![0])).toContain('AS voided');
   });
 
@@ -137,8 +141,10 @@ describe('DashboardService', () => {
 
     const sqlText = (dataSource.query.mock.calls as unknown[][]).map((call) => String(call[0])).join('\n');
     expect(sqlText).toContain('AS voided');
-    expect(sqlText).toContain("COUNT(d.id) - COUNT(d.id) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)");
-    expect(sqlText).toContain("COUNT(*) - COUNT(*) FILTER (WHERE d.status::text = 'void' OR d.void_at IS NOT NULL)");
+    expect(sqlText).toContain("COUNT(d.id)");
+    expect(sqlText).toContain("COUNT(*)");
+    expect(sqlText).toContain("- COUNT(d.id) FILTER (WHERE d.status::text IN ('void','voided') OR d.void_at IS NOT NULL)");
+    expect(sqlText).toContain("- COUNT(*) FILTER (WHERE d.status::text IN ('void','voided') OR d.void_at IS NOT NULL)");
     expect(sqlText).not.toContain("completed')::numeric * 100 / COUNT(d.id)");
     expect(sqlText).not.toContain("completed')::numeric * 100 / COUNT(*)");
   });

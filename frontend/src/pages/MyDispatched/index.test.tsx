@@ -5,6 +5,7 @@ import MyDispatched from './index';
 const mocks = vi.hoisted(() => ({
   latestProTableProps: undefined as any,
   getDispatchedOrders: vi.fn(),
+  batchAcceptDispatchedOrders: vi.fn(),
   navigate: vi.fn(),
   currentRoles: [] as string[],
 }));
@@ -40,6 +41,7 @@ vi.mock('@/services/dispatchedOrders', () => ({
   getDispatchedOrders: (...args: unknown[]) => mocks.getDispatchedOrders(...args),
   getDispatchedOrdersSafe: (...args: unknown[]) => mocks.getDispatchedOrders(...args),
   acceptDispatchedOrder: vi.fn(),
+  batchAcceptDispatchedOrders: (...args: unknown[]) => mocks.batchAcceptDispatchedOrders(...args),
   batchExportDispatchedOrders: vi.fn(),
   batchCompleteDispatchedOrders: vi.fn(),
   batchReturnDispatchedOrders: vi.fn(),
@@ -58,6 +60,7 @@ describe('MyDispatched processing status filter', () => {
     mocks.latestProTableProps = undefined;
     mocks.currentRoles = [];
     mocks.getDispatchedOrders.mockResolvedValue({ list: [], total: 0 });
+    mocks.batchAcceptDispatchedOrders.mockResolvedValue({ success: true, accepted: 1, skipped: [] });
   });
 
   function getColumn(dataIndexOrKey: string) {
@@ -186,6 +189,55 @@ describe('MyDispatched processing status filter', () => {
     const params = mocks.getDispatchedOrders.mock.calls.at(-1)?.[0] as Record<string, unknown>;
     expect(params.status).toBeUndefined();
     expect(params.statuses).toBeUndefined();
+  });
+
+  it('shows business-side done work by completed month without handler=current filter', async () => {
+    mocks.currentRoles = ['business_group_member'];
+    render(<MyDispatched mode="done" />);
+
+    await mocks.latestProTableProps.request({ current: 1, pageSize: 20 });
+
+    await waitFor(() => expect(mocks.getDispatchedOrders).toHaveBeenCalledWith(expect.objectContaining({
+      page: 1,
+      pageSize: 20,
+      status: 'completed',
+      completedFrom: expect.any(String),
+      completedTo: expect.any(String),
+    })));
+    const params = mocks.getDispatchedOrders.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(params.handlerId).toBeUndefined();
+    expect(params.orderMonth).toBeUndefined();
+  });
+
+  it('keeps backend done work scoped to current handler', async () => {
+    mocks.currentRoles = ['labor_contract_member'];
+    render(<MyDispatched mode="done" />);
+
+    await mocks.latestProTableProps.request({ current: 1, pageSize: 20 });
+
+    await waitFor(() => expect(mocks.getDispatchedOrders).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'completed',
+      handlerId: 'current',
+      completedFrom: expect.any(String),
+      completedTo: expect.any(String),
+    })));
+  });
+
+  it('offers batch accept for selected pending rows in pending mode', async () => {
+    render(<MyDispatched mode="pending" />);
+
+    const alert = mocks.latestProTableProps.tableAlertRender({
+      selectedRowKeys: ['d-pending', 'd-processing'],
+      selectedRows: [
+        { id: 'd-pending', status: 'pending' },
+        { id: 'd-processing', status: 'processing' },
+      ],
+      onCleanSelected: vi.fn(),
+    }) as React.ReactElement;
+    const batchAcceptButton = (alert.props.children as React.ReactNode[]).find((child) => (child as React.ReactElement)?.props?.children?.toString?.().includes('批量接单')) as React.ReactElement;
+    batchAcceptButton.props.onClick();
+
+    await waitFor(() => expect(mocks.batchAcceptDispatchedOrders).toHaveBeenCalledWith(['d-pending']));
   });
 
   it('shows returned work as child-order rows only', async () => {

@@ -165,10 +165,10 @@ describe('BasicLayout menu visibility', () => {
     expect(text).toContain('我的工单');
     expect(text).toContain('团队工单');
     expect(text).toContain('历史工单');
-    expect(text).toContain('我发起的');
-    expect(text).toContain('我的退回');
-    expect(text).toContain('我的待办');
-    expect(text).toContain('我的已办');
+    expect(text).not.toContain('我发起的');
+    expect(text).not.toContain('我的退回');
+    expect(text).not.toContain('我的待办');
+    expect(text).not.toContain('我的已办');
     expect(text).not.toContain('入职管理');
     expect(text).not.toContain('在职管理');
     expect(text).not.toContain('离职管理');
@@ -197,7 +197,7 @@ describe('BasicLayout menu visibility', () => {
     expect(text).toContain('我发起的');
     expect(text).toContain('我的退回');
     expect(text).toContain('历史工单');
-    expect(text).toContain('我的待办');
+    expect(text).not.toContain('我的待办');
     expect(text).toContain('我的已办');
     expect(text).not.toContain('团队工单');
     expect(text).not.toContain('在职管理');
@@ -218,12 +218,12 @@ describe('BasicLayout menu visibility', () => {
     expect(text).toContain('离职主工单列表');
     expect(text).not.toContain('入职导入');
     expect(text).not.toContain('离职导入');
-    expect(text).toContain('我发起的');
-    expect(text).toContain('我的退回');
+    expect(text).not.toContain('我发起的');
+    expect(text).not.toContain('我的退回');
     expect(text).toContain('历史工单');
     expect(text).toContain('团队工单');
-    expect(text).toContain('我的待办');
-    expect(text).toContain('我的已办');
+    expect(text).not.toContain('我的待办');
+    expect(text).not.toContain('我的已办');
     expect(text).not.toContain('在职管理');
   });
 

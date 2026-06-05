@@ -116,7 +116,7 @@ const DASHBOARD_ROLE_META: Record<DashboardRoleView, {
     title: '后道办理看板',
     subtitle: '',
     matrixTitle: '本月办理节点总表',
-    cardTitles: { totalPending: '总待处理', monthPending: '单月待处理', monthTotal: '本月派发节点', completed: '本月已办结', voided: '本月已作废', messages: '待处理消息' },
+    cardTitles: { totalPending: '总待处理', monthPending: '单月待处理', monthTotal: '本月工单总数', completed: '本月已完成', voided: '本月已作废', messages: '待处理消息' },
   },
 };
 
@@ -164,8 +164,8 @@ function clampRate(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value * 10) / 10));
 }
 
-function calculateCompletionRate(completed: number, total: number, voided: number, withdrawn = 0): number {
-  const denominator = Math.max(0, total - Math.max(0, voided || 0) - Math.max(0, withdrawn || 0));
+function calculateCompletionRate(completed: number, total: number, voided: number): number {
+  const denominator = Math.max(0, total - Math.max(0, voided || 0));
   return denominator > 0 ? clampRate((Math.max(0, completed || 0) / denominator) * 100) : 0;
 }
 
@@ -178,7 +178,7 @@ function normalizeStatsTotal<T extends Pick<OrderTypeMatrixRow, 'total' | 'proce
   const withdrawn = Math.max(0, row.withdrawn || 0);
   const rawProcessing = Math.max(0, row.processing || 0);
   const processing = rawProcessing;
-  const total = processing + completed + voided + withdrawn;
+  const total = processing + completed + voided;
   return {
     ...row,
     total,
@@ -188,7 +188,7 @@ function normalizeStatsTotal<T extends Pick<OrderTypeMatrixRow, 'total' | 'proce
     withdrawn,
     completionRate: options.preserveCompletionRate
       ? clampRate(row.completionRate)
-      : calculateCompletionRate(completed, total, voided, withdrawn),
+      : calculateCompletionRate(completed, total, voided),
   };
 }
 
@@ -198,14 +198,14 @@ function summarizeMatrixRows(rows: Array<Pick<OrderTypeMatrixRow, 'total' | 'pro
   const completed = normalizedRows.reduce((sum, row) => sum + (row.completed || 0), 0);
   const voided = normalizedRows.reduce((sum, row) => sum + (row.voided || 0), 0);
   const withdrawn = normalizedRows.reduce((sum, row) => sum + (row.withdrawn || 0), 0);
-  const total = processing + completed + voided + withdrawn;
+  const total = processing + completed + voided;
   return {
     total,
     processing,
     completed,
     voided,
     withdrawn,
-    completionRate: calculateCompletionRate(completed, total, voided, withdrawn),
+    completionRate: calculateCompletionRate(completed, total, voided),
   };
 }
 

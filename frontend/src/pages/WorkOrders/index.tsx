@@ -12,6 +12,7 @@ import type { PageParams } from '@/services/mock';
 import { useAuth } from '@/hooks/useAuth';
 import { ROLE } from '@/constants/roles';
 import { getModuleLabel } from '@/constants/modules';
+import { WORK_ORDER_STATUS_CODES, getStatusColor, getStatusText } from '@/constants/dictionaries';
 import { isPhase1VisibleOrderType } from '@/utils/moduleAccess';
 
 const RefButton = forwardRef<HTMLButtonElement, React.ComponentProps<typeof Button>>((props, ref) => (
@@ -19,17 +20,7 @@ const RefButton = forwardRef<HTMLButtonElement, React.ComponentProps<typeof Butt
 ));
 RefButton.displayName = 'RefButton';
 
-const STATUS_OPTIONS = [
-  { value: 'processing', label: '未办结', color: 'blue' },
-  { value: 'completed', label: '已完成', color: 'success' },
-  { value: 'returned', label: '已退回', color: 'warning' },
-  { value: 'withdrawn', label: '已撤回', color: 'default' },
-  { value: 'void', label: '已作废', color: 'default' },
-  { value: 'withdraw_pending', label: '撤回审批中', color: 'gold' },
-  { value: 'void_pending', label: '作废审批中', color: 'gold' },
-];
-const STATUS_MAP = Object.fromEntries(STATUS_OPTIONS.map((item) => [item.value, item]));
-const STATUS_SEARCH_OPTIONS = STATUS_OPTIONS.map(({ value, label }) => ({ value, label }));
+const KANBAN_STATUS_OPTIONS = WORK_ORDER_STATUS_CODES.map((value) => ({ value, label: getStatusText(value), color: getStatusColor(value) }));
 
 // 子工单名称统一由 constants/modules.ts 处理，兼容同一模块码在入职/离职下的不同展示。
 
@@ -115,28 +106,16 @@ const selectHeaderFilter = (
   filterIcon: (filtered) => <SearchOutlined style={{ color: filtered ? '#1677ff' : undefined }} />,
 });
 
-function getStatusMeta(status?: string | null) {
-  const normalized = String(status || '').toLowerCase();
-  if (normalized === 'draft' || normalized === 'pending' || normalized === 'accepted' || normalized === 'in_progress') {
-    return STATUS_MAP.processing;
-  }
-  if (normalized === 'cancelled') return STATUS_MAP.void;
-  return STATUS_MAP[normalized] || { label: '状态未知', color: 'default' };
-}
 
 function getDispatchedProgressMeta(child: DispatchedOrderSummary): { label: string; badge: 'success' | 'warning' | 'processing' | 'error' | 'default'; color: string } {
-  const status = String(child.status || '').toLowerCase();
-  if (child.is_overdue) return { label: '已超时', badge: 'error', color: 'red' };
-  if (status === 'completed') return { label: '已完成', badge: 'success', color: 'success' };
-  if (status === 'withdraw_pending') return { label: '撤回审批中', badge: 'warning', color: 'gold' };
-  if (status === 'withdrawn') return { label: '已撤回', badge: 'default', color: 'default' };
-  if (status === 'void_pending') return { label: '作废审批中', badge: 'warning', color: 'gold' };
-  if (status === 'void' || child.void_at || child.voidAt) return { label: '已作废', badge: 'default', color: 'default' };
-  if (status === 'returned') return { label: '已退回', badge: 'warning', color: 'warning' };
-  if (['processing', 'accepted', 'in_progress', 'pending', 'created', 'waiting_dispatch', 'to_dispatch'].includes(status)) {
-    return { label: '未办结', badge: 'processing', color: 'processing' };
-  }
-  return { label: getStatusMeta(status).label, badge: 'default', color: 'default' };
+  const status = child.void_at || child.voidAt ? 'void' : String(child.status || '').toLowerCase();
+  const label = getStatusText(status);
+  const color = getStatusColor(status);
+  if (child.is_overdue && status !== 'completed' && status !== 'void' && status !== 'withdrawn') return { label, badge: 'error', color: 'red' };
+  if (status === 'completed') return { label, badge: 'success', color };
+  if (status === 'modify_pending' || status === 'withdraw_pending' || status === 'void_pending' || status === 'returned') return { label, badge: 'warning', color };
+  if (status === 'pending' || status === 'processing' || status === 'accepted') return { label, badge: 'processing', color };
+  return { label, badge: 'default', color };
 }
 
 interface WorkOrdersProps {
@@ -274,6 +253,7 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
       width: 100,
       hideInTable: !(isBusinessOwner || isGroupLeader || isAdmin),
       hideInSearch: true,
+      ...textHeaderFilter('输入发起人'),
       renderText: (value) => value || '-',
     },
     {
@@ -286,19 +266,6 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
       search: false,
       ...selectHeaderFilter('选择订单类型', ORDER_TYPE_OPTIONS),
       renderText: (value) => ORDER_TYPE_MAP[String(value || '')] || String(value || '-'),
-    },
-    {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
-      width: 100,
-      valueType: 'select',
-      fieldProps: { options: STATUS_SEARCH_OPTIONS },
-      ...selectHeaderFilter('选择状态', STATUS_SEARCH_OPTIONS),
-      render: (_, record) => {
-        const status = getStatusMeta(record.status);
-        return <Tag color={status.color}>{status.label}</Tag>;
-      },
     },
     {
       title: '子工单进度',
@@ -380,7 +347,8 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
       customerCode: params.customerCode || params.customer_code || urlFilters.customerCode,
       customerName: params.customerName || params.customer_name || urlFilters.customerName,
       employeeName: params.employeeName || params.employee_name || urlFilters.employeeName,
-      idCardNo: params.idCardNo || params.employee_id_card || urlFilters.idCardNo,
+      idCardNo: params.idCardNo || params.employee_id_card || params.employeeIdCard || urlFilters.idCardNo,
+      createdByName: params.createdByName || params.created_by || params.created_by_name,
       orderType: params.orderType || params.order_type || urlFilters.orderType,
       status: params.status || urlFilters.status,
     };
@@ -404,7 +372,7 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
         search={false}
         pagination={{ defaultPageSize: 50, pageSizeOptions: ['20', '50', '100'], showSizeChanger: true }}
         kanbanColumnKey="status"
-        kanbanAllowedValues={STATUS_OPTIONS}
+        kanbanAllowedValues={KANBAN_STATUS_OPTIONS}
         toolBarRender={isInitiatedPage ? undefined : () => [
           canCreateWorkOrder && (
             <RefButton

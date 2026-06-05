@@ -51,11 +51,28 @@ const OFFBOARDING_ROLES = [
   ROLE.DATA_ENTRY_LEADER,
 ] as const satisfies readonly CanonicalRole[];
 
-// 我的工单各入口统一开放给业务员和后道人员；数据范围与可操作动作由列表接口/详情接口按当前用户兜底控制。
-const INITIATED_WORK_ROLES = ALL_ROLES;
-const RETURNED_WORK_ROLES = ALL_ROLES;
-const PENDING_WORK_ROLES = ALL_ROLES;
-const DONE_WORK_ROLES = ALL_ROLES;
+// 我的工单入口按角色分层：业务员不显示“我的待办”；业务负责人只保留团队/历史；后道不显示“我发起的/我的退回”。
+const BUSINESS_SELF_WORK_ROLES = [
+  ROLE.ADMIN,
+  ROLE.BUSINESS_GROUP_MEMBER,
+] as const satisfies readonly CanonicalRole[];
+
+const BACKEND_WORK_ROLES = [
+  ROLE.ADMIN,
+  ROLE.DATA_ENTRY_LEADER,
+  ROLE.SHARED_TEAM_OWNER,
+  ROLE.LABOR_CONTRACT_MEMBER,
+  ROLE.ONBOARDING_RESIGNATION_MEMBER,
+  ROLE.SOCIAL_INSURANCE_SPECIALIST,
+] as const satisfies readonly CanonicalRole[];
+
+const INITIATED_WORK_ROLES = BUSINESS_SELF_WORK_ROLES;
+const RETURNED_WORK_ROLES = BUSINESS_SELF_WORK_ROLES;
+const PENDING_WORK_ROLES = BACKEND_WORK_ROLES;
+const DONE_WORK_ROLES = [
+  ...BUSINESS_SELF_WORK_ROLES,
+  ...BACKEND_WORK_ROLES,
+] as const satisfies readonly CanonicalRole[];
 
 const NOTIFICATION_ROLES = [
   ROLE.ADMIN,
@@ -87,14 +104,10 @@ const HISTORY_WORK_ROLES = [
 ] as const satisfies readonly CanonicalRole[];
 
 const DISPATCHED_DETAIL_ROLES = [
-  ...INITIATED_WORK_ROLES,
+  ...BUSINESS_SELF_WORK_ROLES,
+  ...BACKEND_WORK_ROLES,
   ROLE.BUSINESS_OWNER,
   ROLE.BUSINESS_GROUP_LEADER,
-  ROLE.DATA_ENTRY_LEADER,
-  ROLE.SHARED_TEAM_OWNER,
-  ROLE.LABOR_CONTRACT_MEMBER,
-  ROLE.ONBOARDING_RESIGNATION_MEMBER,
-  ROLE.SOCIAL_INSURANCE_SPECIALIST,
 ] as const satisfies readonly CanonicalRole[];
 
 export const ROUTE_VISIBILITY = {
@@ -242,13 +255,20 @@ function normalizePermissions(permissions?: string[]): Set<string> {
   return new Set((permissions || []).map((item) => String(item || '').trim()).filter(Boolean));
 }
 
-const MY_WORK_ACTIONABLE_ROUTES: readonly VisibilityRoute[] = ['/my-work/initiated', '/my-work/returned', '/my-work/pending', '/my-work/done', '/my-work/history', '/my-dispatched/:id'];
+const BUSINESS_OWNER_DYNAMIC_ROUTES: readonly VisibilityRoute[] = ['/dashboard', '/my-work/team', '/my-work/history', '/my-dispatched/:id'];
+const BUSINESS_MEMBER_DYNAMIC_ROUTES: readonly VisibilityRoute[] = ['/my-work/initiated', '/my-work/returned', '/my-work/done', '/my-work/history', '/my-dispatched/:id'];
+const BACKEND_DYNAMIC_ROUTES: readonly VisibilityRoute[] = ['/my-work/pending', '/my-work/done', '/my-work/history', '/my-dispatched/:id'];
 
 const RESTRICTED_DYNAMIC_PERMISSION_ROUTES: Partial<Record<CanonicalRole, readonly VisibilityRoute[]>> = {
-  [ROLE.BUSINESS_OWNER]: ['/dashboard', '/my-work/team', ...MY_WORK_ACTIONABLE_ROUTES],
-  [ROLE.BUSINESS_GROUP_LEADER]: ['/dashboard', '/work-orders', '/work-orders/create', '/work-orders/import', '/work-orders/:id', '/my-work/team', ...MY_WORK_ACTIONABLE_ROUTES],
+  [ROLE.BUSINESS_OWNER]: BUSINESS_OWNER_DYNAMIC_ROUTES,
+  [ROLE.BUSINESS_GROUP_LEADER]: ['/dashboard', '/work-orders', '/work-orders/create', '/work-orders/import', '/work-orders/:id', '/my-work/team', '/my-work/history', '/my-dispatched/:id'],
+  [ROLE.BUSINESS_GROUP_MEMBER]: BUSINESS_MEMBER_DYNAMIC_ROUTES,
+  [ROLE.DATA_ENTRY_LEADER]: BACKEND_DYNAMIC_ROUTES,
+  [ROLE.LABOR_CONTRACT_MEMBER]: BACKEND_DYNAMIC_ROUTES,
+  [ROLE.ONBOARDING_RESIGNATION_MEMBER]: BACKEND_DYNAMIC_ROUTES,
+  [ROLE.SOCIAL_INSURANCE_SPECIALIST]: BACKEND_DYNAMIC_ROUTES,
   [ROLE.SHARED_TEAM_OWNER]: [
-    '/dashboard', '/notifications', ...MY_WORK_ACTIONABLE_ROUTES, '/dispatched-orders',
+    '/dashboard', '/notifications', ...BACKEND_DYNAMIC_ROUTES, '/dispatched-orders',
     '/onboarding', '/onboarding/onboarding_contact', '/onboarding/contract',
     '/onboarding/resignation_contact',
     '/offboarding', '/offboarding/contact-pool',
@@ -258,7 +278,7 @@ const RESTRICTED_DYNAMIC_PERMISSION_ROUTES: Partial<Record<CanonicalRole, readon
 function allowsDynamicPermissionWithinRoleScope(route: VisibilityRoute, userRoles: { code?: string }[] | undefined): boolean {
   const roleCodes = new Set(canonicalRoleCodes(userRoles));
   if (roleCodes.has(ROLE.ADMIN)) return true;
-  const restrictedRole = [ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.SHARED_TEAM_OWNER]
+  const restrictedRole = (Object.keys(RESTRICTED_DYNAMIC_PERMISSION_ROUTES) as CanonicalRole[])
     .find((role) => roleCodes.has(role));
   if (!restrictedRole) return true;
   return (RESTRICTED_DYNAMIC_PERMISSION_ROUTES[restrictedRole] || []).includes(route);

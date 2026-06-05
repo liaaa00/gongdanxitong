@@ -12,6 +12,7 @@ import {
 import {
   getDispatchedOrdersSafe,
   acceptDispatchedOrder,
+  batchAcceptDispatchedOrders,
   batchExportDispatchedOrders,
   batchCompleteDispatchedOrders,
   batchReturnDispatchedOrders,
@@ -137,6 +138,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
   const isDoneMode = currentMode === 'done';
   const isInitiatedMode = currentMode === 'initiated';
   const isReturnedMode = currentMode === 'returned';
+  const isBusinessSideUser = hasAnyRole([ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER]);
 
   // 发起人视图由路由 mode 控制，数据范围由后端 scope 兜底。
   const headerTitle = isDoneMode ? '我的已办' : isInitiatedMode ? '我发起的' : isReturnedMode ? '我的退回' : '我的待办';
@@ -151,6 +153,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
   const [reassignTarget, setReassignTarget] = useState<DispatchedOrderItem | null>(null);
   const [teamUsers, setTeamUsers] = useState<UserItem[]>([]);
   const [reassignLoading, setReassignLoading] = useState(false);
+  const [batchAcceptLoading, setBatchAcceptLoading] = useState(false);
   const [batchCompleteVisible, setBatchCompleteVisible] = useState(false);
   const [batchCompleteIds, setBatchCompleteIds] = useState<string[]>([]);
   const [batchCompleteRemark, setBatchCompleteRemark] = useState('');
@@ -173,6 +176,26 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
       message.success('已接单');
       await actionRef.current?.reload();
     } catch { message.error('接单失败'); }
+  };
+
+  const handleBatchAccept = async (ids: string[], clear?: () => void) => {
+    if (ids.length === 0) {
+      message.warning('请先选择未接单的子工单');
+      return;
+    }
+    setBatchAcceptLoading(true);
+    try {
+      const res = await batchAcceptDispatchedOrders(ids);
+      const skipped = res.skipped?.length ?? 0;
+      if (skipped > 0) message.warning(`已批量接单 ${res.accepted} 条，${skipped} 条跳过`);
+      else message.success(`已批量接单 ${res.accepted} 条子工单`);
+      clear?.();
+      await actionRef.current?.reload();
+    } catch {
+      message.error('批量接单失败');
+    } finally {
+      setBatchAcceptLoading(false);
+    }
   };
 
   const handleBatchComplete = async () => {
@@ -476,15 +499,22 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
       return true;
     });
 
-    // 已办模式：只显示当前用户已完成的子工单
+    // 已办模式：后道按“我处理完成”查询；业务侧按“我权限范围内已完成”查询，避免业务员看不到自己发起的已完成子工单。
     if (isDoneMode) {
-      const defaultCompletedRange = query.orderMonth || query.completedFrom || query.completedTo
-        ? {}
-        : currentMonthCompletedRange();
+      const doneQuery: Record<string, unknown> = { ...query };
+      const selectedMonth = String(doneQuery.orderMonth || '');
+      delete doneQuery.orderMonth;
+      delete doneQuery.order_month;
+      if (selectedMonth && !doneQuery.completedFrom && !doneQuery.completedTo) {
+        const monthStart = dayjs(selectedMonth, 'YYYY-MM').startOf('month');
+        doneQuery.completedFrom = monthStart.toISOString();
+        doneQuery.completedTo = monthStart.endOf('month').toISOString();
+      } else if (!doneQuery.completedFrom && !doneQuery.completedTo) {
+        Object.assign(doneQuery, currentMonthCompletedRange());
+      }
       const result = await getDispatchedOrdersSafe({
-        ...query,
-        ...defaultCompletedRange,
-        handlerId: 'current',
+        ...doneQuery,
+        ...(isBusinessSideUser ? {} : { handlerId: 'current' }),
         status: 'completed',
       });
       const list = filterVisibleList(result.list);
@@ -572,14 +602,35 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
         dateFormatter="string"
         locale={{ emptyText }}
         rowSelection={{ preserveSelectedRowKeys: true }}
-        tableAlertRender={({ selectedRowKeys, onCleanSelected }) => (
-          <Space wrap>
-            <span>已选 {selectedRowKeys.length} 项</span>
-            <RefButton size="small" onClick={onCleanSelected}>取消</RefButton>
-            <RefButton size="small" type="primary" icon={<ExportOutlined />} loading={exporting}
-              onClick={() => handleBatchExport((selectedRowKeys as React.Key[]).map(String))}>按固定模板导出</RefButton>
-          </Space>
-        )}
+        tableAlertRender={({ selectedRowKeys, selectedRows, onCleanSelected }) => {
+          const ids = (selectedRowKeys as React.Key[]).map(String);
+          const pendingIds = (selectedRows as DispatchedOrderItem[]).filter((row) => row.status === 'pending').map((row) => row.id);
+          const activeIds = (selectedRows as DispatchedOrderItem[]).filter((row) => ACTIVE_DISPATCHED_STATUSES.has(row.status)).map((row) => row.id);
+          return (
+            <Space wrap>
+              <span>已选 {selectedRowKeys.length} 项</span>
+              <RefButton size="small" onClick={onCleanSelected}>取消</RefButton>
+              {!isDoneMode && !isInitiatedMode && !isReturnedMode && (
+                <RefButton size="small" type="primary" loading={batchAcceptLoading} disabled={pendingIds.length === 0}
+                  onClick={() => handleBatchAccept(pendingIds, onCleanSelected)}>批量接单{pendingIds.length > 0 ? `（${pendingIds.length}）` : ''}</RefButton>
+              )}
+              {!isDoneMode && !isInitiatedMode && !isReturnedMode && (
+                <RefButton size="small" icon={<CheckCircleOutlined />} disabled={activeIds.length === 0}
+                  onClick={() => { setBatchCompleteIds(activeIds); setBatchCleanFn(() => onCleanSelected); setBatchCompleteVisible(true); }}>批量完成</RefButton>
+              )}
+              {!isDoneMode && !isInitiatedMode && !isReturnedMode && (
+                <RefButton size="small" danger icon={<RollbackOutlined />} disabled={activeIds.length === 0}
+                  onClick={() => { setBatchReturnIds(activeIds); setBatchCleanFn(() => onCleanSelected); setBatchReturnVisible(true); }}>批量退回</RefButton>
+              )}
+              {!isDoneMode && !isInitiatedMode && !isReturnedMode && (
+                <RefButton size="small" icon={<BellOutlined />} disabled={activeIds.length === 0}
+                  onClick={() => { setBatchUrgeIds(activeIds); setBatchCleanFn(() => onCleanSelected); setBatchUrgeVisible(true); }}>批量催办</RefButton>
+              )}
+              <RefButton size="small" icon={<ExportOutlined />} loading={exporting}
+                onClick={() => handleBatchExport(ids)}>按固定模板导出</RefButton>
+            </Space>
+          );
+        }}
       />
             <Modal
         title="批量完成子工单"

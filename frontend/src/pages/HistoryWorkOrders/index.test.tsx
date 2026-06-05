@@ -57,17 +57,19 @@ describe('HistoryWorkOrders editable unfinished rows', () => {
     render(<HistoryWorkOrders />);
 
     expect(mocks.latestProTableProps.pagination.defaultPageSize).toBe(50);
+    expect(getColumn('createdByName')?.title).toBe('发起人');
 
     await mocks.latestProTableProps.request(
       { current: 1 },
       {},
-      { employee_id_card: ['3301'], status: ['processing'] },
+      { employee_id_card: ['3301'], status: ['processing'], createdByName: ['张三'] },
     );
 
     await waitFor(() => expect(mocks.getDispatchedOrdersSafe).toHaveBeenCalledWith(expect.objectContaining({
       page: 1,
       pageSize: 50,
       idCardNo: '3301',
+      createdByName: '张三',
       status: 'processing',
       includeReturned: true,
       orderMonth: expect.stringMatching(/^\d{4}-\d{2}$/),

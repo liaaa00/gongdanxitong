@@ -103,6 +103,7 @@ function buildService(order: DispatchedOrder, handlerRows: Array<Partial<ModuleH
     fieldPermissionService,
     fieldSupplementService,
     exportTemplatesService as never,
+    { resolveUserDepartmentIds: jest.fn(async () => ['d1']) } as never,
   );
   // Isolate state-transition logic from the detail-mapping chain.
   jest.spyOn(service, 'findOne').mockResolvedValue({ id: ORDER_ID } as DispatchedOrderDetailItem);
@@ -235,8 +236,10 @@ describe('withdrawn-then-void goes directly to terminal (0602 E-5)', () => {
       status: DispatchedOrderStatus.VOID,
       voidAt: expect.any(Date),
     }));
-    // 通知发起人作废完成，而非发给后道审批
-    expect(notificationRepo.save).toHaveBeenCalledWith(expect.objectContaining({ bizType: 'void_approved' }));
+    // 直接作废，不进入 VOID_PENDING 审批流，并通知后道关注终态变化。
+    expect(notificationRepo.save).toHaveBeenCalledWith(expect.arrayContaining([
+      expect.objectContaining({ bizType: 'creator_void_before_accept' }),
+    ]));
   });
 
   it('处理中子单作废仍走 VOID_PENDING 审批流（不被 E-5 影响）', async () => {
@@ -254,6 +257,30 @@ describe('withdrawn-then-void goes directly to terminal (0602 E-5)', () => {
 });
 
 describe('creator modify does not auto-resubmit (0602 E-4)', () => {
+  it('keeps accepted child edits pending approval even when field change hook is unavailable', async () => {
+    const order = makeOrder(DispatchedOrderStatus.PROCESSING, WorkOrderStatus.PROCESSING, {
+      acceptedAt: new Date('2026-06-02T01:00:00.000Z'),
+    });
+    const { service, dispatchedOrderRepo, workOrderRepo, operationLogRepo } = buildService(order, [
+      { moduleCode: 'contract', handlerId: 'handler-old', isActive: true },
+    ]);
+
+    await service.creatorUpdateFields(ORDER_ID, { fields: { employee_name: '李四' }, reason: '业务员修正姓名' }, creator);
+
+    expect(order.status).toBe(DispatchedOrderStatus.MODIFY_PENDING);
+    expect(order.returnReason).toContain('业务员修改申请');
+    expect(dispatchedOrderRepo.save).toHaveBeenCalledWith(expect.objectContaining({ status: DispatchedOrderStatus.MODIFY_PENDING }));
+    expect(workOrderRepo.save).not.toHaveBeenCalled();
+    expect(operationLogRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+      actionType: 'creator_modify_request',
+      afterData: expect.objectContaining({
+        pendingFields: { employee_name: '李四' },
+        previousStatus: DispatchedOrderStatus.PROCESSING,
+        status: DispatchedOrderStatus.MODIFY_PENDING,
+      }),
+    }));
+  });
+
   it('E-4: 修改已退回子单仅保存内容，状态保持 RETURNED 不自动重提', async () => {
     const order = makeOrder(DispatchedOrderStatus.RETURNED, WorkOrderStatus.RETURNED);
     const { service, dispatchedOrderRepo, workOrderRepo, operationLogRepo } = buildService(order);

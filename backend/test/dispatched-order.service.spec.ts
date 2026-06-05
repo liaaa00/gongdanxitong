@@ -23,6 +23,8 @@ function repoMock<T extends object>(overrides: Partial<Record<string, unknown>> 
   } as unknown as Repository<T>;
 }
 
+const validationServiceMock = { resolveUserDepartmentIds: jest.fn(async () => ['d1']) };
+
 function qbMock(rows: DispatchedOrder[], total = rows.length) {
   const qb = {
     leftJoinAndSelect: jest.fn(),
@@ -57,7 +59,8 @@ describe('DispatchedOrderService', () => {
     const fieldPermissionService = { getPermissionsForUser: jest.fn(), applyExtraData: jest.fn(), applyFieldViews: jest.fn() } as unknown as FieldPermissionService;
     const fieldSupplementService = { supplement: jest.fn(), getLogs: jest.fn() } as unknown as FieldSupplementService;
     const exportTemplatesService = { exportSingleDispatchedOrder: jest.fn() };
-    const service = new DispatchedOrderService(dispatchedOrderRepo, workOrderRepo, moduleHandlerRepo, userRoleRepo, fieldConfigRepo, notificationRepo, operationLogRepo, fieldPermissionService, fieldSupplementService, exportTemplatesService as never);
+    const validationService = { resolveUserDepartmentIds: jest.fn(async () => ['d1']) };
+    const service = new DispatchedOrderService(dispatchedOrderRepo, workOrderRepo, moduleHandlerRepo, userRoleRepo, fieldConfigRepo, notificationRepo, operationLogRepo, fieldPermissionService, fieldSupplementService, exportTemplatesService as never, validationService as never);
     return { service, queryBuilder };
   }
 
@@ -74,7 +77,8 @@ describe('DispatchedOrderService', () => {
     const fieldPermissionService = { getPermissionsForUser: jest.fn(), applyExtraData: jest.fn(), applyFieldViews: jest.fn() } as unknown as FieldPermissionService;
     const fieldSupplementService = { supplement: jest.fn(), getLogs: jest.fn() } as unknown as FieldSupplementService;
     const exportTemplatesService = { exportSingleDispatchedOrder: jest.fn() };
-    const service = new DispatchedOrderService(dispatchedOrderRepo, workOrderRepo, moduleHandlerRepo, userRoleRepo, fieldConfigRepo, notificationRepo, operationLogRepo, fieldPermissionService, fieldSupplementService, exportTemplatesService as never);
+    const validationService = { resolveUserDepartmentIds: jest.fn(async () => ['d1']) };
+    const service = new DispatchedOrderService(dispatchedOrderRepo, workOrderRepo, moduleHandlerRepo, userRoleRepo, fieldConfigRepo, notificationRepo, operationLogRepo, fieldPermissionService, fieldSupplementService, exportTemplatesService as never, validationService as never);
     const user: JwtUserPayload = { sub: 'user-1', username: 'dataentry01', roles: ['data_entry_team'] } as JwtUserPayload;
 
     const result = await service.findAll({ page: 1, pageSize: 20, moduleCode: 'data_entry' } as never, user);
@@ -84,6 +88,25 @@ describe('DispatchedOrderService', () => {
     expect(queryBuilder.limit).toHaveBeenCalledWith(20);
     expect(result.total).toBe(1);
     expect(result.items[0].handlerId).toBe('handler-1');
+  });
+
+  it('scopes business owner/leader child-order history by department range', async () => {
+    const { service, queryBuilder } = makeService({
+      find: jest.fn(async () => []),
+    });
+    const user: JwtUserPayload = { sub: 'owner-1', username: 'owner', roles: ['business_group_leader'] } as JwtUserPayload;
+
+    await service.findAll({ page: 1, pageSize: 20 } as never, user);
+
+    const scopeCallback = (queryBuilder.andWhere.mock.calls as Array<[unknown, unknown?]>)
+      .map(([condition]) => condition)
+      .find((condition) => typeof condition === 'object' && condition && condition.constructor?.name === 'Brackets');
+    expect(scopeCallback).toBeDefined();
+    const scopeQb = { where: jest.fn(), orWhere: jest.fn() };
+    (scopeCallback as { whereFactory: (qb: typeof scopeQb) => void }).whereFactory(scopeQb);
+
+    expect(scopeQb.where).toHaveBeenCalledWith('w.department_id IN (:...businessScopeDepartmentIds)', { businessScopeDepartmentIds: ['d1'] });
+    expect(scopeQb.orWhere).toHaveBeenCalledWith('w.created_by = :userId', { userId: 'owner-1' });
   });
 
   it('does not leak unrelated creator child modules for Jiang Lu shared backend list scope', async () => {
@@ -130,6 +153,7 @@ describe('DispatchedOrderService', () => {
       {} as FieldPermissionService,
       { getLogs: jest.fn() } as unknown as FieldSupplementService,
       { exportSingleDispatchedOrder: jest.fn() } as never,
+      validationServiceMock as never,
       undefined,
       undefined,
       undefined,
@@ -180,6 +204,24 @@ describe('DispatchedOrderService', () => {
     expect(queryBuilder.andWhere).toHaveBeenCalledWith(expect.stringContaining('employeeName'), { employeeName: '%Alice%' });
     expect(queryBuilder.offset).toHaveBeenCalledWith(10);
     expect(queryBuilder.limit).toHaveBeenCalledWith(10);
+  });
+
+  it('batch accepts selected pending child orders and reports skipped rows', async () => {
+    const { service } = makeService();
+    const user: JwtUserPayload = { sub: 'user-1', username: 'processor01', roles: ['data_entry_team'] } as JwtUserPayload;
+    jest.spyOn(service, 'accept')
+      .mockResolvedValueOnce({ id: '11111111-1111-4111-8111-111111111111' } as never)
+      .mockRejectedValueOnce(new Error('not pending'));
+
+    const result = await service.batchAccept({ ids: [
+      '11111111-1111-4111-8111-111111111111',
+      '22222222-2222-4222-8222-222222222222',
+      '11111111-1111-4111-8111-111111111111',
+    ] }, user);
+
+    expect(service.accept).toHaveBeenCalledTimes(2);
+    expect(result.accepted).toBe(1);
+    expect(result.skipped).toEqual([{ id: '22222222-2222-4222-8222-222222222222', reason: 'not pending' }]);
   });
 
   it('accepts repeated status query arrays through the global validation pipe contract', async () => {
@@ -294,7 +336,7 @@ describe('DispatchedOrderService', () => {
     const fieldPermissionService = { getPermissionsForUser: jest.fn(), applyExtraData: jest.fn(), applyFieldViews: jest.fn() } as unknown as FieldPermissionService;
     const fieldSupplementService = { supplement: jest.fn(), getLogs: jest.fn() } as unknown as FieldSupplementService;
     const exportTemplatesService = { exportSingleDispatchedOrder: jest.fn() };
-    const service = new DispatchedOrderService(dispatchedOrderRepo, workOrderRepo, moduleHandlerRepo, userRoleRepo, fieldConfigRepo, notificationRepo, operationLogRepo, fieldPermissionService, fieldSupplementService, exportTemplatesService as never);
+    const service = new DispatchedOrderService(dispatchedOrderRepo, workOrderRepo, moduleHandlerRepo, userRoleRepo, fieldConfigRepo, notificationRepo, operationLogRepo, fieldPermissionService, fieldSupplementService, exportTemplatesService as never, validationServiceMock as never);
 
     await expect(service.remove('do-1', { sub: 'admin-1', username: 'admin', roles: ['admin'] } as JwtUserPayload)).rejects.toMatchObject({ status: HttpStatus.FORBIDDEN });
     expect(dispatchedOrderRepo.delete).not.toHaveBeenCalled();
@@ -303,7 +345,7 @@ describe('DispatchedOrderService', () => {
 
   it('forbids batch deleting dispatched orders directly', async () => {
     const dispatchedOrderRepo = repoMock<DispatchedOrder>();
-    const service = new DispatchedOrderService(dispatchedOrderRepo, repoMock<WorkOrder>(), repoMock<ModuleHandler>(), repoMock<UserRole>(), repoMock<FieldConfig>(), repoMock<Notification>(), repoMock<OperationLog>(), {} as FieldPermissionService, { getLogs: jest.fn() } as unknown as FieldSupplementService, { exportSingleDispatchedOrder: jest.fn() } as never);
+    const service = new DispatchedOrderService(dispatchedOrderRepo, repoMock<WorkOrder>(), repoMock<ModuleHandler>(), repoMock<UserRole>(), repoMock<FieldConfig>(), repoMock<Notification>(), repoMock<OperationLog>(), {} as FieldPermissionService, { getLogs: jest.fn() } as unknown as FieldSupplementService, { exportSingleDispatchedOrder: jest.fn() } as never, validationServiceMock as never);
 
     await expect(service.batchRemove(['do-1'], { sub: 'admin-1', username: 'admin', roles: ['admin'] } as JwtUserPayload)).rejects.toMatchObject({ status: HttpStatus.FORBIDDEN });
     expect(dispatchedOrderRepo.delete).not.toHaveBeenCalled();
@@ -354,6 +396,7 @@ describe('DispatchedOrderService', () => {
       {} as FieldPermissionService,
       { getLogs: jest.fn() } as unknown as FieldSupplementService,
       { exportSingleDispatchedOrder: jest.fn() } as never,
+      validationServiceMock as never,
       undefined,
       undefined,
       dirtyMarkRepo,
@@ -419,6 +462,7 @@ describe('DispatchedOrderService', () => {
       {} as FieldPermissionService,
       { getLogs: jest.fn() } as unknown as FieldSupplementService,
       { exportSingleDispatchedOrder: jest.fn() } as never,
+      validationServiceMock as never,
     );
 
     await service.batchImport({
@@ -461,6 +505,7 @@ describe('DispatchedOrderService', () => {
       {} as FieldPermissionService,
       { getLogs: jest.fn() } as unknown as FieldSupplementService,
       { exportSingleDispatchedOrder: jest.fn() } as never,
+      validationServiceMock as never,
     );
 
     const result = await service.batchImport({
@@ -523,6 +568,7 @@ describe('DispatchedOrderService', () => {
       {} as FieldPermissionService,
       { getLogs: jest.fn() } as unknown as FieldSupplementService,
       { exportSingleDispatchedOrder: jest.fn() } as never,
+      validationServiceMock as never,
     );
     const user = { sub: 'handler-1', username: 'handler', roles: ['data_entry_team'] } as JwtUserPayload;
 
@@ -589,6 +635,7 @@ describe('DispatchedOrderService', () => {
       {} as FieldPermissionService,
       { getLogs: jest.fn() } as unknown as FieldSupplementService,
       { exportSingleDispatchedOrder: jest.fn() } as never,
+      validationServiceMock as never,
     );
     const user = { sub: 'handler-1', username: 'handler', roles: ['data_entry_team'] } as JwtUserPayload;
 
@@ -648,6 +695,7 @@ describe('DispatchedOrderService', () => {
       {} as FieldPermissionService,
       { getLogs: jest.fn() } as unknown as FieldSupplementService,
       { exportSingleDispatchedOrder: jest.fn() } as never,
+      validationServiceMock as never,
     );
     const user = { sub: 'handler-1', username: 'handler', roles: ['data_entry_team'] } as JwtUserPayload;
 

@@ -5,6 +5,7 @@ import type { ActionType, ProColumns } from '@ant-design/pro-components';
 import { App, Alert, Badge, Button, Checkbox, Form, Input, Modal, Space, Tag, Tooltip } from 'antd';
 import { BellOutlined, CheckCircleOutlined, ExportOutlined, EyeOutlined, SearchOutlined, UploadOutlined } from '@ant-design/icons';
 import {
+  batchAcceptDispatchedOrders,
   batchCompleteDispatchedOrders,
   batchExportDispatchedOrders,
   batchUrgeDispatchedOrders,
@@ -27,6 +28,7 @@ RefButton.displayName = 'RefButton';
 
 const SOCIAL_REMARK_PLACEHOLDER = '请输入办理备注';
 const ACTIVE_DISPATCHED_STATUSES = new Set(['pending', 'processing']);
+const PENDING_DISPATCHED_STATUSES = new Set(['pending']);
 const DISPATCHED_PROCESSING_FILTER_STATUSES = ['pending', 'processing'] as const;
 
 export const DISPATCHED_STATUS_FILTER_OPTIONS: Array<{ label: string; value: string }> = [
@@ -96,6 +98,7 @@ export const buildHeaderFilterParams = (filters: TableFilters) => {
     customerName: getFirstFilterValue(filters, 'customer_name'),
     employeeName: getFirstFilterValue(filters, 'employee_name'),
     idCardNo: getFirstFilterValue(filters, 'employee_id_card'),
+    createdByName: getFirstFilterValue(filters, 'created_by_name'),
   };
   const statuses = serializeFilterValues(filters, 'status');
   if (statuses) params.statuses = statuses;
@@ -268,6 +271,7 @@ const OnboardingModule: React.FC = () => {
     { title: '客户名称', dataIndex: 'customer_name', key: 'customer_name', width: 190, search: { transform: (value) => ({ customerName: value }) }, filteredValue: tableFilters.customer_name || null, ...textHeaderFilter('输入客户名称') },
     { title: '员工姓名', dataIndex: 'employee_name', key: 'employee_name', width: 120, search: { transform: (value) => ({ employeeName: value }) }, filteredValue: tableFilters.employee_name || null, ...textHeaderFilter('输入员工姓名') },
     { title: '证件号', dataIndex: 'employee_id_card', key: 'employee_id_card', width: 190, search: { transform: (value) => ({ idCardNo: value }) }, filteredValue: tableFilters.employee_id_card || null, ...textHeaderFilter('输入证件号') },
+    { title: '发起人', dataIndex: 'created_by_name', key: 'created_by_name', width: 120, hideInSearch: true, filteredValue: tableFilters.created_by_name || null, ...textHeaderFilter('输入发起人'), renderText: (value, record) => value || record.created_by || '-' },
     {
       title: '状态',
       dataIndex: 'status',
@@ -305,6 +309,26 @@ const OnboardingModule: React.FC = () => {
     const result = await getDispatchedOrders({ ...params, ...headerFilters, module_code: backendModuleCode });
     return { data: result.list, success: true, total: result.total };
   }, [backendModuleCode, tableFilters]);
+
+  const handleBatchAccept = async (rows: DispatchedOrderItem[] = selectedRows) => {
+    const ids = rows
+      .filter((row) => row.module_code === backendModuleCode && PENDING_DISPATCHED_STATUSES.has(row.status))
+      .map((row) => row.id);
+    if (ids.length === 0) {
+      message.warning('请选择当前模块未接单的子工单');
+      return;
+    }
+    try {
+      const result = await batchAcceptDispatchedOrders(ids);
+      const skipped = result.skipped?.length ?? 0;
+      if (skipped > 0) message.warning(`已接单 ${result.accepted} 条，${skipped} 条跳过`);
+      else message.success(`已接单 ${result.accepted} 条子工单`);
+      setSelectedRows([]);
+      actionRef.current?.reload();
+    } catch {
+      message.error('批量接单失败');
+    }
+  };
 
   const handleBatchUrge = async (rows: DispatchedOrderItem[] = selectedRows) => {
     const ids = rows
@@ -397,6 +421,14 @@ const OnboardingModule: React.FC = () => {
             按固定模板导出
           </Button>,
           <Button
+            key="batch-accept"
+            icon={<CheckCircleOutlined />}
+            disabled={selectedRows.filter((row) => PENDING_DISPATCHED_STATUSES.has(row.status)).length === 0}
+            onClick={() => handleBatchAccept()}
+          >
+            批量接单
+          </Button>,
+          <Button
             key="batch"
             type="primary"
             icon={<CheckCircleOutlined />}
@@ -420,6 +452,7 @@ const OnboardingModule: React.FC = () => {
         tableAlertRender={canSelectRows ? ({ selectedRowKeys, selectedRows: alertSelectedRows, onCleanSelected }) => {
           const selected = alertSelectedRows as DispatchedOrderItem[];
           const activeRows = selected.filter((row) => ACTIVE_DISPATCHED_STATUSES.has(row.status));
+          const acceptable = canBackendOperate ? selected.filter((row) => PENDING_DISPATCHED_STATUSES.has(row.status)) : [];
           const completable = canBatchComplete ? activeRows : [];
           const urgeable = canBatchUrge ? activeRows : [];
           return (
@@ -429,6 +462,19 @@ const OnboardingModule: React.FC = () => {
               {canBackendOperate && (
                 <Button size="small" icon={<ExportOutlined />} loading={exporting} disabled={selected.length === 0} onClick={() => handleBatchExport(selected)}>
                   按固定模板导出{selected.length > 0 ? `（${selected.length}）` : ''}
+                </Button>
+              )}
+              {canBackendOperate && (
+                <Button
+                  size="small"
+                  icon={<CheckCircleOutlined />}
+                  disabled={acceptable.length === 0}
+                  onClick={() => {
+                    setSelectedRows(acceptable);
+                    handleBatchAccept(acceptable);
+                  }}
+                >
+                  批量接单{acceptable.length > 0 ? `（${acceptable.length}）` : ''}
                 </Button>
               )}
               {canBatchComplete && (

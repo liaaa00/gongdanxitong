@@ -44,8 +44,10 @@ import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { ExportTemplatesService } from 'src/modules/admin/export-templates/export-templates.service';
 import { FieldPermissionService } from 'src/modules/field-permissions/field-permission.service';
 import { FieldSupplementService } from 'src/modules/field-supplement/field-supplement.service';
-import { FieldChangeHook } from 'src/modules/notifications/field-change.hook';
+import { FieldChangeHook, FieldDiffItem } from 'src/modules/notifications/field-change.hook';
+import { WorkOrderValidationService } from 'src/modules/work-orders/work-order-validation.service';
 import { AcceptDispatchedOrderDto } from './dto/accept.dto';
+import { BatchAcceptDispatchedOrderDto } from './dto/batch-accept.dto';
 import { BatchCompleteDispatchedOrderDto } from './dto/batch-complete.dto';
 import { BatchExportDispatchedOrderDto } from './dto/batch-export.dto';
 import { BatchImportDispatchedOrderRowDto, BatchImportDispatchedOrdersDto } from './dto/batch-import.dto';
@@ -94,6 +96,7 @@ export class DispatchedOrderService {
     private readonly fieldPermissionService: FieldPermissionService,
     private readonly fieldSupplementService: FieldSupplementService,
     private readonly exportTemplatesService: ExportTemplatesService,
+    private readonly validationService: WorkOrderValidationService,
     @Optional()
     @InjectRepository(OrderStage)
     private readonly orderStageRepository?: Repository<OrderStage>,
@@ -361,6 +364,26 @@ export class DispatchedOrderService {
     return this.findOne(id, user);
   }
 
+  async batchAccept(
+    payload: BatchAcceptDispatchedOrderDto,
+    user: JwtUserPayload,
+  ): Promise<{ success: boolean; accepted: number; skipped: Array<{ id: string; reason: string }> }> {
+    const skipped: Array<{ id: string; reason: string }> = [];
+    let accepted = 0;
+    const uniqueIds = Array.from(new Set(payload.ids));
+    for (const id of uniqueIds) {
+      try {
+        await this.accept(id, {}, user);
+        accepted += 1;
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        skipped.push({ id, reason });
+      }
+    }
+
+    return { success: true, accepted, skipped };
+  }
+
   async batchReturn(
     payload: BatchReturnDispatchedOrderDto,
     user: JwtUserPayload,
@@ -561,7 +584,7 @@ export class DispatchedOrderService {
       nextExtraData[fieldCode] = newValue;
     }
 
-    const diff = this.fieldChangeHook?.buildDiff(beforeExtraData, nextExtraData) ?? [];
+    const diff = this.buildFieldDiff(beforeExtraData, nextExtraData);
     if (diff.length === 0) {
       return this.findOne(id, user);
     }
@@ -628,7 +651,7 @@ export class DispatchedOrderService {
     if (approved) {
       const beforeExtraData = { ...(order.parentOrder.extraData ?? {}) };
       const nextExtraData = { ...beforeExtraData, ...pendingFields };
-      const diff = this.fieldChangeHook?.buildDiff(beforeExtraData, nextExtraData) ?? [];
+      const diff = this.buildFieldDiff(beforeExtraData, nextExtraData);
       order.parentOrder.extraData = nextExtraData;
       this.syncWorkOrderListFields(order.parentOrder);
       await this.workOrderRepository.save(order.parentOrder);
@@ -1430,9 +1453,14 @@ export class DispatchedOrderService {
     const canSeeModuleAll = hasManagementScopeRole(user.roles) || hasModuleSupervisorRole(user.roles) || (await this.hasSupervisorLevel(user.sub));
     const includeCreatorScope = this.shouldIncludeCreatorScope(user, modules);
     const restrictAssignedScope = this.shouldRestrictAssignedScope(user, modules);
+    const businessScopeDepartmentIds = !onlyPool && (hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES) || hasAnyRole(user.roles, BUSINESS_LEADER_ROLES))
+      ? await this.validationService.resolveUserDepartmentIds(user.sub)
+      : [];
     qb.andWhere(new Brackets((scope) => {
       if (!onlyPool) {
-        if (restrictAssignedScope && modules.length > 0) {
+        if (businessScopeDepartmentIds.length > 0) {
+          scope.where('w.department_id IN (:...businessScopeDepartmentIds)', { businessScopeDepartmentIds });
+        } else if (restrictAssignedScope && modules.length > 0) {
           scope.where('d.handler_id = :userId AND d.module_code IN (:...modules)', { userId: user.sub, modules });
         } else if (restrictAssignedScope) {
           scope.where('1 = 0');
@@ -2168,6 +2196,29 @@ export class DispatchedOrderService {
       where: { entityType: 'dispatched_order', entityId: id, actionType },
       order: { createdAt: 'DESC' },
     });
+  }
+
+  private buildFieldDiff(before: Record<string, unknown>, after: Record<string, unknown>): FieldDiffItem[] {
+    const hookDiff = this.fieldChangeHook?.buildDiff(before, after);
+    if (hookDiff && hookDiff.length > 0) return hookDiff;
+    const keys = Array.from(new Set([...Object.keys(before), ...Object.keys(after)]));
+    return keys
+      .filter((field) => !this.sameFieldValue(before[field], after[field]))
+      .map((field) => ({ field, before: before[field] ?? null, after: after[field] ?? null }));
+  }
+
+  private sameFieldValue(left: unknown, right: unknown): boolean {
+    if (left === right) return true;
+    if (left === null || left === undefined || right === null || right === undefined) {
+      return String(left ?? '') === String(right ?? '');
+    }
+    if (left instanceof Date || right instanceof Date) {
+      return new Date(left as string | number | Date).getTime() === new Date(right as string | number | Date).getTime();
+    }
+    if (typeof left === 'object' || typeof right === 'object') {
+      return JSON.stringify(left) === JSON.stringify(right);
+    }
+    return String(left) === String(right);
   }
 
   private readRecord(value: unknown): Record<string, unknown> | null {

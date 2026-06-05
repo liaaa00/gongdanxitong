@@ -32,16 +32,13 @@ const DASHBOARD_WITHDRAW_STATUS_SQL = "status::text IN ('withdraw_pending','with
 const DASHBOARD_WITHDRAW_STATUS_SQL_D = "d.status::text IN ('withdraw_pending','withdrawn') AND d.void_at IS NULL";
 const DASHBOARD_OPEN_COUNT_SQL = `(COUNT(*)
   - COUNT(*) FILTER (WHERE ${DASHBOARD_COMPLETED_STATUS_SQL})
-  - COUNT(*) FILTER (WHERE ${DASHBOARD_VOID_STATUS_SQL})
-  - COUNT(*) FILTER (WHERE ${DASHBOARD_WITHDRAW_STATUS_SQL}))`;
+  - COUNT(*) FILTER (WHERE ${DASHBOARD_VOID_STATUS_SQL}))`;
 const DASHBOARD_OPEN_COUNT_SQL_D = `(COUNT(*)
   - COUNT(*) FILTER (WHERE ${DASHBOARD_COMPLETED_STATUS_SQL_D})
-  - COUNT(*) FILTER (WHERE ${DASHBOARD_VOID_STATUS_SQL_D})
-  - COUNT(*) FILTER (WHERE ${DASHBOARD_WITHDRAW_STATUS_SQL_D}))`;
+  - COUNT(*) FILTER (WHERE ${DASHBOARD_VOID_STATUS_SQL_D}))`;
 const DASHBOARD_OPEN_COUNT_SQL_D_ID = `(COUNT(d.id)
   - COUNT(d.id) FILTER (WHERE ${DASHBOARD_COMPLETED_STATUS_SQL_D})
-  - COUNT(d.id) FILTER (WHERE ${DASHBOARD_VOID_STATUS_SQL_D})
-  - COUNT(d.id) FILTER (WHERE ${DASHBOARD_WITHDRAW_STATUS_SQL_D}))`;
+  - COUNT(d.id) FILTER (WHERE ${DASHBOARD_VOID_STATUS_SQL_D}))`;
 
 const BACKEND_HANDLER_ROLES = [
   'contract_specialist',
@@ -742,13 +739,11 @@ export class DashboardService {
         COALESCE(COUNT(d.id) FILTER (WHERE ${DASHBOARD_WITHDRAW_STATUS_SQL_D}), 0)::int AS withdrawn,
         CASE
           WHEN (COUNT(d.id)
-            - COUNT(d.id) FILTER (WHERE ${DASHBOARD_VOID_STATUS_SQL_D})
-            - COUNT(d.id) FILTER (WHERE ${DASHBOARD_WITHDRAW_STATUS_SQL_D})) <= 0 THEN 0
+            - COUNT(d.id) FILTER (WHERE ${DASHBOARD_VOID_STATUS_SQL_D})) <= 0 THEN 0
           ELSE ROUND(
             COUNT(d.id) FILTER (WHERE ${DASHBOARD_COMPLETED_STATUS_SQL_D})::numeric * 100
             / (COUNT(d.id)
-              - COUNT(d.id) FILTER (WHERE ${DASHBOARD_VOID_STATUS_SQL_D})
-              - COUNT(d.id) FILTER (WHERE ${DASHBOARD_WITHDRAW_STATUS_SQL_D})),
+              - COUNT(d.id) FILTER (WHERE ${DASHBOARD_VOID_STATUS_SQL_D})),
             1
           )
         END AS "completionRate"
@@ -808,13 +803,11 @@ export class DashboardService {
         COUNT(*) FILTER (WHERE ${DASHBOARD_WITHDRAW_STATUS_SQL_D})::int AS withdrawn,
         CASE
           WHEN (COUNT(*)
-            - COUNT(*) FILTER (WHERE ${DASHBOARD_VOID_STATUS_SQL_D})
-            - COUNT(*) FILTER (WHERE ${DASHBOARD_WITHDRAW_STATUS_SQL_D})) <= 0 THEN 0
+            - COUNT(*) FILTER (WHERE ${DASHBOARD_VOID_STATUS_SQL_D})) <= 0 THEN 0
           ELSE ROUND(
             COUNT(*) FILTER (WHERE ${DASHBOARD_COMPLETED_STATUS_SQL_D})::numeric * 100
             / (COUNT(*)
-              - COUNT(*) FILTER (WHERE ${DASHBOARD_VOID_STATUS_SQL_D})
-              - COUNT(*) FILTER (WHERE ${DASHBOARD_WITHDRAW_STATUS_SQL_D})),
+              - COUNT(*) FILTER (WHERE ${DASHBOARD_VOID_STATUS_SQL_D})),
             1
           )
         END AS "completionRate"
@@ -866,13 +859,11 @@ export class DashboardService {
         COUNT(*) FILTER (WHERE ${DASHBOARD_WITHDRAW_STATUS_SQL_D})::int AS withdrawn,
         CASE
           WHEN (COUNT(*)
-            - COUNT(*) FILTER (WHERE ${DASHBOARD_VOID_STATUS_SQL_D})
-            - COUNT(*) FILTER (WHERE ${DASHBOARD_WITHDRAW_STATUS_SQL_D})) <= 0 THEN 0
+            - COUNT(*) FILTER (WHERE ${DASHBOARD_VOID_STATUS_SQL_D})) <= 0 THEN 0
           ELSE ROUND(
             COUNT(*) FILTER (WHERE ${DASHBOARD_COMPLETED_STATUS_SQL_D})::numeric * 100
             / (COUNT(*)
-              - COUNT(*) FILTER (WHERE ${DASHBOARD_VOID_STATUS_SQL_D})
-              - COUNT(*) FILTER (WHERE ${DASHBOARD_WITHDRAW_STATUS_SQL_D})),
+              - COUNT(*) FILTER (WHERE ${DASHBOARD_VOID_STATUS_SQL_D})),
             1
           )
         END AS "completionRate"

@@ -88,6 +88,20 @@ describe('useDispatchedActions', () => {
     await waitFor(() => expect(onUpdated).toHaveBeenCalled());
   });
 
+  it('submits accepted creator field edits as modify approval request', async () => {
+    mockCreatorUpdate.mockResolvedValue({ ...baseOrder, status: 'modify_pending', accepted_at: '2026-06-04T09:00:00Z' });
+    const onUpdated = vi.fn();
+    const acceptedOrder = { ...baseOrder, status: 'processing', accepted_at: '2026-06-04T09:00:00Z', extra_data: { employee_name: '张三' } };
+    const { result } = renderHook(() =>
+      useDispatchedActions({ orderId: 'd1', order: acceptedOrder, onOrderUpdated: onUpdated }),
+    );
+
+    await act(async () => { await result.current.handleCreatorUpdate({ employee_name: '李四' }, '业务员修改字段'); });
+
+    expect(mockCreatorUpdate).toHaveBeenCalledWith('d1', { employee_name: '李四' }, '业务员修改字段');
+    await waitFor(() => expect(onUpdated).toHaveBeenCalledWith(expect.objectContaining({ status: 'modify_pending' })));
+  });
+
   it('saves creator field edits without auto-resubmitting returned child order', async () => {
     mockCreatorUpdate.mockResolvedValue({ ...baseOrder, status: 'returned', extra_data: { employee_name: '李四' } });
     const onUpdated = vi.fn();

@@ -63,6 +63,7 @@ function normalizeQuery(params: PageParams & Record<string, unknown>): PageParam
     customerName: readString(params.customerName, params.customer_name),
     employeeName: readString(params.employeeName, params.employee_name),
     idCardNo: readString(params.idCardNo, params.employee_id_card, params.employeeIdCard),
+    createdByName: readString(params.createdByName, params.created_by, params.created_by_name),
     status: readString(params.status),
     handlerName: readString(params.handlerName, params.handler_name),
   };
@@ -80,6 +81,7 @@ const HistoryWorkOrders: React.FC = () => {
     { title: '子工单类型', dataIndex: 'module_code', width: 150, valueType: 'select', fieldProps: { options: MODULE_OPTIONS }, search: { transform: (value) => ({ moduleCode: value }) }, ...selectHeaderFilter('选择子工单类型', MODULE_OPTIONS), render: (_, row) => <Tag>{getModuleLabel(row.module_code, row.order_type)}</Tag> },
     { title: '员工姓名', dataIndex: 'employee_name', width: 110, search: { transform: (value) => ({ employeeName: value }) }, ...textHeaderFilter('输入员工姓名') },
     { title: '员工证件号', dataIndex: 'employee_id_card', width: 170, ellipsis: true, search: { transform: (value) => ({ idCardNo: value }) }, ...textHeaderFilter('输入员工证件号') },
+    { title: '发起人', dataIndex: 'created_by_name', key: 'createdByName', width: 120, hideInSearch: true, ...textHeaderFilter('输入发起人'), renderText: (value, row) => value || row.created_by || '-' },
     { title: '客户代码', dataIndex: 'customer_code', width: 120, search: { transform: (value) => ({ customerCode: value }) }, ...textHeaderFilter('输入客户代码') },
     { title: '客户名称', dataIndex: 'customer_name', width: 160, ellipsis: true, search: { transform: (value) => ({ customerName: value }) }, ...textHeaderFilter('输入客户名称') },
     { title: '状态', dataIndex: 'status', width: 110, valueType: 'select', fieldProps: { options: STATUS_OPTIONS }, ...selectHeaderFilter('选择状态', STATUS_OPTIONS), render: (_, row) => <Tag color={getStatusColor(row.void_at ? 'void' : row.status)}>{getStatusText(row.void_at ? 'void' : row.status)}</Tag> },

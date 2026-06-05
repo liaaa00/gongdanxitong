@@ -102,11 +102,13 @@ describe('WorkOrders initiated read-only view', () => {
 
     expect(mocks.navigate).not.toHaveBeenCalled();
 
-    await mocks.latestTableProps.request({ current: 1, pageSize: 20, customer_name: '客户A', order_type: 'onboarding' });
+    await mocks.latestTableProps.request({ current: 1, pageSize: 20, customer_name: '客户A', order_type: 'onboarding', employee_id_card: '3301', created_by: '陶明月' });
 
     await waitFor(() => expect(mocks.getWorkOrders).toHaveBeenCalledWith(expect.objectContaining({
       employeeName: '张三',
       customerName: '客户A',
+      idCardNo: '3301',
+      createdByName: '陶明月',
       orderType: 'onboarding',
     })));
   });
@@ -124,6 +126,8 @@ describe('WorkOrders initiated read-only view', () => {
     expect(mocks.latestTableProps.toolBarRender).toBeTypeOf('function');
     expect(mocks.latestTableProps.batchActions).toBeTypeOf('function');
     expect(mocks.latestTableProps.pagination).toEqual(expect.objectContaining({ defaultPageSize: 50, showSizeChanger: true }));
+    expect(getColumn('status')).toBeUndefined();
+    expect(getColumn('dispatched_status')).toBeDefined();
     expect(getColumn('actions')).toBeDefined();
 
     await waitFor(() => expect(screen.getByRole('button', { name: /新建工单/ })).toBeInTheDocument());

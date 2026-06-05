@@ -565,6 +565,29 @@ export async function acceptDispatchedOrder(id: string): Promise<DispatchedOrder
   return request.post(`/dispatched-orders/${id}/accept`) as Promise<DispatchedOrderItem>;
 }
 
+export interface BatchAcceptResult {
+  success: boolean;
+  accepted: number;
+  skipped: Array<{ id: string; reason: string }>;
+}
+
+export async function batchAcceptDispatchedOrders(ids: string[]): Promise<BatchAcceptResult> {
+  if (isMockMode) {
+    let accepted = 0;
+    ids.forEach((id) => {
+      const updated = updateChildInParent(id, (c) => {
+        if (c.status !== 'pending') return;
+        c.status = 'processing';
+        c.accepted_at = new Date().toISOString();
+        c.handler_name = '当前用户';
+      });
+      if (updated?.status === 'processing') accepted += 1;
+    });
+    return mockDelay({ success: true, accepted, skipped: [] });
+  }
+  return request.post('/dispatched-orders/batch-accept', { ids }) as Promise<BatchAcceptResult>;
+}
+
 export async function completeDispatchedOrder(id: string, data?: Record<string, unknown>): Promise<DispatchedOrderItem> {
   if (isMockMode) {
     const updated = updateChildInParent(id, (c) => {

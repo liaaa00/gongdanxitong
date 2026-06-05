@@ -18,6 +18,7 @@ import { ExportTemplatesModule } from 'src/modules/admin/export-templates/export
 import { FieldPermissionsModule } from 'src/modules/field-permissions/field-permissions.module';
 import { FieldSupplementModule } from 'src/modules/field-supplement/field-supplement.module';
 import { NotificationModule } from 'src/modules/notifications/notification.module';
+import { WorkOrderModule } from 'src/modules/work-orders/work-order.module';
 import { DispatchedOrderController, WorkOrderSubOrderController } from './dispatched-order.controller';
 import { DispatchedOrderService } from './dispatched-order.service';
 import { SlaNotificationService } from './sla-notification.service';
@@ -42,6 +43,7 @@ import { SlaNotificationService } from './sla-notification.service';
     FieldPermissionsModule,
     FieldSupplementModule,
     NotificationModule,
+    WorkOrderModule,
   ],
   controllers: [DispatchedOrderController, WorkOrderSubOrderController],
   providers: [DispatchedOrderService, SlaNotificationService],

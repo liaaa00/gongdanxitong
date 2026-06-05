@@ -9,6 +9,7 @@ import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { FieldPermissionScenario } from 'src/modules/field-permissions/field-permission.decorator';
 import { DispatchedOrderService } from './dispatched-order.service';
 import { AcceptDispatchedOrderDto } from './dto/accept.dto';
+import { BatchAcceptDispatchedOrderDto } from './dto/batch-accept.dto';
 import { BatchCompleteDispatchedOrderDto } from './dto/batch-complete.dto';
 import { BatchDeleteDispatchedOrderDto } from './dto/batch-delete.dto';
 import { BatchExportDispatchedOrderDto } from './dto/batch-export.dto';
@@ -78,6 +79,15 @@ export class DispatchedOrderController {
   @Audit('dispatched_orders', 'delete')
   remove(@Param('id') id: string, @CurrentUser() user: JwtUserPayload) {
     return this.dispatchedOrderService.remove(assertUuidParam(id, '瀛愬伐鍗曚笉瀛樺湪'), user);
+  }
+
+  @Post('batch-accept')
+  @FieldPermissionScenario('dispatched:auto')
+  batchAccept(
+    @Body() payload: BatchAcceptDispatchedOrderDto,
+    @CurrentUser() user: JwtUserPayload,
+  ) {
+    return this.dispatchedOrderService.batchAccept(payload, user);
   }
 
   @Post('batch-complete')
