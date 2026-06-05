@@ -167,6 +167,11 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
   const [batchUrgeReason, setBatchUrgeReason] = useState('');
   const [batchUrgeLoading, setBatchUrgeLoading] = useState(false);
   const [batchCleanFn, setBatchCleanFn] = useState<(() => void) | null>(null);
+  const [selectedRows, setSelectedRows] = useState<DispatchedOrderItem[]>([]);
+  const selectedIds = selectedRows.map((row) => row.id);
+  const selectedPendingIds = selectedRows.filter((row) => row.status === 'pending').map((row) => row.id);
+  const selectedActiveIds = selectedRows.filter((row) => ACTIVE_DISPATCHED_STATUSES.has(row.status)).map((row) => row.id);
+  const canBatchOperate = !isDoneMode && !isInitiatedMode && !isReturnedMode;
   const [visibleImportModuleCodes, setVisibleImportModuleCodes] = useState<string[]>([]);
   const [reassignForm] = Form.useForm<{ handlerId: string; reason: string }>();
 
@@ -189,6 +194,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
       const skipped = res.skipped?.length ?? 0;
       if (skipped > 0) message.warning(`已批量接单 ${res.accepted} 条，${skipped} 条跳过`);
       else message.success(`已批量接单 ${res.accepted} 条子工单`);
+      setSelectedRows([]);
       clear?.();
       await actionRef.current?.reload();
     } catch {
@@ -220,6 +226,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
       setBatchCompleteVisible(false);
       setBatchCompleteRemark('');
       setBatchCompleteIds([]);
+      setSelectedRows([]);
       batchCleanFn?.();
       actionRef.current?.reload();
     } catch {
@@ -248,6 +255,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
       setBatchReturnVisible(false);
       setBatchReturnReason('');
       setBatchReturnIds([]);
+      setSelectedRows([]);
       batchCleanFn?.();
       actionRef.current?.reload();
     } catch {
@@ -272,6 +280,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
       setBatchUrgeVisible(false);
       setBatchUrgeReason('');
       setBatchUrgeIds([]);
+      setSelectedRows([]);
       batchCleanFn?.();
       actionRef.current?.reload();
     } catch {
@@ -601,33 +610,38 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
         scroll={{ x: 1500 }}
         dateFormatter="string"
         locale={{ emptyText }}
-        rowSelection={{ preserveSelectedRowKeys: true }}
-        tableAlertRender={({ selectedRowKeys, selectedRows, onCleanSelected }) => {
-          const ids = (selectedRowKeys as React.Key[]).map(String);
-          const pendingIds = (selectedRows as DispatchedOrderItem[]).filter((row) => row.status === 'pending').map((row) => row.id);
-          const activeIds = (selectedRows as DispatchedOrderItem[]).filter((row) => ACTIVE_DISPATCHED_STATUSES.has(row.status)).map((row) => row.id);
+        rowSelection={{
+          selectedRowKeys: selectedIds,
+          onChange: (_keys, rows) => setSelectedRows(rows as DispatchedOrderItem[]),
+          preserveSelectedRowKeys: true,
+        }}
+        tableAlertRender={({ selectedRowKeys }) => <span>已选 {selectedRowKeys.length} 项</span>}
+        tableAlertOptionRender={({ onCleanSelected }) => {
+          const cleanSelection = () => {
+            onCleanSelected?.();
+            setSelectedRows([]);
+          };
           return (
             <Space wrap>
-              <span>已选 {selectedRowKeys.length} 项</span>
-              <RefButton size="small" onClick={onCleanSelected}>取消</RefButton>
-              {!isDoneMode && !isInitiatedMode && !isReturnedMode && (
-                <RefButton size="small" type="primary" loading={batchAcceptLoading} disabled={pendingIds.length === 0}
-                  onClick={() => handleBatchAccept(pendingIds, onCleanSelected)}>批量接单{pendingIds.length > 0 ? `（${pendingIds.length}）` : ''}</RefButton>
+              <RefButton size="small" onClick={cleanSelection}>取消</RefButton>
+              {canBatchOperate && (
+                <RefButton size="small" type="primary" loading={batchAcceptLoading} disabled={selectedPendingIds.length === 0}
+                  onClick={() => handleBatchAccept(selectedPendingIds, cleanSelection)}>批量接单{selectedPendingIds.length > 0 ? `（${selectedPendingIds.length}）` : ''}</RefButton>
               )}
-              {!isDoneMode && !isInitiatedMode && !isReturnedMode && (
-                <RefButton size="small" icon={<CheckCircleOutlined />} disabled={activeIds.length === 0}
-                  onClick={() => { setBatchCompleteIds(activeIds); setBatchCleanFn(() => onCleanSelected); setBatchCompleteVisible(true); }}>批量完成</RefButton>
+              {canBatchOperate && (
+                <RefButton size="small" icon={<CheckCircleOutlined />} disabled={selectedActiveIds.length === 0}
+                  onClick={() => { setBatchCompleteIds(selectedActiveIds); setBatchCleanFn(() => cleanSelection); setBatchCompleteVisible(true); }}>批量完成</RefButton>
               )}
-              {!isDoneMode && !isInitiatedMode && !isReturnedMode && (
-                <RefButton size="small" danger icon={<RollbackOutlined />} disabled={activeIds.length === 0}
-                  onClick={() => { setBatchReturnIds(activeIds); setBatchCleanFn(() => onCleanSelected); setBatchReturnVisible(true); }}>批量退回</RefButton>
+              {canBatchOperate && (
+                <RefButton size="small" danger icon={<RollbackOutlined />} disabled={selectedActiveIds.length === 0}
+                  onClick={() => { setBatchReturnIds(selectedActiveIds); setBatchCleanFn(() => cleanSelection); setBatchReturnVisible(true); }}>批量退回</RefButton>
               )}
-              {!isDoneMode && !isInitiatedMode && !isReturnedMode && (
-                <RefButton size="small" icon={<BellOutlined />} disabled={activeIds.length === 0}
-                  onClick={() => { setBatchUrgeIds(activeIds); setBatchCleanFn(() => onCleanSelected); setBatchUrgeVisible(true); }}>批量催办</RefButton>
+              {canBatchOperate && (
+                <RefButton size="small" icon={<BellOutlined />} disabled={selectedActiveIds.length === 0}
+                  onClick={() => { setBatchUrgeIds(selectedActiveIds); setBatchCleanFn(() => cleanSelection); setBatchUrgeVisible(true); }}>批量催办</RefButton>
               )}
               <RefButton size="small" icon={<ExportOutlined />} loading={exporting}
-                onClick={() => handleBatchExport(ids)}>按固定模板导出</RefButton>
+                onClick={() => handleBatchExport(selectedIds)}>按固定模板导出</RefButton>
             </Space>
           );
         }}

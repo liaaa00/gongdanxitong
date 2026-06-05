@@ -1,4 +1,4 @@
-import { render, waitFor } from '@testing-library/react';
+import { act, render, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import MyDispatched from './index';
 
@@ -226,15 +226,20 @@ describe('MyDispatched processing status filter', () => {
   it('offers batch accept for selected pending rows in pending mode', async () => {
     render(<MyDispatched mode="pending" />);
 
-    const alert = mocks.latestProTableProps.tableAlertRender({
-      selectedRowKeys: ['d-pending', 'd-processing'],
-      selectedRows: [
+    expect(mocks.latestProTableProps.rowSelection).toEqual(expect.objectContaining({
+      selectedRowKeys: [],
+      preserveSelectedRowKeys: true,
+    }));
+
+    await act(async () => {
+      mocks.latestProTableProps.rowSelection.onChange(['d-pending', 'd-processing'], [
         { id: 'd-pending', status: 'pending' },
         { id: 'd-processing', status: 'processing' },
-      ],
-      onCleanSelected: vi.fn(),
-    }) as React.ReactElement;
-    const batchAcceptButton = (alert.props.children as React.ReactNode[]).find((child) => (child as React.ReactElement)?.props?.children?.toString?.().includes('批量接单')) as React.ReactElement;
+      ]);
+    });
+
+    const option = mocks.latestProTableProps.tableAlertOptionRender({ onCleanSelected: vi.fn() }) as React.ReactElement;
+    const batchAcceptButton = (option.props.children as React.ReactNode[]).find((child) => (child as React.ReactElement)?.props?.children?.toString?.().includes('批量接单')) as React.ReactElement;
     batchAcceptButton.props.onClick();
 
     await waitFor(() => expect(mocks.batchAcceptDispatchedOrders).toHaveBeenCalledWith(['d-pending']));
