@@ -1,8 +1,9 @@
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import dayjs, { type Dayjs } from 'dayjs';
 import { useParams, useNavigate } from 'react-router-dom';
 import { PageContainer, ProTable } from '@ant-design/pro-components';
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
-import { App, Alert, Badge, Button, Checkbox, Form, Input, Modal, Space, Tag, Tooltip } from 'antd';
+import { App, Alert, Badge, Button, Checkbox, DatePicker, Form, Input, Modal, Space, Tag, Tooltip } from 'antd';
 import { BellOutlined, CheckCircleOutlined, ExportOutlined, EyeOutlined, SearchOutlined, UploadOutlined } from '@ant-design/icons';
 import {
   batchAcceptDispatchedOrders,
@@ -20,6 +21,7 @@ import { getModuleLabel, getModuleTitle } from '@/constants/modules';
 import { getStatusColor, getStatusText, STATUS_MAP, WORK_ORDER_STATUS_CODES } from '@/constants/dictionaries';
 import { useAuth } from '@/hooks/useAuth';
 import { DISPATCHED_PROCESSING_STATUS_OPTION } from '@/utils/dispatchedStatusFilter';
+import { getCachedMonth, toMonthKey, updateCachedListPageState } from '@/utils/listPageState';
 
 const RefButton = forwardRef<HTMLButtonElement, React.ComponentProps<typeof Button>>((props, ref) => (
   <Button ref={ref} {...props} />
@@ -197,15 +199,18 @@ const OnboardingModule: React.FC = () => {
   const [exporting, setExporting] = useState(false);
 
   const currentModule = moduleCode || '';
+  const pageStateKey = `onboarding-module-${currentModule || 'unknown'}`;
+  const [month, setMonth] = useState<Dayjs | null>(() => getCachedMonth(pageStateKey));
   const backendModuleCode = currentModule === 'social_insurance_resign' ? 'resignation_social_insurance' : currentModule;
   const moduleLabel = getModuleLabel(currentModule);
 
   useEffect(() => {
+    setMonth(getCachedMonth(pageStateKey));
     setTableFilters((previousFilters) => (
       areControlledFiltersEqual(previousFilters, {}) ? previousFilters : {}
     ));
     setSelectedRows((previousRows) => (previousRows.length === 0 ? previousRows : []));
-  }, [currentModule]);
+  }, [currentModule, pageStateKey]);
 
   useEffect(() => {
     if (!didMountFilterReloadRef.current) {
@@ -306,9 +311,14 @@ const OnboardingModule: React.FC = () => {
 
   const requestFn = useCallback(async (params: PageParams, _sort: Record<string, unknown>, filters: TableFilters = {}) => {
     const headerFilters = buildEffectiveHeaderFilterParams(filters, tableFilters);
-    const result = await getDispatchedOrders({ ...params, ...headerFilters, module_code: backendModuleCode });
+    const result = await getDispatchedOrders({
+      ...params,
+      ...headerFilters,
+      module_code: backendModuleCode,
+      orderMonth: (month || dayjs()).format('YYYY-MM'),
+    });
     return { data: result.list, success: true, total: result.total };
-  }, [backendModuleCode, tableFilters]);
+  }, [backendModuleCode, month, tableFilters]);
 
   const handleBatchAccept = async (rows: DispatchedOrderItem[] = selectedRows) => {
     const ids = rows
@@ -397,7 +407,25 @@ const OnboardingModule: React.FC = () => {
   };
 
   return (
-    <PageContainer header={{ title: getModuleTitle(currentModule) }}>
+    <PageContainer header={{
+      title: getModuleTitle(currentModule),
+      extra: [
+        <Space key="month">
+          <span>工单月份：</span>
+          <DatePicker
+            picker="month"
+            allowClear={false}
+            value={month}
+            onChange={(value) => {
+              const nextMonth = value || dayjs();
+              setMonth(nextMonth);
+              updateCachedListPageState(pageStateKey, { month: toMonthKey(nextMonth), current: 1 });
+              actionRef.current?.reload();
+            }}
+          />
+        </Space>,
+      ],
+    }}>
       <ProTable<DispatchedOrderItem>
         key={currentModule}
         actionRef={actionRef}

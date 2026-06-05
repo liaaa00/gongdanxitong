@@ -88,7 +88,7 @@ describe('WorkOrders initiated read-only view', () => {
     expect(screen.getByRole('heading', { name: '我发起的工单' })).toBeInTheDocument();
     expect(screen.getByTestId('multi-view-table')).toHaveAttribute('data-view-id', 'my-work-initiated-readonly');
     expect(screen.getByTestId('multi-view-table')).toHaveAttribute('data-has-batch-actions', 'false');
-    expect(mocks.latestTableProps.toolBarRender).toBeUndefined();
+    expect(mocks.latestTableProps.toolBarRender).toBeTypeOf('function');
     expect(mocks.latestTableProps.batchActions).toBeUndefined();
     expect(getColumn('actions')).toBeUndefined();
 
@@ -110,6 +110,8 @@ describe('WorkOrders initiated read-only view', () => {
       idCardNo: '3301',
       createdByName: '陶明月',
       orderType: 'onboarding',
+      createdAfter: expect.any(String),
+      createdBefore: expect.any(String),
     })));
   });
 
@@ -157,6 +159,10 @@ describe('WorkOrders initiated read-only view', () => {
 
     const result = await mocks.latestTableProps.request({ current: 1, pageSize: 20 });
 
+    expect(mocks.getWorkOrders).toHaveBeenCalledWith(expect.objectContaining({
+      createdAfter: expect.any(String),
+      createdBefore: expect.any(String),
+    }));
     expect(mocks.getWorkOrders).toHaveBeenCalledWith(expect.not.objectContaining({ orderType: 'onboarding' }));
     expect(result.data).toHaveLength(2);
   });
@@ -176,6 +182,10 @@ describe('WorkOrders initiated read-only view', () => {
 
     await mocks.latestTableProps.request({ current: 1, pageSize: 20 });
 
-    expect(mocks.getWorkOrders).toHaveBeenCalledWith(expect.objectContaining({ orderType: 'resignation' }));
+    expect(mocks.getWorkOrders).toHaveBeenCalledWith(expect.objectContaining({
+      orderType: 'resignation',
+      createdAfter: expect.any(String),
+      createdBefore: expect.any(String),
+    }));
   });
 });

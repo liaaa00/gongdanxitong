@@ -1,8 +1,9 @@
 import { forwardRef, useEffect, useMemo, useState } from 'react';
+import dayjs, { type Dayjs } from 'dayjs';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { PageContainer } from '@ant-design/pro-components';
 import type { ProColumns } from '@ant-design/pro-components';
-import { App, Badge, Button, Input, Popconfirm, Radio, Space, Tag, Tooltip } from 'antd';
+import { App, Badge, Button, DatePicker, Input, Popconfirm, Radio, Space, Tag, Tooltip } from 'antd';
 import { ExportOutlined, EyeOutlined, ImportOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import MultiViewTable from '@/components/MultiViewTable';
 import { batchDeleteWorkOrders, deleteWorkOrder, getWorkOrders } from '@/services/workOrders';
@@ -14,6 +15,7 @@ import { ROLE } from '@/constants/roles';
 import { getModuleLabel } from '@/constants/modules';
 import { WORK_ORDER_STATUS_CODES, getStatusColor, getStatusText } from '@/constants/dictionaries';
 import { isPhase1VisibleOrderType } from '@/utils/moduleAccess';
+import { getCachedMonth, toMonthKey, updateCachedListPageState } from '@/utils/listPageState';
 
 const RefButton = forwardRef<HTMLButtonElement, React.ComponentProps<typeof Button>>((props, ref) => (
   <Button ref={ref} {...props} />
@@ -29,6 +31,14 @@ const ORDER_TYPE_OPTIONS = [
   { value: 'resignation', label: '离职' },
 ];
 const ORDER_TYPE_MAP = Object.fromEntries(ORDER_TYPE_OPTIONS.map((item) => [item.value, item.label]));
+
+function getMonthRange(value?: Dayjs | null): { createdAfter: string; createdBefore: string } {
+  const selected = value && value.isValid() ? value : dayjs();
+  return {
+    createdAfter: selected.startOf('month').toISOString(),
+    createdBefore: selected.endOf('month').toISOString(),
+  };
+}
 
 const textHeaderFilter = (placeholder: string): Pick<ProColumns<WorkOrderItem>, 'filterDropdown' | 'filterIcon'> => ({
   filterDropdown: ({ setSelectedKeys, selectedKeys, confirm, clearFilters, close }) => (
@@ -152,6 +162,8 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
   const isBackendOnly = isBackendProcessor && !isAdmin && !isBusinessOwner && !isGroupLeader && !isGroupMember;
   const isInitiatedPage = mode === 'initiated' || location.pathname.includes('/my-work/initiated');
   const currentOrderType = useMemo(() => new URLSearchParams(location.search).get('orderType') || undefined, [location.search]);
+  const pageStateKey = isInitiatedPage ? 'my-work-initiated' : `work-orders-${currentOrderType || 'all'}`;
+  const [month, setMonth] = useState<Dayjs | null>(() => getCachedMonth(pageStateKey));
   const currentOrderTypeLabel = currentOrderType === 'resignation' ? '离职' : currentOrderType === 'onboarding' ? '入职' : '';
   const modulePrefix = currentOrderTypeLabel || '';
   const canDelete = !isInitiatedPage && isAdmin;
@@ -170,6 +182,10 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
     });
     return next;
   }, [location.search]);
+
+  useEffect(() => {
+    setMonth(getCachedMonth(pageStateKey));
+  }, [pageStateKey]);
 
   useEffect(() => {
     if (isBackendOnly) {
@@ -340,9 +356,11 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
   }, [canDelete, isAdmin, isBusinessOwner, isGroupLeader, isInitiatedPage, navigate]);
 
   const requestFn = async (params: Record<string, unknown>) => {
+    const monthRange = getMonthRange(month);
     const query: Record<string, unknown> = {
       ...urlFilters,
       ...params,
+      ...monthRange,
       orderNo: params.orderNo || params.order_no || urlFilters.orderNo,
       customerCode: params.customerCode || params.customer_code || urlFilters.customerCode,
       customerName: params.customerName || params.customer_name || urlFilters.customerName,
@@ -373,30 +391,46 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
         pagination={{ defaultPageSize: 50, pageSizeOptions: ['20', '50', '100'], showSizeChanger: true }}
         kanbanColumnKey="status"
         kanbanAllowedValues={KANBAN_STATUS_OPTIONS}
-        toolBarRender={isInitiatedPage ? undefined : () => [
-          canCreateWorkOrder && (
-            <RefButton
-              key="new"
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={() => navigate(`/work-orders/new${currentOrderType ? `?orderType=${currentOrderType}` : ''}`)}
-            >
-              {modulePrefix ? `新建${modulePrefix}工单` : '新建工单'}
-            </RefButton>
-          ),
-          canImportWorkOrder && (
-            <RefButton
-              key="import"
-              icon={<ImportOutlined />}
-              onClick={() => navigate(`/work-orders/import${currentOrderType ? `?orderType=${currentOrderType}` : ''}`)}
-            >
-              {modulePrefix ? `${modulePrefix}批量导入` : '工单批量导入'}
-            </RefButton>
-          ),
-          <RefButton key="export" icon={<ExportOutlined />} onClick={handleBatchExport}>
-            批量导出
-          </RefButton>,
-        ].filter(Boolean) as React.ReactNode[]}
+        toolBarRender={() => [
+          <Space key="month">
+            <span>工单月份：</span>
+            <DatePicker
+              picker="month"
+              allowClear={false}
+              value={month}
+              onChange={(value) => {
+                const nextMonth = value || dayjs();
+                setMonth(nextMonth);
+                updateCachedListPageState(pageStateKey, { month: toMonthKey(nextMonth), current: 1 });
+                setRefreshKey((current) => current + 1);
+              }}
+            />
+          </Space>,
+          ...(!isInitiatedPage ? ([
+            canCreateWorkOrder && (
+              <RefButton
+                key="new"
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={() => navigate(`/work-orders/new${currentOrderType ? `?orderType=${currentOrderType}` : ''}`)}
+              >
+                {modulePrefix ? `新建${modulePrefix}工单` : '新建工单'}
+              </RefButton>
+            ),
+            canImportWorkOrder && (
+              <RefButton
+                key="import"
+                icon={<ImportOutlined />}
+                onClick={() => navigate(`/work-orders/import${currentOrderType ? `?orderType=${currentOrderType}` : ''}`)}
+              >
+                {modulePrefix ? `${modulePrefix}批量导入` : '工单批量导入'}
+              </RefButton>
+            ),
+            <RefButton key="export" icon={<ExportOutlined />} onClick={handleBatchExport}>
+              批量导出
+            </RefButton>,
+          ].filter(Boolean) as React.ReactNode[]) : []),
+        ]}
         proTableOptions={false}
         proTableToolBarRender={false}
         batchActions={!isInitiatedPage && canDelete ? (selectedKeys, clear) => (

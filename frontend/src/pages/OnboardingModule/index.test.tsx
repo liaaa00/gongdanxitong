@@ -11,7 +11,12 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@ant-design/pro-components', () => ({
-  PageContainer: ({ children }: { children: React.ReactNode }) => children,
+  PageContainer: ({ children, header }: { children: React.ReactNode; header?: { extra?: React.ReactNode[] } }) => (
+    <section>
+      {header?.extra}
+      {children}
+    </section>
+  ),
   ProTable: (props: {
     actionRef?: { current?: { reload?: () => unknown } };
     request?: (params: Record<string, unknown>, sort: Record<string, unknown>, filters: Record<string, unknown>) => unknown;
@@ -78,6 +83,7 @@ describe('OnboardingModule header table filters', () => {
       current: 1,
       pageSize: 20,
       module_code: 'data_entry',
+      orderMonth: expect.stringMatching(/^\d{4}-\d{2}$/),
       statuses: 'pending',
     })));
   });
@@ -94,6 +100,7 @@ describe('OnboardingModule header table filters', () => {
       current: 1,
       pageSize: 20,
       module_code: 'data_entry',
+      orderMonth: expect.stringMatching(/^\d{4}-\d{2}$/),
       statuses: 'pending,processing',
       createdByName: '张三',
     })));
@@ -112,6 +119,7 @@ describe('OnboardingModule header table filters', () => {
       current: 1,
       pageSize: 20,
       module_code: 'resignation_social_insurance',
+      orderMonth: expect.stringMatching(/^\d{4}-\d{2}$/),
     })));
   });
 
@@ -134,6 +142,7 @@ describe('OnboardingModule header table filters', () => {
     await waitFor(() => expect(mocks.getDispatchedOrders).toHaveBeenCalled());
     const params = mocks.getDispatchedOrders.mock.calls.at(-1)?.[0] as Record<string, unknown>;
     expect(params.module_code).toBe('data_entry');
+    expect(params.orderMonth).toEqual(expect.stringMatching(/^\d{4}-\d{2}$/));
     expect(params.statuses).toBeUndefined();
   });
 });
