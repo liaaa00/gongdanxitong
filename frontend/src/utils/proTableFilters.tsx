@@ -58,7 +58,7 @@ export function textHeaderFilter<T extends Record<string, unknown> = Record<stri
 
 export function selectHeaderFilter<T extends Record<string, unknown> = Record<string, unknown>>(
   placeholder: string,
-  options: Array<{ label: string; value: string }>,
+  options: ReadonlyArray<{ label: string; value: string }>,
 ): Pick<ProColumns<T>, 'filterDropdown' | 'filterIcon'> {
   return {
     filterDropdown: ({ setSelectedKeys, selectedKeys, confirm, clearFilters, close }) => (

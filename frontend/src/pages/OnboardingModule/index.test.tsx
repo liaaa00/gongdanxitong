@@ -88,11 +88,11 @@ describe('OnboardingModule header table filters', () => {
     })));
   });
 
-  it('reloads and sends pending plus processing with creator filter when header filters change', async () => {
+  it('reloads and sends selected status with creator filter when header filters change', async () => {
     render(<OnboardingModule />);
 
     await act(async () => {
-      mocks.latestProTableProps.onChange({}, { status: ['pending,processing'], created_by_name: ['张三'] });
+      mocks.latestProTableProps.onChange({}, { status: ['processing'], created_by_name: ['张三'] });
     });
 
     await waitFor(() => expect(mocks.reload).toHaveBeenCalledTimes(1));
@@ -101,7 +101,7 @@ describe('OnboardingModule header table filters', () => {
       pageSize: 20,
       module_code: 'data_entry',
       orderMonth: expect.stringMatching(/^\d{4}-\d{2}$/),
-      statuses: 'pending,processing',
+      statuses: 'processing',
       createdByName: '张三',
     })));
   });

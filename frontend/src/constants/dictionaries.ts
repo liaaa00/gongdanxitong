@@ -2,12 +2,12 @@ export const WORK_ORDER_STATUS_CODES = [
   'pending',
   'processing',
   'modify_pending',
-  'completed',
-  'returned',
-  'withdrawn',
-  'void',
   'withdraw_pending',
   'void_pending',
+  'completed',
+  'void',
+  'withdrawn',
+  'returned',
 ] as const;
 
 export type WorkOrderStatusCode = (typeof WORK_ORDER_STATUS_CODES)[number];

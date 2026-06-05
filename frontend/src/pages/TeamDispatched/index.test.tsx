@@ -92,20 +92,33 @@ describe('TeamDispatched readonly child-order view', () => {
     })));
   });
 
-  it('normalizes pending/processing status filter to the shared statuses query', async () => {
+  it('sends a single selected team status instead of a merged pending/processing option', async () => {
     render(<TeamDispatched />);
+
+    const statusColumn = getColumn('status');
+    expect(statusColumn.fieldProps.options.map((option: { label: string }) => option.label)).toEqual([
+      '未接单',
+      '已接单',
+      '修改审批中',
+      '撤回审批中',
+      '作废审批中',
+      '已完成',
+      '已作废',
+      '已撤回',
+      '已退回',
+    ]);
 
     await mocks.latestProTableProps.request(
       { current: 1, pageSize: 20 },
       {},
-      { status: ['pending,processing'] },
+      { status: ['pending'] },
     );
 
     await waitFor(() => expect(mocks.getDispatchedOrdersSafe).toHaveBeenCalledWith(expect.objectContaining({
-      statuses: 'pending,processing',
+      status: 'pending',
       scope: 'team',
     })));
-    expect(mocks.getDispatchedOrdersSafe.mock.calls.at(-1)?.[0]).not.toHaveProperty('status');
+    expect(mocks.getDispatchedOrdersSafe.mock.calls.at(-1)?.[0]).not.toHaveProperty('statuses');
   });
 
   it('does not depend on the main work-order API or main detail route', () => {

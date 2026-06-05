@@ -124,7 +124,7 @@ export class DispatchedOrderService {
     const qb = this.baseListQuery();
     this.applyPhase1VisibleModuleScope(qb);
 
-    await this.applyUserScope(qb, user, query.onlyPool === true || query.onlyUnclaimed === true);
+    await this.applyUserScope(qb, user, query.onlyPool === true || query.onlyUnclaimed === true, query.scope);
     this.applyCommonFilters(qb, { ...query, __currentUserId: user.sub } as ListDispatchedOrderQueryDto & { __currentUserId: string });
 
     const [rows, total] = await qb
@@ -1444,6 +1444,7 @@ export class DispatchedOrderService {
     qb: SelectQueryBuilder<DispatchedOrder>,
     user: JwtUserPayload,
     onlyPool: boolean,
+    requestedScope?: string,
   ): Promise<void> {
     if (this.isAdmin(user)) {
       if (onlyPool) qb.andWhere('d.handler_id IS NULL');
@@ -1456,7 +1457,8 @@ export class DispatchedOrderService {
     const isBusinessManagementUser = hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES) || hasAnyRole(user.roles, BUSINESS_LEADER_ROLES);
     const isBusinessMemberUser = hasAnyRole(user.roles, BUSINESS_MEMBER_ROLES);
     const isBusinessSideUser = isBusinessManagementUser || isBusinessMemberUser;
-    const businessScopeDepartmentIds = !onlyPool && isBusinessManagementUser
+    const useTeamBusinessScope = requestedScope === 'team' && isBusinessManagementUser;
+    const businessScopeDepartmentIds = !onlyPool && useTeamBusinessScope
       ? await this.validationService.resolveUserDepartmentIds(user.sub)
       : [];
     qb.andWhere(new Brackets((scope) => {

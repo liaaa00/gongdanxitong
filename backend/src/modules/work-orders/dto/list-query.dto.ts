@@ -21,6 +21,16 @@ export class ListWorkOrderQueryDto extends PaginationQueryDto {
   customerId?: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  orderNo?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  order_no?: string;
+
+  @IsOptional()
   @IsDateString()
   createdAfter?: string;
 

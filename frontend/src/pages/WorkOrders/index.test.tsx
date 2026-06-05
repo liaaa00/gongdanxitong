@@ -115,6 +115,37 @@ describe('WorkOrders initiated read-only view', () => {
     })));
   });
 
+  it('passes all main work-order header filters to the backend query', async () => {
+    mocks.pathname = '/work-orders';
+    mocks.search = '';
+
+    render(<WorkOrders />);
+
+    await mocks.latestTableProps.request({
+      current: 1,
+      pageSize: 100,
+      order_no: 'WO-001',
+      customer_code: 'C001',
+      customer_name: '客户A',
+      employee_name: '张三',
+      employee_id_card: '3301',
+      created_by: '陶明月',
+      order_type: 'resignation',
+    });
+
+    await waitFor(() => expect(mocks.getWorkOrders).toHaveBeenCalledWith(expect.objectContaining({
+      orderNo: 'WO-001',
+      customerCode: 'C001',
+      customerName: '客户A',
+      employeeName: '张三',
+      idCardNo: '3301',
+      createdByName: '陶明月',
+      orderType: 'resignation',
+      createdAfter: expect.any(String),
+      createdBefore: expect.any(String),
+    })));
+  });
+
   it('keeps main work-order list operations outside the initiated route', async () => {
     mocks.pathname = '/work-orders';
     mocks.search = '';
@@ -127,7 +158,7 @@ describe('WorkOrders initiated read-only view', () => {
     expect(screen.getByTestId('multi-view-table')).toHaveAttribute('data-view-id', 'work-orders-main');
     expect(mocks.latestTableProps.toolBarRender).toBeTypeOf('function');
     expect(mocks.latestTableProps.batchActions).toBeTypeOf('function');
-    expect(mocks.latestTableProps.pagination).toEqual(expect.objectContaining({ defaultPageSize: 50, showSizeChanger: true }));
+    expect(mocks.latestTableProps.pagination).toEqual(expect.objectContaining({ defaultPageSize: 100, showSizeChanger: false, hideOnSinglePage: true }));
     expect(getColumn('status')).toBeUndefined();
     expect(getColumn('dispatched_status')).toBeDefined();
     expect(getColumn('actions')).toBeDefined();

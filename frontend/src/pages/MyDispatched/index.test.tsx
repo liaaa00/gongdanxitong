@@ -68,23 +68,33 @@ describe('MyDispatched processing status filter', () => {
     return columns.find((column) => column.dataIndex === dataIndexOrKey || column.key === dataIndexOrKey);
   }
 
-  it('shows one processing option that sends pending plus processing', async () => {
+  it('shows the nine status options and sends a single selected status', async () => {
     render(<MyDispatched mode="pending" />);
 
     const statusColumn = getColumn('status');
-    expect(statusColumn.fieldProps.options).toEqual([{ label: '未接单/已接单', value: 'pending,processing' }]);
+    expect(statusColumn.fieldProps.options.map((option: { label: string }) => option.label)).toEqual([
+      '未接单',
+      '已接单',
+      '修改审批中',
+      '撤回审批中',
+      '作废审批中',
+      '已完成',
+      '已作废',
+      '已撤回',
+      '已退回',
+    ]);
 
-    await mocks.latestProTableProps.request({ current: 1, pageSize: 20, status: 'pending,processing', moduleCode: 'contract' });
+    await mocks.latestProTableProps.request({ current: 1, pageSize: 20, status: 'processing', moduleCode: 'contract' });
 
     await waitFor(() => expect(mocks.getDispatchedOrders).toHaveBeenCalledWith(expect.objectContaining({
       page: 1,
       pageSize: 20,
       moduleCode: 'contract',
       orderMonth: expect.stringMatching(/^\d{4}-\d{2}$/),
-      statuses: 'pending,processing',
+      status: 'processing',
     })));
     const params = mocks.getDispatchedOrders.mock.calls.at(-1)?.[0] as Record<string, unknown>;
-    expect(params.status).toBeUndefined();
+    expect(params.statuses).toBeUndefined();
   });
 
   it('clears status search without reusing stale statuses and keeps default pending plus processing', async () => {

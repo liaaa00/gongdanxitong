@@ -21,7 +21,7 @@ import {
   updateCachedListPageState,
 } from '@/utils/listPageState';
 import {
-  DISPATCHED_PROCESSING_STATUS_OPTION,
+  DISPATCHED_NINE_STATUS_OPTIONS,
   normalizeDispatchedStatusSearchParams,
 } from '@/utils/dispatchedStatusFilter';
 
@@ -31,14 +31,7 @@ const WORK_TYPE_OPTIONS = getPhaseOneModuleOptions().map((option) => ({
 }));
 
 const TEAM_STATUS_OPTIONS = [
-  DISPATCHED_PROCESSING_STATUS_OPTION,
-  { value: 'completed', label: '已完成' },
-  { value: 'returned', label: '已退回' },
-  { value: 'withdrawn', label: '已撤回' },
-  { value: 'void', label: '已作废' },
-  { value: 'modify_pending', label: '修改审批中' },
-  { value: 'withdraw_pending', label: '撤回审批中' },
-  { value: 'void_pending', label: '作废审批中' },
+  ...DISPATCHED_NINE_STATUS_OPTIONS,
 ];
 
 const PAGE_STATE_KEY = 'team-work';

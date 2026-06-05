@@ -388,7 +388,7 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
         rowKey="id"
         headerTitle={pageTitle}
         search={false}
-        pagination={{ defaultPageSize: 50, pageSizeOptions: ['20', '50', '100'], showSizeChanger: true }}
+        pagination={{ defaultPageSize: 100, pageSizeOptions: ['100'], showSizeChanger: false, hideOnSinglePage: true }}
         kanbanColumnKey="status"
         kanbanAllowedValues={KANBAN_STATUS_OPTIONS}
         toolBarRender={() => [

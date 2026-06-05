@@ -2,13 +2,18 @@ import { describe, expect, it } from 'vitest';
 import { DISPATCHED_STATUS_FILTER_OPTIONS, buildEffectiveHeaderFilterParams, buildHeaderFilterParams, getFilterValues, normalizeTableFilters, serializeFilterValues } from './index';
 
 describe('OnboardingModule table header filter params', () => {
-  it('maps the visible processing filter option to both pending and processing backend statuses', () => {
-    const processingOption = DISPATCHED_STATUS_FILTER_OPTIONS.find((option) => option.label === '未接单/已接单');
-
-    expect(processingOption).toMatchObject({ value: 'pending,processing' });
-    expect(buildHeaderFilterParams({ status: [processingOption?.value || ''] })).toMatchObject({
-      statuses: 'pending,processing',
-    });
+  it('uses the required nine visible status filter options', () => {
+    expect(DISPATCHED_STATUS_FILTER_OPTIONS.map((option) => option.label)).toEqual([
+      '未接单',
+      '已接单',
+      '修改审批中',
+      '撤回审批中',
+      '作废审批中',
+      '已完成',
+      '已作废',
+      '已撤回',
+      '已退回',
+    ]);
   });
 
   it('serializes multiple selected status filters for request params', () => {

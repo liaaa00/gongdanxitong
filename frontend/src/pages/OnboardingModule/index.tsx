@@ -18,9 +18,9 @@ import DispatchedBatchImportModal from '@/components/DispatchedBatchImportModal'
 import type { DispatchedBatchImportMode } from '@/components/DispatchedBatchImportModal';
 import type { PageParams } from '@/services/mock';
 import { getModuleLabel, getModuleTitle } from '@/constants/modules';
-import { getStatusColor, getStatusText, STATUS_MAP, WORK_ORDER_STATUS_CODES } from '@/constants/dictionaries';
+import { getStatusColor, getStatusText } from '@/constants/dictionaries';
 import { useAuth } from '@/hooks/useAuth';
-import { DISPATCHED_PROCESSING_STATUS_OPTION } from '@/utils/dispatchedStatusFilter';
+import { DISPATCHED_NINE_STATUS_OPTIONS } from '@/utils/dispatchedStatusFilter';
 import { getCachedMonth, toMonthKey, updateCachedListPageState } from '@/utils/listPageState';
 
 const RefButton = forwardRef<HTMLButtonElement, React.ComponentProps<typeof Button>>((props, ref) => (
@@ -34,10 +34,7 @@ const PENDING_DISPATCHED_STATUSES = new Set(['pending']);
 const DISPATCHED_PROCESSING_FILTER_STATUSES = ['pending', 'processing'] as const;
 
 export const DISPATCHED_STATUS_FILTER_OPTIONS: Array<{ label: string; value: string }> = [
-  DISPATCHED_PROCESSING_STATUS_OPTION,
-  ...WORK_ORDER_STATUS_CODES
-    .filter((value) => value !== 'processing')
-    .map((value) => ({ value, label: STATUS_MAP[value]?.label || getStatusText(value) })),
+  ...DISPATCHED_NINE_STATUS_OPTIONS,
 ];
 
 type TableFilterValue = Array<string | number | bigint | boolean> | null | undefined;

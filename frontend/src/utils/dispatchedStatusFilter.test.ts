@@ -1,13 +1,25 @@
 import { describe, expect, it } from 'vitest';
 import {
   DISPATCHED_PROCESSING_STATUS_FILTER_VALUE,
+  DISPATCHED_NINE_STATUS_OPTIONS,
   DISPATCHED_PROCESSING_STATUS_OPTION,
   isDispatchedProcessingStatusFilter,
   normalizeDispatchedStatusSearchParams,
 } from './dispatchedStatusFilter';
 
 describe('dispatched status search params', () => {
-  it('exposes one visible processing option that represents pending plus processing', () => {
+  it('exposes the required nine visible status options and keeps the legacy processing value', () => {
+    expect(DISPATCHED_NINE_STATUS_OPTIONS.map((option) => option.label)).toEqual([
+      '未接单',
+      '已接单',
+      '修改审批中',
+      '撤回审批中',
+      '作废审批中',
+      '已完成',
+      '已作废',
+      '已撤回',
+      '已退回',
+    ]);
     expect(DISPATCHED_PROCESSING_STATUS_OPTION).toEqual({
       label: '未接单/已接单',
       value: 'pending,processing',
@@ -23,11 +35,11 @@ describe('dispatched status search params', () => {
     });
   });
 
-  it('also treats legacy single pending or processing values as processing group', () => {
-    expect(normalizeDispatchedStatusSearchParams({ status: 'processing' })).toEqual({ statuses: 'pending,processing' });
-    expect(normalizeDispatchedStatusSearchParams({ status: 'pending' })).toEqual({ statuses: 'pending,processing' });
-    expect(isDispatchedProcessingStatusFilter('processing')).toBe(true);
-    expect(isDispatchedProcessingStatusFilter('pending')).toBe(true);
+  it('keeps single pending or processing selections as individual status queries', () => {
+    expect(normalizeDispatchedStatusSearchParams({ status: 'processing' })).toEqual({ status: 'processing' });
+    expect(normalizeDispatchedStatusSearchParams({ status: 'pending' })).toEqual({ status: 'pending' });
+    expect(isDispatchedProcessingStatusFilter('processing')).toBe(false);
+    expect(isDispatchedProcessingStatusFilter('pending')).toBe(false);
   });
 
   it('keeps other statuses as a single status query', () => {

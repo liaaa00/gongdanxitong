@@ -873,11 +873,7 @@ export class WorkOrderService {
         }
         qb.andWhere('w.department_id IN (:...departmentIds)', { departmentIds });
       } else if (hasAnyRole(user.roles, BUSINESS_LEADER_ROLES)) {
-        const departmentIds = await this.validationService.resolveUserDepartmentIds(user.sub);
-        if (departmentIds.length === 0) {
-          return { items: [], total: 0, page, pageSize };
-        }
-        qb.andWhere('w.department_id IN (:...departmentIds)', { departmentIds });
+        qb.andWhere('w.created_by = :userId', { userId: user.sub });
       } else {
         qb.andWhere('w.created_by = :userId', { userId: user.sub });
       }
@@ -906,6 +902,10 @@ export class WorkOrderService {
       qb.andWhere('(w.employee_name ILIKE :keyword OR w.employee_id_card ILIKE :keyword OR w.order_no ILIKE :keyword)', {
         keyword: `%${query.keyword}%`,
       });
+    }
+    const orderNo = query.orderNo ?? query.order_no;
+    if (orderNo) {
+      qb.andWhere('w.order_no ILIKE :orderNo', { orderNo: `%${orderNo}%` });
     }
     if (query.customerCode) {
       qb.andWhere("(w.customer_code ILIKE :customerCode OR w.extra_data->>'customer_code' ILIKE :customerCode)", { customerCode: `%${query.customerCode}%` });

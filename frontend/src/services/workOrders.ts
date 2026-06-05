@@ -580,6 +580,8 @@ export async function getWorkOrders(params: PageParams): Promise<PageResult<Work
     let list = mockWorkOrders.map((item) => normalizeWorkOrderResponse(item));
     const query = params as PageParams & Record<string, unknown>;
     if (query.status) list = list.filter((w) => w.status === query.status);
+    const orderNo = String(query.orderNo ?? query.order_no ?? '').toLowerCase();
+    if (orderNo) list = list.filter((w) => String(w.order_no || '').toLowerCase().includes(orderNo));
     const orderType = String(query.orderType ?? query.order_type ?? '');
     if (orderType) list = list.filter((w) => w.order_type === orderType);
     const customerCode = String(query.customerCode ?? query.customer_code ?? '').toLowerCase();

@@ -42,7 +42,7 @@ import {
   updateCachedListPageState,
 } from '@/utils/listPageState';
 import {
-  DISPATCHED_PROCESSING_STATUS_OPTION,
+  DISPATCHED_NINE_STATUS_OPTIONS,
   DISPATCHED_PROCESSING_STATUS_FILTER_VALUE,
   normalizeDispatchedStatusSearchParams,
 } from '@/utils/dispatchedStatusFilter';
@@ -61,22 +61,14 @@ interface MyDispatchedProps {
 }
 
 const ACTIVE_DISPATCHED_STATUSES = new Set(['pending', 'processing']);
+const OPEN_DISPATCHED_STATUS_VALUES = new Set<string>(DISPATCHED_NINE_STATUS_OPTIONS.map((option) => option.value));
 
 const WORK_TYPE_OPTIONS = getPhaseOneModuleOptions().map((option) => ({
   label: `${option.label}子工单`,
   value: option.value,
 }));
 
-const DISPATCHED_STATUS_OPTIONS = [
-  DISPATCHED_PROCESSING_STATUS_OPTION,
-  { label: '已完成', value: 'completed' },
-  { label: '已退回', value: 'returned' },
-  { label: '已撤回', value: 'withdrawn' },
-  { label: '已作废', value: 'void' },
-  { label: '修改审批中', value: 'modify_pending' },
-  { label: '撤回审批中', value: 'withdraw_pending' },
-  { label: '作废审批中', value: 'void_pending' },
-];
+const DISPATCHED_STATUS_OPTIONS = DISPATCHED_NINE_STATUS_OPTIONS;
 
 function currentMonthCompletedRange(): { completedFrom: string; completedTo: string } {
   const now = dayjs();
@@ -393,18 +385,14 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
           ? [{ label: '已完成', value: 'completed' }]
           : isReturnedMode
             ? [{ label: '已退回', value: 'returned' }]
-            : isInitiatedMode
-              ? DISPATCHED_STATUS_OPTIONS
-              : [DISPATCHED_PROCESSING_STATUS_OPTION],
-        placeholder: isDoneMode ? '已完成' : isReturnedMode ? '已退回' : isInitiatedMode ? '请选择状态' : '未接单/已接单',
+            : DISPATCHED_STATUS_OPTIONS,
+        placeholder: isDoneMode ? '已完成' : isReturnedMode ? '已退回' : '请选择状态',
       },
       ...selectHeaderFilter('选择状态', isDoneMode
         ? [{ label: '已完成', value: 'completed' }]
         : isReturnedMode
           ? [{ label: '已退回', value: 'returned' }]
-          : isInitiatedMode
-            ? DISPATCHED_STATUS_OPTIONS
-            : [DISPATCHED_PROCESSING_STATUS_OPTION]),
+          : DISPATCHED_STATUS_OPTIONS),
       render: (_, record) => <Tag color={getStatusColor(record.status)}>{getStatusText(record.status)}</Tag>,
     },
     { title: '工单所属月份', dataIndex: 'orderMonth', key: 'orderMonth', valueType: 'dateMonth', hideInTable: true, hideInSearch: true },
@@ -550,8 +538,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
       return { data: list, success: true, total: result.total };
     }
 
-    // 普通待办模式：显示 pending 和 processing 状态的子工单。
-    // 用户选择“待办理/办理中”时同样传 statuses=pending,processing，避免只筛到 pending 或 processing 之一。
+    // 普通待办模式：默认显示 pending 和 processing；用户选择具体九状态时按单状态筛选。
     if (query.statuses) {
       const result = await getDispatchedOrdersSafe({ ...query, statuses: String(query.statuses) });
       const list = filterVisibleList(result.list.filter((d) => ACTIVE_DISPATCHED_STATUSES.has(d.status)));
@@ -562,8 +549,9 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
 
     // 其它单值状态保留单值 status 查询，兼容已办/退回等场景。
     if (query.status) {
-      const result = await getDispatchedOrdersSafe({ ...query, status: String(query.status) });
-      const list = filterVisibleList(result.list.filter((d) => ACTIVE_DISPATCHED_STATUSES.has(d.status)));
+      const selectedStatus = String(query.status);
+      const result = await getDispatchedOrdersSafe({ ...query, status: selectedStatus });
+      const list = filterVisibleList(result.list.filter((d) => d.status === selectedStatus || !OPEN_DISPATCHED_STATUS_VALUES.has(selectedStatus)));
       setVisibleImportModuleCodes(Array.from(new Set(list.map((item) => item.module_code).filter(Boolean))));
       updateSlaCounts(list);
       return { data: list, success: true, total: result.total };
