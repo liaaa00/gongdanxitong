@@ -1,0 +1,146 @@
+# AI 修改前必读
+
+> 目的：给后续 AI 会话或开发人员一个固定入口，避免长对话压缩后遗忘已确认规则。
+
+## 1. 新会话第一步
+
+每次开始修改代码前，必须先阅读：
+
+1. `docs/业务规则回归清单.md`
+2. `frontend/src/config/routeVisibility.ts`
+3. 本次修改涉及页面或后端接口的现有测试
+
+不要只依赖聊天上下文。
+
+## 2. 修改前必须判断影响面
+
+按修改类型检查影响范围：
+
+### 状态相关
+必须检查：
+- 我的工单
+- 团队工单
+- 历史工单
+- 入职/离职子工单页
+- 子工单详情页
+- 仪表盘
+- 后端枚举、DTO、过滤逻辑
+
+### 月份筛选/统计相关
+必须检查：
+- 我的已办
+- 我的待办
+- 历史工单
+- 入职/离职主工单
+- 入职/离职子工单
+- 仪表盘
+
+重点规则：工单流转统计按派发/创建月份，不默认按完成时间。
+
+### 权限/菜单相关
+必须检查：
+- `frontend/src/config/routeVisibility.ts`
+- `frontend/src/layouts/BasicLayout.tsx`
+- 后端 `applyUserScope` 或对应 service 查询范围
+- 角色菜单测试
+
+### 表格筛选相关
+必须检查：
+- 列 `dataIndex/key`
+- 前端 normalizeQuery / buildHeaderFilterParams
+- 后端 DTO 是否允许该参数
+- 后端 service 是否真正使用该参数过滤
+- mock 服务是否同步支持
+
+## 3. 修改原则
+
+- 小步修改，一次只解决一类问题。
+- 能改公共常量就不要多处硬编码。
+- 改一个已确认规则，必须补测试。
+- 不要用“临时兼容”覆盖业务规则。
+- 不要为了让测试通过删除关键断言。
+- 不要提交构建缓存、上传文件、临时目录。
+
+## 4. 文件编辑规则
+
+在 SpectrAI/Windows 环境中：
+
+- 文本文件编辑优先使用 SpectrAI 文件工具，避免中文乱码。
+- 不要用 shell 的 `echo >`、`cat >`、`sed -i` 写中文文件。
+- PowerShell 读取可以用 `Get-Content -Encoding UTF8`。
+- 搜索内容和文件列表使用 `rg`。
+
+## 5. 固定回归命令
+
+完整回归：
+
+```powershell
+.\回归测试.ps1
+```
+
+只跑前端：
+
+```powershell
+.\回归测试.ps1 -FrontendOnly
+```
+
+只跑后端：
+
+```powershell
+.\回归测试.ps1 -BackendOnly
+```
+
+快速模式（跳过 build，只跑关键测试）：
+
+```powershell
+.\回归测试.ps1 -SkipBuild
+```
+
+## 6. 固定前端关键测试
+
+以下测试属于业务规则回归保护，不能随意删除：
+
+- `src/config/routeVisibility.test.ts`
+- `src/pages/MyDispatched/index.test.tsx`
+- `src/pages/MyDispatched/Detail/index.test.tsx`
+- `src/pages/TeamDispatched/index.test.tsx`
+- `src/pages/HistoryWorkOrders/index.test.tsx`
+- `src/pages/WorkOrders/index.test.tsx`
+- `src/pages/OnboardingModule/index.test.tsx`
+- `src/pages/OnboardingModule/filterParams.test.ts`
+- `src/pages/Dashboard/index.test.tsx`
+- `src/utils/dispatchedStatusFilter.test.ts`
+
+## 7. 提交前检查
+
+提交前必须执行：
+
+```powershell
+git status --short
+```
+
+确认不要提交：
+
+- `.spectrai/`
+- `backend/uploads/excel/*.xlsx`
+- `frontend/tsconfig.tsbuildinfo`
+- `frontend/dist/`（如未被忽略）
+- 其他临时文件
+
+## 8. 回复用户时要说明
+
+每次修改完成后，回复里至少说明：
+
+1. 改了什么
+2. 为什么这样改
+3. 跑了哪些测试/构建
+4. commit 号
+5. 是否有未提交的无关文件
+
+## 9. 用户给新需求时的推荐提示
+
+用户以后只需要说：
+
+> 按项目回归清单处理。
+
+AI 必须主动读取 `docs/AI修改前必读.md` 和 `docs/业务规则回归清单.md`。
