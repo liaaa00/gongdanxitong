@@ -8,23 +8,27 @@ import { markNotificationRead } from '@/services/notifications';
 
 type TestMenuItem = { name?: string; path?: string; key?: string; children?: TestMenuItem[] };
 type TestMenuProps = { selectedKeys?: string[]; openKeys?: string[] };
+type TestMenuRender = (item: TestMenuItem, dom: React.ReactNode) => React.ReactNode;
 
 vi.mock('@ant-design/pro-components', () => {
-  const renderItems = (items: TestMenuItem[] = []) => (
+  const renderItems = (items: TestMenuItem[] = [], menuItemRender?: TestMenuRender) => (
     <ul>
-      {items.map((item) => (
-        <li key={item.key || item.path || item.name} data-path={item.path}>
-          <span>{item.name}</span>
-          {item.children?.length ? renderItems(item.children) : null}
-        </li>
-      ))}
+      {items.map((item) => {
+        const dom = <span>{item.name}</span>;
+        return (
+          <li key={item.key || item.path || item.name} data-path={item.path}>
+            {menuItemRender ? menuItemRender(item, dom) : dom}
+            {item.children?.length ? renderItems(item.children, menuItemRender) : null}
+          </li>
+        );
+      })}
     </ul>
   );
 
   return {
-    ProLayout: ({ children, actionsRender, route, menuProps }: { children?: React.ReactNode; actionsRender?: () => React.ReactNode[]; route?: { children?: TestMenuItem[] }; menuProps?: TestMenuProps }) => (
+    ProLayout: ({ children, actionsRender, route, menuProps, menuItemRender }: { children?: React.ReactNode; actionsRender?: () => React.ReactNode[]; route?: { children?: TestMenuItem[] }; menuProps?: TestMenuProps; menuItemRender?: TestMenuRender }) => (
       <div>
-        <nav data-testid="layout-menu">{renderItems(route?.children || [])}</nav>
+        <nav data-testid="layout-menu">{renderItems(route?.children || [], menuItemRender)}</nav>
         <div data-testid="selected-keys">{JSON.stringify(menuProps?.selectedKeys || [])}</div>
         <div data-testid="layout-actions">{actionsRender?.()}</div>
         <main>{children}</main>
@@ -33,7 +37,7 @@ vi.mock('@ant-design/pro-components', () => {
   };
 });
 
-const { notification, mockUserState } = vi.hoisted(() => {
+const { notification, mockUserState, mockNavigate } = vi.hoisted(() => {
   const makeUser = (roleCodes: string[]) => ({
     id: 'u-1',
     username: 'tester',
@@ -47,6 +51,7 @@ const { notification, mockUserState } = vi.hoisted(() => {
   });
 
   return {
+    mockNavigate: vi.fn(),
     mockUserState: {
       makeUser,
       user: makeUser(['labor_contract_member']),
@@ -69,6 +74,14 @@ const { notification, mockUserState } = vi.hoisted(() => {
         { field_code: 'contract_feedback', old_value: '待确认', new_value: '已完成签订' },
       ],
     },
+  };
+});
+
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
   };
 });
 
@@ -152,6 +165,54 @@ describe('BasicLayout menu visibility', () => {
     expect(selectedKeys()).toContain('/work-orders?orderType=resignation');
     expect(selectedKeys()).not.toContain('work-orders-main');
     expect(selectedKeys()).not.toContain('/work-orders?orderType=onboarding');
+  });
+
+  it('keeps work-order orderType menu selection when list state adds extra query params', () => {
+    mockUserState.user = mockUserState.makeUser(['business_group_member']);
+
+    renderLayout(['/work-orders?orderType=onboarding&page=2&customerName=ACME']);
+
+    expect(selectedKeys()).toContain('work-orders-main');
+    expect(selectedKeys()).toContain('/work-orders?orderType=onboarding');
+    expect(selectedKeys()).not.toContain('resignation-list');
+  });
+
+  it('navigates menu items to their last legal recorded detail path', () => {
+    mockUserState.user = mockUserState.makeUser(['business_group_member']);
+    const first = renderLayout(['/my-work/initiated']);
+    first.unmount();
+
+    renderLayout(['/my-dispatched/d-1?tab=logs']);
+
+    fireEvent.click(screen.getByRole('button', { name: '我的退回' }));
+    fireEvent.click(screen.getByRole('button', { name: '我发起的' }));
+
+    expect(mockNavigate).toHaveBeenLastCalledWith('/my-dispatched/d-1?tab=logs');
+  });
+
+  it('does not let temporary action pages overwrite a menu last path', () => {
+    mockUserState.user = mockUserState.makeUser(['business_group_member']);
+    window.localStorage.setItem('menu_recent_paths_v1', JSON.stringify({ 'work-orders-main': '/work-orders/wo-1?tab=detail' }));
+    window.localStorage.setItem('menu_active_leaf_key_v1', 'work-orders-main');
+
+    renderLayout(['/work-orders/import?orderType=onboarding']);
+
+    fireEvent.click(screen.getByRole('button', { name: '入职主工单列表' }));
+
+    expect(mockNavigate).toHaveBeenLastCalledWith('/work-orders/wo-1?tab=detail');
+  });
+
+  it('falls back to menu default path when last path is illegal or forbidden for current role', () => {
+    mockUserState.user = mockUserState.makeUser(['business_owner']);
+    window.localStorage.setItem('menu_recent_paths_v1', JSON.stringify({ 'my-work-team': '/work-orders/wo-1' }));
+
+    renderLayout(['/dashboard']);
+
+    fireEvent.click(screen.getByRole('button', { name: '团队工单' }));
+
+    expect(mockNavigate).toHaveBeenLastCalledWith('/my-work/team');
+    const recentPaths = JSON.parse(window.localStorage.getItem('menu_recent_paths_v1') || '{}') as Record<string, string>;
+    expect(recentPaths['my-work-team']).toBeUndefined();
   });
 
   it('keeps business owner menu to dashboard, team work and history only', () => {

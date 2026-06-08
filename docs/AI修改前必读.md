@@ -63,6 +63,14 @@
 - 后端 `applyUserScope` 或对应 service 查询范围
 - 角色菜单测试
 
+### 全系统导航状态/列表状态相关
+必须检查：
+- 菜单点击是否优先回到该菜单上次停留的合法路径，且详情页可作为最近路径。
+- 最近路径排除项是否覆盖登录、改密、403、404、新建、导入等临时动作页。
+- 最近路径是否经过 `canAccessPath` / `routeVisibility` 兜底校验；无权限、无匹配路由或非法路径必须回退菜单默认 path。
+- `/work-orders?orderType=onboarding` 与 `/work-orders?orderType=resignation` 的菜单高亮、展开、跳转和最近路径不能互相串。
+- 列表状态是否尽量保留筛选、月份、页码、pageSize、视图模式、表头筛选等状态，且不跨列表污染。
+
 ### 表格筛选相关
 必须检查：
 - 列 `dataIndex/key`
@@ -119,7 +127,9 @@
 
 以下测试属于业务规则回归保护，不能随意删除：
 
+- `src/layouts/BasicLayout.test.tsx`
 - `src/config/routeVisibility.test.ts`
+- `src/components/MultiViewTable/index.test.tsx`
 - `src/pages/MyDispatched/index.test.tsx`
 - `src/pages/MyDispatched/Detail/index.test.tsx`
 - `src/pages/TeamDispatched/index.test.tsx`

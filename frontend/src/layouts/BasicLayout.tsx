@@ -233,12 +233,157 @@ function normalizeMenuUrl(value: string): { fullPath: string; pathname: string; 
 function menuPathMatchesLocation(itemPath: string, currentPath: string, nested = false): boolean {
   const item = normalizeMenuUrl(itemPath);
   const current = normalizeMenuUrl(currentPath);
-  if (item.hasQuery) return current.fullPath === item.fullPath;
+  if (item.hasQuery) {
+    if (current.pathname !== item.pathname) return false;
+    const itemQuery = new URLSearchParams(item.fullPath.split('?')[1] || '');
+    const currentQuery = new URLSearchParams(current.fullPath.split('?')[1] || '');
+    for (const [key, value] of itemQuery.entries()) {
+      if (currentQuery.get(key) !== value) return false;
+    }
+    return true;
+  }
   if (current.pathname === item.pathname) return true;
   return nested && current.pathname.startsWith(`${item.pathname}/`);
 }
 
 const OPEN_KEYS_STORAGE = 'menu_open_keys_v1';
+const RECENT_MENU_PATHS_STORAGE = 'menu_recent_paths_v1';
+const ACTIVE_MENU_KEY_STORAGE = 'menu_active_leaf_key_v1';
+
+type RecentMenuPathMap = Record<string, string>;
+
+function sanitizeInternalPath(value: string | null | undefined): string | null {
+  const raw = String(value || '').trim();
+  if (!raw || !raw.startsWith('/') || raw.startsWith('//') || /^[a-z][a-z\d+.-]*:/i.test(raw)) return null;
+  try {
+    const url = new URL(raw, window.location.origin);
+    if (url.origin !== window.location.origin) return null;
+    return `${url.pathname}${url.search}` || '/';
+  } catch {
+    return null;
+  }
+}
+
+function readRecentMenuPaths(): RecentMenuPathMap {
+  try {
+    const raw = localStorage.getItem(RECENT_MENU_PATHS_STORAGE);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>)
+        .map(([key, value]) => [key, sanitizeInternalPath(String(value || ''))])
+        .filter((entry): entry is [string, string] => Boolean(entry[0] && entry[1])),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function writeRecentMenuPath(menuKey: string, path: string | null): void {
+  if (!menuKey) return;
+  try {
+    const recentPaths = readRecentMenuPaths();
+    if (path) recentPaths[menuKey] = path;
+    else delete recentPaths[menuKey];
+    localStorage.setItem(RECENT_MENU_PATHS_STORAGE, JSON.stringify(recentPaths));
+  } catch { /* ignore */ }
+}
+
+function readRecentMenuPath(menuKey: string): string | null {
+  return readRecentMenuPaths()[menuKey] || null;
+}
+
+function isTemporaryActionPath(pathname: string): boolean {
+  const normalized = normalizeMenuUrl(pathname).pathname;
+  if (['/', '/login', '/change-password', '/403', '/404'].includes(normalized)) return true;
+  if (/^\/work-orders\/(new|create|import)$/.test(normalized)) return true;
+  if (/^\/renewal\/new$/.test(normalized)) return true;
+  if (/^\/resignation\/new$/.test(normalized)) return true;
+  if (/^\/benefit\/new$/.test(normalized)) return true;
+  if (/^\/admin\/workflows\/[^/]+$/.test(normalized)) return true;
+  return false;
+}
+
+function isRecordableRecentPath(value: string): boolean {
+  const safePath = sanitizeInternalPath(value);
+  if (!safePath) return false;
+  return !isTemporaryActionPath(normalizeMenuUrl(safePath).pathname);
+}
+
+function isDispatchedDetailPath(pathname: string): boolean {
+  return /^\/my-dispatched\/[^/]+$/.test(pathname);
+}
+
+function pathCanBeOwnedByMenu(menuPath: string, currentPath: string): boolean {
+  const menu = normalizeMenuUrl(menuPath);
+  const current = normalizeMenuUrl(currentPath);
+  if (menuPathMatchesLocation(menuPath, currentPath, true)) return true;
+  if (isTemporaryActionPath(current.pathname)) return false;
+
+  if (menu.pathname === '/work-orders') {
+    if (/^\/work-orders\/[^/]+$/.test(current.pathname)) return true;
+    return menu.fullPath.includes('orderType=resignation') && /^\/resignation\/[^/]+(\/cert)?$/.test(current.pathname);
+  }
+
+  if (isDispatchedDetailPath(current.pathname)) {
+    return /^\/my-work\/(initiated|returned|pending|done|team|history)$/.test(menu.pathname)
+      || /^\/onboarding\/[^/]+$/.test(menu.pathname);
+  }
+
+  return !menu.hasQuery && current.pathname.startsWith(`${menu.pathname}/`);
+}
+
+function findMenuItemByKey(items: MenuItem[], menuKey: string): MenuItem | null {
+  for (const item of items) {
+    if (getMenuItemKey(item) === menuKey) return item;
+    if (item.children?.length) {
+      const matched = findMenuItemByKey(item.children, menuKey);
+      if (matched) return matched;
+    }
+  }
+  return null;
+}
+
+function findMenuItemForLocation(items: MenuItem[], currentPath: string): MenuItem | null {
+  for (const item of items) {
+    if (item.children?.length) {
+      const matched = findMenuItemForLocation(item.children, currentPath);
+      if (matched) return matched;
+    }
+    if (menuPathMatchesLocation(item.path, currentPath, true)) return item;
+  }
+  return null;
+}
+
+function findMenuOwnerForPath(items: MenuItem[], currentPath: string, fallbackMenuKey?: string): MenuItem | null {
+  const direct = findMenuItemForLocation(items, currentPath);
+  if (direct) return direct;
+  const fallback = fallbackMenuKey ? findMenuItemByKey(items, fallbackMenuKey) : null;
+  return fallback && pathCanBeOwnedByMenu(fallback.path, currentPath) ? fallback : null;
+}
+
+function getMenuNavigationTarget(item: MenuItem, userRoles: { code?: string }[] | undefined, permissions?: string[]): string | null {
+  const defaultPath = sanitizeInternalPath(item.path);
+  if (!defaultPath || !canAccessPath(defaultPath, userRoles, permissions)) return null;
+
+  const menuKey = getMenuItemKey(item);
+  const recentPath = readRecentMenuPath(menuKey);
+  if (!recentPath) return defaultPath;
+
+  const safeRecentPath = sanitizeInternalPath(recentPath);
+  if (
+    !safeRecentPath
+    || !isRecordableRecentPath(safeRecentPath)
+    || !pathCanBeOwnedByMenu(item.path, safeRecentPath)
+    || !canAccessPath(safeRecentPath, userRoles, permissions)
+  ) {
+    writeRecentMenuPath(menuKey, null);
+    return defaultPath;
+  }
+
+  return safeRecentPath;
+}
 
 const POLL_INTERVAL = 30000;
 const EMPTY_UNREAD_BUCKETS: UnreadCountByBucket = {
@@ -382,7 +527,7 @@ const BasicLayout: React.FC = () => {
 
   // ★ 计算当前路径应有的父级菜单 keys。
   // 入职/离职主列表共用 /work-orders，必须用完整 pathname + search 区分 orderType。
-  const computeParentKeys = useCallback((menu: MenuItem[], currentPath: string): string[] => {
+  const computeParentKeys = useCallback((menu: MenuItem[], currentPath: string, ownerKey?: string): string[] => {
     const visit = (items: MenuItem[], ancestors: string[]): string[] | null => {
       for (const item of items) {
         const nextAncestors = item.children?.length ? [...ancestors, item.path] : ancestors;
@@ -390,7 +535,7 @@ const BasicLayout: React.FC = () => {
           const matched = visit(item.children, nextAncestors);
           if (matched) return matched;
         }
-        if (menuPathMatchesLocation(item.path, currentPath, true)) return ancestors;
+        if (menuPathMatchesLocation(item.path, currentPath, true) || (ownerKey && getMenuItemKey(item) === ownerKey)) return ancestors;
       }
       return null;
     };
@@ -399,29 +544,41 @@ const BasicLayout: React.FC = () => {
 
   const selectedKeys = useMemo(() => {
     const currentPath = `${location.pathname}${location.search}`;
-    const visit = (items: MenuItem[]): MenuItem | null => {
-      for (const item of items) {
-        if (item.children?.length) {
-          const matched = visit(item.children);
-          if (matched) return matched;
-        }
-        if (menuPathMatchesLocation(item.path, currentPath, true)) return item;
-      }
-      return null;
-    };
-    const selected = visit(filteredMenu);
+    let fallbackMenuKey: string | undefined;
+    try { fallbackMenuKey = localStorage.getItem(ACTIVE_MENU_KEY_STORAGE) || undefined; } catch { /* ignore */ }
+    const selected = findMenuOwnerForPath(filteredMenu, currentPath, fallbackMenuKey);
     return selected ? Array.from(new Set([getMenuItemKey(selected), selected.path])) : [];
   }, [filteredMenu, location.pathname, location.search]);
 
   // ★ 每次路径变化时，只保留当前路由所属父菜单，避免点其他父菜单后旧父菜单还展开。
   useEffect(() => {
-    const parents = computeParentKeys(filteredMenu, `${location.pathname}${location.search}`);
+    const currentPath = `${location.pathname}${location.search}`;
+    let fallbackMenuKey: string | undefined;
+    try { fallbackMenuKey = localStorage.getItem(ACTIVE_MENU_KEY_STORAGE) || undefined; } catch { /* ignore */ }
+    const owner = findMenuOwnerForPath(filteredMenu, currentPath, fallbackMenuKey);
+    const parents = computeParentKeys(filteredMenu, currentPath, owner ? getMenuItemKey(owner) : undefined);
     if (parents.length === 0) return;
     setOpenKeys((prev) => {
       const next = parents;
       return prev.length === next.length && prev.every((key, index) => key === next[index]) ? prev : next;
     });
   }, [location.pathname, location.search, filteredMenu, computeParentKeys]);
+
+  // 记录每个叶子菜单的最近合法停留路径。详情页等无菜单前缀页面沿用上一个叶子菜单上下文。
+  useEffect(() => {
+    const currentPath = sanitizeInternalPath(`${location.pathname}${location.search}`);
+    if (!currentPath || !isRecordableRecentPath(currentPath)) return;
+    if (!canAccessPath(currentPath, user?.roles, user?.permissions)) return;
+
+    let fallbackMenuKey: string | undefined;
+    try { fallbackMenuKey = localStorage.getItem(ACTIVE_MENU_KEY_STORAGE) || undefined; } catch { /* ignore */ }
+    const owner = findMenuOwnerForPath(filteredMenu, currentPath, fallbackMenuKey);
+    if (!owner || owner.children?.length || !pathCanBeOwnedByMenu(owner.path, currentPath)) return;
+
+    const ownerKey = getMenuItemKey(owner);
+    writeRecentMenuPath(ownerKey, currentPath);
+    try { localStorage.setItem(ACTIVE_MENU_KEY_STORAGE, ownerKey); } catch { /* ignore */ }
+  }, [location.pathname, location.search, filteredMenu, user?.permissions, user?.roles]);
 
   // ★ openKeys 变化时同步到 localStorage
   useEffect(() => {
@@ -581,11 +738,15 @@ const BasicLayout: React.FC = () => {
       return;
     }
     if (!item.path) return;
+    const targetPath = getMenuNavigationTarget(item, user?.roles, user?.permissions);
+    if (!targetPath) return;
+    const menuKey = getMenuItemKey(item);
+    try { localStorage.setItem(ACTIVE_MENU_KEY_STORAGE, menuKey); } catch { /* ignore */ }
     const parents = computeParentKeys(filteredMenu, item.path);
     if (parents.length > 0) {
       setOpenKeys(parents);
     }
-    navigate(item.path);
+    navigate(targetPath);
   };
 
   return (

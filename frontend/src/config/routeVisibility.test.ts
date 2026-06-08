@@ -181,6 +181,15 @@ describe('routeVisibility admin-only configuration routes', () => {
     expect(canAccessPath('/offboarding/social-suspend-pool', sharedOwnerRoles, broadPermissions)).toBe(false);
   });
 
+  it('keeps query-string last-path checks within the same visibility matrix', () => {
+    const memberRoles = roles([ROLE.BUSINESS_GROUP_MEMBER]);
+    const ownerRoles = roles([ROLE.BUSINESS_OWNER]);
+
+    expect(canAccessPath('/work-orders?orderType=onboarding&page=2', memberRoles)).toBe(true);
+    expect(canAccessPath('/my-dispatched/child-1?tab=logs', memberRoles)).toBe(true);
+    expect(canAccessPath('/work-orders/wo-1?tab=detail', ownerRoles)).toBe(false);
+  });
+
   it('does not expose notification route to business owner only role', () => {
     expect(canAccessPath('/notifications', roles([ROLE.BUSINESS_OWNER]))).toBe(false);
     expect(canAccessPath('/notifications', roles([ROLE.BUSINESS_GROUP_MEMBER]))).toBe(true);
