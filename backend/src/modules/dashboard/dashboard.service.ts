@@ -124,11 +124,15 @@ export class DashboardService {
       return { ...(await this.queryWorkOrderCards('department', departmentIds, selectedMonth)), myMessages, scope: 'team' };
     }
 
+    if (hasAnyRole(user.roles, BUSINESS_LEADER_ROLES) && !hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES) && !isAdminRole(user.roles)) {
+      return { ...(await this.queryWorkOrderCards('owner', user.sub, selectedMonth)), myMessages, scope: 'mine' };
+    }
+
     if (await this.canViewAllWorkOrders(user)) {
       return { ...(await this.queryWorkOrderCards(null, null, selectedMonth)), myMessages, scope: 'global' };
     }
 
-    if (hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES) || hasAnyRole(user.roles, BUSINESS_LEADER_ROLES)) {
+    if (hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES)) {
       const departmentIds = await this.workOrderValidationService.resolveUserDepartmentIds(user.sub);
       if (departmentIds.length === 0) return { ...this.emptyCards(), myMessages, scope: 'team' };
       return { ...(await this.queryWorkOrderCards('department', departmentIds, selectedMonth)), myMessages, scope: 'team' };
@@ -1116,10 +1120,13 @@ export class DashboardService {
       }
       return { departmentIds, ownerId: null, empty: false };
     }
+    if (hasAnyRole(user.roles, BUSINESS_LEADER_ROLES) && !hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES) && !isAdminRole(user.roles)) {
+      return { departmentIds: null, ownerId: user.sub, empty: false };
+    }
     if (await this.canViewAllWorkOrders(user)) {
       return { departmentIds: null, ownerId: null, empty: false };
     }
-    if (hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES) || hasAnyRole(user.roles, BUSINESS_LEADER_ROLES)) {
+    if (hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES)) {
       const departmentIds = await this.workOrderValidationService.resolveUserDepartmentIds(user.sub);
       if (departmentIds.length === 0) {
         return { departmentIds: [], ownerId: null, empty: true };

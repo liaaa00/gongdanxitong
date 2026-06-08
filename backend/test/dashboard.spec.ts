@@ -55,7 +55,7 @@ describe('DashboardService', () => {
     expect(dataSource.query).toHaveBeenNthCalledWith(2, expect.stringContaining('wo.created_by = $2::uuid'), ['owner', 'sales-1', [], expect.any(String), phase1Modules]);
   });
 
-  it('returns dashboard cards for business leader with department scope', async () => {
+  it('returns dashboard cards for business leader with personal scope by default', async () => {
     const dataSource = { query: jest.fn()
       .mockResolvedValueOnce([{ count: 1 }])
       .mockResolvedValueOnce([{ totalThisMonth: 9, processing: 4, completed: 5 }]) };
@@ -63,6 +63,20 @@ describe('DashboardService', () => {
     const service = new DashboardService(dataSource as never, { resolveUserDepartmentIds: resolve } as never);
 
     const result = await service.getDashboardCards({ sub: 'leader-1', roles: ['biz_leader'] } as never);
+
+    expect(resolve).not.toHaveBeenCalled();
+    expect(result).toEqual({ totalThisMonth: 9, processing: 4, ...pendingFields(4), completed: 5, ...rateFields(55.6), ...zeroVoided, myMessages: 1, scope: 'mine' });
+    expect(dataSource.query).toHaveBeenNthCalledWith(2, expect.stringContaining('wo.created_by = $2::uuid'), ['owner', 'leader-1', [], expect.any(String), phase1Modules]);
+  });
+
+  it('returns dashboard cards for business leader with department scope only when team scope is requested', async () => {
+    const dataSource = { query: jest.fn()
+      .mockResolvedValueOnce([{ count: 1 }])
+      .mockResolvedValueOnce([{ totalThisMonth: 9, processing: 4, completed: 5 }]) };
+    const resolve = jest.fn(async () => ['dept-a', 'dept-b']);
+    const service = new DashboardService(dataSource as never, { resolveUserDepartmentIds: resolve } as never);
+
+    const result = await service.getDashboardCards({ sub: 'leader-1', roles: ['biz_leader'] } as never, 'team');
 
     expect(resolve).toHaveBeenCalledWith('leader-1');
     expect(result).toEqual({ totalThisMonth: 9, processing: 4, ...pendingFields(4), completed: 5, ...rateFields(55.6), ...zeroVoided, myMessages: 1, scope: 'team' });
@@ -193,13 +207,14 @@ describe('DashboardService', () => {
     });
   });
 
-  it('returns empty dashboard cards when business leader has no departments', async () => {
+  it('returns empty dashboard cards when business leader requests team scope but has no departments', async () => {
     const dataSource = { query: jest.fn().mockResolvedValueOnce([{ count: 6 }]) };
     const resolve = jest.fn(async () => []);
     const service = new DashboardService(dataSource as never, { resolveUserDepartmentIds: resolve } as never);
 
-    await expect(service.getDashboardCards({ sub: 'leader-2', roles: ['business_group_leader'] } as never))
+    await expect(service.getDashboardCards({ sub: 'leader-2', roles: ['business_group_leader'] } as never, 'team'))
       .resolves.toEqual({ totalThisMonth: 0, processing: 0, ...zeroPending, completed: 0, ...rateFields(0), ...zeroVoided, myMessages: 6, scope: 'team' });
+    expect(resolve).toHaveBeenCalledWith('leader-2');
     expect(dataSource.query).toHaveBeenCalledTimes(1);
   });
 
@@ -272,6 +287,20 @@ describe('DashboardService', () => {
 
     expect(dataSource.query).toHaveBeenCalledWith(expect.stringContaining('FROM dispatched_orders d'), [false, [], null, expect.any(String), phase1Modules]);
     expect(result).toEqual({ rows: [expect.objectContaining({ moduleCode: 'onboarding_contact', label: '入职联系' })] });
+  });
+
+  it('defaults business leader order matrix to personal scope and uses department only for team scope', async () => {
+    const dataSource = { query: jest.fn(async () => [{ orderType: 'onboarding', label: '入职工单', total: 1, processing: 1, completed: 0, voided: 0, completionRate: '0.0' }]) };
+    const resolve = jest.fn(async () => ['dept-a']);
+    const service = new DashboardService(dataSource as never, { resolveUserDepartmentIds: resolve } as never);
+
+    await service.getOrderTypeMatrix({ sub: 'leader-1', roles: ['business_group_leader'] } as never, 'orderType');
+    expect(resolve).not.toHaveBeenCalled();
+    expect(dataSource.query).toHaveBeenNthCalledWith(1, expect.stringContaining('FROM dispatched_orders d'), [true, [], 'leader-1', expect.any(String), phase1Modules]);
+
+    await service.getOrderTypeMatrix({ sub: 'leader-1', roles: ['business_group_leader'] } as never, 'orderType', 'team');
+    expect(resolve).toHaveBeenCalledWith('leader-1');
+    expect(dataSource.query).toHaveBeenNthCalledWith(2, expect.stringContaining('FROM dispatched_orders d'), [true, ['dept-a'], null, expect.any(String), phase1Modules]);
   });
 
   it('filters shared leader backend dashboard card modules by 0603 role allow-list even with stale social configs', async () => {
