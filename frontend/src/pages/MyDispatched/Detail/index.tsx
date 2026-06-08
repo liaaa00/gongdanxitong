@@ -68,6 +68,18 @@ const FEEDBACK_FIELD_MAP: Record<string, string> = {
   resignation_cert: 'resignation_cert_status', benefit_apply: 'benefit_result',
 };
 
+const SUPPLEMENT_ALLOWED_MODULE_CODE = 'onboarding_contact';
+const SUPPLEMENT_ALLOWED_USERNAMES = new Set(['maoyani', 'jianglu']);
+const SUPPLEMENT_ALLOWED_REAL_NAMES = new Set(['毛雅妮', '江璐']);
+
+const normalizeUsername = (value: unknown) => String(value || '').trim().toLowerCase();
+const normalizeRealName = (value: unknown) => String(value || '').trim();
+const isAllowedSupplementOperator = (currentUser?: { username?: string; real_name?: string; realName?: string } | null) => {
+  const username = normalizeUsername(currentUser?.username);
+  const realName = normalizeRealName(currentUser?.real_name ?? currentUser?.realName);
+  return SUPPLEMENT_ALLOWED_USERNAMES.has(username) || SUPPLEMENT_ALLOWED_REAL_NAMES.has(realName);
+};
+
 const hasText = (value: unknown) => String(value || '').trim().length > 0;
 
 const getTeamCode = (order?: DispatchedOrderItem | null) => order?.team_code || order?.module_code || 'shared_team';
@@ -244,7 +256,9 @@ const MyDispatchedDetail: React.FC = () => {
   const canAccept = canBackendOperate && !isVoided && order?.status === 'pending';
   const canComplete = canBackendOperate && !isVoided && order?.status === 'processing';
   const canReturn = canBackendOperate && !isVoided && (order?.status === 'processing' || order?.status === 'pending');
-  const canSupplement = canBackendOperate && !isVoided && order?.status === 'processing' && supplementableFields.length > 0;
+  const canSupplementOperator = isAllowedSupplementOperator(user);
+  const canSupplementModule = order?.module_code === SUPPLEMENT_ALLOWED_MODULE_CODE;
+  const canSupplement = canBackendOperate && canSupplementOperator && canSupplementModule && !isVoided && order?.status === 'processing' && supplementableFields.length > 0;
   const isRepairableStatus = isResubmittableStatus;
   const isApprovalStatus = Boolean(order && ['modify_pending', 'withdraw_pending', 'void_pending'].includes(order.status));
   const isTerminalStatus = Boolean(order && ['completed', 'modify_pending', 'withdraw_pending', 'void_pending', 'void'].includes(order.status));
@@ -416,6 +430,11 @@ const MyDispatchedDetail: React.FC = () => {
   };
 
   const handleSupplementOk = async () => {
+    if (!canSupplement) {
+      message.error('当前用户或子工单无权补充暂存字段');
+      setSupplementModalOpen(false);
+      return;
+    }
     const values = supplementForm.getFieldsValue();
     await handleSupplement(values);
     setSupplementModalOpen(false);

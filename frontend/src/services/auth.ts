@@ -197,15 +197,25 @@ export async function getMe(): Promise<UserInfo> {
   return normalizeUserInfo(res);
 }
 
-export async function changePassword(data: {
-  old_password: string;
-  new_password: string;
-}): Promise<void> {
+export type ChangePasswordPayload = {
+  oldPassword?: string;
+  newPassword?: string;
+  /** @deprecated 仅保留 mock/旧调用兼容，真实后端 DTO 使用 oldPassword */
+  old_password?: string;
+  /** @deprecated 仅保留 mock/旧调用兼容，真实后端 DTO 使用 newPassword */
+  new_password?: string;
+};
+
+export async function changePassword(data: ChangePasswordPayload): Promise<void> {
+  const payload = {
+    oldPassword: data.oldPassword ?? data.old_password ?? '',
+    newPassword: data.newPassword ?? data.new_password ?? '',
+  };
   if (isMockMode) {
     const session = getMockSessionUser();
     if (!session) throw new Error('未登录');
-    changeUserPassword(session.username, data.old_password, data.new_password);
+    changeUserPassword(session.username, payload.oldPassword, payload.newPassword);
     return;
   }
-  return request.post('/auth/change-password', data) as Promise<void>;
+  return request.post('/auth/change-password', payload) as Promise<void>;
 }

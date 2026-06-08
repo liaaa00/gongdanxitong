@@ -51,12 +51,12 @@ const ChangePasswordPage: React.FC = () => {
     setStrength(isStrong(val));
   };
 
-  const handleSubmit = async (values: { old_password: string; new_password: string; confirm: string }) => {
-    if (values.new_password !== values.confirm) {
+  const handleSubmit = async (values: { oldPassword: string; newPassword: string; confirm: string }) => {
+    if (values.newPassword !== values.confirm) {
       message.error('两次输入的密码不一致');
       return;
     }
-    if (values.old_password === values.new_password) {
+    if (values.oldPassword === values.newPassword) {
       message.error('新密码不能与旧密码相同');
       return;
     }
@@ -67,7 +67,7 @@ const ChangePasswordPage: React.FC = () => {
 
     setLoading(true);
     try {
-      await changePassword({ old_password: values.old_password, new_password: values.new_password });
+      await changePassword({ oldPassword: values.oldPassword, newPassword: values.newPassword });
       message.success('密码修改成功，请重新登录');
       // 清除标记并跳转登录
       setUser(null as any);
@@ -94,13 +94,13 @@ const ChangePasswordPage: React.FC = () => {
         <Alert type="warning" showIcon style={{ marginBottom: 16 }}
           message="检测到您使用的是默认密码，为保障账号安全，请立即修改密码后继续使用系统。" />
 
-        <Form layout="vertical" onFinish={handleSubmit} initialValues={{ old_password: '123456' }}>
-          <Form.Item label="当前密码（默认密码）" name="old_password"
+        <Form layout="vertical" onFinish={handleSubmit} initialValues={{ oldPassword: '123456' }}>
+          <Form.Item label="当前密码（默认密码）" name="oldPassword"
             rules={[{ required: true, message: '请输入当前密码' }]}>
             <Input.Password prefix={<LockOutlined />} />
           </Form.Item>
 
-          <Form.Item label="新密码" name="new_password"
+          <Form.Item label="新密码" name="newPassword"
             rules={[
               { required: true, message: '请输入新密码' },
               { validator: validatePasswordStrength },
@@ -135,7 +135,7 @@ const ChangePasswordPage: React.FC = () => {
               { required: true, message: '请再次输入新密码' },
               ({ getFieldValue }) => ({
                 validator(_, value) {
-                  if (!value || getFieldValue('new_password') === value) return Promise.resolve();
+                  if (!value || getFieldValue('newPassword') === value) return Promise.resolve();
                   return Promise.reject(new Error('两次密码不一致'));
                 },
               }),
