@@ -1,4 +1,5 @@
 import type { ProColumns, ProTableProps } from '@ant-design/pro-components';
+import type { CachedListPageState, CachedTableFilters } from '@/utils/listPageState';
 
 export type ViewMode = 'table' | 'kanban' | 'grid';
 
@@ -23,7 +24,11 @@ export interface FilterCondition {
 
 export interface MultiViewTableProps<T extends Record<string, unknown>> {
   columns: ProColumns<T>[];
-  request: (params: Record<string, unknown>) => Promise<{ data: T[]; success: boolean; total: number }>;
+  request: (
+    params: Record<string, unknown>,
+    sort?: Record<string, unknown>,
+    filters?: Record<string, unknown[] | null>,
+  ) => Promise<{ data: T[]; success: boolean; total: number }>;
   rowKey?: string;
   viewId: string;
   kanbanColumnKey?: keyof T;
@@ -39,6 +44,14 @@ export interface MultiViewTableProps<T extends Record<string, unknown>> {
   search?: ProTableProps<T, Record<string, unknown>>['search'];
   /** ProTable 分页配置，默认 20 条/页，可由页面覆盖 */
   pagination?: ProTableProps<T, Record<string, unknown>>['pagination'];
+  /** 列表状态缓存 key；提供后会自动保存/恢复分页与表头筛选 */
+  listStateKey?: string;
+  /** 页面自行读取的初始列表状态；未传时按 listStateKey 从公共缓存读取 */
+  initialListState?: CachedListPageState;
+  /** MultiViewTable 写入状态后通知页面，便于页面同步派生 UI */
+  onListStateChange?: (state: CachedListPageState) => void;
+  /** 额外传入的受控表头筛选值；会和缓存筛选合并后恢复到列 filteredValue */
+  controlledFilters?: CachedTableFilters;
   /** 关闭 ProTable 内置 options，避免默认工具栏 Tooltip 链路触发 findDOMNode */
   proTableOptions?: false;
   /** 关闭 ProTable 内置 toolBarRender，仅保留 MultiViewTable 自定义工具栏 */

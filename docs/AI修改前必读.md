@@ -130,6 +130,7 @@
 - `src/layouts/BasicLayout.test.tsx`
 - `src/config/routeVisibility.test.ts`
 - `src/components/MultiViewTable/index.test.tsx`
+- `src/utils/listPageState.test.ts`
 - `src/pages/MyDispatched/index.test.tsx`
 - `src/pages/MyDispatched/Detail/index.test.tsx`
 - `src/pages/TeamDispatched/index.test.tsx`

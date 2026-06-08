@@ -15,7 +15,7 @@ import { ROLE } from '@/constants/roles';
 import { getModuleLabel } from '@/constants/modules';
 import { WORK_ORDER_STATUS_CODES, getStatusColor, getStatusText } from '@/constants/dictionaries';
 import { isPhase1VisibleOrderType } from '@/utils/moduleAccess';
-import { getCachedMonth, toMonthKey, updateCachedListPageState } from '@/utils/listPageState';
+import { getCachedListPageState, getCachedMonth, toMonthKey, updateCachedListPageState } from '@/utils/listPageState';
 
 const RefButton = forwardRef<HTMLButtonElement, React.ComponentProps<typeof Button>>((props, ref) => (
   <Button ref={ref} {...props} />
@@ -163,6 +163,7 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
   const isInitiatedPage = mode === 'initiated' || location.pathname.includes('/my-work/initiated');
   const currentOrderType = useMemo(() => new URLSearchParams(location.search).get('orderType') || undefined, [location.search]);
   const pageStateKey = isInitiatedPage ? 'my-work-initiated' : `work-orders-${currentOrderType || 'all'}`;
+  const cachedPageState = getCachedListPageState(pageStateKey);
   const [month, setMonth] = useState<Dayjs | null>(() => getCachedMonth(pageStateKey));
   const currentOrderTypeLabel = currentOrderType === 'resignation' ? '离职' : currentOrderType === 'onboarding' ? '入职' : '';
   const modulePrefix = currentOrderTypeLabel || '';
@@ -383,6 +384,8 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
       <MultiViewTable<WorkOrderItem>
         key={`${refreshKey}-${location.search}`}
         viewId={isInitiatedPage ? 'my-work-initiated-readonly' : 'work-orders-main'}
+        listStateKey={pageStateKey}
+        initialListState={cachedPageState}
         columns={columns}
         request={requestFn}
         rowKey="id"

@@ -383,3 +383,159 @@ describe('BasicLayout notification dropdown', () => {
     expect(markNotificationRead).not.toHaveBeenCalled();
   });
 });
+
+// ─── 菜单最近路径临时动作页排除 ──────────────────────────────────────
+
+describe('BasicLayout menu recent path temporary action exclusions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    mockUserState.user = mockUserState.makeUser(['business_group_member']);
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+    window.localStorage.clear();
+  });
+
+  it('does not record /403 as a menu recent path', () => {
+    window.localStorage.setItem('menu_recent_paths_v1', JSON.stringify({ 'work-orders-main': '/work-orders/wo-1' }));
+    window.localStorage.setItem('menu_active_leaf_key_v1', 'work-orders-main');
+
+    renderLayout(['/403']);
+
+    fireEvent.click(screen.getByRole('button', { name: '入职主工单列表' }));
+
+    expect(mockNavigate).toHaveBeenLastCalledWith('/work-orders/wo-1');
+    const recentPaths = JSON.parse(window.localStorage.getItem('menu_recent_paths_v1') || '{}') as Record<string, string>;
+    // /403 must not be recorded — existing recent path survives
+    expect(recentPaths['work-orders-main']).toBe('/work-orders/wo-1');
+  });
+
+  it('does not record /404 as a menu recent path', () => {
+    window.localStorage.setItem('menu_recent_paths_v1', JSON.stringify({ 'work-orders-main': '/work-orders/wo-2' }));
+    window.localStorage.setItem('menu_active_leaf_key_v1', 'work-orders-main');
+
+    renderLayout(['/404']);
+
+    fireEvent.click(screen.getByRole('button', { name: '入职主工单列表' }));
+
+    expect(mockNavigate).toHaveBeenLastCalledWith('/work-orders/wo-2');
+    const recentPaths = JSON.parse(window.localStorage.getItem('menu_recent_paths_v1') || '{}') as Record<string, string>;
+    expect(recentPaths['work-orders-main']).toBe('/work-orders/wo-2');
+  });
+
+  it('does not record /login as a menu recent path', () => {
+    window.localStorage.setItem('menu_recent_paths_v1', JSON.stringify({ 'work-orders-main': '/work-orders/wo-1' }));
+    window.localStorage.setItem('menu_active_leaf_key_v1', 'work-orders-main');
+
+    renderLayout(['/login']);
+
+    fireEvent.click(screen.getByRole('button', { name: '入职主工单列表' }));
+
+    expect(mockNavigate).toHaveBeenLastCalledWith('/work-orders/wo-1');
+    const recentPaths = JSON.parse(window.localStorage.getItem('menu_recent_paths_v1') || '{}') as Record<string, string>;
+    expect(recentPaths['work-orders-main']).toBe('/work-orders/wo-1');
+  });
+
+  it('does not record /change-password as a menu recent path', () => {
+    window.localStorage.setItem('menu_recent_paths_v1', JSON.stringify({ 'work-orders-main': '/work-orders/wo-1' }));
+    window.localStorage.setItem('menu_active_leaf_key_v1', 'work-orders-main');
+
+    renderLayout(['/change-password']);
+
+    fireEvent.click(screen.getByRole('button', { name: '入职主工单列表' }));
+
+    expect(mockNavigate).toHaveBeenLastCalledWith('/work-orders/wo-1');
+    const recentPaths = JSON.parse(window.localStorage.getItem('menu_recent_paths_v1') || '{}') as Record<string, string>;
+    expect(recentPaths['work-orders-main']).toBe('/work-orders/wo-1');
+  });
+
+  it('does not record /work-orders/new as a menu recent path', () => {
+    window.localStorage.setItem('menu_recent_paths_v1', JSON.stringify({ 'work-orders-main': '/work-orders/wo-1' }));
+    window.localStorage.setItem('menu_active_leaf_key_v1', 'work-orders-main');
+
+    renderLayout(['/work-orders/new?orderType=onboarding']);
+
+    fireEvent.click(screen.getByRole('button', { name: '入职主工单列表' }));
+
+    expect(mockNavigate).toHaveBeenLastCalledWith('/work-orders/wo-1');
+    const recentPaths = JSON.parse(window.localStorage.getItem('menu_recent_paths_v1') || '{}') as Record<string, string>;
+    expect(recentPaths['work-orders-main']).toBe('/work-orders/wo-1');
+  });
+
+  it('does not record /work-orders/import as a menu recent path', () => {
+    window.localStorage.setItem('menu_recent_paths_v1', JSON.stringify({ 'work-orders-main': '/work-orders/wo-1' }));
+    window.localStorage.setItem('menu_active_leaf_key_v1', 'work-orders-main');
+
+    renderLayout(['/work-orders/import?orderType=onboarding']);
+
+    fireEvent.click(screen.getByRole('button', { name: '入职主工单列表' }));
+
+    expect(mockNavigate).toHaveBeenLastCalledWith('/work-orders/wo-1');
+    const recentPaths = JSON.parse(window.localStorage.getItem('menu_recent_paths_v1') || '{}') as Record<string, string>;
+    expect(recentPaths['work-orders-main']).toBe('/work-orders/wo-1');
+  });
+});
+
+// ─── 菜单点击回到详情页 ──────────────────────────────────────────────
+
+describe('BasicLayout menu returns to last detail page', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    mockUserState.user = mockUserState.makeUser(['business_group_member']);
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+    window.localStorage.clear();
+  });
+
+  it('keeps onboarding menu selection distinct from resignation orderType', () => {
+    mockUserState.user = mockUserState.makeUser(['business_group_member']);
+
+    // Visit onboarding list to set active menu context
+    const first = renderLayout(['/work-orders?orderType=onboarding']);
+    expect(selectedKeys()).toContain('work-orders-main');
+    expect(selectedKeys()).toContain('/work-orders?orderType=onboarding');
+    expect(selectedKeys()).not.toContain('/work-orders?orderType=resignation');
+    first.unmount();
+
+    // Now visit resignation list — orderType switches, onboarding keys gone
+    const second = renderLayout(['/work-orders?orderType=resignation']);
+    expect(selectedKeys()).toContain('resignation-list');
+    expect(selectedKeys()).toContain('/work-orders?orderType=resignation');
+    expect(selectedKeys()).not.toContain('work-orders-main');
+    expect(selectedKeys()).not.toContain('/work-orders?orderType=onboarding');
+    second.unmount();
+
+    // Back to onboarding — should restore onboarding keys
+    renderLayout(['/work-orders?orderType=onboarding']);
+    expect(selectedKeys()).toContain('work-orders-main');
+    expect(selectedKeys()).toContain('/work-orders?orderType=onboarding');
+    expect(selectedKeys()).not.toContain('/work-orders?orderType=resignation');
+  });
+
+  it('keeps resignation menu selection distinct from onboarding orderType', () => {
+    mockUserState.user = mockUserState.makeUser(['business_group_member']);
+
+    // Visit resignation first
+    const first = renderLayout(['/work-orders?orderType=resignation']);
+    expect(selectedKeys()).toContain('resignation-list');
+    expect(selectedKeys()).toContain('/work-orders?orderType=resignation');
+    first.unmount();
+
+    // Visit onboarding
+    const second = renderLayout(['/work-orders?orderType=onboarding']);
+    expect(selectedKeys()).toContain('work-orders-main');
+    expect(selectedKeys()).toContain('/work-orders?orderType=onboarding');
+    expect(selectedKeys()).not.toContain('/work-orders?orderType=resignation');
+    second.unmount();
+
+    // Back to resignation
+    renderLayout(['/work-orders?orderType=resignation']);
+    expect(selectedKeys()).toContain('resignation-list');
+    expect(selectedKeys()).toContain('/work-orders?orderType=resignation');
+  });
+});
