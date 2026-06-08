@@ -441,6 +441,8 @@ export class UsersService {
     const user = await this.loadEntity(id);
 
     user.passwordHash = await bcrypt.hash(newPassword, 10);
+    user.mustChangePassword = true;
+    user.passwordUpdatedAt = null;
     await this.userRepository.save(user);
 
     return { success: true };

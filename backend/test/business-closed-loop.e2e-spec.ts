@@ -161,6 +161,7 @@ beforeAll(async () => {
   await ensureToken('shenwenjun', SEED_PASSWORD);
   await ensureToken('zhouqiqing', SEED_PASSWORD);
   await ensureToken('contractsup01', SEED_PASSWORD);
+  await ensureToken('maoyani', SEED_PASSWORD);
 });
 
 afterAll(async () => {
@@ -195,7 +196,7 @@ describe('业务闭环 E2E', () => {
         // Without local DataSource we cannot insert the supplement rule; skip.
         return;
       }
-      const adminToken = tokens[ADMIN_USERNAME];
+      const maoyaniToken = tokens['maoyani'];
       const onboardingContactChild = dispatched.find((d) => d.moduleCode === 'onboarding_contact');
       expect(onboardingContactChild).toBeDefined();
 
@@ -220,10 +221,10 @@ describe('业务闭环 E2E', () => {
         await ruleRepo.save(existing);
       }
 
-      // Admin accepts then supplements (admin bypasses handler/role checks).
+      // 毛雅妮作为入职联系处理人接单后补充字段；supplement 接口不再允许管理员兜底绕过。
       await request(server)
         .post(`/api/dispatched-orders/${onboardingContactChild!.id}/accept`)
-        .set(auth(adminToken))
+        .set(auth(maoyaniToken))
         .send({})
         .expect((r) => {
           if (![200, 201].includes(r.status)) {
@@ -234,7 +235,7 @@ describe('业务闭环 E2E', () => {
       const newBank = '6222026052100000000';
       const supplementRes = await request(server)
         .post(`/api/dispatched-orders/${onboardingContactChild!.id}/supplement`)
-        .set(auth(adminToken))
+        .set(auth(maoyaniToken))
         .send({ fieldCode: 'bank_account', newValue: newBank });
       if (![200, 201].includes(supplementRes.status)) {
         throw new Error(`supplement failed: ${supplementRes.status} ${JSON.stringify(supplementRes.body)}`);

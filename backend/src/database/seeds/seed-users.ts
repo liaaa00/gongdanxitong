@@ -186,13 +186,16 @@ export async function seedUsers(dataSource: DataSource): Promise<void> {
         passwordUpdatedAt: null,
       });
     } else {
+      const hasChangedPassword = user.mustChangePassword === false || user.passwordUpdatedAt !== null;
       user.realName = seed.realName;
       user.email = seed.email;
       user.phone = seed.phone;
       user.isActive = true;
-      user.passwordHash = hashed;
-      user.mustChangePassword = true;
-      user.passwordUpdatedAt = null;
+      if (!hasChangedPassword) {
+        user.passwordHash = hashed;
+        user.mustChangePassword = true;
+        user.passwordUpdatedAt = null;
+      }
     }
 
     user = await userRepository.save(user);

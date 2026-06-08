@@ -46,6 +46,8 @@ export class AuthService {
     const payload: JwtUserPayload = {
       sub: user.id,
       username: user.username,
+      realName: user.realName,
+      real_name: user.realName,
       roles: roleCodes,
     };
 
@@ -85,6 +87,8 @@ export class AuthService {
       const accessToken = await this.jwtService.signAsync({
         sub: payload.sub,
         username: payload.username,
+        realName: payload.realName,
+        real_name: payload.real_name ?? payload.realName,
         roles: payload.roles,
       });
 
@@ -102,6 +106,8 @@ export class AuthService {
     phone: string | null;
     isActive: boolean;
     lastLoginAt: Date | null;
+    mustChangePassword: boolean;
+    must_change_password: boolean;
     roles: Array<{
       roleCode: string;
       roleName: string;
@@ -132,6 +138,8 @@ export class AuthService {
       phone: user.phone,
       isActive: user.isActive,
       lastLoginAt: user.lastLoginAt,
+      mustChangePassword: user.mustChangePassword,
+      must_change_password: user.mustChangePassword,
       roles: user.userRoles.map((userRole) => ({
         roleCode: userRole.role.code,
         roleName: userRole.role.name,

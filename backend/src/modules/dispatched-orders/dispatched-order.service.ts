@@ -76,6 +76,9 @@ const DISPATCHED_ORDER_STATUS_ALIASES: Record<string, DispatchedOrderStatus | Di
   '處理中': [DispatchedOrderStatus.PENDING, DispatchedOrderStatus.PROCESSING],
 };
 
+const SUPPLEMENT_ALLOWED_MODULE_CODE = 'onboarding_contact';
+const SUPPLEMENT_ALLOWED_USERNAMES = new Set(['maoyani', 'jianglu', '毛雅妮', '江璐']);
+
 @Injectable()
 export class DispatchedOrderService {
   constructor(
@@ -537,6 +540,8 @@ export class DispatchedOrderService {
   ): Promise<{ success: boolean; workOrderId: string; fieldCode: string } | { success: boolean; workOrderId: string; fieldCode: string[] }> {
     const order = await this.loadDispatchedOrder(id);
     await this.assertCanHandle(order, user);
+    this.assertCanSupplementFields(order, user);
+    this.assertSupplementStatusAllowed(order);
     const fields: Array<[string, unknown]> = payload.fields ? Object.entries(payload.fields) : (payload.fieldCode ? [[payload.fieldCode, payload.newValue]] : []);
     if (fields.length === 0) {
       throw businessException(4301, HttpStatus.BAD_REQUEST, '至少提供一个可补充字段');
@@ -1846,6 +1851,21 @@ export class DispatchedOrderService {
     if (order.handlerId === user.sub && this.canReadAssignedModule(user, order.moduleCode)) return;
     if (await this.canActAsModuleSupervisor(user, order.moduleCode)) return;
     throw businessException(5000, HttpStatus.FORBIDDEN, '无权操作该子工单');
+  }
+
+  private assertCanSupplementFields(order: DispatchedOrder, user: JwtUserPayload): void {
+    const operatorKeys = [user.username, user.realName, user.real_name]
+      .map((value) => String(value || '').trim())
+      .filter(Boolean);
+    if (order.moduleCode !== SUPPLEMENT_ALLOWED_MODULE_CODE || !operatorKeys.some((key) => SUPPLEMENT_ALLOWED_USERNAMES.has(key))) {
+      throw businessException(5001, HttpStatus.FORBIDDEN, '仅毛雅妮或江璐可补充入职联系子工单字段');
+    }
+  }
+
+  private assertSupplementStatusAllowed(order: DispatchedOrder): void {
+    if (order.voidAt || order.status !== DispatchedOrderStatus.PROCESSING) {
+      throw businessException(4201, HttpStatus.CONFLICT, '仅处理中子工单可补充暂存字段');
+    }
   }
 
   private async assertCanBatchImportModule(moduleCode: string, user: JwtUserPayload): Promise<void> {
