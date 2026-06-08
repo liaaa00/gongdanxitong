@@ -52,6 +52,6 @@
 - 用户要求：业务组长在具体模块只看本人，团队数据只在团队工单和仪表盘团队视角查看；核查未实现项并补齐。
 - 是否覆盖旧规则：否；补齐 `业务规则回归清单` 已确认的“仪表盘允许本人/团队切换，默认本人兜底”。
 - 同步更新规则文档：无，既有规则已覆盖本次要求。
-- 代码提交：`ea27885c fix: default leader dashboard to personal scope`
+- 代码提交：`bb89cf1c fix: default leader dashboard to personal scope`
 - 验证：`npm test -- --runInBand dashboard.spec.ts` 通过；`./回归测试.ps1 -SkipBuild` 通过；后端 `npm run build` 通过。
 - 未提交无关文件：`frontend/tsconfig.tsbuildinfo`、`.spectrai/`、`backend/uploads/excel/*.xlsx`。
