@@ -15,6 +15,7 @@ async function importAuthWithMockMode(isMockMode: boolean) {
   vi.doMock('./users', () => ({
     validateUserCredentials: vi.fn(),
     changeUserPassword,
+    getUserPasswordStatus: vi.fn(() => ({ must_change_password: false, password_updated_at: null })),
   }));
   const auth = await import('./auth');
   return { auth, post, changeUserPassword };

@@ -18,6 +18,7 @@ export interface LoginResponse {
   roles: RoleInfo[];
   permissions: string[];
   must_change_password?: boolean;  // ★ 首次登录强制改密标记
+  mustChangePassword?: boolean;
 }
 
 export interface UserInfo {
@@ -31,6 +32,7 @@ export interface UserInfo {
   roles: RoleInfo[];
   permissions: string[];
   must_change_password?: boolean;  // ★ 首次登录标记
+  mustChangePassword?: boolean;
   password_updated_at?: string | null;
 }
 

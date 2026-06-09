@@ -803,6 +803,7 @@ const BasicLayout: React.FC = () => {
               </Badge>
             </Popover>
           ) : null}
+          <Button size="small" icon={<LockOutlined />} onClick={() => navigate('/change-password')}>修改密码</Button>
           <Button size="small" icon={<LogoutOutlined />} onClick={handleLogout} style={{ marginLeft: 10 }}>退出</Button>
         </Space>,
       ]}

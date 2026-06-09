@@ -63,6 +63,12 @@
 - 后端 `applyUserScope` 或对应 service 查询范围
 - 角色菜单测试
 
+### 上线账号/改密相关
+必须检查：
+- 登录后主布局顶部必须有可见“修改密码”入口，不通过新增业务菜单或改 `routeVisibility`/菜单矩阵实现。
+- 登录响应、`/auth/me` 刷新恢复、mock refresh 必须同步 `mustChangePassword`/`must_change_password` 到前端状态；改密成功、退出登录时必须清除该标记。
+- 首次登录默认密码账号需要进入改密链路；前端 `changePassword` 请求字段必须与后端 DTO 保持 `oldPassword` / `newPassword`。
+
 ### 全系统导航状态/列表状态相关
 必须检查：
 - 菜单点击是否优先回到该菜单上次停留的合法路径，且详情页可作为最近路径。
@@ -70,6 +76,7 @@
 - 最近路径是否经过 `canAccessPath` / `routeVisibility` 兜底校验；无权限、无匹配路由或非法路径必须回退菜单默认 path。
 - `/work-orders?orderType=onboarding` 与 `/work-orders?orderType=resignation` 的菜单高亮、展开、跳转和最近路径不能互相串。
 - 列表状态是否尽量保留筛选、月份、页码、pageSize、视图模式、表头筛选等状态，且不跨列表污染。
+- 子工单详情“返回列表”必须优先回到进入详情时的来源页；来源缺失、非法或当前角色不可访问时才回默认列表兜底。
 
 ### 表格筛选相关
 必须检查：
@@ -139,6 +146,11 @@
 - `src/pages/OnboardingModule/index.test.tsx`
 - `src/pages/OnboardingModule/filterParams.test.ts`
 - `src/pages/Dashboard/index.test.tsx`
+- `src/pages/Login/index.test.tsx`
+- `src/pages/ChangePassword/index.test.tsx`
+- `src/services/authLoginRegression.test.ts`
+- `src/services/auth.changePassword.test.ts`
+- `src/utils/dispatchedDetailNavigation.test.ts`
 - `src/utils/dispatchedStatusFilter.test.ts`
 
 ## 8. 提交前检查

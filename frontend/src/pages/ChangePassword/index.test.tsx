@@ -7,16 +7,26 @@ import ChangePasswordPage from './index';
 
 const mocks = vi.hoisted(() => ({
   changePassword: vi.fn(),
+  logoutApi: vi.fn(),
   navigate: vi.fn(),
-  setUser: vi.fn(),
+  storeLogout: vi.fn(),
+  fetchUser: vi.fn(),
 }));
 
 vi.mock('@/services/auth', () => ({
   changePassword: (...args: unknown[]) => mocks.changePassword(...args),
+  logout: (...args: unknown[]) => mocks.logoutApi(...args),
 }));
 
 vi.mock('@/stores/userStore', () => ({
-  useUserStore: () => ({ setUser: mocks.setUser }),
+  useUserStore: () => ({
+    user: null,
+    mustChangePassword: false,
+    logout: mocks.storeLogout,
+    isLoggedIn: false,
+    loading: false,
+    fetchUser: mocks.fetchUser,
+  }),
 }));
 
 vi.mock('react-router-dom', async () => {
@@ -44,6 +54,7 @@ describe('ChangePasswordPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.changePassword.mockResolvedValue(undefined);
+    mocks.logoutApi.mockResolvedValue(undefined);
   });
 
   it('submits oldPassword/newPassword DTO fields to auth service', async () => {
@@ -56,8 +67,9 @@ describe('ChangePasswordPage', () => {
 
     const passwordInputs = document.querySelectorAll('input[type="password"]');
     expect(passwordInputs).toHaveLength(3);
+    expect(passwordInputs[0]).toHaveValue('');
+    expect(screen.queryByText('当前密码（默认密码）')).not.toBeInTheDocument();
 
-    await user.clear(passwordInputs[0]);
     await user.type(passwordInputs[0], '123456');
     await user.type(passwordInputs[1], 'Newpass123');
     await user.type(passwordInputs[2], 'Newpass123');
@@ -69,5 +81,8 @@ describe('ChangePasswordPage', () => {
     }));
     expect(mocks.changePassword.mock.calls[0][0]).not.toHaveProperty('old_password');
     expect(mocks.changePassword.mock.calls[0][0]).not.toHaveProperty('new_password');
+    expect(mocks.logoutApi).toHaveBeenCalled();
+    expect(mocks.storeLogout).toHaveBeenCalled();
+    expect(mocks.navigate).toHaveBeenCalledWith('/login', { replace: true });
   });
 });

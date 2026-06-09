@@ -4,13 +4,15 @@ import { getMe } from '@/services/auth';
 import {
   getToken,
   setToken as setTokenStorage,
-  removeToken,
   getRefreshToken,
   setRefreshToken as setRefreshTokenStorage,
-  removeRefreshToken,
   clearAll,
 } from '@/utils/storage';
 import { canonicalRoleCode } from '@/constants/roles';
+
+function readMustChangePassword(user: UserInfo | null | undefined): boolean {
+  return Boolean(user?.must_change_password ?? user?.mustChangePassword ?? false);
+}
 
 interface UserState {
   user: UserInfo | null;
@@ -21,7 +23,7 @@ interface UserState {
   mustChangePassword: boolean;  // ★ 首登强制改密标记
 
   setToken: (token: string, refreshToken?: string) => void;
-  setUser: (user: UserInfo) => void;
+  setUser: (user: UserInfo | null) => void;
   setMustChangePassword: (v: boolean) => void;
   fetchUser: () => Promise<void>;
   logout: () => void;
@@ -45,15 +47,15 @@ export const useUserStore = create<UserState>((set, get) => ({
     set({ token, refreshToken: refreshToken || null, isLoggedIn: true });
   },
 
-  setUser: (user: UserInfo) => {
-    set({ user });
+  setUser: (user: UserInfo | null) => {
+    set({ user, mustChangePassword: readMustChangePassword(user) });
   },
 
   fetchUser: async () => {
     set({ loading: true });
     try {
       const user = await getMe();
-      set({ user, isLoggedIn: true, loading: false });
+      set({ user, isLoggedIn: true, loading: false, mustChangePassword: readMustChangePassword(user) });
     } catch {
       set({ loading: false });
       get().logout();
@@ -65,7 +67,7 @@ export const useUserStore = create<UserState>((set, get) => ({
     if (typeof window !== 'undefined' && window.localStorage) {
       window.localStorage.removeItem('mock_session_user_v1');
     }
-    set({ user: null, token: null, refreshToken: null, isLoggedIn: false });
+    set({ user: null, token: null, refreshToken: null, isLoggedIn: false, mustChangePassword: false });
   },
 
   hasRole: (roleCode: string) => {

@@ -9,7 +9,7 @@ import type { UserInfo } from '@/services/types';
 
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
-  const { setToken, setUser } = useUserStore();
+  const { setToken, setUser, setMustChangePassword } = useUserStore();
   const [loading, setLoading] = useState(false);
   const { message } = App.useApp();
   const { token: themeToken } = theme.useToken();
@@ -23,17 +23,20 @@ const LoginPage: React.FC = () => {
         throw new Error('登录成功但未返回访问令牌');
       }
       setToken(accessToken, res.refreshToken);
+      const mustChangePassword = res.must_change_password ?? res.mustChangePassword ?? res.user.must_change_password ?? res.user.mustChangePassword ?? false;
       const userWithPermissions: UserInfo = {
         ...res.user,
         roles: res.roles || res.user.roles || [],
         permissions: res.permissions || res.user.permissions || [],
-        must_change_password: res.must_change_password ?? res.user.must_change_password ?? false,
+        must_change_password: mustChangePassword,
+        mustChangePassword,
       };
       setUser(userWithPermissions);
+      setMustChangePassword(Boolean(mustChangePassword));
       message.success('登录成功');
 
       // ★ 首登强制改密：跳转到改密页
-      if (userWithPermissions.must_change_password) {
+      if (mustChangePassword) {
         navigate('/change-password', { replace: true });
       } else {
         navigate('/dashboard', { replace: true });

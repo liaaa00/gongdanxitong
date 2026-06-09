@@ -1,12 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Form, Input, Button, App, Card, Typography, Space, Progress } from 'antd';
 import { LockOutlined, SafetyOutlined } from '@ant-design/icons';
 import { Alert } from 'antd';
-import { changePassword } from '@/services/auth';
+import { changePassword, logout as logoutApi } from '@/services/auth';
 import { useUserStore } from '@/stores/userStore';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 interface PasswordStrength {
   score: number; // 0-4
@@ -40,10 +40,24 @@ function validatePasswordStrength(_: unknown, value: string) {
 const ChangePasswordPage: React.FC = () => {
   const navigate = useNavigate();
   const { message } = App.useApp();
-  const { setUser } = useUserStore();
+  const {
+    user,
+    logout: storeLogout,
+    mustChangePassword,
+    isLoggedIn,
+    loading: userLoading,
+    fetchUser,
+  } = useUserStore();
   const [loading, setLoading] = useState(false);
   const [password, setPassword] = useState('');
   const [strength, setStrength] = useState<PasswordStrength>({ score: 0, color: '#ff4d4f', label: '很弱' });
+  const isForcedChange = mustChangePassword || Boolean(user?.must_change_password ?? user?.mustChangePassword ?? false);
+
+  useEffect(() => {
+    if (isLoggedIn && !user && !userLoading) {
+      void fetchUser();
+    }
+  }, [fetchUser, isLoggedIn, user, userLoading]);
 
   const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
@@ -68,9 +82,9 @@ const ChangePasswordPage: React.FC = () => {
     setLoading(true);
     try {
       await changePassword({ oldPassword: values.oldPassword, newPassword: values.newPassword });
+      try { await logoutApi(); } catch { /* ignore */ }
+      storeLogout();
       message.success('密码修改成功，请重新登录');
-      // 清除标记并跳转登录
-      setUser(null as any);
       navigate('/login', { replace: true });
     } catch (e: any) {
       message.error(e?.message || '修改失败，请检查旧密码是否正确');
@@ -88,14 +102,17 @@ const ChangePasswordPage: React.FC = () => {
         title={
           <Space>
             <SafetyOutlined style={{ color: '#1677ff' }} />
-            <span>首次登录 — 请修改默认密码</span>
+            <span>{isForcedChange ? '首次登录 — 请修改密码' : '修改密码'}</span>
           </Space>
         }>
-        <Alert type="warning" showIcon style={{ marginBottom: 16 }}
-          message="检测到您使用的是默认密码，为保障账号安全，请立即修改密码后继续使用系统。" />
+        <Alert type={isForcedChange ? 'warning' : 'info'} showIcon style={{ marginBottom: 16 }}
+          message={isForcedChange
+            ? '检测到当前账号需要完成首次改密，请输入当前密码并设置新密码后继续使用系统。'
+            : '为保障账号安全，请输入当前密码并设置新密码。修改成功后需要重新登录。'} />
 
-        <Form layout="vertical" onFinish={handleSubmit} initialValues={{ oldPassword: '123456' }}>
-          <Form.Item label="当前密码（默认密码）" name="oldPassword"
+        <Form layout="vertical" onFinish={handleSubmit}>
+          <Form.Item label="当前密码" name="oldPassword"
+            extra={isForcedChange ? '如管理员未单独告知，初始默认密码通常为 123456。' : undefined}
             rules={[{ required: true, message: '请输入当前密码' }]}>
             <Input.Password prefix={<LockOutlined />} />
           </Form.Item>

@@ -2,7 +2,7 @@ import request, { getFriendlyErrorMessage } from './request';
 import { AxiosError } from 'axios';
 import type { LoginRequest, LoginResponse, RoleInfo, UserInfo } from './types';
 import { isMockMode, mockDelay } from './mock';
-import { validateUserCredentials, changeUserPassword } from './users';
+import { validateUserCredentials, changeUserPassword, getUserPasswordStatus } from './users';
 import { loadList } from './_mockStore';
 import type { RoleItem } from './roles';
 
@@ -33,6 +33,8 @@ type RawUser = Partial<UserInfo> & {
   avatarUrl?: string | null;
   roles?: RawRole[];
   permissions?: string[];
+  mustChangePassword?: boolean;
+  passwordUpdatedAt?: string | null;
 };
 
 type RawLoginResponse = Partial<LoginResponse> & {
@@ -99,20 +101,26 @@ function normalizeUserInfo(rawUser: RawUser | undefined, rawRoles?: RawRole[], r
     is_active: rawUser?.is_active ?? rawUser?.isActive ?? true,
     roles,
     permissions,
+    must_change_password: rawUser?.must_change_password ?? rawUser?.mustChangePassword ?? false,
+    mustChangePassword: rawUser?.must_change_password ?? rawUser?.mustChangePassword ?? false,
+    password_updated_at: rawUser?.password_updated_at ?? rawUser?.passwordUpdatedAt ?? null,
   };
 }
 
 function normalizeLoginResponse(raw: RawLoginResponse): LoginResponse {
   const token = raw.token || raw.accessToken || '';
   const user = normalizeUserInfo(raw.user, raw.roles, raw.permissions);
+  const mustChangePassword = raw.must_change_password ?? raw.mustChangePassword ?? user.must_change_password ?? false;
+  const userWithPasswordFlag: UserInfo = { ...user, must_change_password: mustChangePassword, mustChangePassword };
   return {
     token,
     accessToken: raw.accessToken || token,
     refreshToken: raw.refreshToken,
-    user,
-    roles: user.roles,
-    permissions: user.permissions,
-    must_change_password: raw.must_change_password ?? user.must_change_password ?? false,
+    user: userWithPasswordFlag,
+    roles: userWithPasswordFlag.roles,
+    permissions: userWithPasswordFlag.permissions,
+    must_change_password: mustChangePassword,
+    mustChangePassword,
   };
 }
 
@@ -122,6 +130,7 @@ export async function login(data: LoginRequest): Promise<LoginResponse> {
     const user = validateUserCredentials(data.username, data.password);
     if (user) {
       const rolesMap = getRolesMap();
+      const passwordStatus = getUserPasswordStatus(user.username);
       const userInfo: UserInfo = {
         id: user.id,
         username: user.username,
@@ -140,6 +149,9 @@ export async function login(data: LoginRequest): Promise<LoginResponse> {
           };
         }),
         permissions: user.roles.some((r) => rolesMap.get(r.role_id)?.code === 'admin') ? ['*'] : [],
+        must_change_password: passwordStatus.must_change_password,
+        mustChangePassword: passwordStatus.must_change_password,
+        password_updated_at: passwordStatus.password_updated_at,
       };
       setMockSessionUser(userInfo);
       return {
@@ -147,6 +159,8 @@ export async function login(data: LoginRequest): Promise<LoginResponse> {
         user: userInfo,
         roles: userInfo.roles,
         permissions: userInfo.permissions,
+        must_change_password: userInfo.must_change_password,
+        mustChangePassword: userInfo.must_change_password,
       };
     }
     throw new Error('用户名或密码错误');
@@ -181,6 +195,8 @@ export async function refreshToken(): Promise<LoginResponse> {
       user,
       roles: user.roles,
       permissions: user.permissions,
+      must_change_password: user.must_change_password,
+      mustChangePassword: user.must_change_password,
     };
   }
   const res = await request.post('/auth/refresh') as RawLoginResponse;
@@ -215,6 +231,13 @@ export async function changePassword(data: ChangePasswordPayload): Promise<void>
     const session = getMockSessionUser();
     if (!session) throw new Error('未登录');
     changeUserPassword(session.username, payload.oldPassword, payload.newPassword);
+    const changedAt = getUserPasswordStatus(session.username).password_updated_at;
+    setMockSessionUser({
+      ...session,
+      must_change_password: false,
+      mustChangePassword: false,
+      password_updated_at: changedAt,
+    });
     return;
   }
   return request.post('/auth/change-password', payload) as Promise<void>;

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { login, logout, getMe, refreshToken } from './auth';
+import { login, logout, getMe, refreshToken, changePassword } from './auth';
 import { createUser } from './users';
 import { useUserStore } from '@/stores/userStore';
 
@@ -68,6 +68,34 @@ describe('auth mock login regression', () => {
     const refreshed = await refreshToken();
     expect(me.username).toBe('maoyani');
     expect(refreshed.user.username).toBe('maoyani');
+  });
+
+  it('syncs mustChangePassword through login, refresh recovery and first-login password change', async () => {
+    const res = await login({ username: 'jianglu', password: '123456' });
+    expect(res.must_change_password).toBe(true);
+    expect(res.user.must_change_password).toBe(true);
+
+    useUserStore.getState().setToken(res.token);
+    useUserStore.getState().setUser(res.user);
+    expect(useUserStore.getState().mustChangePassword).toBe(true);
+
+    useUserStore.setState({ user: null, token: localStorage.getItem('token'), isLoggedIn: true, mustChangePassword: false });
+    await useUserStore.getState().fetchUser();
+    expect(useUserStore.getState().user?.username).toBe('jianglu');
+    expect(useUserStore.getState().mustChangePassword).toBe(true);
+
+    const me = await getMe();
+    const refreshed = await refreshToken();
+    expect(me.must_change_password).toBe(true);
+    expect(refreshed.must_change_password).toBe(true);
+
+    await changePassword({ oldPassword: '123456', newPassword: 'JiangluNew123' });
+    const changedMe = await getMe();
+    expect(changedMe.must_change_password).toBe(false);
+    expect(changedMe.password_updated_at).toEqual(expect.any(String));
+
+    useUserStore.getState().setUser(changedMe);
+    expect(useUserStore.getState().mustChangePassword).toBe(false);
   });
 
   it('clears session data on logout', async () => {

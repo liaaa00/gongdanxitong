@@ -11,6 +11,8 @@ const adminUser = {
   realName: '李占博',
   roles: [{ code: 'admin', name: '系统管理员' }],
   permissions: ['*'],
+  mustChangePassword: true,
+  must_change_password: true,
 };
 
 export const authHandlers = [
@@ -34,6 +36,8 @@ export const authHandlers = [
           realName: body.username,
           roles: [{ code: 'business_group_member', name: '业务员' }],
           permissions: [],
+          mustChangePassword: true,
+          must_change_password: true,
         },
       });
     }

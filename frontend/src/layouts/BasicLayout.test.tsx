@@ -215,6 +215,17 @@ describe('BasicLayout menu visibility', () => {
     expect(recentPaths['my-work-team']).toBeUndefined();
   });
 
+  it('shows a stable top action entry for changing current user password', () => {
+    renderLayout(['/dashboard']);
+
+    const changePasswordButton = screen.getByRole('button', { name: /修改密码/ });
+    expect(changePasswordButton).toBeInTheDocument();
+
+    fireEvent.click(changePasswordButton);
+
+    expect(mockNavigate).toHaveBeenLastCalledWith('/change-password');
+  });
+
   it('keeps business owner menu to dashboard, team work and history only', () => {
     mockUserState.user = mockUserState.makeUser(['business_owner']);
     mockUserState.user.permissions = ['*', 'work_order.*', 'data_scope.all'];

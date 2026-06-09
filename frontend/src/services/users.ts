@@ -82,6 +82,8 @@ const PASSWORDS_KEY = 'mock_admin_passwords_v1';
 interface PasswordEntry {
   username: string;
   password_hash: string;
+  must_change_password?: boolean;
+  password_updated_at?: string | null;
 }
 
 function loadPasswords(): PasswordEntry[] {
@@ -148,12 +150,19 @@ function ensureSeedPasswords() {
   for (const [username, password_hash] of Object.entries(DEFAULT_SEED_PASSWORDS)) {
     const entry = existingMap.get(username);
     if (!entry) {
-      existing.push({ username, password_hash });
+      existing.push({ username, password_hash, must_change_password: true, password_updated_at: null });
       changed = true;
     } else if (entry.password_hash === 'admin123') {
       // admin123 is an obsolete demo default: it returns 401 and must not be used for demos.
       // Migrate that old default only; do not overwrite custom passwords users changed in mock mode.
       entry.password_hash = password_hash;
+      entry.must_change_password = true;
+      entry.password_updated_at = null;
+      changed = true;
+    } else if (entry.must_change_password === undefined || entry.password_updated_at === undefined) {
+      const hasChangedPassword = entry.password_hash !== password_hash;
+      entry.must_change_password = hasChangedPassword ? false : true;
+      entry.password_updated_at = hasChangedPassword ? entry.password_updated_at ?? new Date().toISOString() : null;
       changed = true;
     }
   }
@@ -163,13 +172,17 @@ function ensureSeedPasswords() {
   }
 }
 
-function setUserPassword(username: string, password: string) {
+function setUserPassword(username: string, password: string, options?: { mustChangePassword?: boolean; updatedAt?: string | null }) {
   const pwds = loadPasswords();
   const idx = pwds.findIndex((p) => p.username === username);
+  const mustChangePassword = options?.mustChangePassword ?? true;
+  const passwordUpdatedAt = options?.updatedAt ?? null;
   if (idx >= 0) {
     pwds[idx].password_hash = password;
+    pwds[idx].must_change_password = mustChangePassword;
+    pwds[idx].password_updated_at = passwordUpdatedAt;
   } else {
-    pwds.push({ username, password_hash: password });
+    pwds.push({ username, password_hash: password, must_change_password: mustChangePassword, password_updated_at: passwordUpdatedAt });
   }
   savePasswords(pwds);
 }
@@ -419,12 +432,19 @@ export function getAllUserPasswordStatus(): PasswordStatus[] {
   }));
 }
 
-export function getUserPasswordStatus(username: string): { has_password: boolean; password: string } {
+export function getUserPasswordStatus(username: string): {
+  has_password: boolean;
+  password: string;
+  must_change_password: boolean;
+  password_updated_at: string | null;
+} {
   const pwds = loadPasswords();
   const entry = pwds.find((p) => p.username === username);
   return {
     has_password: !!entry,
     password: entry?.password_hash || '',
+    must_change_password: entry?.must_change_password ?? false,
+    password_updated_at: entry?.password_updated_at ?? null,
   };
 }
 
@@ -435,6 +455,8 @@ export function changeUserPassword(username: string, oldPassword: string, newPas
   if (entry.password_hash !== oldPassword) throw new Error('旧密码不正确');
   if (newPassword.length < 6) throw new Error('新密码至少6位');
   entry.password_hash = newPassword;
+  entry.must_change_password = false;
+  entry.password_updated_at = new Date().toISOString();
   savePasswords(pwds);
 }
 
@@ -447,10 +469,12 @@ export function resetAllSeedPasswords(): { fixed: string[]; skipped: string[] } 
   for (const [username, defaultPwd] of Object.entries(DEFAULT_SEED_PASSWORDS)) {
     const entry = existingMap.get(username);
     if (!entry) {
-      updated.push({ username, password_hash: defaultPwd });
+      updated.push({ username, password_hash: defaultPwd, must_change_password: true, password_updated_at: null });
       result.fixed.push(username);
     } else {
       entry.password_hash = defaultPwd;
+      entry.must_change_password = true;
+      entry.password_updated_at = null;
       result.fixed.push(username);
     }
   }
