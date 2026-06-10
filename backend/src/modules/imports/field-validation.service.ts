@@ -24,6 +24,12 @@ interface ValueNormalizeResult {
 }
 
 const SOFT_REQUIRED_SAFE_DEFAULTS: Record<string, string> = {};
+const ONBOARDING_IMPORT_EXCLUDED_FIELDS = new Set([
+  'contract_feedback',
+  'onboarding_feedback',
+  'data_entry_feedback',
+  'contract_template',
+]);
 
 const HEADER_ALIASES: Record<string, string[]> = {
   customer_name: ['客户', '客户名称', '客户全称', '公司名称', '用工客户', '客户单位', '商社名称'],
@@ -92,7 +98,7 @@ export class ImportFieldValidationService {
   ) {}
 
   async getActiveFields(orderType: OrderType): Promise<FieldConfig[]> {
-    return this.fieldConfigRepository
+    const fields = await this.fieldConfigRepository
       .createQueryBuilder('field')
       .where('field.is_active = true')
       .andWhere(
@@ -101,6 +107,8 @@ export class ImportFieldValidationService {
       )
       .orderBy('field.display_order', 'ASC')
       .getMany();
+
+    return this.filterImportFields(orderType, fields);
   }
 
   async buildCandidateFields(orderType: OrderType): Promise<CandidateField[]> {
@@ -113,6 +121,56 @@ export class ImportFieldValidationService {
     }));
   }
 
+  private filterImportFields(orderType: OrderType, fields: FieldConfig[]): FieldConfig[] {
+    if (orderType !== OrderType.ONBOARDING) {
+      return fields;
+    }
+    return this.applyInferredImportRules(fields);
+  }
+
+  private applyInferredImportRules(fields: FieldConfig[]): FieldConfig[] {
+    const isOnboardingImport = fields.some((field) => field.fieldCode === 'need_onboarding_contact');
+    if (!isOnboardingImport) {
+      return fields;
+    }
+
+    return fields
+      .filter((field) => !ONBOARDING_IMPORT_EXCLUDED_FIELDS.has(field.fieldCode))
+      .map((field) => {
+        if (field.fieldCode === 'feedback_deadline' || field.fieldCode === 'is_common_template') {
+          return {
+            ...field,
+            isRequired: false,
+            defaultRequired: false,
+            conditionalRequired: this.needOnboardingContactCondition() as unknown as Record<string, unknown>,
+          } as FieldConfig;
+        }
+        if (field.fieldCode === 'template_name') {
+          return {
+            ...field,
+            isRequired: false,
+            defaultRequired: false,
+            conditionalRequired: this.commonOnboardingTemplateCondition() as unknown as Record<string, unknown>,
+          } as FieldConfig;
+        }
+        return field;
+      });
+  }
+
+  private needOnboardingContactCondition(): AstNode {
+    return { field: 'need_onboarding_contact', op: 'EQ', value: '是' } as AstNode;
+  }
+
+  private commonOnboardingTemplateCondition(): AstNode {
+    return {
+      op: 'AND',
+      children: [
+        this.needOnboardingContactCondition(),
+        { field: 'is_common_template', op: 'EQ', value: '是' } as AstNode,
+      ],
+    } as AstNode;
+  }
+
   async validateRow(input: {
     rowNo: number;
     raw: Record<string, unknown>;
@@ -120,12 +178,13 @@ export class ImportFieldValidationService {
     defaults?: Record<string, unknown>;
     fields: FieldConfig[];
   }): Promise<RowValidationResult> {
-    const mapped = this.mapRow(input.raw, input.mapping, input.fields, input.defaults ?? {});
+    const fields = this.applyInferredImportRules(input.fields);
+    const mapped = this.mapRow(input.raw, input.mapping, fields, input.defaults ?? {});
     const normalized = mapped.normalized;
     const warnings = mapped.warnings;
     const errors: RowValidationError[] = [];
 
-    for (const field of input.fields) {
+    for (const field of fields) {
       const value = normalized[field.fieldCode];
       const required = await this.isRequired(field, normalized);
       if (required && !this.hasValue(value)) {

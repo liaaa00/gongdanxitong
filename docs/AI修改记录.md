@@ -92,3 +92,12 @@
 - 验证：`npm test -- --run src/layouts/BasicLayout.test.tsx src/pages/ChangePassword/index.test.tsx src/pages/Login/index.test.tsx src/services/authLoginRegression.test.ts src/pages/MyDispatched/index.test.tsx src/pages/MyDispatched/Detail/index.test.tsx src/pages/TeamDispatched/index.test.tsx src/pages/HistoryWorkOrders/index.test.tsx src/pages/OnboardingModule/index.test.tsx src/utils/dispatchedDetailNavigation.test.ts` 通过（10 文件 73 条）；`./回归测试.ps1 -FrontendOnly` 通过（16 文件 113 条 + 前端 build）。
 - 未提交无关文件：已检查 `git status --short`；`frontend/tsconfig.tsbuildinfo` 已恢复，`frontend/dist/` 被忽略，未纳入 `.spectrai/`、Excel 或截图/RDP 临时文件；为运行 integration 前端测试临时创建的 `frontend/node_modules` 目录联接被 git 忽略，不纳入提交。
 - 修改文件清单：顶部改密入口、`mustChangePassword` 归一化与 userStore 同步、改密后标记清理、详情来源返回工具与各入口 state 传递、相关稳定前端测试、三份 docs 与 `回归测试.ps1`。
+
+## 2026-06-10 · 入职导入模板与条件必填回归测试（integration 返工）
+- 用户要求：业务员入职导入下载模板不再出现 `contract_feedback`、`onboarding_feedback`、`data_entry_feedback`、`contract_template`；`need_onboarding_contact` 仍必填；仅当 `need_onboarding_contact=是` 时要求 `feedback_deadline`、`is_common_template`，且 `template_name` 仅在 `need_onboarding_contact=是` 且 `is_common_template=是` 时必填。
+- 是否覆盖旧规则：是。覆盖第 17 节中 `contract_template` 入职导入条件必填、以及 `is_common_template=是` 单独触发 `template_name` 必填的旧口径；新口径限定在业务员入职导入模板/导入校验，不全局停用后道反馈、详情、导出等字段。
+- 同步更新规则文档：已更新 `docs/业务规则回归清单.md` 第 17 节，写明入职导入模板四字段排除、新条件必填口径与非全局停用边界。
+- 实现/测试覆盖：新增 `backend/src/modules/imports/import-template.service.ts` 并注册到 `ImportsModule`，`ImportsController` 提供模板下载入口，生成当前字段配置模板并仅对入职导入排除四字段；`backend/src/database/seeds/seed-fields.ts` 同步三字段条件必填 seed；`backend/src/modules/imports/field-validation.service.ts` 在入职导入校验中排除四字段并推断 `need_onboarding_contact` 相关条件必填；`frontend/src/services/workOrders.ts` 本地 mock 下载模板同步排除四字段；新增 `backend/test/import-template.service.spec.ts` 覆盖模板排除/保留/非入职不误伤；更新 `backend/test/import.service.spec.ts` 覆盖条件必填矩阵和 `contract_template` 入职忽略、非入职别名仍可用。
+- 验证：`npx jest --config ./test/jest-unit.json --runInBand import-template.service.spec.ts import.service.spec.ts` 通过（2 个测试文件，23 条）；`.\回归测试.ps1 -BackendOnly` 通过（后端 build 成功）。
+- 代码提交：未提交，待 Leader 汇总。
+- 未提交无关文件：`git status --short` 已检查；本次 integration 变更集中在导入模板/导入校验/seed/mock/文档和对应测试，未提交 `.spectrai`、上传 Excel、`frontend/tsconfig.tsbuildinfo`、dist 或临时文件。为运行 integration 后端测试临时创建的 `backend/node_modules` 目录联接未出现在 git status 中，不纳入提交。

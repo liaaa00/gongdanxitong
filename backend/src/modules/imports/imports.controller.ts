@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { Response } from 'express';
@@ -6,13 +6,15 @@ import { randomBytes } from 'crypto';
 import { BusinessPermission } from 'src/common/decorators/business-permission.decorator';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { businessException } from 'src/common/exceptions/business-exception';
+import { OrderType } from 'src/entities';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { UploadsService } from 'src/modules/uploads/uploads.service';
 import { FieldsService } from 'src/modules/admin/fields/fields.service';
 import { ConfirmImportDto, ConfirmNewFieldDto } from './dto/confirm-import.dto';
 import { PreviewImportDto } from './dto/preview-import.dto';
 import { ImportJobService } from './import-job.service';
-import { assertCanImportWorkOrder } from './import-permissions';
+import { ImportTemplateService } from './import-template.service';
+import { assertCanImportWorkOrder, FIRST_PHASE_IMPORT_ORDER_TYPES } from './import-permissions';
 
 const excelFilter = (_req: unknown, file: Express.Multer.File, callback: (error: Error | null, acceptFile: boolean) => void): void => {
   const ok = file.originalname.toLowerCase().endsWith('.xlsx') || file.originalname.toLowerCase().endsWith('.xls');
@@ -25,7 +27,28 @@ export class ImportsController {
     private readonly importJobService: ImportJobService,
     private readonly uploadsService: UploadsService,
     private readonly fieldsService: FieldsService,
+    private readonly importTemplateService: ImportTemplateService,
   ) {}
+
+  @Get('import/template')
+  @BusinessPermission('work_order.import')
+  async downloadTemplate(
+    @Query('orderType') orderTypeRaw: string | undefined,
+    @CurrentUser() user: JwtUserPayload,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const orderType = (orderTypeRaw as OrderType) ?? OrderType.ONBOARDING;
+    if (!FIRST_PHASE_IMPORT_ORDER_TYPES.includes(orderType)) {
+      throw businessException(4400, 400, '当前阶段仅开放入职、离职导入模板');
+    }
+    assertCanImportWorkOrder(user, orderType);
+    const result = await this.importTemplateService.generate(orderType);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(result.fileName)}"`);
+    res.setHeader('X-Field-Count', String(result.fieldCount));
+    res.setHeader('Access-Control-Expose-Headers', 'X-Field-Count, Content-Disposition');
+    return res.send(result.buffer);
+  }
 
   @Post('import/preview')
   @BusinessPermission('work_order.import')

@@ -9,6 +9,7 @@ import { WorkOrderModule } from 'src/modules/work-orders/work-order.module';
 import { ExcelParserService } from './excel-parser.service';
 import { ImportErrorExcelService } from './error-excel.service';
 import { ImportFieldValidationService } from './field-validation.service';
+import { ImportTemplateService } from './import-template.service';
 import { ImportJobService } from './import-job.service';
 import { ImportsController } from './imports.controller';
 import { WorkOrderImportService } from './work-order-import.service';
@@ -26,10 +27,11 @@ import { WorkOrderImportService } from './work-order-import.service';
   providers: [
     ExcelParserService,
     ImportFieldValidationService,
+    ImportTemplateService,
     ImportErrorExcelService,
     ImportJobService,
     WorkOrderImportService,
   ],
-  exports: [ImportJobService, WorkOrderImportService],
+  exports: [ImportTemplateService, ImportJobService, WorkOrderImportService],
 })
 export class ImportsModule {}

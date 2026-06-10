@@ -470,6 +470,13 @@ export function reloadMockWorkOrders(): void {
 
 const mockWorkOrders: WorkOrderItem[] = loadMockWorkOrders();
 
+const ONBOARDING_IMPORT_TEMPLATE_EXCLUDED_FIELD_CODES = new Set([
+  'contract_feedback',
+  'onboarding_feedback',
+  'data_entry_feedback',
+  'contract_template',
+]);
+
 const AVAILABLE_FIELDS_MOCK = [
   { field_code: 'customer_name', field_name: '客户名称', is_required: true },
   { field_code: 'customer_code', field_name: '客户代码', is_required: true },
@@ -1290,10 +1297,13 @@ function normalizeImportPreviewResult(raw: RawImportPreviewResult, fallbackFileI
 
 export async function previewImport(file: File, orderType = 'onboarding'): Promise<ImportPreviewResult> {
   if (isMockMode) {
+    const availableImportFields = orderType === 'onboarding'
+      ? AVAILABLE_FIELDS_MOCK.filter((f) => !ONBOARDING_IMPORT_TEMPLATE_EXCLUDED_FIELD_CODES.has(f.field_code))
+      : AVAILABLE_FIELDS_MOCK;
     const { headers, rows } = await readExcelFile(file);
     if (headers.length === 0) {
       return mockDelay({
-        mapping: [], availableFields: AVAILABLE_FIELDS_MOCK, suggestedMapping: {},
+        mapping: [], availableFields: availableImportFields, suggestedMapping: {},
         totalRows: 0, previewRows: [], missingRequired: [],
       }, 300);
     }
@@ -1311,7 +1321,7 @@ export async function previewImport(file: File, orderType = 'onboarding'): Promi
     for (const m of mapping) if (m.systemFieldCode) suggestedMapping[m.excelColumn] = m.systemFieldCode;
     return mockDelay({
       mapping,
-      availableFields: AVAILABLE_FIELDS_MOCK,
+      availableFields: availableImportFields,
       suggestedMapping,
       totalRows: rows.length,
       previewRows: rows.slice(0, 10),
@@ -1402,6 +1412,7 @@ function buildImportTemplateExample(fieldCode: string, fieldType?: string): stri
 export async function downloadCurrentImportTemplate(orderType = 'onboarding'): Promise<{ fieldCount: number; fileName: string }> {
   const fields = (await getFields(orderType))
     .filter((field) => field.is_active !== false)
+    .filter((field) => orderType !== 'onboarding' || !ONBOARDING_IMPORT_TEMPLATE_EXCLUDED_FIELD_CODES.has(field.field_code))
     .sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
   if (fields.length === 0) {
     throw new Error('NO_FIELDS');

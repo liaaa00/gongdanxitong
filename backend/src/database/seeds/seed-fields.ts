@@ -48,7 +48,7 @@ const onboardingCollectionGroups: Record<string, string> = Object.fromEntries([
   ].map((code) => [code, '社保公积金信息']),
   ...[
     'business_mode', 'employee_type', 'need_company_contract', 'contract_subject', 'contract_template',
-    'need_contract_urge', 'need_onboarding_contact',
+    'need_contract_urge', 'need_onboarding_contact', 'feedback_deadline', 'is_common_template', 'template_name',
   ].map((code) => [code, '业务判断项']),
   ...['remark', 'special_remark', 'contract_feedback', 'onboarding_feedback', 'data_entry_feedback'].map((code) => [code, '备注与反馈']),
 ]);
@@ -107,6 +107,9 @@ const onboardingFields: FieldSeed[] = [
   { code: 'need_contract_urge',     name: '劳动合同签署是否需要催办员工', type: FieldType.DROPDOWN, required: false, defaultRequired: false, options: ['是', '否'], conditionalRequired: { op: 'EQ', field: 'need_company_contract', value: '是' }, orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'contract_feedback',      name: '劳动合同新签反馈', type: FieldType.DROPDOWN, required: false, defaultRequired: false, options: ['未办', '办理中', '已办结'], orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'need_onboarding_contact', name: '入职材料是否需要集约收集', type: FieldType.DROPDOWN, required: true,  defaultRequired: true,  options: ['是', '否'], helpText: '选择“是”时拆分入职联系工单。', orderType: ONBOARDING, businessContext: [ONBOARDING] },
+  { code: 'feedback_deadline',      name: '反馈截止日期', type: FieldType.DATE,     required: false, defaultRequired: false, conditionalRequired: { op: 'EQ', field: 'need_onboarding_contact', value: '是' }, orderType: ONBOARDING, businessContext: [ONBOARDING, RESIGNATION] },
+  { code: 'is_common_template',     name: '是否为通用模板', type: FieldType.DROPDOWN, required: false, defaultRequired: false, options: ['是', '否'], conditionalRequired: { op: 'EQ', field: 'need_onboarding_contact', value: '是' }, orderType: ONBOARDING, businessContext: [ONBOARDING, RESIGNATION] },
+  { code: 'template_name',          name: '模板名称',     type: FieldType.TEXT,     required: false, defaultRequired: false, conditionalRequired: { op: 'AND', children: [{ op: 'EQ', field: 'need_onboarding_contact', value: '是' }, { op: 'EQ', field: 'is_common_template', value: '是' }] }, orderType: ONBOARDING, businessContext: [ONBOARDING, RESIGNATION] },
   { code: 'onboarding_feedback',    name: '入职联系反馈', type: FieldType.DROPDOWN, required: false, defaultRequired: false, options: ['未办', '办理中', '已办结'], orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'need_company_payroll',   name: '是否企服发薪', type: FieldType.DROPDOWN, required: true,  defaultRequired: true,  options: ['是', '否'], orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'payroll_location',       name: '发薪地',       type: FieldType.TEXT,     required: false, defaultRequired: false, conditionalRequired: { op: 'EQ', field: 'need_company_payroll', value: '是' }, orderType: ONBOARDING, businessContext: [ONBOARDING] },
