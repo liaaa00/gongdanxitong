@@ -1,18 +1,21 @@
-import { Body, Controller, Get, Param, Post, Query, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, Query, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { Response } from 'express';
 import { randomBytes } from 'crypto';
 import { BusinessPermission } from 'src/common/decorators/business-permission.decorator';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
+import { Roles } from 'src/common/decorators/roles.decorator';
 import { businessException } from 'src/common/exceptions/business-exception';
 import { OrderType } from 'src/entities';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { UploadsService } from 'src/modules/uploads/uploads.service';
 import { FieldsService } from 'src/modules/admin/fields/fields.service';
 import { ConfirmImportDto, ConfirmNewFieldDto } from './dto/confirm-import.dto';
+import { ImportTemplateFieldItemDto, ReplaceImportTemplateFieldsDto } from './dto/import-template-config.dto';
 import { PreviewImportDto } from './dto/preview-import.dto';
 import { ImportJobService } from './import-job.service';
+import { ImportTemplateConfigService } from './import-template-config.service';
 import { ImportTemplateService } from './import-template.service';
 import { assertCanImportWorkOrder, FIRST_PHASE_IMPORT_ORDER_TYPES } from './import-permissions';
 
@@ -28,6 +31,7 @@ export class ImportsController {
     private readonly uploadsService: UploadsService,
     private readonly fieldsService: FieldsService,
     private readonly importTemplateService: ImportTemplateService,
+    private readonly importTemplateConfigService: ImportTemplateConfigService,
   ) {}
 
   @Get('import/template')
@@ -35,7 +39,7 @@ export class ImportsController {
   async downloadTemplate(
     @Query('orderType') orderTypeRaw: string | undefined,
     @CurrentUser() user: JwtUserPayload,
-    @Res({ passthrough: true }) res: Response,
+    @Res() res: Response,
   ) {
     const orderType = (orderTypeRaw as OrderType) ?? OrderType.ONBOARDING;
     if (!FIRST_PHASE_IMPORT_ORDER_TYPES.includes(orderType)) {
@@ -101,6 +105,43 @@ export class ImportsController {
     });
   }
 
+  @Get('import/template-config')
+  @Roles('admin')
+  async getTemplateConfig(@Query('orderType') orderTypeRaw: string | undefined) {
+    const orderType = this.parseImportTemplateOrderType(orderTypeRaw);
+    return this.importTemplateConfigService.list(orderType);
+  }
+
+  @Get('import/template-config/available-fields')
+  @Roles('admin')
+  async getAvailableTemplateFields(@Query('orderType') orderTypeRaw: string | undefined) {
+    const orderType = this.parseImportTemplateOrderType(orderTypeRaw);
+    return this.importTemplateConfigService.listAvailableFields(orderType);
+  }
+
+  @Put('import/template-config')
+  @Roles('admin')
+  async replaceTemplateConfig(
+    @Query('orderType') orderTypeRaw: string | undefined,
+    @Body() payload: ReplaceImportTemplateFieldsDto,
+  ) {
+    const orderType = this.parseImportTemplateOrderType(orderTypeRaw);
+    const fields: ImportTemplateFieldItemDto[] = Array.isArray(payload.fields) ? payload.fields : [];
+    const result = await this.importTemplateConfigService.replace(orderType, fields);
+    return {
+      ...result,
+      fields: await this.importTemplateConfigService.list(orderType),
+    };
+  }
+
+  private parseImportTemplateOrderType(orderTypeRaw: string | undefined): OrderType {
+    const orderType = (orderTypeRaw as OrderType) || OrderType.ONBOARDING;
+    if (![OrderType.ONBOARDING, OrderType.RESIGNATION].includes(orderType)) {
+      throw businessException(4400, 400, '当前阶段仅开放入职、离职导入模板配置');
+    }
+    return orderType;
+  }
+
   private async materializeNewFields(
     newFields: ConfirmNewFieldDto[],
     orderType: ConfirmImportDto['orderType'],
@@ -162,7 +203,7 @@ export class ImportsController {
   }
 
   @Get('import/:jobId/error-report')
-  async errorReport(@Param('jobId') jobId: string, @CurrentUser() user: JwtUserPayload, @Res({ passthrough: true }) res: Response) {
+  async errorReport(@Param('jobId') jobId: string, @CurrentUser() user: JwtUserPayload, @Res() res: Response) {
     const report = await this.importJobService.getErrorReport(jobId, user);
     res.setHeader('Content-Type', report.mimeType);
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(report.fileName)}"`);
@@ -175,7 +216,7 @@ export class ImportsController {
   async errorReportAlias(
     @Param('jobId') jobId: string,
     @CurrentUser() user: JwtUserPayload,
-    @Res({ passthrough: true }) res: Response,
+    @Res() res: Response,
   ) {
     return this.errorReport(jobId, user, res);
   }

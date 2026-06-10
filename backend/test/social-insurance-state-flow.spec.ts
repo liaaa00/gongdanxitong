@@ -118,6 +118,7 @@ function makeService(order: DispatchedOrder) {
     { getPermissionsForUser: jest.fn(), applyExtraData: jest.fn(), applyFieldViews: jest.fn() } as unknown as FieldPermissionService,
     { supplement: jest.fn(), getLogs: jest.fn() } as unknown as FieldSupplementService,
     { exportSingleDispatchedOrder: jest.fn() } as never,
+    { resolveUserDepartmentIds: jest.fn(async () => []) } as never,
     undefined,
     fieldChangeHook as never,
   );

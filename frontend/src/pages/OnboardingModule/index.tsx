@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import dayjs, { type Dayjs } from 'dayjs';
+import { type Dayjs } from 'dayjs';
 import { useParams, useNavigate } from 'react-router-dom';
 import { PageContainer, ProTable } from '@ant-design/pro-components';
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
@@ -21,7 +21,7 @@ import { getModuleLabel, getModuleTitle } from '@/constants/modules';
 import { getStatusColor, getStatusText } from '@/constants/dictionaries';
 import { useAuth } from '@/hooks/useAuth';
 import { DISPATCHED_NINE_STATUS_OPTIONS } from '@/utils/dispatchedStatusFilter';
-import { getCachedMonth, toMonthKey, updateCachedListPageState } from '@/utils/listPageState';
+import { getCachedMonthOrNull, toMonthKey, updateCachedListPageState } from '@/utils/listPageState';
 
 const RefButton = forwardRef<HTMLButtonElement, React.ComponentProps<typeof Button>>((props, ref) => (
   <Button ref={ref} {...props} />
@@ -197,12 +197,12 @@ const OnboardingModule: React.FC = () => {
 
   const currentModule = moduleCode || '';
   const pageStateKey = `onboarding-module-${currentModule || 'unknown'}`;
-  const [month, setMonth] = useState<Dayjs | null>(() => getCachedMonth(pageStateKey));
+  const [month, setMonth] = useState<Dayjs | null>(() => getCachedMonthOrNull(pageStateKey));
   const backendModuleCode = currentModule === 'social_insurance_resign' ? 'resignation_social_insurance' : currentModule;
   const moduleLabel = getModuleLabel(currentModule);
 
   useEffect(() => {
-    setMonth(getCachedMonth(pageStateKey));
+    setMonth(getCachedMonthOrNull(pageStateKey));
     setTableFilters((previousFilters) => (
       areControlledFiltersEqual(previousFilters, {}) ? previousFilters : {}
     ));
@@ -312,7 +312,7 @@ const OnboardingModule: React.FC = () => {
       ...params,
       ...headerFilters,
       module_code: backendModuleCode,
-      orderMonth: (month || dayjs()).format('YYYY-MM'),
+      orderMonth: month ? month.format('YYYY-MM') : undefined,
     });
     return { data: result.list, success: true, total: result.total };
   }, [backendModuleCode, month, tableFilters]);
@@ -411,12 +411,12 @@ const OnboardingModule: React.FC = () => {
           <span>工单月份：</span>
           <DatePicker
             picker="month"
-            allowClear={false}
+            allowClear
+            placeholder="全部月份"
             value={month}
             onChange={(value) => {
-              const nextMonth = value || dayjs();
-              setMonth(nextMonth);
-              updateCachedListPageState(pageStateKey, { month: toMonthKey(nextMonth), current: 1 });
+              setMonth(value);
+              updateCachedListPageState(pageStateKey, { month: value ? toMonthKey(value) : '', current: 1 });
               actionRef.current?.reload();
             }}
           />
@@ -425,6 +425,7 @@ const OnboardingModule: React.FC = () => {
     }}>
       <ProTable<DispatchedOrderItem>
         key={currentModule}
+        getPopupContainer={() => document.body}
         actionRef={actionRef}
         columns={columns}
         request={requestFn}

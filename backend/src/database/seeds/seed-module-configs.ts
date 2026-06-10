@@ -68,22 +68,26 @@ const onboardingSocialFields = [
   'social_location', 'start_month', 'social_base', 'fund_base', 'fund_ratio',
 ];
 
+// 离职减员表 10 字段：前 7 字段 → 三单可见；后 3 字段（feedback_deadline/is_common_template/template_name）→ 仅离职材料收集。
+const resignationCoreFields = [
+  'employee_name', 'id_card_no', 'social_pay_region', 'social_stop_month',
+  'resignation_reason', 'resignation_date', 'need_resignation_share',
+];
+
 const resignationContactFields = [
-  'customer_name', 'customer_code', 'employee_name', 'id_card_no', 'mobile', 'position',
-  'resignation_type', 'resignation_reason', 'last_work_date', 'contract_terminate_date',
-  'handover_person', 'resignation_contact_feedback', 'resignation_remark',
+  'customer_name', 'customer_code', 'mobile', 'position',
+  ...resignationCoreFields,
+  'feedback_deadline', 'is_common_template', 'template_name',
 ];
 
 const dataEntryResignFields = [
-  'customer_name', 'customer_code', 'employee_name', 'id_card_no', 'mobile', 'position',
-  'resignation_type', 'last_work_date', 'contract_terminate_date',
-  'social_handover_done', 'final_salary_settled', 'resignation_remark',
+  'customer_name', 'customer_code', 'mobile', 'position',
+  ...resignationCoreFields,
 ];
 
 const resignationSocialFields = [
-  'customer_name', 'customer_code', 'employee_name', 'id_card_no', 'mobile',
-  'resignation_type', 'last_work_date', 'contract_terminate_date',
-  'social_handover_done', 'resignation_remark',
+  'customer_name', 'customer_code', 'mobile',
+  ...resignationCoreFields,
 ];
 
 const moduleFields: Record<string, string[]> = {

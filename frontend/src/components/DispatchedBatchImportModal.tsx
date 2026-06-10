@@ -101,7 +101,7 @@ function hasImportIdentity(row: DispatchedBatchImportRow): boolean {
 }
 
 function previewMessage(row: DispatchedBatchImportRow, mode: DispatchedBatchImportMode, action: BatchStatusAction): { ok: boolean; text: string } {
-  if (!hasImportIdentity(row)) return { ok: false, text: '缺少工单号/身份证号，无法匹配' };
+  if (!hasImportIdentity(row)) return { ok: false, text: '缺少工单号/证件号码，无法匹配' };
   if (mode === 'status' && action === 'return' && !(row.returnReason || '').trim()) return { ok: false, text: '退回动作缺少退回原因，将使用默认原因' };
   if (mode === 'fields' && Object.keys(row.fields || {}).length === 0) return { ok: false, text: '缺少可修改银行卡字段' };
   return { ok: true, text: '可导入，实际结果以系统权限和状态校验为准' };
@@ -174,8 +174,8 @@ const DispatchedBatchImportModal: React.FC<Props> = ({ open, mode, moduleOptions
       const missingMatch = normalized.filter((row) => !hasImportIdentity(row)).length;
       setRows(normalized);
       setResult(null);
-      if (normalized.length === 0) message.warning('未读取到可导入数据，请确认表格至少包含工单号/员工证件号');
-      else if (missingMatch > 0) message.warning(`已读取 ${normalized.length} 行，其中 ${missingMatch} 行缺少工单号/身份证号，将在导入时失败`);
+      if (normalized.length === 0) message.warning('未读取到可导入数据，请确认表格至少包含工单号/证件号码');
+      else if (missingMatch > 0) message.warning(`已读取 ${normalized.length} 行，其中 ${missingMatch} 行缺少工单号/证件号码，将在导入时失败`);
       else message.success(`已读取 ${normalized.length} 行，请确认后导入`);
     } catch {
       message.error('Excel 解析失败，请检查文件格式');
@@ -302,7 +302,7 @@ const DispatchedBatchImportModal: React.FC<Props> = ({ open, mode, moduleOptions
               columns={[
                 { title: 'Excel 行号', dataIndex: 'previewRowNumber', width: 90 },
                 { title: '工单号', dataIndex: 'orderNo', width: 150, render: (value?: string) => value || <Tag color="orange">未填</Tag> },
-                { title: '员工证件号', dataIndex: 'employeeIdCard', width: 170, render: (value?: string) => value || <Tag color="orange">未填</Tag> },
+                { title: '证件号码', dataIndex: 'employeeIdCard', width: 170, render: (value?: string) => value || <Tag color="orange">未填</Tag> },
                 { title: mode === 'status' ? '导入动作' : '银行卡字段', width: 150, render: (_, row) => mode === 'status' ? <Tag color={statusAction === 'complete' ? 'green' : 'orange'}>{selectedActionLabel}</Tag> : Object.keys(row.fields || {}).join('、') || <Tag color="orange">未填</Tag> },
                 { title: '预检', dataIndex: 'preview', render: (value: { ok: boolean; text: string }) => <Tag color={value.ok ? 'green' : 'red'}>{value.text}</Tag> },
               ]}
@@ -325,7 +325,7 @@ const DispatchedBatchImportModal: React.FC<Props> = ({ open, mode, moduleOptions
                 { title: 'Excel 行号', dataIndex: 'rowNumber', width: 90 },
                 { title: '结果', dataIndex: 'success', width: 90, render: (ok: boolean) => <Tag color={ok ? 'green' : 'red'}>{ok ? '成功' : '失败'}</Tag> },
                 { title: '工单号', dataIndex: 'orderNo', width: 160 },
-                { title: '员工证件号', dataIndex: 'employeeIdCard', width: 180 },
+                { title: '证件号码', dataIndex: 'employeeIdCard', width: 180 },
                 { title: '动作', dataIndex: 'action', width: 100, render: resultActionText },
                 { title: '原因', dataIndex: 'message' },
               ]}

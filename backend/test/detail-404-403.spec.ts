@@ -36,6 +36,7 @@ function makeDispatchedOrderService(findOne: jest.Mock) {
     null as never,
     { getLogs: jest.fn(async () => []) } as never,
     null as never,
+    { resolveUserDepartmentIds: jest.fn(async () => []) } as never,
   );
 }
 

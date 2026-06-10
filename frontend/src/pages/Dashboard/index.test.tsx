@@ -7,6 +7,7 @@ import { useUserStore } from '@/stores/userStore';
 import { ROLE } from '@/constants/roles';
 import { getDashboardCards, getLeaderTrend, getOrderTypeMatrix } from '@/services/dashboard';
 import { getModuleConfigs } from '@/services/moduleConfigs';
+import { clearCachedListPageState, updateCachedListPageState } from '@/utils/listPageState';
 
 type MatrixTestRow = {
   rowKey?: string;
@@ -49,6 +50,7 @@ const mockedGetModuleConfigs = vi.mocked(getModuleConfigs);
 describe('Dashboard display behavior', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearCachedListPageState('dashboard');
     useUserStore.setState({
       user: {
         id: 'admin-1',
@@ -90,6 +92,21 @@ describe('Dashboard display behavior', () => {
 
     expect(container.textContent).not.toContain('工单总表暂时不可用，已展示 0 值或空态，请稍后刷新重试。');
     expect(container.textContent).not.toContain('负责人月办结完成率趋势暂时不可用，已展示空态数据，请稍后刷新重试。');
+  });
+
+  it('remembers a previously selected month from cache instead of defaulting to current month', async () => {
+    updateCachedListPageState('dashboard', { month: '2026-01' });
+
+    render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(mockedGetDashboardCards).toHaveBeenCalledWith('business', undefined, '2026-01');
+      expect(mockedGetOrderTypeMatrix).toHaveBeenCalledWith({ dimension: 'node', audience: 'business', scope: undefined, month: '2026-01' });
+    });
   });
 
   it('renders total pending separately from selected-month pending with visible metric explanation', async () => {

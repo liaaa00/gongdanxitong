@@ -76,6 +76,7 @@ export enum DispatchModuleCode {
   RESIGNATION_CONTACT = 'resignation_contact',
   RESIGNATION_CERT = 'resignation_cert',
   DATA_ENTRY_RESIGN = 'data_entry_resign',
+  RESIGNATION_SOCIAL_INSURANCE = 'resignation_social_insurance',
 }
 
 export const ONBOARDING_DISPATCH_MODULE_CODES: readonly DispatchModuleCode[] = [
@@ -95,6 +96,7 @@ export const ALL_DISPATCH_MODULE_CODES: readonly DispatchModuleCode[] = [
   DispatchModuleCode.RESIGNATION_CONTACT,
   DispatchModuleCode.RESIGNATION_CERT,
   DispatchModuleCode.DATA_ENTRY_RESIGN,
+  DispatchModuleCode.RESIGNATION_SOCIAL_INSURANCE,
 ];
 
 export function isDispatchModuleCode(value: unknown): value is DispatchModuleCode {

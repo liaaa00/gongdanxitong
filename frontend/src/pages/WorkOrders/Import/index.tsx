@@ -5,7 +5,7 @@ import { Card, Button, Space, App } from 'antd';
 import { DownloadOutlined } from '@ant-design/icons';
 import ExcelUploader from '@/components/ExcelUploader';
 import type { FieldMappingResult, ImportJobResult, NewFieldDraft } from '@/components/ExcelUploader';
-import { previewImport, confirmImport, getImportJob, downloadImportErrorReport, downloadCurrentImportTemplate } from '@/services/workOrders';
+import { previewImport, confirmImport, getImportJob, downloadImportErrorReport, downloadServerImportTemplate } from '@/services/workOrders';
 
 const ORDER_TYPE_LABEL: Record<string, string> = {
   onboarding: '入职',
@@ -25,7 +25,7 @@ const WorkOrdersImport: React.FC = () => {
 
   const handleDownloadTemplate = async () => {
     try {
-      const result = await downloadCurrentImportTemplate(orderType);
+      const result = await downloadServerImportTemplate(orderType);
       message.success(`已按当前字段配置生成${moduleLabel}模板（${result.fieldCount} 个字段）`);
     } catch (error) {
       if ((error as Error)?.message === 'NO_FIELDS') {

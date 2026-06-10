@@ -1160,7 +1160,7 @@ export class DispatchedOrderService {
     const orderNo = this.readImportString(row.orderNo) ?? this.readImportAlias(row.raw, ['工单编号', '工单编码', '工单号', '编号', '主工单号', '主工单编号', '子工单号', '子工单编号', 'order_no', 'orderNo']);
     const employeeIdCard = this.readImportString(row.employeeIdCard ?? row.idCardNo) ?? this.readImportAlias(row.raw, ['员工证件号', '证件号', '证件号码', '身份证号', '身份证号码', '员工身份证号', '员工身份证号码', 'employee_id_card', 'employeeIdCard', 'id_card_no', 'idCardNo']);
     if (!orderNo && !employeeIdCard) {
-      throw businessException(4224, HttpStatus.BAD_REQUEST, '必须提供工单号或员工证件号用于匹配子工单');
+      throw businessException(4224, HttpStatus.BAD_REQUEST, '必须提供工单号或证件号码用于匹配子工单');
     }
 
     const qb = this.dispatchedOrderRepository
@@ -1169,10 +1169,15 @@ export class DispatchedOrderService {
       .leftJoinAndSelect('d.handler', 'h')
       .where('d.module_code = :moduleCode', { moduleCode });
     if (orderNo) qb.andWhere('w.order_no = :orderNo', { orderNo });
-    if (employeeIdCard) qb.andWhere('w.employee_id_card = :employeeIdCard', { employeeIdCard });
+    if (employeeIdCard) {
+      qb.andWhere(
+        "(w.employee_id_card = :employeeIdCard OR w.extra_data->>'id_card_no' = :employeeIdCard OR w.extra_data->>'employee_id_card' = :employeeIdCard OR w.extra_data->>'employeeIdCard' = :employeeIdCard OR w.extra_data->>'idCardNo' = :employeeIdCard)",
+        { employeeIdCard },
+      );
+    }
     const matches = await qb.orderBy('d.created_at', 'DESC').getMany();
     if (matches.length === 0) {
-      const identity = [orderNo ? `工单号：${orderNo}` : '', employeeIdCard ? `身份证号：${employeeIdCard}` : ''].filter(Boolean).join('，');
+      const identity = [orderNo ? `工单号：${orderNo}` : '', employeeIdCard ? `证件号码：${employeeIdCard}` : ''].filter(Boolean).join('，');
       throw businessException(4040, HttpStatus.NOT_FOUND, `未匹配到${moduleCode}子工单（${identity || '缺少匹配条件'}），请检查导入表后重新导入`);
     }
     if (matches.length === 1) return matches[0];

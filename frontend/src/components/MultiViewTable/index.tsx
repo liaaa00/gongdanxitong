@@ -277,6 +277,7 @@ function MultiViewTable<T extends Record<string, unknown>>(props: MultiViewTable
 
       {viewMode === 'table' && (
         <ProTable<T>
+          getPopupContainer={() => document.body}
           actionRef={actionRef}
           columns={resolvedColumns}
           request={wrappedRequest}

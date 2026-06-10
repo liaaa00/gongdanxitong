@@ -66,7 +66,6 @@ describe('TeamDispatched readonly child-order view', () => {
       pageSize: 20,
       orderNo: 'WO-001',
       customerName: '客户A',
-      orderMonth: expect.stringMatching(/^\d{4}-\d{2}$/),
       scope: 'team',
     })));
   });
@@ -87,7 +86,6 @@ describe('TeamDispatched readonly child-order view', () => {
       handlerName: '李四',
       status: 'completed',
       moduleCode: 'contract',
-      orderMonth: expect.stringMatching(/^\d{4}-\d{2}$/),
       scope: 'team',
     })));
   });

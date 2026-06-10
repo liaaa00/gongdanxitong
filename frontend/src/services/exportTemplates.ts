@@ -1,13 +1,31 @@
 import request from './request';
 import { isMockMode, mockDelay } from './mock';
 
+export interface ExportTemplateFieldItem {
+  field_code?: string;
+  fieldCode?: string;
+  code?: string;
+  alias?: string;
+  title?: string;
+  order?: number;
+  const?: unknown;
+  sameAs?: string;
+  formula?: string;
+  numFmt?: string;
+  header?: string | string[];
+  options?: string[];
+  dropdownOptions?: string[];
+  [key: string]: unknown;
+}
+
 export interface ExportTemplateItem {
   id: string;
   template_name: string;
   module_code: string;
-  field_list: { field_code: string; alias: string; order: number }[];
+  field_list: ExportTemplateFieldItem[];
   created_by: string;
   is_shared: boolean;
+  sign_platform?: string | null;
   created_at: string;
 }
 
@@ -18,7 +36,8 @@ const mockTemplates: ExportTemplateItem[] = [
     module_code: 'contract',
     field_list: [
       { field_code: 'employee_name', alias: '姓名', order: 1 },
-      { field_code: 'id_card_no', alias: '身份证号', order: 2 },
+      { field_code: 'id_card_no', alias: '证件号码', order: 2 },
+      { field_code: 'created_by_name', alias: '发起人', order: 3 },
     ],
     created_by: 'admin',
     is_shared: true,
@@ -41,6 +60,7 @@ export async function getExportTemplates(moduleCode?: string): Promise<ExportTem
       field_list: t.field_list ?? t.fieldList ?? [],
       created_by: t.created_by ?? t.createdBy ?? '',
       is_shared: t.is_shared ?? t.isShared ?? false,
+      sign_platform: t.sign_platform ?? t.signPlatform ?? null,
       created_at: t.created_at ?? t.createdAt ?? '',
     } as ExportTemplateItem));
   } catch {
@@ -54,6 +74,7 @@ function packExportTemplate(data: Partial<ExportTemplateItem>): Record<string, u
   if (data.module_code !== undefined) body.moduleCode = data.module_code;
   if (data.field_list !== undefined) body.fieldList = data.field_list;
   if (data.is_shared !== undefined) body.isShared = data.is_shared;
+  if (data.sign_platform !== undefined) body.signPlatform = data.sign_platform;
   return body;
 }
 

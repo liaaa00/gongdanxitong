@@ -20,6 +20,7 @@ export const FIELD_PERMISSION_SCENARIOS = [
   'dispatched:resignation_contact',
   'dispatched:resignation_cert',
   'dispatched:data_entry_resign',
+  'dispatched:resignation_social_insurance',
 ] as const;
 
 const VISIBLE = FieldPermissionMode.VISIBLE;
@@ -86,20 +87,25 @@ const SOCIAL_INSURANCE_ROLE_CODES = [
   ...BUSINESS_MANAGER_ROLE_CODES,
 ];
 
+// 各子工单可见字段严格按《浙江企服服务外包增员信息表》「涉及工单」标注重建（杭州 sheet）。
+// 反馈类字段（contract_feedback/onboarding_feedback/data_entry_feedback）不在导入表列中，按口径不显示。
 const CONTRACT_VISIBLE = new Set([
-  'customer_name','customer_code','outsource_type','position','employee_name','id_card_no','gender','birth_date','age','household_type','ethnicity','mobile','email','current_address','household_address','postal_code','contract_term_type','contract_term','contract_start_date','contract_end_date','probation_start_date','probation_months','probation_end_date','work_city','work_hour_system','work_cycle','salary_form','base_salary','other_salary','probation_salary','business_mode','employee_type','need_company_contract','contract_subject','contract_template','need_contract_urge','contract_feedback','special_remark',
+  'customer_name','customer_code','outsource_type','position','position_type','employee_name','id_card_type','id_card_no','gender','mobile','email','current_address','household_address','contract_term_type','contract_term','contract_start_date','contract_end_date','probation_start_date','probation_months','probation_end_date','work_city','work_hour_system','salary_form','base_salary','other_salary','probation_salary','probation_other_salary','payroll_cycle','payroll_date','bank_name','bank_account','business_mode','employee_type','need_company_contract','need_esign','esign_platform','contract_subject','company_address','project_name','work_arrangement','contract_template','need_contract_urge',
 ]);
 const CONTRACT_EDITABLE = new Set(['contract_feedback', 'special_remark']);
 
 const ONBOARDING_VISIBLE = new Set([
-  'customer_name','customer_code','position','employee_name','id_card_no','gender','birth_date','ethnicity','mobile','email','current_address','household_address','postal_code','bank_name','bank_account','need_onboarding_contact','onboarding_feedback','special_remark',
+  'customer_name','customer_code','employee_name','id_card_no','mobile','email','need_onboarding_contact','feedback_deadline','is_common_template','template_name','social_urge','special_remark',
 ]);
 const ONBOARDING_EDITABLE = new Set(['bank_name', 'bank_account', 'onboarding_feedback', 'special_remark']);
 
+const DATA_ENTRY_VISIBLE = new Set([
+  'customer_name','customer_code','outsource_type','position','position_type','employee_name','id_card_type','id_card_no','gender','birth_date','age','household_type','ethnicity','education','marital_status','mobile','email','current_address','household_address','postal_code','social_location','start_month','social_base','fund_base','fund_ratio','bank_name','bank_account','remark','business_mode','need_company_payroll','payroll_location',
+]);
 const DATA_ENTRY_EDITABLE = new Set(['data_entry_feedback']);
 const SOCIAL_INSURANCE_VISIBLE = new Set([
-  'customer_name','customer_code','employee_name','id_card_no',
-  'social_location','start_month','social_base','fund_base','fund_ratio','special_remark',
+  'customer_name','customer_code','position_type','employee_name','id_card_type','id_card_no','household_type','education','marital_status',
+  'social_location','start_month','social_base','fund_base','fund_ratio','social_urge','special_remark',
 ]);
 const SOCIAL_INSURANCE_EDITABLE = new Set([
   'social_location','start_month','social_base','fund_base','fund_ratio','special_remark',
@@ -107,19 +113,24 @@ const SOCIAL_INSURANCE_EDITABLE = new Set([
 
 const RENEWAL_EDITABLE = new Set(['renewal_feedback', 'renewal_remark']);
 
-const RESIGNATION_CERT_VISIBLE = new Set([
-  'customer_name','customer_code','employee_name','id_card_no','mobile','position',
-  'resignation_type','last_work_date','contract_terminate_date','need_resignation_cert',
-  'cert_delivery_address','resignation_cert_status','resignation_remark',
+// 离职减员表 10 列严格按《外包减员表》「涉及工单」标注重建。
+// 前 6 列（姓名/身份证号/缴纳地区/停保月/离职原因/离职日期）+ 共享收集流转至 离职材料收集/数据录入/社保公积金减员 三单；
+// feedback_deadline/is_common_template/template_name 仅离职材料收集可见。
+const RESIGNATION_CORE_VISIBLE = [
+  'employee_name', 'id_card_no', 'social_pay_region', 'social_stop_month',
+  'resignation_reason', 'resignation_date', 'need_resignation_share',
+];
+const RESIGNATION_CONTACT_VISIBLE = new Set([
+  ...RESIGNATION_CORE_VISIBLE, 'feedback_deadline', 'is_common_template', 'template_name',
 ]);
-const RESIGNATION_CONTACT_EDITABLE = new Set(['resignation_contact_feedback', 'handover_person']);
-const RESIGNATION_CERT_EDITABLE = new Set(['resignation_cert_status', 'cert_delivery_address']);
-const DATA_ENTRY_RESIGN_VISIBLE = new Set([
-  'customer_name','customer_code','employee_name','id_card_no','mobile','position',
-  'resignation_type','last_work_date','contract_terminate_date','social_handover_done',
-  'final_salary_settled','resignation_remark',
-]);
-const DATA_ENTRY_RESIGN_EDITABLE = new Set(['social_handover_done', 'final_salary_settled', 'resignation_remark']);
+const RESIGNATION_CERT_VISIBLE = RESIGNATION_CONTACT_VISIBLE;
+const RESIGNATION_CONTACT_EDITABLE = new Set<string>([]);
+const RESIGNATION_CERT_EDITABLE = new Set<string>([]);
+const DATA_ENTRY_RESIGN_VISIBLE = new Set(RESIGNATION_CORE_VISIBLE);
+const DATA_ENTRY_RESIGN_EDITABLE = new Set<string>([]);
+// 社保公积金减员：7 核心字段可见，可编辑集为空（办理动作走 action 表单，不改字段值）。
+const RESIGNATION_SOCIAL_VISIBLE = new Set(RESIGNATION_CORE_VISIBLE);
+const RESIGNATION_SOCIAL_EDITABLE = new Set<string>([]);
 
 const BENEFIT_EDITABLE = new Set([
   'benefit_review_status',
@@ -252,7 +263,7 @@ export async function seedFieldPermissions(dataSource: DataSource): Promise<void
         role.id,
         field.fieldCode,
         'dispatched:data_entry',
-        dispatchedPermission(role.code, field, [OrderType.ONBOARDING], DATA_ENTRY_ROLE_CODES, DATA_ENTRY_EDITABLE),
+        dispatchedPermission(role.code, field, [OrderType.ONBOARDING], DATA_ENTRY_ROLE_CODES, DATA_ENTRY_EDITABLE, DATA_ENTRY_VISIBLE),
       );
       await upsertPermission(
         permRepo,
@@ -280,7 +291,7 @@ export async function seedFieldPermissions(dataSource: DataSource): Promise<void
         role.id,
         field.fieldCode,
         'dispatched:resignation_contact',
-        dispatchedPermission(role.code, field, [OrderType.RESIGNATION], RESIGNATION_ROLE_CODES, RESIGNATION_CONTACT_EDITABLE),
+        dispatchedPermission(role.code, field, [OrderType.RESIGNATION], RESIGNATION_ROLE_CODES, RESIGNATION_CONTACT_EDITABLE, RESIGNATION_CONTACT_VISIBLE),
       );
       await upsertPermission(
         permRepo,
@@ -295,6 +306,13 @@ export async function seedFieldPermissions(dataSource: DataSource): Promise<void
         field.fieldCode,
         'dispatched:data_entry_resign',
         dispatchedPermission(role.code, field, [OrderType.RESIGNATION], DATA_ENTRY_ROLE_CODES, DATA_ENTRY_RESIGN_EDITABLE, DATA_ENTRY_RESIGN_VISIBLE),
+      );
+      await upsertPermission(
+        permRepo,
+        role.id,
+        field.fieldCode,
+        'dispatched:resignation_social_insurance',
+        dispatchedPermission(role.code, field, [OrderType.RESIGNATION], SOCIAL_INSURANCE_ROLE_CODES, RESIGNATION_SOCIAL_EDITABLE, RESIGNATION_SOCIAL_VISIBLE),
       );
     }
   }

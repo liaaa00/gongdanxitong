@@ -20,6 +20,7 @@ import {
 } from '@/services/dashboard';
 import { getModuleConfigs } from '@/services/moduleConfigs';
 import type { ModuleConfigItem } from '@/services/moduleConfigs';
+import { getCachedMonth, toMonthKey, updateCachedListPageState } from '@/utils/listPageState';
 import {
   canAccessModuleCode,
   getAccessibleModuleCodes,
@@ -29,6 +30,8 @@ import {
 } from '@/utils/moduleAccess';
 
 const { Text } = Typography;
+
+const DASHBOARD_MONTH_KEY = 'dashboard';
 
 const EMPTY_CARDS: DashboardCards = {
   totalPending: 0,
@@ -418,7 +421,7 @@ const Dashboard: React.FC = () => {
   const [moduleOptions, setModuleOptions] = useState<ModuleConfigItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [scopeMode, setScopeMode] = useState<DashboardScopeMode>('mine');
-  const [selectedMonth, setSelectedMonth] = useState<Dayjs>(() => dayjs().startOf('month'));
+  const [selectedMonth, setSelectedMonth] = useState<Dayjs>(() => getCachedMonth(DASHBOARD_MONTH_KEY).startOf('month'));
 
   const selectedMonthValue = selectedMonth.format('YYYY-MM');
   const selectedMonthLabel = selectedMonth.format('YYYY年M月');
@@ -588,7 +591,11 @@ const Dashboard: React.FC = () => {
             size="small"
             value={selectedMonth}
             allowClear={false}
-            onChange={(value) => setSelectedMonth(value || dayjs().startOf('month'))}
+            onChange={(value) => {
+              const next = (value || dayjs()).startOf('month');
+              setSelectedMonth(next);
+              updateCachedListPageState(DASHBOARD_MONTH_KEY, { month: toMonthKey(next) });
+            }}
           />
         </Space>,
       ],

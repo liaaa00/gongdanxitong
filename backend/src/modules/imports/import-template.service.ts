@@ -1,9 +1,8 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
 import { Workbook, Worksheet } from 'exceljs';
-import { Repository } from 'typeorm';
 import { businessException } from 'src/common/exceptions/business-exception';
 import { FieldConfig, FieldType, OrderType } from 'src/entities';
+import { ImportTemplateConfigService, ImportTemplateFieldView } from './import-template-config.service';
 
 export interface ImportTemplateResult {
   buffer: Buffer;
@@ -11,27 +10,23 @@ export interface ImportTemplateResult {
   fileName: string;
 }
 
+type TemplateField = FieldConfig & {
+  templateHeader?: string | null;
+  templateRequiredOverride?: boolean | null;
+};
+
 const MAIN_SHEET_NAME = '当前字段配置';
 const OPTIONS_SHEET_NAME = '__options';
 const LABEL_COLUMN_WIDTH = 12;
 const DATA_VALIDATION_ROWS = 500;
 
-const ONBOARDING_IMPORT_EXCLUDED_FIELDS = new Set([
-  'contract_feedback',
-  'onboarding_feedback',
-  'data_entry_feedback',
-  'contract_template',
-]);
-
 @Injectable()
 export class ImportTemplateService {
-  constructor(
-    @InjectRepository(FieldConfig)
-    private readonly fieldRepository: Repository<FieldConfig>,
-  ) {}
+  constructor(private readonly templateConfigService: ImportTemplateConfigService) {}
 
   async generate(orderType: OrderType): Promise<ImportTemplateResult> {
-    const fields = this.filterTemplateFields(orderType, await this.loadActiveFields(orderType));
+    const configuredFields = await this.templateConfigService.list(orderType);
+    const fields = configuredFields.map((item) => this.toTemplateField(item));
     if (fields.length === 0) {
       throw businessException(4400, HttpStatus.BAD_REQUEST, 'NO_FIELDS');
     }
@@ -49,66 +44,36 @@ export class ImportTemplateService {
     return { buffer, fieldCount: fields.length, fileName: this.buildFileName(orderType) };
   }
 
-  private filterTemplateFields(orderType: OrderType, fields: FieldConfig[]): FieldConfig[] {
-    if (orderType !== OrderType.ONBOARDING) {
-      return fields;
-    }
-    return fields
-      .filter((field) => !ONBOARDING_IMPORT_EXCLUDED_FIELDS.has(field.fieldCode))
-      .map((field) => this.withOnboardingConditionalRequired(field));
-  }
-
-  private withOnboardingConditionalRequired(field: FieldConfig): FieldConfig {
-    if (field.fieldCode === 'feedback_deadline' || field.fieldCode === 'is_common_template') {
-      return {
-        ...field,
-        isRequired: false,
-        defaultRequired: false,
-        conditionalRequired: this.needOnboardingContactCondition(),
-      } as FieldConfig;
-    }
-    if (field.fieldCode === 'template_name') {
-      return {
-        ...field,
-        isRequired: false,
-        defaultRequired: false,
-        conditionalRequired: this.commonOnboardingTemplateCondition(),
-      } as FieldConfig;
-    }
-    return field;
-  }
-
-  private needOnboardingContactCondition(): Record<string, unknown> {
-    return { field: 'need_onboarding_contact', op: 'EQ', value: '是' };
-  }
-
-  private commonOnboardingTemplateCondition(): Record<string, unknown> {
+  private toTemplateField(item: ImportTemplateFieldView): TemplateField {
+    const rawItem = item as ImportTemplateFieldView & { templateHeader?: string | null; templateRequiredOverride?: boolean | null };
     return {
-      op: 'AND',
-      children: [
-        this.needOnboardingContactCondition(),
-        { field: 'is_common_template', op: 'EQ', value: '是' },
-      ],
-    };
-  }
-
-  private async loadActiveFields(orderType: OrderType): Promise<FieldConfig[]> {
-    return this.fieldRepository
-      .createQueryBuilder('field')
-      .where('field.isActive = true')
-      .andWhere(
-        '(field.orderType = :orderType OR field.businessContext @> :businessContext)',
-        { orderType, businessContext: JSON.stringify([orderType]) },
-      )
-      .orderBy('field.displayOrder', 'ASC')
-      .addOrderBy('field.createdAt', 'ASC')
-      .getMany();
+      id: item.id ?? item.fieldCode,
+      fieldCode: item.fieldCode,
+      fieldName: item.fieldName,
+      fieldType: item.fieldType,
+      isRequired: item.isRequired,
+      defaultRequired: item.defaultRequired,
+      conditionalRequired: item.conditionalRequired,
+      validationRegex: null,
+      validationMsg: null,
+      dropdownOptions: item.dropdownOptions,
+      collectionGroup: null,
+      placeholder: item.placeholder,
+      helpText: item.helpText,
+      orderType: item.orderType,
+      businessContext: null,
+      displayOrder: item.displayOrder,
+      isActive: item.isActive,
+      createdAt: new Date(),
+      templateHeader: item.headerAlias ?? rawItem.templateHeader ?? null,
+      templateRequiredOverride: item.isRequiredOverride ?? rawItem.templateRequiredOverride ?? null,
+    } as TemplateField;
   }
 
   // 列 A 放说明标签（字段名/是否必填/填写要求/填写示例），字段从列 B 起。
   // 解析器以「行首单元格命中 TEMPLATE_META_ROW_LABELS」跳过第 2~4 行说明行，
-  // 第 1 行作为表头（header=field_name 用于往返匹配），数据从第 5 行开始。
-  private writeHeaderAndMetaRows(sheet: Worksheet, fields: FieldConfig[]): void {
+  // 第 1 行作为表头（header=field_name/header_alias 用于往返匹配），数据从第 5 行开始。
+  private writeHeaderAndMetaRows(sheet: Worksheet, fields: TemplateField[]): void {
     const headerRow = sheet.getRow(1);
     const requiredRow = sheet.getRow(2);
     const requirementRow = sheet.getRow(3);
@@ -121,8 +86,8 @@ export class ImportTemplateService {
 
     fields.forEach((field, index) => {
       const col = index + 2;
-      headerRow.getCell(col).value = field.fieldName || field.fieldCode;
-      requiredRow.getCell(col).value = field.isRequired || field.defaultRequired ? '必填' : '非必填';
+      headerRow.getCell(col).value = this.headerName(field);
+      requiredRow.getCell(col).value = this.isRequired(field) ? '必填' : '非必填';
       requirementRow.getCell(col).value = this.buildRequirement(field);
       exampleRow.getCell(col).value = this.buildExample(field);
     });
@@ -133,7 +98,15 @@ export class ImportTemplateService {
     exampleRow.font = { color: { argb: 'FF999999' } };
   }
 
-  private buildRequirement(field: FieldConfig): string {
+  private headerName(field: TemplateField): string {
+    return field.templateHeader || field.fieldName || field.fieldCode;
+  }
+
+  private isRequired(field: TemplateField): boolean {
+    return field.templateRequiredOverride ?? (field.isRequired || field.defaultRequired);
+  }
+
+  private buildRequirement(field: TemplateField): string {
     const parts: string[] = [];
     if (field.conditionalRequired) {
       parts.push('满足条件时必填');
@@ -151,7 +124,7 @@ export class ImportTemplateService {
     return parts.join('；');
   }
 
-  private buildExample(field: FieldConfig): string | number {
+  private buildExample(field: TemplateField): string | number {
     if (field.fieldType === FieldType.DROPDOWN && field.dropdownOptions?.length) {
       return field.dropdownOptions[0];
     }
@@ -168,16 +141,16 @@ export class ImportTemplateService {
     return '';
   }
 
-  private applyColumnWidths(sheet: Worksheet, fields: FieldConfig[]): void {
+  private applyColumnWidths(sheet: Worksheet, fields: TemplateField[]): void {
     sheet.getColumn(1).width = LABEL_COLUMN_WIDTH;
     fields.forEach((field, index) => {
-      const header = field.fieldName || field.fieldCode;
+      const header = this.headerName(field);
       sheet.getColumn(index + 2).width = Math.max(12, Math.min(28, header.length + 4));
     });
   }
 
   // 每个下拉字段在隐藏 sheet 写一列选项，主表数据区(第5行起)用列表校验引用该区域。
-  private applyDropdownValidations(sheet: Worksheet, optionsSheet: Worksheet, fields: FieldConfig[]): void {
+  private applyDropdownValidations(sheet: Worksheet, optionsSheet: Worksheet, fields: TemplateField[]): void {
     let optionColIndex = 0;
     fields.forEach((field, index) => {
       if (field.fieldType !== FieldType.DROPDOWN || !field.dropdownOptions?.length) {
@@ -194,7 +167,7 @@ export class ImportTemplateService {
       for (let rowNo = 5; rowNo < 5 + DATA_VALIDATION_ROWS; rowNo += 1) {
         sheet.getCell(`${dataColLetter}${rowNo}`).dataValidation = {
           type: 'list',
-          allowBlank: !(field.isRequired || field.defaultRequired),
+          allowBlank: !this.isRequired(field),
           formulae: [formula],
           showErrorMessage: true,
           errorStyle: 'warning',

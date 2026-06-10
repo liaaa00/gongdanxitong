@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import dayjs, { type Dayjs } from 'dayjs';
+import { type Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { PageContainer, ProTable } from '@ant-design/pro-components';
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
@@ -15,7 +15,7 @@ import { mergeProTableFiltersIntoParams, selectHeaderFilter, textHeaderFilter } 
 import {
   applyCachedColumnFilters,
   getCachedListPageState,
-  getCachedMonth,
+  getCachedMonthOrNull,
   normalizeCachedFilters,
   toMonthKey,
   updateCachedListPageState,
@@ -74,7 +74,7 @@ const HistoryWorkOrders: React.FC = () => {
   const actionRef = useRef<ActionType>();
   const pageStateKey = 'my-work:history';
   const cachedPageState = getCachedListPageState(pageStateKey);
-  const [month, setMonth] = useState<Dayjs | null>(() => getCachedMonth(pageStateKey));
+  const [month, setMonth] = useState<Dayjs | null>(() => getCachedMonthOrNull(pageStateKey));
 
   const columns = useMemo<ProColumns<DispatchedOrderItem>[]>(() => applyCachedColumnFilters<DispatchedOrderItem>([
     { title: '工单编号', dataIndex: 'order_no', width: 160, copyable: true, search: { transform: (value) => ({ orderNo: value }) }, ...textHeaderFilter('输入工单编号') },
@@ -103,12 +103,12 @@ const HistoryWorkOrders: React.FC = () => {
             <span>工单月份：</span>
             <DatePicker
               picker="month"
-              allowClear={false}
+              allowClear
+              placeholder="全部月份"
               value={month}
               onChange={(value) => {
-                const nextMonth = value || dayjs();
-                setMonth(nextMonth);
-                updateCachedListPageState(pageStateKey, { month: toMonthKey(nextMonth), current: 1 });
+                setMonth(value);
+                updateCachedListPageState(pageStateKey, { month: value ? toMonthKey(value) : '', current: 1 });
                 actionRef.current?.reload();
               }}
             />
@@ -117,6 +117,7 @@ const HistoryWorkOrders: React.FC = () => {
       }}
     >
       <ProTable<DispatchedOrderItem>
+        getPopupContainer={() => document.body}
         actionRef={actionRef}
         rowKey="id"
         columns={columns}
@@ -136,7 +137,7 @@ const HistoryWorkOrders: React.FC = () => {
             ...query,
             pageSize: Math.min(Number(query.pageSize || 50), 100),
             includeReturned: true,
-            orderMonth: (month || dayjs()).format('YYYY-MM'),
+            orderMonth: month ? month.format('YYYY-MM') : undefined,
           });
           const list = result.list.filter((row) => isPhase1VisibleModule(row.module_code) && (!row.order_type || isPhase1VisibleOrderType(row.order_type)));
           return { data: list, success: true, total: result.total };

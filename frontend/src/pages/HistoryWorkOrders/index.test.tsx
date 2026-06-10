@@ -73,7 +73,6 @@ describe('HistoryWorkOrders editable unfinished rows', () => {
       createdByName: '张三',
       status: 'processing',
       includeReturned: true,
-      orderMonth: expect.stringMatching(/^\d{4}-\d{2}$/),
     })));
   });
 });

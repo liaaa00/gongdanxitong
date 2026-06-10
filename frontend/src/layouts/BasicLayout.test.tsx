@@ -137,6 +137,9 @@ const renderLayout = (initialEntries: string[] = ['/']) => render(
 );
 
 const menuText = () => screen.getByTestId('layout-menu').textContent || '';
+const menuPaths = () => Array.from(screen.getByTestId('layout-menu').querySelectorAll('[data-path]'))
+  .map((node) => node.getAttribute('data-path'))
+  .filter(Boolean);
 const selectedKeys = () => JSON.parse(screen.getByTestId('selected-keys').textContent || '[]') as string[];
 
 describe('BasicLayout menu visibility', () => {
@@ -148,6 +151,28 @@ describe('BasicLayout menu visibility', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('shows the admin field and template configuration center with import templates only to admin', () => {
+    mockUserState.user = mockUserState.makeUser(['admin']);
+    const adminView = renderLayout(['/admin/fields']);
+
+    expect(menuPaths()).toEqual(expect.arrayContaining([
+      '/admin/field-template-group',
+      '/admin/fields',
+      '/admin/import-templates',
+      '/admin/module-config',
+      '/admin/field-permissions',
+      '/admin/export-templates',
+      '/admin/dispatch-flow-group',
+      '/admin/dispatch-config',
+      '/admin/workflows',
+    ]));
+    adminView.unmount();
+
+    mockUserState.user = mockUserState.makeUser(['business_group_member']);
+    renderLayout(['/dashboard']);
+    expect(menuPaths()).not.toContain('/admin/import-templates');
   });
 
   it('selects onboarding and offboarding main work-order menu entries by orderType query', () => {
@@ -177,20 +202,19 @@ describe('BasicLayout menu visibility', () => {
     expect(selectedKeys()).not.toContain('resignation-list');
   });
 
-  it('navigates menu items to their last legal recorded detail path', () => {
+  it('does not record detail pages as a menu recent path', () => {
     mockUserState.user = mockUserState.makeUser(['business_group_member']);
     const first = renderLayout(['/my-work/initiated']);
     first.unmount();
 
     renderLayout(['/my-dispatched/d-1?tab=logs']);
 
-    fireEvent.click(screen.getByRole('button', { name: '我的退回' }));
-    fireEvent.click(screen.getByRole('button', { name: '我发起的' }));
-
-    expect(mockNavigate).toHaveBeenLastCalledWith('/my-dispatched/d-1?tab=logs');
+    const recentPaths = JSON.parse(window.localStorage.getItem('menu_recent_paths_v1') || '{}') as Record<string, string>;
+    expect(recentPaths['my-work-initiated']).not.toBe('/my-dispatched/d-1?tab=logs');
+    expect(Object.values(recentPaths)).not.toContain('/my-dispatched/d-1?tab=logs');
   });
 
-  it('does not let temporary action pages overwrite a menu last path', () => {
+  it('clicking a menu returns to its list default path even when a stale detail path is cached', () => {
     mockUserState.user = mockUserState.makeUser(['business_group_member']);
     window.localStorage.setItem('menu_recent_paths_v1', JSON.stringify({ 'work-orders-main': '/work-orders/wo-1?tab=detail' }));
     window.localStorage.setItem('menu_active_leaf_key_v1', 'work-orders-main');
@@ -199,11 +223,11 @@ describe('BasicLayout menu visibility', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '入职主工单列表' }));
 
-    expect(mockNavigate).toHaveBeenLastCalledWith('/work-orders/wo-1?tab=detail');
+    expect(mockNavigate).toHaveBeenLastCalledWith('/work-orders?orderType=onboarding');
   });
 
   it('falls back to menu default path when last path is illegal or forbidden for current role', () => {
-    mockUserState.user = mockUserState.makeUser(['business_owner']);
+    mockUserState.user = mockUserState.makeUser(['admin']);
     window.localStorage.setItem('menu_recent_paths_v1', JSON.stringify({ 'my-work-team': '/work-orders/wo-1' }));
 
     renderLayout(['/dashboard']);
@@ -215,18 +239,16 @@ describe('BasicLayout menu visibility', () => {
     expect(recentPaths['my-work-team']).toBeUndefined();
   });
 
-  it('shows a stable top action entry for changing current user password', () => {
+  it('does not render a duplicate standalone change-password button in top actions', () => {
     renderLayout(['/dashboard']);
 
-    const changePasswordButton = screen.getByRole('button', { name: /修改密码/ });
-    expect(changePasswordButton).toBeInTheDocument();
+    const actions = screen.getByTestId('layout-actions');
+    const duplicateButton = Array.from(actions.querySelectorAll('button')).find((button) => /修改密码/.test(button.textContent || ''));
 
-    fireEvent.click(changePasswordButton);
-
-    expect(mockNavigate).toHaveBeenLastCalledWith('/change-password');
+    expect(duplicateButton).toBeUndefined();
   });
 
-  it('keeps business owner menu to dashboard, team work and history only', () => {
+  it('keeps business owner menu to dashboard without my-work pages', () => {
     mockUserState.user = mockUserState.makeUser(['business_owner']);
     mockUserState.user.permissions = ['*', 'work_order.*', 'data_scope.all'];
 
@@ -234,9 +256,9 @@ describe('BasicLayout menu visibility', () => {
 
     const text = menuText();
     expect(text).toContain('仪表盘');
-    expect(text).toContain('我的工单');
-    expect(text).toContain('团队工单');
-    expect(text).toContain('历史工单');
+    expect(text).not.toContain('我的工单');
+    expect(text).not.toContain('团队工单');
+    expect(text).not.toContain('历史工单');
     expect(text).not.toContain('我发起的');
     expect(text).not.toContain('我的退回');
     expect(text).not.toContain('我的待办');
@@ -266,18 +288,19 @@ describe('BasicLayout menu visibility', () => {
     expect(text).toContain('社保公积金减员子工单');
     expect(text).not.toContain('入职导入');
     expect(text).not.toContain('离职导入');
-    expect(text).toContain('我发起的');
-    expect(text).toContain('我的退回');
-    expect(text).toContain('历史工单');
+    expect(text).not.toContain('我的工单');
+    expect(text).not.toContain('我发起的');
+    expect(text).not.toContain('我的退回');
+    expect(text).not.toContain('历史工单');
     expect(text).not.toContain('我的待办');
-    expect(text).toContain('我的已办');
+    expect(text).not.toContain('我的已办');
     expect(text).not.toContain('团队工单');
     expect(text).not.toContain('在职管理');
     expect(text).not.toContain('劳动合同续签子工单');
     expect(text).not.toContain('待遇申报子工单');
   });
 
-  it('keeps business group leader module entries plus team view without independent import menu', () => {
+  it('keeps business group leader module entries without my-work pages', () => {
     mockUserState.user = mockUserState.makeUser(['business_group_leader']);
     mockUserState.user.permissions = ['*', 'work_order.*', 'data_scope.all'];
 
@@ -297,12 +320,13 @@ describe('BasicLayout menu visibility', () => {
     expect(text).toContain('社保公积金减员子工单');
     expect(text).not.toContain('入职导入');
     expect(text).not.toContain('离职导入');
-    expect(text).toContain('我发起的');
-    expect(text).toContain('我的退回');
-    expect(text).toContain('历史工单');
-    expect(text).toContain('团队工单');
+    expect(text).not.toContain('我的工单');
+    expect(text).not.toContain('我发起的');
+    expect(text).not.toContain('我的退回');
+    expect(text).not.toContain('历史工单');
+    expect(text).not.toContain('团队工单');
     expect(text).not.toContain('我的待办');
-    expect(text).toContain('我的已办');
+    expect(text).not.toContain('我的已办');
     expect(text).not.toContain('在职管理');
   });
 
@@ -410,82 +434,82 @@ describe('BasicLayout menu recent path temporary action exclusions', () => {
   });
 
   it('does not record /403 as a menu recent path', () => {
-    window.localStorage.setItem('menu_recent_paths_v1', JSON.stringify({ 'work-orders-main': '/work-orders/wo-1' }));
+    window.localStorage.setItem('menu_recent_paths_v1', JSON.stringify({ 'work-orders-main': '/work-orders?orderType=onboarding&page=2' }));
     window.localStorage.setItem('menu_active_leaf_key_v1', 'work-orders-main');
 
     renderLayout(['/403']);
 
     fireEvent.click(screen.getByRole('button', { name: '入职主工单列表' }));
 
-    expect(mockNavigate).toHaveBeenLastCalledWith('/work-orders/wo-1');
+    expect(mockNavigate).toHaveBeenLastCalledWith('/work-orders?orderType=onboarding&page=2');
     const recentPaths = JSON.parse(window.localStorage.getItem('menu_recent_paths_v1') || '{}') as Record<string, string>;
     // /403 must not be recorded — existing recent path survives
-    expect(recentPaths['work-orders-main']).toBe('/work-orders/wo-1');
+    expect(recentPaths['work-orders-main']).toBe('/work-orders?orderType=onboarding&page=2');
   });
 
   it('does not record /404 as a menu recent path', () => {
-    window.localStorage.setItem('menu_recent_paths_v1', JSON.stringify({ 'work-orders-main': '/work-orders/wo-2' }));
+    window.localStorage.setItem('menu_recent_paths_v1', JSON.stringify({ 'work-orders-main': '/work-orders?orderType=onboarding&page=3' }));
     window.localStorage.setItem('menu_active_leaf_key_v1', 'work-orders-main');
 
     renderLayout(['/404']);
 
     fireEvent.click(screen.getByRole('button', { name: '入职主工单列表' }));
 
-    expect(mockNavigate).toHaveBeenLastCalledWith('/work-orders/wo-2');
+    expect(mockNavigate).toHaveBeenLastCalledWith('/work-orders?orderType=onboarding&page=3');
     const recentPaths = JSON.parse(window.localStorage.getItem('menu_recent_paths_v1') || '{}') as Record<string, string>;
-    expect(recentPaths['work-orders-main']).toBe('/work-orders/wo-2');
+    expect(recentPaths['work-orders-main']).toBe('/work-orders?orderType=onboarding&page=3');
   });
 
   it('does not record /login as a menu recent path', () => {
-    window.localStorage.setItem('menu_recent_paths_v1', JSON.stringify({ 'work-orders-main': '/work-orders/wo-1' }));
+    window.localStorage.setItem('menu_recent_paths_v1', JSON.stringify({ 'work-orders-main': '/work-orders?orderType=onboarding&page=2' }));
     window.localStorage.setItem('menu_active_leaf_key_v1', 'work-orders-main');
 
     renderLayout(['/login']);
 
     fireEvent.click(screen.getByRole('button', { name: '入职主工单列表' }));
 
-    expect(mockNavigate).toHaveBeenLastCalledWith('/work-orders/wo-1');
+    expect(mockNavigate).toHaveBeenLastCalledWith('/work-orders?orderType=onboarding&page=2');
     const recentPaths = JSON.parse(window.localStorage.getItem('menu_recent_paths_v1') || '{}') as Record<string, string>;
-    expect(recentPaths['work-orders-main']).toBe('/work-orders/wo-1');
+    expect(recentPaths['work-orders-main']).toBe('/work-orders?orderType=onboarding&page=2');
   });
 
   it('does not record /change-password as a menu recent path', () => {
-    window.localStorage.setItem('menu_recent_paths_v1', JSON.stringify({ 'work-orders-main': '/work-orders/wo-1' }));
+    window.localStorage.setItem('menu_recent_paths_v1', JSON.stringify({ 'work-orders-main': '/work-orders?orderType=onboarding&page=2' }));
     window.localStorage.setItem('menu_active_leaf_key_v1', 'work-orders-main');
 
     renderLayout(['/change-password']);
 
     fireEvent.click(screen.getByRole('button', { name: '入职主工单列表' }));
 
-    expect(mockNavigate).toHaveBeenLastCalledWith('/work-orders/wo-1');
+    expect(mockNavigate).toHaveBeenLastCalledWith('/work-orders?orderType=onboarding&page=2');
     const recentPaths = JSON.parse(window.localStorage.getItem('menu_recent_paths_v1') || '{}') as Record<string, string>;
-    expect(recentPaths['work-orders-main']).toBe('/work-orders/wo-1');
+    expect(recentPaths['work-orders-main']).toBe('/work-orders?orderType=onboarding&page=2');
   });
 
   it('does not record /work-orders/new as a menu recent path', () => {
-    window.localStorage.setItem('menu_recent_paths_v1', JSON.stringify({ 'work-orders-main': '/work-orders/wo-1' }));
+    window.localStorage.setItem('menu_recent_paths_v1', JSON.stringify({ 'work-orders-main': '/work-orders?orderType=onboarding&page=2' }));
     window.localStorage.setItem('menu_active_leaf_key_v1', 'work-orders-main');
 
     renderLayout(['/work-orders/new?orderType=onboarding']);
 
     fireEvent.click(screen.getByRole('button', { name: '入职主工单列表' }));
 
-    expect(mockNavigate).toHaveBeenLastCalledWith('/work-orders/wo-1');
+    expect(mockNavigate).toHaveBeenLastCalledWith('/work-orders?orderType=onboarding&page=2');
     const recentPaths = JSON.parse(window.localStorage.getItem('menu_recent_paths_v1') || '{}') as Record<string, string>;
-    expect(recentPaths['work-orders-main']).toBe('/work-orders/wo-1');
+    expect(recentPaths['work-orders-main']).toBe('/work-orders?orderType=onboarding&page=2');
   });
 
   it('does not record /work-orders/import as a menu recent path', () => {
-    window.localStorage.setItem('menu_recent_paths_v1', JSON.stringify({ 'work-orders-main': '/work-orders/wo-1' }));
+    window.localStorage.setItem('menu_recent_paths_v1', JSON.stringify({ 'work-orders-main': '/work-orders?orderType=onboarding&page=2' }));
     window.localStorage.setItem('menu_active_leaf_key_v1', 'work-orders-main');
 
     renderLayout(['/work-orders/import?orderType=onboarding']);
 
     fireEvent.click(screen.getByRole('button', { name: '入职主工单列表' }));
 
-    expect(mockNavigate).toHaveBeenLastCalledWith('/work-orders/wo-1');
+    expect(mockNavigate).toHaveBeenLastCalledWith('/work-orders?orderType=onboarding&page=2');
     const recentPaths = JSON.parse(window.localStorage.getItem('menu_recent_paths_v1') || '{}') as Record<string, string>;
-    expect(recentPaths['work-orders-main']).toBe('/work-orders/wo-1');
+    expect(recentPaths['work-orders-main']).toBe('/work-orders?orderType=onboarding&page=2');
   });
 });
 

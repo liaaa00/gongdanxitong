@@ -2,7 +2,7 @@ import request from './request';
 import { isMockMode, mockDelay, type PageParams, type PageResult } from './mock';
 import * as XLSX from 'xlsx';
 import { addMockNotification } from './notifications';
-import { getFields } from './fields';
+import { getImportTemplateConfig } from './importTemplates';
 import { uploadExcel } from './upload';
 
 export interface WorkOrderItem {
@@ -470,28 +470,47 @@ export function reloadMockWorkOrders(): void {
 
 const mockWorkOrders: WorkOrderItem[] = loadMockWorkOrders();
 
+// 入职导入模板排除：办理岗在子单完成时填写的反馈字段，不进业务员发起的导入表。
+// 注意：contract_template（劳动合同模板）是业务员发起阶段字段，必须保留在模板中。
 const ONBOARDING_IMPORT_TEMPLATE_EXCLUDED_FIELD_CODES = new Set([
   'contract_feedback',
   'onboarding_feedback',
   'data_entry_feedback',
-  'contract_template',
 ]);
+
+// 离职导入模板白名单：《外包减员表》10 列，按模板列序输出。
+const RESIGNATION_IMPORT_TEMPLATE_FIELD_CODES = [
+  'employee_name',
+  'id_card_no',
+  'social_pay_region',
+  'social_stop_month',
+  'resignation_reason',
+  'resignation_date',
+  'need_resignation_share',
+  'feedback_deadline',
+  'is_common_template',
+  'template_name',
+];
 
 const AVAILABLE_FIELDS_MOCK = [
   { field_code: 'customer_name', field_name: '客户名称', is_required: true },
   { field_code: 'customer_code', field_name: '客户代码', is_required: true },
   { field_code: 'outsource_type', field_name: '外包类型', is_required: true },
   { field_code: 'position', field_name: '岗位', is_required: true },
+  { field_code: 'position_type', field_name: '岗位类型', is_required: true },
   { field_code: 'employee_name', field_name: '姓名', is_required: true },
-  { field_code: 'id_card_no', field_name: '身份证号码（护照）', is_required: true },
-  { field_code: 'gender', field_name: '性别', is_required: true },
+  { field_code: 'id_card_type', field_name: '证件类型', is_required: true },
+  { field_code: 'id_card_no', field_name: '证件号码', is_required: true },
+  { field_code: 'gender', field_name: '性别' },
   { field_code: 'birth_date', field_name: '出生日期' },
   { field_code: 'age', field_name: '年龄' },
   { field_code: 'household_type', field_name: '户籍性质' },
   { field_code: 'ethnicity', field_name: '民族' },
+  { field_code: 'education', field_name: '学历' },
+  { field_code: 'marital_status', field_name: '婚姻状况' },
   { field_code: 'mobile', field_name: '移动电话', is_required: true },
-  { field_code: 'email', field_name: '电子邮件', is_required: true },
-  { field_code: 'current_address', field_name: '现住地址', is_required: true },
+  { field_code: 'email', field_name: '电子邮件' },
+  { field_code: 'current_address', field_name: '现住地址' },
   { field_code: 'household_address', field_name: '户籍地址', is_required: true },
   { field_code: 'postal_code', field_name: '邮编' },
   { field_code: 'contract_term_type', field_name: '合同期限形式', is_required: true },
@@ -499,37 +518,46 @@ const AVAILABLE_FIELDS_MOCK = [
   { field_code: 'contract_start_date', field_name: '合同开始日期', is_required: true },
   { field_code: 'contract_end_date', field_name: '合同终止日期', is_required: true },
   { field_code: 'probation_start_date', field_name: '试用期开始日期', is_required: true },
-  { field_code: 'probation_months', field_name: '试用期(月)', is_required: true },
+  { field_code: 'probation_months', field_name: '试用期（月）', is_required: true },
   { field_code: 'probation_end_date', field_name: '试用期结束日期', is_required: true },
   { field_code: 'work_city', field_name: '工作城市', is_required: true },
   { field_code: 'work_hour_system', field_name: '工时制', is_required: true },
-  { field_code: 'work_cycle', field_name: '工作制周期', is_required: true },
   { field_code: 'salary_form', field_name: '工资形式', is_required: true },
   { field_code: 'base_salary', field_name: '基本工资', is_required: true },
-  { field_code: 'other_salary', field_name: '其他工资', is_required: true },
+  { field_code: 'other_salary', field_name: '其他工资' },
   { field_code: 'probation_salary', field_name: '试用期工资' },
+  { field_code: 'probation_other_salary', field_name: '试用期其他工资' },
   { field_code: 'payroll_cycle', field_name: '发薪周期', is_required: true },
   { field_code: 'payroll_date', field_name: '发薪日期', is_required: true },
   { field_code: 'social_location', field_name: '参保地', is_required: true },
-  { field_code: 'start_month', field_name: '起始月', is_required: true },
+  { field_code: 'start_month', field_name: '参保起始月', is_required: true },
   { field_code: 'social_base', field_name: '社保基数', is_required: true },
   { field_code: 'fund_base', field_name: '公积金基数', is_required: true },
   { field_code: 'fund_ratio', field_name: '公积金比例', is_required: true },
-  { field_code: 'bank_name', field_name: '开户银行信息', is_required: true },
-  { field_code: 'bank_account', field_name: '银行借记卡帐号', is_required: true },
+  { field_code: 'bank_name', field_name: '开户银行信息' },
+  { field_code: 'bank_account', field_name: '银行借记卡帐号' },
   { field_code: 'remark', field_name: '备注' },
-  { field_code: 'business_mode', field_name: '业务模式' },
-  { field_code: 'employee_type', field_name: '人员类型' },
+  { field_code: 'business_mode', field_name: '业务模式', is_required: true },
+  { field_code: 'employee_type', field_name: '人员类型', is_required: true },
   { field_code: 'need_company_contract', field_name: '是否企服发起劳动合同', is_required: true },
+  { field_code: 'need_esign', field_name: '是否电子签' },
+  { field_code: 'esign_platform', field_name: '电子签平台' },
   { field_code: 'contract_subject', field_name: '劳动合同主体' },
-  { field_code: 'contract_template', field_name: '劳动合同模板' },
-  { field_code: 'contract_urge', field_name: '劳动合同签署是否需要催办员工' },
-  { field_code: 'contract_feedback', field_name: '劳动合同新签反馈' },
+  { field_code: 'company_address', field_name: '甲方住所' },
+  { field_code: 'project_name', field_name: '项目名称' },
+  { field_code: 'work_arrangement', field_name: '安排或调整工作的情况' },
+  { field_code: 'contract_template', field_name: '劳动合同模板（标准模板/特殊模板）' },
+  { field_code: 'need_contract_urge', field_name: '劳动合同签署是否需要催办员工' },
   { field_code: 'need_onboarding_contact', field_name: '入职材料是否需要集约收集', is_required: true },
-  { field_code: 'onboarding_feedback', field_name: '入职联系反馈' },
+  { field_code: 'feedback_deadline', field_name: '反馈截止日期' },
+  { field_code: 'is_common_template', field_name: '是否为通用模板' },
+  { field_code: 'template_name', field_name: '模板名称' },
   { field_code: 'need_company_payroll', field_name: '是否企服发薪', is_required: true },
-  { field_code: 'pay_location', field_name: '发薪地' },
+  { field_code: 'payroll_location', field_name: '发薪地' },
+  { field_code: 'social_urge', field_name: '社保公积金未办是否需要催办', is_required: true },
   { field_code: 'special_remark', field_name: '特殊备注' },
+  { field_code: 'contract_feedback', field_name: '劳动合同新签反馈' },
+  { field_code: 'onboarding_feedback', field_name: '入职联系反馈' },
   { field_code: 'data_entry_feedback', field_name: '增员报岗录入反馈' },
 ];
 
@@ -1409,16 +1437,15 @@ function buildImportTemplateExample(fieldCode: string, fieldType?: string): stri
   return '';
 }
 
-export async function downloadCurrentImportTemplate(orderType = 'onboarding'): Promise<{ fieldCount: number; fileName: string }> {
-  const fields = (await getFields(orderType))
+async function downloadMockImportTemplate(orderType = 'onboarding'): Promise<{ fieldCount: number; fileName: string }> {
+  const fields = (await getImportTemplateConfig(orderType))
     .filter((field) => field.is_active !== false)
-    .filter((field) => orderType !== 'onboarding' || !ONBOARDING_IMPORT_TEMPLATE_EXCLUDED_FIELD_CODES.has(field.field_code))
     .sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
   if (fields.length === 0) {
     throw new Error('NO_FIELDS');
   }
 
-  const headers = fields.map((field) => field.field_name || field.field_code);
+  const headers = fields.map((field) => field.header_alias || field.field_name || field.field_code);
   const example = fields.map((field) => buildImportTemplateExample(field.field_code, field.field_type));
   const worksheet = XLSX.utils.aoa_to_sheet([headers, example]);
   worksheet['!cols'] = headers.map((header) => ({ wch: Math.max(12, Math.min(28, String(header).length + 4)) }));
@@ -1427,6 +1454,38 @@ export async function downloadCurrentImportTemplate(orderType = 'onboarding'): P
   const fileName = getImportTemplateFileName(orderType);
   XLSX.writeFile(workbook, fileName);
   return { fieldCount: fields.length, fileName };
+}
+
+export async function downloadServerImportTemplate(orderType = 'onboarding'): Promise<{ fieldCount: number; fileName: string }> {
+  if (isMockMode) {
+    return downloadMockImportTemplate(orderType);
+  }
+
+  const token = localStorage.getItem('token');
+  const base = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || '';
+  const url = `${base}/api/work-orders/import/template?orderType=${encodeURIComponent(orderType)}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
+  const response = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(text || `下载导入模板失败 (${response.status})`);
+  }
+  const blob = await response.blob();
+  const fieldCount = Number(response.headers.get('X-Field-Count') || 0);
+  const fileName = getImportTemplateFileName(orderType);
+  const blobUrl = window.URL.createObjectURL(blob);
+  try {
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = fileName;
+    a.click();
+  } finally {
+    window.URL.revokeObjectURL(blobUrl);
+  }
+  return { fieldCount, fileName };
+}
+
+export async function downloadCurrentImportTemplate(orderType = 'onboarding'): Promise<{ fieldCount: number; fileName: string }> {
+  return downloadServerImportTemplate(orderType);
 }
 
 export function downloadImportErrorReport(jobId: string) {

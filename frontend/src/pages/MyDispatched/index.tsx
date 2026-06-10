@@ -1,6 +1,6 @@
 import { forwardRef, useRef, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import dayjs, { type Dayjs } from 'dayjs';
+import { type Dayjs } from 'dayjs';
 import { PageContainer } from '@ant-design/pro-components';
 import type { ProColumns, ActionType } from '@ant-design/pro-components';
 import { ProTable } from '@ant-design/pro-components';
@@ -36,7 +36,7 @@ import { mergeProTableFiltersIntoParams, selectHeaderFilter, textHeaderFilter } 
 import {
   applyCachedColumnFilters,
   getCachedListPageState,
-  getCachedMonth,
+  getCachedMonthOrNull,
   normalizeCachedFilters,
   toMonthKey,
   updateCachedListPageState,
@@ -131,7 +131,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
   const childTableTitle = isDoneMode ? '当月已办子工单' : isInitiatedMode ? '我发起的子工单' : isReturnedMode ? '退回待处理子工单' : '待办子工单';
   const emptyText = isDoneMode ? '本月暂无已办子工单' : isInitiatedMode ? '暂无我发起的子工单' : isReturnedMode ? '暂无退回待处理子工单' : '暂无待办子工单';
   const [exporting, setExporting] = useState(false);
-  const [month, setMonth] = useState<Dayjs | null>(() => getCachedMonth(pageStateKey));
+  const [month, setMonth] = useState<Dayjs | null>(() => getCachedMonthOrNull(pageStateKey));
   const [batchImportMode, setBatchImportMode] = useState<DispatchedBatchImportMode | null>(null);
   const [slaWarningCount, setSlaWarningCount] = useState(0);
   const [slaBreachedCount, setSlaBreachedCount] = useState(0);
@@ -467,7 +467,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
       dispatchedTo: toIso(dispatchedRange[1]),
       completedFrom: toIso(completedRange[0]),
       completedTo: toIso(completedRange[1]),
-      orderMonth: orderMonth || (month || dayjs()).format('YYYY-MM'),
+      orderMonth: orderMonth || (month ? month.format('YYYY-MM') : undefined),
     });
   };
 
@@ -560,12 +560,12 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
           <span>工单月份：</span>
           <DatePicker
             picker="month"
-            allowClear={false}
+            allowClear
+            placeholder="全部月份"
             value={month}
             onChange={(value) => {
-              const nextMonth = value || dayjs();
-              setMonth(nextMonth);
-              updateCachedListPageState(pageStateKey, { month: toMonthKey(nextMonth), current: 1 });
+              setMonth(value);
+              updateCachedListPageState(pageStateKey, { month: value ? toMonthKey(value) : '', current: 1 });
               actionRef.current?.reload();
             }}
           />
@@ -575,6 +575,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
       ],
     }}>
       <ProTable<DispatchedOrderItem>
+        getPopupContainer={() => document.body}
         actionRef={actionRef} columns={columns} rowKey="id"
         request={requestDispatchedOrders}
         search={false} headerTitle={childTableTitle}

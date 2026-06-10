@@ -141,6 +141,7 @@ describe('P1 split4 dirty return backend rules', () => {
       {} as never,
       { supplement: jest.fn(), getLogs: jest.fn() } as never,
       { exportSingleDispatchedOrder: jest.fn() } as never,
+      { resolveUserDepartmentIds: jest.fn(async () => []) } as never,
       undefined,
       undefined,
       undefined,
@@ -166,6 +167,7 @@ describe('P1 split4 dirty return backend rules', () => {
       {} as never,
       { supplement: jest.fn(), getLogs: jest.fn() } as never,
       { exportSingleDispatchedOrder: jest.fn() } as never,
+      { resolveUserDepartmentIds: jest.fn(async () => []) } as never,
     );
 
     await expect(service.batchCompleteSocialInsurance({ ids: ['00000000-0000-4000-8000-000000000001'], remark: '   ' }, user({ sub: 'handler-1' }))).rejects.toThrow('社保批量完成备注必填');

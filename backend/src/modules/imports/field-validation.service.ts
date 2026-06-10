@@ -1,10 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CandidateField, MappingItemInput, RowValidationResult, RowValidationWarning } from './types';
 import { AstNode } from 'src/modules/dispatch-engine/dispatch-engine.types';
 import { AstEvaluator } from 'src/modules/dispatch-engine/ast-evaluator';
 import { FieldConfig, FieldType, OrderType } from 'src/entities';
+import { ImportTemplateConfigService } from './import-template-config.service';
 
 interface RowValidationError {
   fieldCode: string;
@@ -87,6 +88,24 @@ const HEADER_ALIASES: Record<string, string[]> = {
   need_company_payroll: ['是否企服发薪', '是否公司发薪', '是否代发薪', '是否发薪'],
   special_remark: ['特殊备注', '特别备注', '特殊说明'],
   data_entry_feedback: ['增员报岗录入反馈', '数据录入反馈', '报岗录入反馈', '录入反馈', '数据反馈'],
+  position_type: ['岗位类型', '岗位性质', '职位类型'],
+  id_card_type: ['证件类型', '证件种类', '身份证件类型'],
+  education: ['学历', '最高学历', '文化程度'],
+  marital_status: ['婚姻状况', '婚姻情况', '婚否'],
+  probation_other_salary: ['试用期其他工资', '试用期其它工资', '试用期补贴', '试用期津贴'],
+  need_esign: ['是否电子签', '是否电子签署', '是否需要电子签', '电子签'],
+  esign_platform: ['电子签平台', '电子签署平台', '电签平台', '签署平台'],
+  company_address: ['甲方住所', '甲方地址', '甲方注册地址', '公司住所', '用人单位住所'],
+  project_name: ['项目名称', '项目', '所属项目'],
+  work_arrangement: ['安排或调整工作的情况', '工作安排', '安排或调整工作', '可调整工作地点', '工作调整情况'],
+  feedback_deadline: ['反馈截止日期', '需要反馈截止日期', '反馈截止时间', '反馈期限'],
+  is_common_template: ['是否为通用模板', '是否通用模板', '通用模板'],
+  template_name: ['模板名称', '模版名称', '通用模板名称'],
+  social_pay_region: ['缴纳地区', '社保缴纳地区', '参保地区', '社保公积金缴纳地区', '社保公积金缴纳地'],
+  social_stop_month: ['社保公积金停保月', '停保月', '社保停保月', '公积金停保月', '减员月份', '停保月份'],
+  resignation_reason: ['离职原因', '减员原因', '离职事由'],
+  resignation_date: ['离职日期', '离职时间', '减员日期', '减员时间'],
+  need_resignation_share: ['离职材料是否需要共享收集', '离职材料是否需要集约收集', '是否共享收集离职材料', '离职材料共享收集'],
 };
 
 @Injectable()
@@ -95,9 +114,16 @@ export class ImportFieldValidationService {
     @InjectRepository(FieldConfig)
     private readonly fieldConfigRepository: Repository<FieldConfig>,
     private readonly astEvaluator: AstEvaluator,
+    @Optional()
+    private readonly templateConfigService?: ImportTemplateConfigService,
   ) {}
 
   async getActiveFields(orderType: OrderType): Promise<FieldConfig[]> {
+    if (this.templateConfigService) {
+      const { fields } = await this.templateConfigService.resolveFields(orderType);
+      return fields;
+    }
+
     const fields = await this.fieldConfigRepository
       .createQueryBuilder('field')
       .where('field.is_active = true')
@@ -115,9 +141,9 @@ export class ImportFieldValidationService {
     const fields = await this.getActiveFields(orderType);
     return fields.map((field) => ({
       fieldCode: field.fieldCode,
-      fieldName: field.fieldName,
+      fieldName: this.templateHeader(field) || field.fieldName,
       fieldType: field.fieldType,
-      required: field.isRequired || field.defaultRequired,
+      required: this.templateRequiredOverride(field) ?? (field.isRequired || field.defaultRequired),
     }));
   }
 
@@ -126,6 +152,23 @@ export class ImportFieldValidationService {
       return fields;
     }
     return this.applyInferredImportRules(fields);
+  }
+
+  private templateHeader(field: FieldConfig): string | null {
+    const value = (field as FieldConfig & { templateHeader?: string | null }).templateHeader;
+    return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+  }
+
+  private templateRequiredOverride(field: FieldConfig): boolean | null {
+    const value = (field as FieldConfig & { templateRequiredOverride?: boolean | null }).templateRequiredOverride;
+    return typeof value === 'boolean' ? value : null;
+  }
+
+  private hasTemplateConfigMetadata(fields: FieldConfig[]): boolean {
+    return fields.some((field) => {
+      const configured = (field as FieldConfig & { importTemplateConfigured?: boolean }).importTemplateConfigured;
+      return configured === true || this.templateHeader(field) !== null || this.templateRequiredOverride(field) !== null;
+    });
   }
 
   private applyInferredImportRules(fields: FieldConfig[]): FieldConfig[] {
@@ -178,7 +221,7 @@ export class ImportFieldValidationService {
     defaults?: Record<string, unknown>;
     fields: FieldConfig[];
   }): Promise<RowValidationResult> {
-    const fields = this.applyInferredImportRules(input.fields);
+    const fields = this.hasTemplateConfigMetadata(input.fields) ? input.fields : this.applyInferredImportRules(input.fields);
     const mapped = this.mapRow(input.raw, input.mapping, fields, input.defaults ?? {});
     const normalized = mapped.normalized;
     const warnings = mapped.warnings;
@@ -390,6 +433,8 @@ export class ImportFieldValidationService {
   private headerMatchKeys(header: string, field: FieldConfig, includeFieldAliases: boolean): Set<string> {
     const rawCandidates = new Set<string>([header]);
     if (includeFieldAliases) {
+      const templateHeader = this.templateHeader(field);
+      if (templateHeader) rawCandidates.add(templateHeader);
       rawCandidates.add(field.fieldName);
       rawCandidates.add(field.fieldCode);
       field.fieldCode.split('_').forEach((part) => rawCandidates.add(part));

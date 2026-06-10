@@ -27,6 +27,10 @@ class SaveExportTemplateDto {
   @IsOptional()
   @IsBoolean()
   isShared?: boolean;
+
+  @IsOptional()
+  @IsString()
+  signPlatform?: string | null;
 }
 
 class ApplyExportTemplateDto {

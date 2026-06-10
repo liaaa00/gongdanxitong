@@ -101,3 +101,40 @@
 - 验证：`npx jest --config ./test/jest-unit.json --runInBand import-template.service.spec.ts import.service.spec.ts` 通过（2 个测试文件，23 条）；`.\回归测试.ps1 -BackendOnly` 通过（后端 build 成功）。
 - 代码提交：未提交，待 Leader 汇总。
 - 未提交无关文件：`git status --short` 已检查；本次 integration 变更集中在导入模板/导入校验/seed/mock/文档和对应测试，未提交 `.spectrai`、上传 Excel、`frontend/tsconfig.tsbuildinfo`、dist 或临时文件。为运行 integration 后端测试临时创建的 `backend/node_modules` 目录联接未出现在 git status 中，不纳入提交。
+
+## 2026-06-10 · 劳动合同导出按电子签平台自动拆分
+- 用户要求：劳动合同新签有速创/E签宝两套导出模板，点击导出时系统自动识别工单电子签平台并按对应模板导出；批量混选时不能用第一条工单模板套全部数据。
+- 是否覆盖旧规则：否；补齐第 17 节“三套导出模板/电子签平台路由”的批量混合平台场景，保留发起人字段追加、`order_no`/`employee_id_card` 过滤和 `id_card_no` 表头口径。
+- 同步更新规则文档：已更新 `docs/业务规则回归清单.md` 第 17 节，写明劳动合同新签导出按 `extraData.esign_platform` 路由，混合批量按 `moduleCode + esign_platform` 拆分 sheet，非劳动合同模块不参与电子签平台路由。
+- 实现/测试覆盖：`backend/src/modules/admin/export-templates/export-templates.service.ts` 单条导出和批量导出统一走劳动合同平台路由；批量导出从按 `moduleCode` 分组改为按 `moduleCode + signPlatform` 分组，并在操作日志记录 `exportGroups`。劳动合同缺少电子签平台或平台没有对应模板时明确报错，不再兜底到任意一套劳动合同共享模板。劳动合同速创/E签宝固定导出改为读取 `backend/src/assets/export-templates/` 下用户提供的标准 Excel 文件作为底板，在原工作簿中填充数据，保留原 sheet 结构、表头行、隐藏行、合并单元格、隐藏选项 sheet 和样式；后台导出模板配置仍通过 `seed-export-templates.ts` 写入两套共享模板元数据，管理员可看到并编辑“劳动合同签订批导出模板-速创”和“劳动合同签订批导出模板-e签宝”，本轮已将手写字段配置校准到标准 Excel：速创 37 列、E签宝 30 列，去除标准模板不存在的“发起人”列，并修正“身份证号/证件号”表头文案。清理 ExcelJS 无法稳定回写的数据验证规则，避免模板原有超大验证范围导致导出失败。新增 `backend/test/export-template-platform-routing.spec.ts` 覆盖速创/E签宝混选批量导出分别匹配共享模板、按标准模板 sheet 填数、E签宝绑定行隐藏，以及缺失平台时不误导出任意合同模板。
+- 验证：`npx jest --config ./test/jest-unit.json --runInBand export-template-platform-routing.spec.ts` 通过；`npx jest --config ./test/jest-unit.json --runInBand export-template` 通过（4 个测试文件，15 条）；`npx tsc --noEmit -p tsconfig.json` 通过。
+- 代码提交：未提交，待 Leader 汇总。
+- 未提交无关文件：已执行 `git status --short` 检查；工作区存在大量历史/他人无关改动、截图、上传 Excel 和临时文件，本次未清理也不纳入本次说明范围；本次相关文件为导出服务、导出平台路由测试和两份 docs。
+
+## 2026-06-10 · 字段与模板配置中心及导入模板配置入口
+- 用户要求：后台原“办理环节设置 / 表单字段库 / 字段可填设置”过于割裂，不能集中管理系统字段、子工单字段和导入模板；希望按新的“字段与模板配置中心”结构配置，并新增可查看/下载入职、离职导入模板的入口。
+- 是否覆盖旧规则：否；本轮只调整后台配置菜单表达和补齐导入模板配置入口，不改变既有业务数据范围、工单状态、月份口径、导出平台路由或导入校验规则。
+- 同步更新规则文档：未修改 `docs/业务规则回归清单.md`；本次没有新增业务口径，仅在 `docs/AI修改记录.md` 记录实现与验证。
+- 实现/测试覆盖：`BasicLayout` 将后台配置拆为“字段与模板配置”（系统字段库、导入模板配置、子工单字段配置、字段权限配置、导出模板配置）和“流程与派发配置”（负责人派发设置、流程版本配置）；新增 `/admin/import-templates` 路由和管理员权限矩阵；新增 `frontend/src/pages/Admin/ImportTemplates/index.tsx`，按入职/离职查看当前模板字段、必填/条件必填、下拉选项、提示文案，并调用后端真实导入模板下载接口；`frontend/src/services/fields.ts` 兼容后端 `conditionalRequired` 字段；恢复 `/my-work/*` 角色权限常量矩阵，避免后台菜单改动误伤“我的工单”；顶部恢复可见“修改密码”按钮，同时保留用户名下拉改密项。
+- 验证：`frontend` 下 `npx tsc -b --noEmit` 通过；`npm test -- --run src/layouts/BasicLayout.test.tsx src/config/routeVisibility.test.ts` 通过（2 个测试文件，33 条）。
+- 代码提交：未提交，待 Leader 汇总。
+- 未提交无关文件：已执行 `git status --short` 检查；工作区存在大量历史/他人无关改动、截图、上传 Excel、临时脚本和 `frontend/tsconfig.tsbuildinfo`，本次未清理也不纳入本次说明范围；本次相关文件集中在 `BasicLayout`、`routes`、`routeVisibility`、导入模板页面、字段/工单服务和对应测试/记录。
+
+## 2026-06-10 · 导出模板字段来源改为系统字段库
+- 用户要求：导出模板配置弹窗里的“选择导出字段”字段太少，需说明字段来源并按建议改为从系统字段库获取；同时保留导出模板可编辑、可新增空值字段/默认值字段，满足子工单导出模板中存在入职导入模板之外字段的场景。
+- 是否覆盖旧规则：否；本轮只调整导出模板配置页的字段选择来源和前端字段加载方式，不改变劳动合同速创/E签宝平台路由、导出模板保存结构、工单权限、菜单矩阵、状态流或月份口径。
+- 同步更新规则文档：未修改 `docs/业务规则回归清单.md`；本次没有新增业务口径，仅在 `docs/AI修改记录.md` 记录实现与验证。
+- 实现/测试覆盖：`frontend/src/pages/Admin/ExportTemplates/index.tsx` 去除写死的 `FIELD_OPTIONS`/`ALL_FIELDS`，改为调用系统字段库 `getFields()`，按当前适用模块动态分组展示字段；`frontend/src/pages/Admin/ExportTemplates/fieldList.ts` 提供 `buildExportFieldOptions`、模块适用过滤、字段去重、中文名覆盖和导出虚拟字段 `created_by_name/发起人`；保留右侧已选字段编辑、顺序调整、空值列和默认值列能力；`frontend/src/services/fields.ts` 改为分页拉取全部字段，避免系统字段超过 100 条时仍缺字段；`fieldList.test.ts` 新增动态字段来源、发起人虚拟字段、模块过滤、停用字段过滤和“证件号码”名称覆盖测试。
+- 验证：`frontend` 下 `npx tsc -b --noEmit` 通过；`npm test -- --run src/pages/Admin/ExportTemplates/fieldList.test.ts` 通过（1 个测试文件，6 条）；`npm test -- --run src/layouts/BasicLayout.test.tsx src/config/routeVisibility.test.ts src/pages/Admin/ExportTemplates/fieldList.test.ts` 通过（3 个测试文件，39 条）。
+- 代码提交：未提交，待 Leader 汇总。
+- 未提交无关文件：已执行 `git status --short` 检查；工作区存在大量历史/他人无关改动、截图、上传 Excel、临时脚本和 `frontend/tsconfig.tsbuildinfo`，本次未清理也不纳入本次说明范围；本次相关文件为导出模板页面、字段工具、字段服务、导出模板字段测试和本记录。
+
+## 2026-06-10 · 导入模板改为真正字段配置表
+- 用户要求：导入模板页面不能只是查看和下载，应改为真正的导入模板字段配置表，可配置字段、顺序、表头和必填覆盖，并用于导入。
+- 是否覆盖旧规则：否；保留入职导入排除 `contract_feedback`、`onboarding_feedback`、`data_entry_feedback`、`contract_template` 以及离职减员表默认字段口径，只把字段来源改为配置表优先。
+- 同步更新规则文档：已更新 `docs/业务规则回归清单.md` 第 17 节，明确 `import_template_fields` 配置表优先，下载、预览候选字段、确认校验必须同源读取。
+- 实现/测试覆盖：新增 `ImportTemplateField` 实体和 `CreateImportTemplateFields` 迁移；新增 `ImportTemplateConfigService`，导入模板下载、导入预览候选字段、导入确认校验都优先读取配置表；新增管理员接口 `GET/PUT /work-orders/import/template-config` 和 `GET /work-orders/import/template-config/available-fields`；前端新增 `services/importTemplates.ts`，后台“导入模板配置”改为可保存配置表，支持添加/移除字段、排序、Excel 表头别名、必填覆盖、下载当前模板。
+- 追加调整：按用户要求将 `email / 电子邮件` 字段扩展到离职业务域，新增迁移更新既有库 `field_configs.business_context`，并同步前端 mock 的 `business_context` 过滤，确保离职导入模板配置页可搜索并添加邮箱字段。
+- 验证：`backend` 下 `npx jest --config ./test/jest-unit.json --runInBand import-template-config.service.spec.ts import-template.service.spec.ts import.service.spec.ts` 通过（3 个测试文件，30 条）；`backend` 下 `npx tsc --noEmit -p tsconfig.json` 通过；追加后 `backend` 下 `npx jest --config ./test/jest-unit.json --runInBand import-template-config.service.spec.ts` 通过；`frontend` 下 `npm test -- --run src/pages/Admin/ImportTemplates/index.test.tsx` 通过（1 个测试文件，3 条）；`frontend` 下 `npx tsc -b --noEmit` 通过；`frontend` 下 `npm test -- --run src/layouts/BasicLayout.test.tsx src/config/routeVisibility.test.ts src/pages/Admin/ImportTemplates/index.test.tsx` 通过（3 个测试文件，36 条）。
+- 代码提交：未提交，待 Leader 汇总。
+- 未提交无关文件：待提交前检查；工作区已有大量历史/他人无关改动、截图、上传 Excel 和临时文件，本次不清理不纳入提交范围。

@@ -21,11 +21,12 @@ const ORDER_TYPE_LABEL: Record<SupportedOrderType, string> = {
 
 const CONDITIONAL_REQUIRED_BY_TYPE: Record<SupportedOrderType, ConditionalRequired[]> = {
   onboarding: [
-    { field: 'need_company_contract', value: '是', requireFields: ['contract_subject', 'contract_template', 'need_contract_urge'] },
+    { field: 'need_company_contract', value: '是', requireFields: ['need_esign', 'esign_platform', 'contract_subject', 'company_address', 'project_name', 'work_arrangement', 'contract_template', 'need_contract_urge'] },
     { field: 'need_company_payroll', value: '是', requireFields: ['payroll_location'] },
+    { field: 'is_common_template', value: '是', requireFields: ['template_name'] },
   ],
   resignation: [
-    { field: 'need_resignation_cert', value: '是', requireFields: ['cert_delivery_address'] },
+    { field: 'is_common_template', value: '是', requireFields: ['template_name'] },
   ],
 };
 

@@ -42,6 +42,7 @@ const AdminCustomers = lazy(() => import('@/pages/Admin/Customers'));
 const AdminModuleConfig = lazy(() => import('@/pages/Admin/ModuleConfig'));
 const AdminFields = lazy(() => import('@/pages/Admin/Fields'));
 const AdminFieldPermissions = lazy(() => import('@/pages/Admin/FieldPermissions'));
+const AdminImportTemplates = lazy(() => import('@/pages/Admin/ImportTemplates'));
 const AdminDispatchConfig = lazy(() => import('@/pages/Admin/DispatchConfig'));
 const AdminWorkflows = lazy(() => import('@/pages/Admin/Workflows'));
 const AdminWorkflowEditor = lazy(() => import('@/pages/Admin/Workflows/Editor'));
@@ -78,7 +79,10 @@ const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   }, [isLoggedIn, user, location.pathname, loading, fetchUser]);
 
   if (!isLoggedIn) return <Navigate to="/login" replace />;
-  if (!user || loading) return <Loading />;
+  // 仅在「尚无用户、首次阻塞加载」时显示全屏 Loading；
+  // 已有用户时的后台重校验（visibilitychange/storage/切菜单触发的 /auth/me）
+  // 不得卸载整个布局，否则会销毁 KeepAliveOutlet 缓存导致页面状态丢失。
+  if (!user) return <Loading />;
 
   // ★ 首登强制改密：拦截所有非改密页路由
   const path = window.location.pathname;
@@ -170,8 +174,9 @@ const AppRoutes: React.FC = () => (
           <Route path="roles" element={<RouteGuard moduleName="角色管理"><AdminRoles /></RouteGuard>} />
           <Route path="departments" element={<RouteGuard moduleName="部门管理"><AdminDepartments /></RouteGuard>} />
           <Route path="customers" element={<RouteGuard moduleName="客户管理"><AdminCustomers /></RouteGuard>} />
-          <Route path="module-config" element={<RouteGuard moduleName="模块化配置"><AdminModuleConfig /></RouteGuard>} />
           <Route path="fields" element={<RouteGuard moduleName="表单字段管理"><AdminFields /></RouteGuard>} />
+          <Route path="import-templates" element={<RouteGuard moduleName="导入模板配置"><AdminImportTemplates /></RouteGuard>} />
+          <Route path="module-config" element={<RouteGuard moduleName="模块化配置"><AdminModuleConfig /></RouteGuard>} />
           <Route path="field-permissions" element={<RouteGuard moduleName="字段填写权限"><AdminFieldPermissions /></RouteGuard>} />
           <Route path="dispatch-config" element={<RouteGuard moduleName="派发配置"><AdminDispatchConfig /></RouteGuard>} />
           <Route path="workflows" element={<RouteGuard moduleName="工单流程配置"><AdminWorkflows /></RouteGuard>} />

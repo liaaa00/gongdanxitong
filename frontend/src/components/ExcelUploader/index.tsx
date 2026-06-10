@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import {
   Upload, Button, Table, Select, Alert, Space, Progress, Steps, Card,
   Tag, Badge, Tooltip, Collapse, Typography, Descriptions, App,
-  Modal, Form, Input, Switch,
+  Modal, Form, Input, Switch, Popconfirm,
 } from 'antd';
 import {
   InboxOutlined, FileExcelOutlined, CheckCircleOutlined,
@@ -445,7 +445,20 @@ function ExcelUploader({ onPreview, onConfirm, onPollJob, onDownloadErrorReport 
 
 
   return (
-    <Card title="批量导入工单">
+    <Card
+      title="批量导入工单"
+      extra={step > 0 ? (
+        <Popconfirm
+          title="重新开始？"
+          description="将清空当前已上传文件与映射等内容，回到上传步骤。"
+          okText="清空重来"
+          cancelText="取消"
+          onConfirm={handleReset}
+        >
+          <Button size="small" icon={<ReloadOutlined />}>重新开始</Button>
+        </Popconfirm>
+      ) : undefined}
+    >
       <Steps
         current={step}
         items={[

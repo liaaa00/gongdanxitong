@@ -306,4 +306,39 @@ describe('ImportFieldValidationService scenarios', () => {
     expect(result.ok).toBe(false);
     expect(result.errors).toContainEqual(expect.objectContaining({ fieldCode: 'household_address', reason: 'required' }));
   });
+
+  it('uses import template configuration for candidate fields and row validation', async () => {
+    const configuredFields = [
+      field({ fieldCode: 'employee_name', fieldName: '姓名', isRequired: true }),
+      field({ fieldCode: 'feedback_deadline', fieldName: '反馈截止日期', fieldType: FieldType.DATE, conditionalRequired: needsOnboardingContact }),
+      field({ fieldCode: 'is_common_template', fieldName: '是否为通用模板', fieldType: FieldType.DROPDOWN, dropdownOptions: ['是', '否'], conditionalRequired: needsOnboardingContact }),
+    ].map((item) => {
+      if (item.fieldCode === 'feedback_deadline') {
+        return { ...item, templateHeader: '回传截止日', templateRequiredOverride: false, isRequired: false, defaultRequired: false } as FieldConfig;
+      }
+      return item;
+    });
+    const templateConfigService = {
+      resolveFields: jest.fn().mockResolvedValue({ fields: configuredFields, configured: [] }),
+    };
+    const configuredService = new ImportFieldValidationService({} as never, new AstEvaluator(), templateConfigService as never);
+
+    const candidates = await configuredService.buildCandidateFields(OrderType.ONBOARDING);
+    expect(candidates).toContainEqual(expect.objectContaining({ fieldCode: 'feedback_deadline', fieldName: '回传截止日', required: false }));
+
+    const result = await configuredService.validateRow({
+      rowNo: 16,
+      raw: { 姓名: '王十二', 回传截止日: '', 是否为通用模板: '' },
+      mapping: [
+        { header: '姓名', fieldCode: 'employee_name' },
+        { header: '反馈截止日期', fieldCode: 'feedback_deadline' },
+        { header: '是否为通用模板', fieldCode: 'is_common_template' },
+      ],
+      fields: configuredFields,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.errors).toHaveLength(0);
+    expect(result.warnings.some((item) => item.code === 'header_alias' && item.normalizedValue === '回传截止日')).toBe(true);
+  });
 });

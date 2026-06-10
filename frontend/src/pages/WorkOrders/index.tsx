@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useMemo, useState } from 'react';
-import dayjs, { type Dayjs } from 'dayjs';
+import { type Dayjs } from 'dayjs';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { PageContainer } from '@ant-design/pro-components';
 import type { ProColumns } from '@ant-design/pro-components';
@@ -15,7 +15,7 @@ import { ROLE } from '@/constants/roles';
 import { getModuleLabel } from '@/constants/modules';
 import { WORK_ORDER_STATUS_CODES, getStatusColor, getStatusText } from '@/constants/dictionaries';
 import { isPhase1VisibleOrderType } from '@/utils/moduleAccess';
-import { getCachedListPageState, getCachedMonth, toMonthKey, updateCachedListPageState } from '@/utils/listPageState';
+import { getCachedListPageState, getCachedMonthOrNull, toMonthKey, updateCachedListPageState } from '@/utils/listPageState';
 
 const RefButton = forwardRef<HTMLButtonElement, React.ComponentProps<typeof Button>>((props, ref) => (
   <Button ref={ref} {...props} />
@@ -32,11 +32,11 @@ const ORDER_TYPE_OPTIONS = [
 ];
 const ORDER_TYPE_MAP = Object.fromEntries(ORDER_TYPE_OPTIONS.map((item) => [item.value, item.label]));
 
-function getMonthRange(value?: Dayjs | null): { createdAfter: string; createdBefore: string } {
-  const selected = value && value.isValid() ? value : dayjs();
+function getMonthRange(value?: Dayjs | null): { createdAfter: string; createdBefore: string } | undefined {
+  if (!value || !value.isValid()) return undefined;
   return {
-    createdAfter: selected.startOf('month').toISOString(),
-    createdBefore: selected.endOf('month').toISOString(),
+    createdAfter: value.startOf('month').toISOString(),
+    createdBefore: value.endOf('month').toISOString(),
   };
 }
 
@@ -164,7 +164,7 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
   const currentOrderType = useMemo(() => new URLSearchParams(location.search).get('orderType') || undefined, [location.search]);
   const pageStateKey = isInitiatedPage ? 'my-work-initiated' : `work-orders-${currentOrderType || 'all'}`;
   const cachedPageState = getCachedListPageState(pageStateKey);
-  const [month, setMonth] = useState<Dayjs | null>(() => getCachedMonth(pageStateKey));
+  const [month, setMonth] = useState<Dayjs | null>(() => getCachedMonthOrNull(pageStateKey));
   const currentOrderTypeLabel = currentOrderType === 'resignation' ? '离职' : currentOrderType === 'onboarding' ? '入职' : '';
   const modulePrefix = currentOrderTypeLabel || '';
   const canDelete = !isInitiatedPage && isAdmin;
@@ -185,7 +185,7 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
   }, [location.search]);
 
   useEffect(() => {
-    setMonth(getCachedMonth(pageStateKey));
+    setMonth(getCachedMonthOrNull(pageStateKey));
   }, [pageStateKey]);
 
   useEffect(() => {
@@ -361,7 +361,7 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
     const query: Record<string, unknown> = {
       ...urlFilters,
       ...params,
-      ...monthRange,
+      ...(monthRange || {}),
       orderNo: params.orderNo || params.order_no || urlFilters.orderNo,
       customerCode: params.customerCode || params.customer_code || urlFilters.customerCode,
       customerName: params.customerName || params.customer_name || urlFilters.customerName,
@@ -399,12 +399,12 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
             <span>工单月份：</span>
             <DatePicker
               picker="month"
-              allowClear={false}
+              allowClear
+              placeholder="全部月份"
               value={month}
               onChange={(value) => {
-                const nextMonth = value || dayjs();
-                setMonth(nextMonth);
-                updateCachedListPageState(pageStateKey, { month: toMonthKey(nextMonth), current: 1 });
+                setMonth(value);
+                updateCachedListPageState(pageStateKey, { month: value ? toMonthKey(value) : '', current: 1 });
                 setRefreshKey((current) => current + 1);
               }}
             />

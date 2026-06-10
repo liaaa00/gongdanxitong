@@ -5,6 +5,7 @@ import {
   updateCachedListPageState,
   clearCachedListPageState,
   getCachedMonth,
+  getCachedMonthOrNull,
   toMonthKey,
   normalizeCachedFilters,
   applyCachedColumnFilters,
@@ -150,6 +151,24 @@ describe('listPageState', () => {
       updateCachedListPageState('bad-month', { month: 'not-a-date' });
       const month = getCachedMonth('bad-month');
       expect(month.isValid()).toBe(true);
+    });
+  });
+
+  describe('getCachedMonthOrNull', () => {
+    it('returns null when no cached month exists', () => {
+      expect(getCachedMonthOrNull('no-month-null')).toBeNull();
+    });
+
+    it('returns cached month as dayjs when present', () => {
+      updateCachedListPageState('month-null-test', { month: '2026-03' });
+      const month = getCachedMonthOrNull('month-null-test');
+      expect(month?.format('YYYY-MM')).toBe('2026-03');
+      expect(month?.isValid()).toBe(true);
+    });
+
+    it('returns null when cached month is invalid', () => {
+      updateCachedListPageState('bad-month-null', { month: 'not-a-date' });
+      expect(getCachedMonthOrNull('bad-month-null')).toBeNull();
     });
   });
 

@@ -1,6 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Workbook } from 'exceljs';
+import { Workbook, Worksheet } from 'exceljs';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { Repository } from 'typeorm';
 import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 import { toPageResult } from 'src/common/types/pagination.types';
@@ -16,6 +18,18 @@ interface ExportColumn {
   order: number;
 }
 
+interface RichExportColumn {
+  kind: 'field' | 'const' | 'sameAs' | 'formula';
+  valueCode: string;
+  constValue: string;
+  formulaTemplate: string;
+  numFmt: string;
+  dropdownOptions: string[];
+  headers: string[];
+  publicTitle: string;
+  order: number;
+}
+
 export interface ExportTemplateView {
   id: string;
   templateName: string;
@@ -23,6 +37,7 @@ export interface ExportTemplateView {
   fieldList: Array<Record<string, unknown>>;
   createdBy: string;
   isShared: boolean;
+  signPlatform: string | null;
   createdAt: Date;
 }
 
@@ -71,6 +86,7 @@ export class ExportTemplatesService {
     fieldList: Array<Record<string, unknown>>;
     createdBy: string;
     isShared?: boolean;
+    signPlatform?: string | null;
   }): Promise<ExportTemplateView> {
     const fieldNameMap = await this.loadFieldNameMap();
     const saved = await this.repository.save(this.repository.create({
@@ -79,14 +95,20 @@ export class ExportTemplatesService {
       fieldList: this.normalizeFieldList(input.fieldList, fieldNameMap),
       createdBy: input.createdBy,
       isShared: input.isShared ?? false,
+      signPlatform: this.normalizeSignPlatform(input.signPlatform),
     }));
     return this.toTemplateView(saved, fieldNameMap);
   }
 
-  async update(id: string, input: Partial<{ templateName: string; moduleCode: string; fieldList: Array<Record<string, unknown>>; isShared: boolean }>): Promise<ExportTemplateView> {
+  async update(id: string, input: Partial<{ templateName: string; moduleCode: string; fieldList: Array<Record<string, unknown>>; isShared: boolean; signPlatform: string | null }>): Promise<ExportTemplateView> {
     const row = await this.loadTemplate(id);
     const fieldNameMap = await this.loadFieldNameMap();
-    Object.assign(row, input, input.fieldList ? { fieldList: this.normalizeFieldList(input.fieldList, fieldNameMap) } : {});
+    Object.assign(
+      row,
+      input,
+      input.fieldList ? { fieldList: this.normalizeFieldList(input.fieldList, fieldNameMap) } : {},
+      input.signPlatform !== undefined ? { signPlatform: this.normalizeSignPlatform(input.signPlatform) } : {},
+    );
     return this.toTemplateView(await this.repository.save(row), fieldNameMap);
   }
 
@@ -111,12 +133,12 @@ export class ExportTemplatesService {
   async exportSingleDispatchedOrder(dispatchedOrderId: string, templateId: string | undefined, user: JwtUserPayload): Promise<DispatchedOrderExportResult> {
     const order = await this.dispatchedOrderRepository.findOne({
       where: { id: dispatchedOrderId },
-      relations: { parentOrder: true, handler: true },
+      relations: { parentOrder: { creator: true }, handler: true },
     });
     if (!order) throw new NotFoundException('子工单未找到');
     const template = templateId
       ? await this.loadTemplate(templateId)
-      : await this.resolveDefaultTemplate(order.moduleCode, order.visibleFields ?? []);
+      : await this.resolveDefaultTemplate(order.moduleCode, order.visibleFields ?? [], this.resolveTemplateRouteSignPlatform(order));
     if (template.moduleCode !== order.moduleCode) throw new NotFoundException('该模块下未找到导出模板');
     return this.applyTemplateToOrders(template, [order], [dispatchedOrderId], user, 'dispatched_order');
   }
@@ -128,25 +150,37 @@ export class ExportTemplatesService {
 
     const orders = await this.loadOrdersByIds(ids);
     const fieldNameMap = await this.loadFieldNameMap();
-    const workbook = new Workbook();
+    const fieldOptionsMap = await this.loadFieldOptionsMap();
+    let workbook = new Workbook();
     const usedSheetNames = new Set<string>();
     let rowCount = 0;
-    const grouped = new Map<string, DispatchedOrder[]>();
+    const grouped = new Map<string, { moduleCode: string; signPlatform: string | null; orders: DispatchedOrder[] }>();
     for (const order of orders) {
-      const list = grouped.get(order.moduleCode) ?? [];
-      list.push(order);
-      grouped.set(order.moduleCode, list);
+      const moduleCode = order.moduleCode;
+      const signPlatform = this.resolveTemplateRouteSignPlatform(order);
+      const groupKey = `${moduleCode}::${signPlatform ?? ''}`;
+      const group = grouped.get(groupKey) ?? { moduleCode, signPlatform, orders: [] };
+      group.orders.push(order);
+      grouped.set(groupKey, group);
     }
 
-    for (const [moduleCode, moduleOrders] of grouped.entries()) {
+    for (const { moduleCode, signPlatform, orders: moduleOrders } of grouped.values()) {
       const visibleFields = Array.from(new Set(moduleOrders.flatMap((order) => order.visibleFields ?? [])));
-      const template = await this.resolveDefaultTemplate(moduleCode, visibleFields);
+      const template = await this.resolveDefaultTemplate(moduleCode, visibleFields, signPlatform);
       const result = this.buildResult(template, moduleOrders, fieldNameMap);
       rowCount += result.rowCount ?? result.rows.length;
-      const worksheet = workbook.addWorksheet(this.uniqueSheetName(template.templateName || moduleCode, usedSheetNames));
-      worksheet.columns = result.columns.map((column) => ({ header: column.title, key: column.title, width: Math.min(Math.max(column.title.length + 6, 12), 32) }));
-      worksheet.getRow(1).font = { bold: true };
-      result.rows.forEach((row) => worksheet.addRow(row));
+      const standardWorkbook = await this.tryBuildStandardTemplateWorkbook(template, moduleOrders);
+      if (standardWorkbook) {
+        workbook = await this.appendWorkbookSheets(workbook, standardWorkbook, usedSheetNames, template.templateName || moduleCode);
+      } else {
+        this.writeWorksheet(
+          workbook,
+          this.uniqueSheetName(template.templateName || moduleCode, usedSheetNames),
+          this.resolveRichColumns(template, fieldNameMap, fieldOptionsMap),
+          moduleOrders,
+          template.signPlatform ?? signPlatform ?? null,
+        );
+      }
     }
 
     const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
@@ -156,16 +190,22 @@ export class ExportTemplatesService {
       originalName: `子工单批量导出-${Date.now()}.xlsx`,
       mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });
+    const exportGroups = Array.from(grouped.values()).map(({ moduleCode, signPlatform, orders: groupOrders }) => ({
+      moduleCode,
+      signPlatform,
+      count: groupOrders.length,
+    }));
+    const moduleCodes = Array.from(new Set(exportGroups.map((group) => group.moduleCode)));
     await this.operationLogRepository.save(this.operationLogRepository.create({
       entityType: 'dispatched_order',
       entityId: ids[0],
       userId: user.sub,
       actionType: 'batch_export_auto_template',
       beforeData: null,
-      afterData: { dispatchedOrderIds: ids, fileId: meta.fileId, rowCount, moduleCodes: Array.from(grouped.keys()) },
+      afterData: { dispatchedOrderIds: ids, fileId: meta.fileId, rowCount, moduleCodes, exportGroups },
       ipAddress: null,
     }));
-    return { templateId: null, templateName: '子工单批量导出', moduleCode: grouped.size === 1 ? Array.from(grouped.keys())[0] : 'mixed', columns: [], rows: [], rowCount, fileId: meta.fileId, fileName: meta.originalName, downloadUrl: `/api/files/${meta.fileId}` };
+    return { templateId: null, templateName: '子工单批量导出', moduleCode: moduleCodes.length === 1 ? moduleCodes[0] : 'mixed', columns: [], rows: [], rowCount, fileId: meta.fileId, fileName: meta.originalName, downloadUrl: `/api/files/${meta.fileId}` };
   }
 
   private async applyTemplateToOrders(
@@ -175,12 +215,14 @@ export class ExportTemplatesService {
     user: JwtUserPayload,
     entityType: 'export_template' | 'dispatched_order',
   ): Promise<DispatchedOrderExportResult> {
-    const result = this.buildResult(template, orders, await this.loadFieldNameMap());
-    const workbook = new Workbook();
-    const worksheet = workbook.addWorksheet(template.templateName);
-    worksheet.columns = result.columns.map((column) => ({ header: column.title, key: column.title, width: Math.min(Math.max(column.title.length + 6, 12), 32) }));
-    worksheet.getRow(1).font = { bold: true };
-    result.rows.forEach((row) => worksheet.addRow(row));
+    const fieldNameMap = await this.loadFieldNameMap();
+    const fieldOptionsMap = await this.loadFieldOptionsMap();
+    const exportTemplate = { ...template, fieldList: this.prepareExportFieldList(template.fieldList ?? []) } as ExportTemplate;
+    const result = this.buildResult(exportTemplate, orders, fieldNameMap);
+    const workbook = await this.tryBuildStandardTemplateWorkbook(exportTemplate, orders) ?? new Workbook();
+    if (workbook.worksheets.length === 0) {
+      this.writeWorksheet(workbook, exportTemplate.templateName, this.resolveRichColumns(exportTemplate, fieldNameMap, fieldOptionsMap), orders, exportTemplate.signPlatform ?? null);
+    }
     const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
     const meta = await this.uploadService.saveBuffer({
       kind: 'excel',
@@ -205,6 +247,7 @@ export class ExportTemplatesService {
     const orders = await this.dispatchedOrderRepository
       .createQueryBuilder('d')
       .leftJoinAndSelect('d.parentOrder', 'w')
+      .leftJoinAndSelect('w.creator', 'creator')
       .leftJoinAndSelect('d.handler', 'h')
       .where('d.id IN (:...ids)', { ids })
       .orderBy('d.created_at', 'ASC')
@@ -231,6 +274,7 @@ export class ExportTemplatesService {
     const orders = await this.dispatchedOrderRepository
       .createQueryBuilder('d')
       .leftJoinAndSelect('d.parentOrder', 'w')
+      .leftJoinAndSelect('w.creator', 'creator')
       .leftJoinAndSelect('d.handler', 'h')
       .where('d.id IN (:...ids)', { ids })
       .andWhere('d.module_code = :moduleCode', { moduleCode })
@@ -240,26 +284,45 @@ export class ExportTemplatesService {
     return orders;
   }
 
-  private async resolveDefaultTemplate(moduleCode: string, visibleFields: string[]): Promise<ExportTemplate> {
-    const shared = await this.repository.findOne({ where: { moduleCode, isShared: true }, order: { createdAt: 'DESC' } });
+  private async resolveDefaultTemplate(moduleCode: string, visibleFields: string[], signPlatform?: string | null): Promise<ExportTemplate> {
+    const platform = this.normalizeSignPlatform(signPlatform);
+    let shared: ExportTemplate | null = null;
+    if (moduleCode === 'contract') {
+      if (!platform) {
+        throw new BadRequestException('劳动合同子工单缺少电子签平台，无法自动匹配速创/E签宝导出模板');
+      }
+      shared = await this.repository.findOne({ where: { moduleCode, isShared: true, signPlatform: platform }, order: { createdAt: 'DESC' } });
+      if (!shared) {
+        throw new BadRequestException(`未找到电子签平台“${platform}”对应的劳动合同导出模板，请先重启后端或执行 seed 同步后台导出模板配置`);
+      }
+    } else {
+      shared = await this.repository.findOne({ where: { moduleCode, isShared: true }, order: { createdAt: 'DESC' } });
+    }
     if (shared) {
-      shared.fieldList = this.ensureImportIdentityColumns(shared.fieldList);
+      shared.fieldList = this.prepareExportFieldList(shared.fieldList);
       return shared;
     }
-    const fieldList = this.ensureImportIdentityColumns(visibleFields.map((fieldCode, order) => ({ fieldCode, order: order + 10 })));
-    return this.repository.create({ id: '', templateName: `${moduleCode}-default`, moduleCode, fieldList, createdBy: '', isShared: false });
+    const fieldList = this.prepareExportFieldList(visibleFields.map((fieldCode, order) => ({ fieldCode, order: order + 10 })));
+    return this.repository.create({ id: '', templateName: `${moduleCode}-default`, moduleCode, fieldList, createdBy: '', isShared: false, signPlatform: null });
+  }
+
+  private readonly exportExcludedFieldCodes = new Set(['order_no', 'employee_id_card']);
+
+  private prepareExportFieldList(fieldList: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+    const normalized = fieldList
+      .filter((item) => !this.exportExcludedFieldCodes.has(this.resolveFieldCode(item)))
+      .map((item, index) => ({ ...item, order: this.readNumber(item.order) ?? index + 10 }));
+    const hasCreator = normalized.some((item) => this.resolveFieldCode(item) === 'created_by_name');
+    if (hasCreator) return normalized;
+    const maxOrder = normalized.reduce((max, item, index) => Math.max(max, this.readNumber(item.order) ?? index + 1), 0);
+    return [
+      ...normalized,
+      { fieldCode: 'created_by_name', alias: '发起人', header: ['发起人'], order: maxOrder + 1 },
+    ];
   }
 
   private ensureImportIdentityColumns(fieldList: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
-    const identityColumns: Array<Record<string, unknown>> = [
-      { fieldCode: 'order_no', alias: '工单编号', order: 0 },
-      { fieldCode: 'employee_id_card', alias: '员工证件号', order: 1 },
-    ];
-    const existed = new Set(fieldList.map((item) => this.resolveFieldCode(item)));
-    return [
-      ...identityColumns.filter((item) => !existed.has(String(item.fieldCode))),
-      ...fieldList.map((item, index) => ({ ...item, order: this.readNumber(item.order) ?? index + 10 })),
-    ];
+    return this.prepareExportFieldList(fieldList);
   }
 
   private buildResult(
@@ -267,17 +330,372 @@ export class ExportTemplatesService {
     orders: DispatchedOrder[],
     fieldNameMap: Map<string, string>,
   ): DispatchedOrderExportResult {
-    const columns = this.resolveColumns(template, fieldNameMap);
+    const exportTemplate = { ...template, fieldList: this.prepareExportFieldList(template.fieldList ?? []) } as ExportTemplate;
+    const rich = this.resolveRichColumns(exportTemplate, fieldNameMap);
+    const columns = rich.map((column) => ({ fieldCode: column.valueCode, title: column.publicTitle, order: column.order }));
     const rows = orders.map((order) => {
       const row: Record<string, unknown> = {};
-      for (const column of columns) row[column.title] = this.renderExportValue(column.fieldCode, order);
+      for (const column of rich) row[column.publicTitle] = this.renderRichValue(column, order);
       return row;
     });
     return { templateId: template.id || null, templateName: template.templateName, moduleCode: template.moduleCode, columns, rows, rowCount: rows.length };
   }
 
-  private resolveColumns(template: ExportTemplate, fieldNameMap: Map<string, string>): ExportColumn[] {
+  private resolveRichColumns(
+    template: ExportTemplate,
+    fieldNameMap: Map<string, string>,
+    fieldOptionsMap?: Map<string, string[]>,
+  ): RichExportColumn[] {
     return template.fieldList
+      .map((item, index) => {
+        const order = this.readNumber(item.order) ?? index;
+        const hasConst = Object.prototype.hasOwnProperty.call(item, 'const');
+        const sameAsCode = this.readString(item.sameAs);
+        const formulaTemplate = this.readString(item.formula);
+        const fieldCode = this.resolveFieldCode(item);
+        let kind: RichExportColumn['kind'] = 'field';
+        let valueCode = fieldCode;
+        let constValue = '';
+        if (formulaTemplate) {
+          kind = 'formula';
+          valueCode = fieldCode;
+        } else if (hasConst && !fieldCode) {
+          kind = 'const';
+          constValue = this.readString(item.const) ?? '';
+        } else if (sameAsCode) {
+          kind = 'sameAs';
+          valueCode = sameAsCode;
+        }
+        const numFmt = this.readString(item.numFmt) ?? '';
+        const dropdownOptions = this.resolveDropdownOptions(item, kind, valueCode, fieldOptionsMap);
+        const rawTitle = this.readString(item.alias) ?? this.readString(item.title) ?? '';
+        const primaryTitle = kind === 'const'
+          ? (rawTitle || constValue)
+          : (this.shouldUseFallbackTitle(rawTitle, valueCode) ? this.resolveFieldTitle(valueCode, fieldNameMap) : rawTitle);
+        const explicitHeaders = this.toHeaderArray(item.header);
+        const headers = explicitHeaders.length > 0 ? explicitHeaders : [primaryTitle];
+        const publicTitle = headers.find((header) => header.length > 0) ?? primaryTitle;
+        return { kind, valueCode, constValue, formulaTemplate: formulaTemplate ?? '', numFmt, dropdownOptions, headers, publicTitle, order };
+      })
+      .filter((column) => column.kind === 'const' || column.valueCode.length > 0)
+      .sort((left, right) => left.order - right.order);
+  }
+
+  // 下拉选项来源优先级：① 列配置显式 options/dropdownOptions ② 字段配置 FieldConfig.dropdownOptions。
+  // 公式列、const 列不加下拉；无权威 options 的列不加下拉（不猜平台私有选项）。
+  private resolveDropdownOptions(
+    item: Record<string, unknown>,
+    kind: RichExportColumn['kind'],
+    valueCode: string,
+    fieldOptionsMap?: Map<string, string[]>,
+  ): string[] {
+    if (kind === 'formula' || kind === 'const') return [];
+    const explicit = this.toOptionArray(item.options) ?? this.toOptionArray(item.dropdownOptions);
+    if (explicit) return explicit;
+    if (valueCode && fieldOptionsMap) {
+      const fromField = fieldOptionsMap.get(valueCode);
+      if (fromField && fromField.length > 0) return fromField;
+    }
+    return [];
+  }
+
+  private toOptionArray(value: unknown): string[] | null {
+    if (!Array.isArray(value)) return null;
+    const options = value
+      .map((entry) => (entry === null || entry === undefined ? '' : String(entry)))
+      .filter((entry) => entry.length > 0);
+    return options.length > 0 ? options : null;
+  }
+
+  private renderRichValue(column: RichExportColumn, order: DispatchedOrder): unknown {
+    if (column.kind === 'const') return column.constValue;
+    return this.renderExportValue(column.valueCode, order);
+  }
+
+  private columnLetter(index: number): string {
+    let n = index + 1;
+    let letter = '';
+    while (n > 0) {
+      const rem = (n - 1) % 26;
+      letter = String.fromCharCode(65 + rem) + letter;
+      n = Math.floor((n - 1) / 26);
+    }
+    return letter;
+  }
+
+  // 公式占位符 {code} 解析：模板内有对应业务列 → 替换为同行单元格引用（如 A5）；
+  // 无对应列 → 从当前订单取值，作为带引号的字符串字面量写入（双引号转义为成对引号）。
+  private buildFieldCellMap(columns: RichExportColumn[]): Map<string, string> {
+    const map = new Map<string, string>();
+    columns.forEach((column, index) => {
+      if (column.kind === 'formula') return;
+      const code = column.valueCode;
+      if (code && !map.has(code)) map.set(code, this.columnLetter(index));
+    });
+    return map;
+  }
+
+  private resolveFormula(
+    template: string,
+    fieldCellMap: Map<string, string>,
+    rowNo: number,
+    order: DispatchedOrder,
+  ): string {
+    return template.replace(/\{(\w+)\}/g, (_match, code: string) => {
+      const letter = fieldCellMap.get(code);
+      if (letter) return `${letter}${rowNo}`;
+      const value = this.renderExportValue(code, order);
+      const text = value === null || value === undefined ? '' : String(value);
+      return `"${text.replace(/"/g, '""')}"`;
+    });
+  }
+
+  private toHeaderArray(value: unknown): string[] {
+    if (Array.isArray(value)) {
+      return value.map((item) => (item === null || item === undefined ? '' : String(item)));
+    }
+    const text = this.readString(value);
+    return text ? [text] : [];
+  }
+
+  private padHeaders(headers: string[], count: number): string[] {
+    if (headers.length >= count) return headers;
+    return [...headers, ...Array(count - headers.length).fill('')];
+  }
+
+  private async tryBuildStandardTemplateWorkbook(template: ExportTemplate, orders: DispatchedOrder[]): Promise<Workbook | null> {
+    const fileName = this.resolveStandardTemplateFileName(template);
+    if (!fileName) return null;
+    const workbook = new Workbook();
+    await workbook.xlsx.readFile(this.resolveStandardTemplatePath(fileName));
+    const worksheet = workbook.worksheets.find((sheet) => sheet.state === 'visible') ?? workbook.worksheets[0];
+    if (!worksheet) return workbook;
+    const platform = this.normalizeSignPlatform(template.signPlatform);
+    for (const sheet of workbook.worksheets) this.clearWorksheetDataValidations(sheet);
+    const dataStartRow = platform === 'E签宝' ? 5 : 4;
+    const columns = this.resolveRichColumns(
+      { ...template, fieldList: this.prepareStandardTemplateFieldList(template.fieldList ?? []) } as ExportTemplate,
+      new Map(),
+    ).slice(0, worksheet.columnCount);
+    this.fillStandardTemplateWorksheet(worksheet, columns, orders, dataStartRow);
+    return workbook;
+  }
+
+  private clearWorksheetDataValidations(worksheet: Worksheet): void {
+    const model = (worksheet as unknown as { dataValidations?: { model?: Record<string, unknown> } }).dataValidations?.model;
+    if (model) {
+      for (const key of Object.keys(model)) {
+        delete (worksheet.getCell(key) as unknown as { dataValidation?: unknown }).dataValidation;
+        delete model[key];
+      }
+    }
+  }
+
+  private resolveStandardTemplateFileName(template: ExportTemplate): string | null {
+    if (template.moduleCode !== 'contract') return null;
+    const platform = this.normalizeSignPlatform(template.signPlatform);
+    if (platform === '速创') return '劳动合同签订批导出模板-速创.xlsx';
+    if (platform === 'E签宝') return '劳动合同签订批导出模板-e签宝.xlsx';
+    return null;
+  }
+
+  private resolveStandardTemplatePath(fileName: string): string {
+    const candidates = [
+      join(process.cwd(), 'src', 'assets', 'export-templates', fileName),
+      join(process.cwd(), 'dist', 'assets', 'export-templates', fileName),
+      join(__dirname, '..', '..', '..', 'assets', 'export-templates', fileName),
+    ];
+    const found = candidates.find((candidate) => existsSync(candidate));
+    if (!found) throw new InternalServerErrorException(`标准导出模板文件缺失：${fileName}，请检查 backend/src/assets/export-templates 或 dist/assets/export-templates 是否已部署`);
+    return found;
+  }
+
+  private prepareStandardTemplateFieldList(fieldList: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+    return fieldList
+      .filter((item) => !this.exportExcludedFieldCodes.has(this.resolveFieldCode(item)))
+      .map((item, index) => ({ ...item, order: this.readNumber(item.order) ?? index + 10 }));
+  }
+
+  private fillStandardTemplateWorksheet(
+    worksheet: Worksheet,
+    columns: RichExportColumn[],
+    orders: DispatchedOrder[],
+    dataStartRow: number,
+  ): void {
+    const fieldCellMap = this.buildFieldCellMap(columns);
+    orders.forEach((order, rowIndex) => {
+      const rowNo = dataStartRow + rowIndex;
+      this.copyDataRowShape(worksheet, dataStartRow, rowNo, columns.length);
+      columns.forEach((column, columnIndex) => {
+        const cell = worksheet.getCell(rowNo, columnIndex + 1);
+        cell.value = (column.kind === 'formula'
+          ? { formula: this.resolveFormula(column.formulaTemplate, fieldCellMap, rowNo, order) }
+          : this.renderRichValue(column, order)) as typeof cell.value;
+        if (column.kind === 'formula' && column.numFmt) cell.numFmt = column.numFmt;
+      });
+    });
+  }
+
+  private copyDataRowShape(worksheet: Worksheet, sourceRowNo: number, targetRowNo: number, columnCount: number): void {
+    if (sourceRowNo === targetRowNo) return;
+    const sourceRow = worksheet.getRow(sourceRowNo);
+    const targetRow = worksheet.getRow(targetRowNo);
+    targetRow.height = sourceRow.height;
+    for (let columnIndex = 1; columnIndex <= columnCount; columnIndex += 1) {
+      const sourceCell = sourceRow.getCell(columnIndex);
+      const targetCell = targetRow.getCell(columnIndex);
+      targetCell.style = this.cloneExcelObject(sourceCell.style) ?? {};
+      if (sourceCell.dataValidation) targetCell.dataValidation = this.cloneExcelObject(sourceCell.dataValidation);
+    }
+  }
+
+  private async appendWorkbookSheets(target: Workbook, source: Workbook, usedSheetNames: Set<string>, fallbackName: string): Promise<Workbook> {
+    if (target.worksheets.length === 0) {
+      source.worksheets.forEach((sheet) => usedSheetNames.add(sheet.name));
+      return source;
+    }
+    for (const sourceSheet of source.worksheets) {
+      const worksheet = target.addWorksheet(this.uniqueSheetName(sourceSheet.name || fallbackName, usedSheetNames), {
+        state: sourceSheet.state,
+        properties: this.cloneExcelObject(sourceSheet.properties),
+        pageSetup: this.cloneExcelObject(sourceSheet.pageSetup),
+        views: this.cloneExcelObject(sourceSheet.views),
+      });
+      worksheet.columns = sourceSheet.columns.map((column, index) => ({
+        key: `c${index}`,
+        width: column.width,
+        hidden: column.hidden,
+        outlineLevel: column.outlineLevel,
+        style: this.cloneExcelObject(column.style),
+      }));
+      for (let rowNo = 1; rowNo <= sourceSheet.rowCount; rowNo += 1) {
+        const sourceRow = sourceSheet.getRow(rowNo);
+        const targetRow = worksheet.getRow(rowNo);
+        targetRow.height = sourceRow.height;
+        targetRow.hidden = sourceRow.hidden;
+        targetRow.outlineLevel = sourceRow.outlineLevel;
+        for (let columnIndex = 1; columnIndex <= sourceSheet.columnCount; columnIndex += 1) {
+          const sourceCell = sourceRow.getCell(columnIndex);
+          const targetCell = targetRow.getCell(columnIndex);
+          if (!sourceCell.isMerged || sourceCell.master === sourceCell) {
+            targetCell.value = this.cloneExcelObject(sourceCell.value) as typeof targetCell.value;
+          }
+          targetCell.style = this.cloneExcelObject(sourceCell.style) ?? {};
+          if (sourceCell.dataValidation) targetCell.dataValidation = this.cloneExcelObject(sourceCell.dataValidation);
+          if (sourceCell.note) targetCell.note = this.cloneExcelObject(sourceCell.note);
+        }
+        targetRow.commit();
+      }
+      const merges = (sourceSheet as unknown as { _merges?: Record<string, { model?: { top: number; left: number; bottom: number; right: number } }> })._merges ?? {};
+      for (const merge of Object.values(merges)) {
+        const model = merge.model;
+        if (model) worksheet.mergeCells(model.top, model.left, model.bottom, model.right);
+      }
+    }
+    return target;
+  }
+
+  private cloneExcelObject<T>(value: T): T {
+    if (value === null || value === undefined) return value;
+    if (value instanceof Date) return new Date(value.getTime()) as T;
+    if (Buffer.isBuffer(value)) return Buffer.from(value) as T;
+    if (typeof value !== 'object') return value;
+    return JSON.parse(JSON.stringify(value)) as T;
+  }
+
+  private writeWorksheet(
+    workbook: Workbook,
+    sheetName: string,
+    columns: RichExportColumn[],
+    orders: DispatchedOrder[],
+    signPlatform: string | null = null,
+  ): void {
+    const worksheet = workbook.addWorksheet(sheetName);
+    const headerRowCount = columns.reduce((max, column) => Math.max(max, column.headers.length), 1);
+    worksheet.columns = columns.map((column, index) => ({
+      header: this.padHeaders(column.headers, headerRowCount),
+      key: `c${index}`,
+      width: Math.min(Math.max((column.headers[0]?.length ?? 4) + 6, 12), 32),
+    }));
+    for (let rowNo = 1; rowNo <= headerRowCount; rowNo += 1) {
+      worksheet.getRow(rowNo).font = { bold: true };
+    }
+    const fieldCellMap = this.buildFieldCellMap(columns);
+    let dataRowNo = headerRowCount;
+    for (const order of orders) {
+      dataRowNo += 1;
+      const row: Record<string, unknown> = {};
+      columns.forEach((column, index) => {
+        row[`c${index}`] = column.kind === 'formula'
+          ? { formula: this.resolveFormula(column.formulaTemplate, fieldCellMap, dataRowNo, order) }
+          : this.renderRichValue(column, order);
+      });
+      const added = worksheet.addRow(row);
+      columns.forEach((column, index) => {
+        if (column.kind === 'formula' && column.numFmt) {
+          added.getCell(index + 1).numFmt = column.numFmt;
+        }
+      });
+    }
+    this.applyDropdownValidations(workbook, worksheet, columns, headerRowCount, orders.length);
+    // e签宝模板第 3 行为「绑定串行」（内部 e签宝 字段绑定串，非人读数据），导出后隐藏。
+    if (this.normalizeSignPlatform(signPlatform) === 'E签宝' && headerRowCount >= 3) {
+      worksheet.getRow(3).hidden = true;
+    }
+  }
+
+  // 下拉数据写入 veryHidden 的 __options sheet，主 sheet 数据区按列引用做 list dataValidation。
+  // 数据区 = 数据起始行起，覆盖已有数据行 + 预留 500 行，便于复用空模板继续录入。
+  private applyDropdownValidations(
+    workbook: Workbook,
+    worksheet: ReturnType<Workbook['addWorksheet']>,
+    columns: RichExportColumn[],
+    headerRowCount: number,
+    dataRowsCount: number,
+  ): void {
+    const dropdownColumns = columns
+      .map((column, index) => ({ column, index }))
+      .filter(({ column }) => column.dropdownOptions.length > 0);
+    if (dropdownColumns.length === 0) return;
+
+    const optionsSheet = workbook.getWorksheet('__options') ?? workbook.addWorksheet('__options', { state: 'veryHidden' });
+    const optionsStartCol = optionsSheet.columnCount + 1;
+    const firstDataRow = headerRowCount + 1;
+    const lastDataRow = headerRowCount + dataRowsCount + 500;
+
+    dropdownColumns.forEach(({ column, index }, slot) => {
+      const optionsCol = optionsStartCol + slot;
+      const optionsColLetter = this.columnLetter(optionsCol - 1);
+      column.dropdownOptions.forEach((option, optionRow) => {
+        optionsSheet.getCell(optionRow + 1, optionsCol).value = option;
+      });
+      const ref = `'__options'!$${optionsColLetter}$1:$${optionsColLetter}$${column.dropdownOptions.length}`;
+      const validation = {
+        type: 'list' as const,
+        allowBlank: true,
+        formulae: [ref],
+        showErrorMessage: true,
+        errorStyle: 'stop',
+        errorTitle: '输入有误',
+        error: '请从下拉列表中选择有效选项',
+      };
+      for (let rowNo = firstDataRow; rowNo <= lastDataRow; rowNo += 1) {
+        worksheet.getCell(rowNo, index + 1).dataValidation = validation;
+      }
+    });
+  }
+
+  private resolveTemplateRouteSignPlatform(order: DispatchedOrder): string | null {
+    return order.moduleCode === 'contract' ? this.extractSignPlatform(order) : null;
+  }
+
+  private extractSignPlatform(order: DispatchedOrder): string | null {
+    const extra = order.parentOrder?.extraData ?? {};
+    return this.normalizeSignPlatform(this.readString(extra['esign_platform']));
+  }
+
+  private resolveColumns(template: ExportTemplate, fieldNameMap: Map<string, string>): ExportColumn[] {
+    return this.prepareExportFieldList(template.fieldList ?? [])
       .map((item, index) => {
         const fieldCode = this.resolveFieldCode(item);
         const fallbackTitle = this.resolveFieldTitle(fieldCode, fieldNameMap);
@@ -297,8 +715,14 @@ export class ExportTemplatesService {
       fieldList: this.normalizeFieldList(template.fieldList, fieldNameMap),
       createdBy: template.createdBy,
       isShared: template.isShared,
+      signPlatform: template.signPlatform ?? null,
       createdAt: template.createdAt,
     };
+  }
+
+  private normalizeSignPlatform(value: string | null | undefined): string | null {
+    const text = this.readString(value);
+    return text ? text.slice(0, 16) : null;
   }
 
   private normalizeFieldList(
@@ -338,6 +762,16 @@ export class ExportTemplatesService {
     return new Map(fields.map((field) => [field.fieldCode, field.fieldName]));
   }
 
+  private async loadFieldOptionsMap(): Promise<Map<string, string[]>> {
+    const fields = await this.fieldConfigRepository.find({ where: { isActive: true } });
+    const map = new Map<string, string[]>();
+    for (const field of fields) {
+      const options = this.toOptionArray(field.dropdownOptions);
+      if (options) map.set(field.fieldCode, options);
+    }
+    return map;
+  }
+
   private isMojibakePlaceholder(value: string): boolean {
     return /^\?+$/.test(value.trim());
   }
@@ -354,6 +788,8 @@ export class ExportTemplatesService {
       dispatched_at: order.dispatchedAt?.toISOString() ?? '',
       accepted_at: order.acceptedAt?.toISOString() ?? '',
       completed_at: order.completedAt?.toISOString() ?? '',
+      created_by_name: order.parentOrder.creator?.realName || order.parentOrder.creator?.username || order.parentOrder.createdBy || '',
+      creator_name: order.parentOrder.creator?.realName || order.parentOrder.creator?.username || order.parentOrder.createdBy || '',
     };
     return fieldCode in builtIns ? builtIns[fieldCode] : order.parentOrder.extraData[fieldCode] ?? '';
   }

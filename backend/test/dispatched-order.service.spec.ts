@@ -497,7 +497,10 @@ describe('DispatchedOrderService', () => {
 
     expect(qb.where).toHaveBeenCalledWith('d.module_code = :moduleCode', { moduleCode: 'data_entry' });
     expect(qb.andWhere).toHaveBeenCalledWith('w.order_no = :orderNo', { orderNo: order.parentOrder.orderNo });
-    expect(qb.andWhere).toHaveBeenCalledWith('w.employee_id_card = :employeeIdCard', { employeeIdCard: order.parentOrder.employeeIdCard });
+    expect(qb.andWhere).toHaveBeenCalledWith(
+      "(w.employee_id_card = :employeeIdCard OR w.extra_data->>'id_card_no' = :employeeIdCard OR w.extra_data->>'employee_id_card' = :employeeIdCard OR w.extra_data->>'employeeIdCard' = :employeeIdCard OR w.extra_data->>'idCardNo' = :employeeIdCard)",
+      { employeeIdCard: order.parentOrder.employeeIdCard },
+    );
     expect(qb.orderBy).toHaveBeenCalledWith('d.created_at', 'DESC');
   });
 

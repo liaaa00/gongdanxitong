@@ -130,6 +130,14 @@ export function getCachedMonth(key: string): Dayjs {
   return parsed.isValid() ? parsed : dayjs();
 }
 
+// 列表页默认空月份：无缓存时返回 null（=全部月份），有缓存且合法时返回该月份。
+export function getCachedMonthOrNull(key: string): Dayjs | null {
+  const month = getCachedListPageState(key).month;
+  if (!month) return null;
+  const parsed = dayjs(month, 'YYYY-MM');
+  return parsed.isValid() ? parsed : null;
+}
+
 export function toMonthKey(value?: Dayjs | null): string {
   const month = value && value.isValid() ? value : dayjs();
   return month.format('YYYY-MM');

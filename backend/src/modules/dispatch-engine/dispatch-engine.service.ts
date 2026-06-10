@@ -111,7 +111,7 @@ export class DispatchEngineService {
       await this.ensureOnboardingSplitChildren(workOrder, childrenToCreate, manager);
     }
 
-    await this.applyModuleConfig(childrenToCreate, manager);
+    await this.applyModuleConfig(childrenToCreate, workOrder.extraData ?? {}, manager);
 
     childrenToCreate.sort((left, right) => {
       const leftRule = rules.find((item) => item.id === left.ruleId);
@@ -125,7 +125,7 @@ export class DispatchEngineService {
     };
   }
 
-  private async applyModuleConfig(childrenToCreate: ChildToCreate[], manager?: EntityManager): Promise<void> {
+  private async applyModuleConfig(childrenToCreate: ChildToCreate[], extraData: Record<string, unknown>, manager?: EntityManager): Promise<void> {
     const moduleCodes = Array.from(new Set(childrenToCreate.map((child) => child.moduleCode).filter(Boolean)));
     if (moduleCodes.length === 0) return;
 
@@ -142,6 +142,15 @@ export class DispatchEngineService {
       child.slaReminderBeforeHours = reminderBeforeHours;
       child.handlerId = await this.resolveModuleTeamHandler(child.moduleCode, config?.dispatchStrategy ?? DispatchStrategy.TEAM_CLAIM, manager);
       child.dispatchStrategy = config?.dispatchStrategy ?? DispatchStrategy.TEAM_CLAIM;
+
+      if (child.moduleCode === 'contract' && extraData.contract_start_date) {
+        const startDate = new Date(extraData.contract_start_date as string);
+        if (!isNaN(startDate.getTime())) {
+          child.dueAt = new Date(startDate.getTime() + 26 * 24 * 60 * 60 * 1000);
+          continue;
+        }
+      }
+
       if (slaHours !== null && Number.isFinite(Number(slaHours)) && Number(slaHours) > 0) {
         child.dueAt = new Date(base.getTime() + Number(slaHours) * 60 * 60 * 1000);
       } else {

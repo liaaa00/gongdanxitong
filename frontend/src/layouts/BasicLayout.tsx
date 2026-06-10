@@ -7,7 +7,7 @@ import {
   useOutlet,
 } from 'react-router-dom';
 import { ProLayout } from '@ant-design/pro-components';
-import { App, Badge, Popover, List, Button, Empty, Tabs, Tag, Space } from 'antd';
+import { App, Badge, Popover, List, Button, Empty, Tabs, Tag, Space, Dropdown } from 'antd';
 import {
   DashboardOutlined, FileTextOutlined, SettingOutlined, LogoutOutlined,
   TeamOutlined, SafetyOutlined, ApartmentOutlined, IdcardOutlined,
@@ -30,6 +30,8 @@ const MAX_KEEP_ALIVE_PAGES = 12;
 
 function isKeepAlivePath(pathname: string): boolean {
   if (pathname === '/' || pathname === '/login' || pathname === '/change-password' || pathname === '/403' || pathname === '/404') return false;
+  // 批量导入页保活：操作到一半切走再回来不清空（页面内提供「重新开始」入口手动清空）
+  if (pathname === '/work-orders/import') return true;
   if (/^\/work-orders\/(new|import|[^/]+)$/.test(pathname)) return false;
   if (/^\/renewal\/(new|[^/]+)$/.test(pathname)) return false;
   if (/^\/resignation\/(new|[^/]+)(\/cert)?$/.test(pathname)) return false;
@@ -179,17 +181,26 @@ const RAW_MENU: MenuItem[] = [
         ],
       },
       {
-        path: '/admin/workflow-group',
-        name: '工单配置',
-        key: 'admin-workflow',
+        path: '/admin/field-template-group',
+        name: '字段与模板配置',
+        key: 'admin-field-template',
+        icon: <FieldStringOutlined />,
+        children: [
+          { path: '/admin/fields', name: '系统字段库', icon: <FieldStringOutlined /> },
+          { path: '/admin/import-templates', name: '导入模板配置', icon: <FileTextOutlined />, key: 'admin-import-templates' },
+          { path: '/admin/module-config', name: '子工单字段配置', icon: <BranchesOutlined /> },
+          { path: '/admin/field-permissions', name: '字段权限配置', icon: <LockOutlined /> },
+          { path: '/admin/export-templates', name: '导出模板配置', key: 'admin-export-templates' },
+        ],
+      },
+      {
+        path: '/admin/dispatch-flow-group',
+        name: '流程与派发配置',
+        key: 'admin-dispatch-flow',
         icon: <NodeIndexOutlined />,
         children: [
-          { path: '/admin/module-config', name: '办理环节设置', icon: <BranchesOutlined /> },
-          { path: '/admin/fields', name: '表单字段库', icon: <FieldStringOutlined /> },
-          { path: '/admin/field-permissions', name: '字段可填设置', icon: <LockOutlined /> },
           { path: '/admin/dispatch-config', name: '负责人派发设置', icon: <UserSwitchOutlined /> },
           { path: '/admin/workflows', name: '流程版本配置', key: 'admin-workflows' },
-          { path: '/admin/export-templates', name: '导出模板配置', key: 'admin-export-templates' },
         ],
       },
       {
@@ -308,7 +319,17 @@ function isTemporaryActionPath(pathname: string): boolean {
 function isRecordableRecentPath(value: string): boolean {
   const safePath = sanitizeInternalPath(value);
   if (!safePath) return false;
-  return !isTemporaryActionPath(normalizeMenuUrl(safePath).pathname);
+  const pathname = normalizeMenuUrl(safePath).pathname;
+  return !isTemporaryActionPath(pathname) && !isDetailOrEditPath(pathname);
+}
+
+// 详情/编辑页（工单详情、派发详情、离职详情等）不作为菜单最近路径：点菜单回列表页，不进入详情。
+function isDetailOrEditPath(pathname: string): boolean {
+  const normalized = normalizeMenuUrl(pathname).pathname;
+  if (/^\/work-orders\/[^/]+$/.test(normalized)) return true;
+  if (/^\/my-dispatched\/[^/]+$/.test(normalized)) return true;
+  if (/^\/resignation\/[^/]+(\/cert)?$/.test(normalized)) return true;
+  return false;
 }
 
 function isDispatchedDetailPath(pathname: string): boolean {
@@ -479,8 +500,9 @@ const BasicLayout: React.FC = () => {
     if (location.pathname === '/dashboard') title = '仪表盘 - 工单管理系统';
     if (location.pathname === '/notifications') title = '消息通知 - 工单管理系统';
     if (location.pathname === '/admin/users') title = '用户管理 - 工单管理系统';
-    if (location.pathname === '/admin/module-config') title = '办理环节设置 - 工单管理系统';
-    if (location.pathname === '/admin/fields') title = '表单字段库 - 工单管理系统';
+    if (location.pathname === '/admin/module-config') title = '子工单字段配置 - 工单管理系统';
+    if (location.pathname === '/admin/fields') title = '系统字段库 - 工单管理系统';
+    if (location.pathname === '/admin/import-templates') title = '导入模板配置 - 工单管理系统';
     if (location.pathname === '/admin/dispatch-config') title = '负责人派发设置 - 工单管理系统';
     if (location.pathname === '/work-orders') {
       const orderType = params.get('orderType');
@@ -776,24 +798,39 @@ const BasicLayout: React.FC = () => {
       )}
       actionsRender={() => [
         <Space key="top-actions" size={8} align="center" style={{ flexWrap: 'nowrap', marginRight: 0 }}>
-          <span
-            title={user?.real_name || user?.username || '当前用户'}
-            style={{
-              display: 'inline-block',
-              maxWidth: 96,
-              padding: '2px 8px',
-              borderRadius: 12,
-              background: '#f5f5f5',
-              color: 'rgba(0, 0, 0, 0.65)',
-              fontSize: 13,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              verticalAlign: 'middle',
+          <Dropdown
+            placement="bottomRight"
+            menu={{
+              items: [
+                {
+                  key: 'change-password',
+                  icon: <LockOutlined />,
+                  label: '修改密码',
+                  onClick: () => navigate('/change-password'),
+                },
+              ],
             }}
           >
-            {user?.real_name || user?.username || '用户'}
-          </span>
+            <span
+              title={user?.real_name || user?.username || '当前用户'}
+              style={{
+                display: 'inline-block',
+                maxWidth: 96,
+                padding: '2px 8px',
+                borderRadius: 12,
+                background: '#f5f5f5',
+                color: 'rgba(0, 0, 0, 0.65)',
+                fontSize: 13,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                verticalAlign: 'middle',
+                cursor: 'pointer',
+              }}
+            >
+              {user?.real_name || user?.username || '用户'}
+            </span>
+          </Dropdown>
           {canViewNotifications ? (
             <Popover content={notifContent} title={null} trigger="click"
               open={notifOpen} onOpenChange={setNotifOpen} placement="bottomRight">
@@ -803,7 +840,6 @@ const BasicLayout: React.FC = () => {
               </Badge>
             </Popover>
           ) : null}
-          <Button size="small" icon={<LockOutlined />} onClick={() => navigate('/change-password')}>修改密码</Button>
           <Button size="small" icon={<LogoutOutlined />} onClick={handleLogout} style={{ marginLeft: 10 }}>退出</Button>
         </Space>,
       ]}

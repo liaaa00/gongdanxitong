@@ -8,6 +8,7 @@ describe('routeVisibility admin-only configuration routes', () => {
   it('allows admin to access field/workflow/export/portal configuration routes', () => {
     const adminRoles = roles([ROLE.ADMIN]);
     expect(canAccessPath('/admin/fields', adminRoles)).toBe(true);
+    expect(canAccessPath('/admin/import-templates', adminRoles)).toBe(true);
     expect(canAccessPath('/admin/field-permissions', adminRoles)).toBe(true);
     expect(canAccessPath('/admin/workflows', adminRoles)).toBe(true);
     expect(canAccessPath('/admin/workflow-config', adminRoles)).toBe(true);
@@ -22,6 +23,7 @@ describe('routeVisibility admin-only configuration routes', () => {
   it('blocks non-admin direct URL access to restricted configuration routes', () => {
     const businessRoles = roles([ROLE.BUSINESS_GROUP_MEMBER]);
     expect(canAccessPath('/admin/fields', businessRoles)).toBe(false);
+    expect(canAccessPath('/admin/import-templates', businessRoles)).toBe(false);
     expect(canAccessPath('/admin/field-permissions', businessRoles)).toBe(false);
     expect(canAccessPath('/admin/workflows', businessRoles)).toBe(false);
     expect(canAccessPath('/admin/workflow-config', businessRoles)).toBe(false);
@@ -34,11 +36,11 @@ describe('routeVisibility admin-only configuration routes', () => {
     expect(canAccessPath('/my-field-permissions', businessRoles)).toBe(false);
   });
 
-  it('keeps business owner on dashboard, team work and history only', () => {
+  it('keeps business owner away from my-work pages', () => {
     const ownerRoles = roles([ROLE.BUSINESS_OWNER]);
     expect(canAccessPath('/dashboard', ownerRoles)).toBe(true);
-    expect(canAccessPath('/my-work/team', ownerRoles)).toBe(true);
-    expect(canAccessPath('/my-work/history', ownerRoles)).toBe(true);
+    expect(canAccessPath('/my-work/team', ownerRoles)).toBe(false);
+    expect(canAccessPath('/my-work/history', ownerRoles)).toBe(false);
     expect(canAccessPath('/my-dispatched/child-1', ownerRoles)).toBe(true);
     expect(canAccessPath('/work-orders', ownerRoles)).toBe(false);
     expect(canAccessPath('/work-orders/create', ownerRoles)).toBe(false);
@@ -70,26 +72,26 @@ describe('routeVisibility admin-only configuration routes', () => {
     expect(canAccessPath('/onboarding/resignation_cert', memberRoles)).toBe(false);
     expect(canAccessPath('/onboarding/renewal_contract', memberRoles)).toBe(false);
     expect(canAccessPath('/onboarding/benefit_apply', memberRoles)).toBe(false);
-    expect(canAccessPath('/my-work/initiated', memberRoles)).toBe(true);
-    expect(canAccessPath('/my-work/returned', memberRoles)).toBe(true);
-    expect(canAccessPath('/my-work/history', memberRoles)).toBe(true);
+    expect(canAccessPath('/my-work/initiated', memberRoles)).toBe(false);
+    expect(canAccessPath('/my-work/returned', memberRoles)).toBe(false);
+    expect(canAccessPath('/my-work/history', memberRoles)).toBe(false);
     expect(canAccessPath('/my-work/team', memberRoles)).toBe(false);
     expect(canAccessPath('/my-work/pending', memberRoles)).toBe(false);
-    expect(canAccessPath('/my-work/done', memberRoles)).toBe(true);
+    expect(canAccessPath('/my-work/done', memberRoles)).toBe(false);
   });
 
-  it('keeps business group leader operable on business modules and own work views', () => {
+  it('keeps business group leader operable on business modules without my-work pages', () => {
     const leaderRoles = roles([ROLE.BUSINESS_GROUP_LEADER]);
     expect(canAccessPath('/work-orders', leaderRoles)).toBe(true);
     expect(canAccessPath('/work-orders/create', leaderRoles)).toBe(true);
     expect(canAccessPath('/work-orders/import', leaderRoles)).toBe(true);
-    expect(canAccessPath('/my-work/initiated', leaderRoles)).toBe(true);
-    expect(canAccessPath('/my-work/returned', leaderRoles)).toBe(true);
-    expect(canAccessPath('/my-work/history', leaderRoles)).toBe(true);
-    expect(canAccessPath('/my-work/team', leaderRoles)).toBe(true);
+    expect(canAccessPath('/my-work/initiated', leaderRoles)).toBe(false);
+    expect(canAccessPath('/my-work/returned', leaderRoles)).toBe(false);
+    expect(canAccessPath('/my-work/history', leaderRoles)).toBe(false);
+    expect(canAccessPath('/my-work/team', leaderRoles)).toBe(false);
     expect(canAccessPath('/my-dispatched/child-1', leaderRoles)).toBe(true);
     expect(canAccessPath('/my-work/pending', leaderRoles)).toBe(false);
-    expect(canAccessPath('/my-work/done', leaderRoles)).toBe(true);
+    expect(canAccessPath('/my-work/done', leaderRoles)).toBe(false);
     expect(canAccessPath('/onboarding/onboarding_contact', leaderRoles)).toBe(true);
     expect(canAccessPath('/onboarding/contract', leaderRoles)).toBe(true);
     expect(canAccessPath('/onboarding/data_entry', leaderRoles)).toBe(true);
@@ -152,21 +154,21 @@ describe('routeVisibility admin-only configuration routes', () => {
     const sharedOwnerRoles = roles([ROLE.SHARED_TEAM_OWNER]);
     const broadPermissions = ['*', 'work_order.*', 'data_scope.all'];
 
-    expect(canAccessPath('/my-work/team', ownerRoles, broadPermissions)).toBe(true);
-    expect(canAccessPath('/my-work/history', ownerRoles, broadPermissions)).toBe(true);
+    expect(canAccessPath('/my-work/team', ownerRoles, broadPermissions)).toBe(false);
+    expect(canAccessPath('/my-work/history', ownerRoles, broadPermissions)).toBe(false);
     expect(canAccessPath('/work-orders', ownerRoles, broadPermissions)).toBe(false);
     expect(canAccessPath('/my-work/initiated', ownerRoles, broadPermissions)).toBe(false);
     expect(canAccessPath('/my-work/pending', ownerRoles, broadPermissions)).toBe(false);
     expect(canAccessPath('/onboarding/contract', ownerRoles, broadPermissions)).toBe(false);
     expect(canAccessPath('/offboarding/contact-pool', ownerRoles, broadPermissions)).toBe(false);
 
-    expect(canAccessPath('/my-work/team', leaderRoles, broadPermissions)).toBe(true);
+    expect(canAccessPath('/my-work/team', leaderRoles, broadPermissions)).toBe(false);
     expect(canAccessPath('/work-orders', leaderRoles, broadPermissions)).toBe(true);
     expect(canAccessPath('/work-orders/import', leaderRoles, broadPermissions)).toBe(true);
-    expect(canAccessPath('/my-work/initiated', leaderRoles, broadPermissions)).toBe(true);
-    expect(canAccessPath('/my-work/returned', leaderRoles, broadPermissions)).toBe(true);
+    expect(canAccessPath('/my-work/initiated', leaderRoles, broadPermissions)).toBe(false);
+    expect(canAccessPath('/my-work/returned', leaderRoles, broadPermissions)).toBe(false);
     expect(canAccessPath('/my-work/pending', leaderRoles, broadPermissions)).toBe(false);
-    expect(canAccessPath('/my-work/done', leaderRoles, broadPermissions)).toBe(true);
+    expect(canAccessPath('/my-work/done', leaderRoles, broadPermissions)).toBe(false);
     expect(canAccessPath('/onboarding/contract', leaderRoles, broadPermissions)).toBe(true);
     expect(canAccessPath('/onboarding/data_entry', leaderRoles, broadPermissions)).toBe(true);
     expect(canAccessPath('/onboarding/resignation_contact', leaderRoles, broadPermissions)).toBe(true);

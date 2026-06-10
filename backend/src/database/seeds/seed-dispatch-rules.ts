@@ -57,7 +57,7 @@ const dispatchRuleSeeds: Array<{
   {
     name: 'resignation-default-contact',
     orderType: OrderType.RESIGNATION,
-    triggerConditions: null,
+    triggerConditions: yesCondition('need_resignation_share'),
     targetModule: 'resignation_contact',
     strategy: DispatchStrategy.FIXED,
     priority: 10,

@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import dayjs, { type Dayjs } from 'dayjs';
+import { type Dayjs } from 'dayjs';
 import { PageContainer, ProTable } from '@ant-design/pro-components';
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
 import { DatePicker, Space, Tag } from 'antd';
@@ -15,7 +15,7 @@ import { mergeProTableFiltersIntoParams, selectHeaderFilter, textHeaderFilter } 
 import {
   applyCachedColumnFilters,
   getCachedListPageState,
-  getCachedMonth,
+  getCachedMonthOrNull,
   normalizeCachedFilters,
   toMonthKey,
   updateCachedListPageState,
@@ -68,7 +68,7 @@ function normalizeQuery(params: PageParams & Record<string, unknown>, month: Day
     handlerName: readString(params.handlerName, params.handler_name),
     moduleCode: readString(params.moduleCode, params.module_code),
     status: readString(params.status),
-    orderMonth: orderMonth || (month || dayjs()).format('YYYY-MM'),
+    orderMonth: orderMonth || (month ? month.format('YYYY-MM') : undefined),
     scope: 'team',
   });
 }
@@ -77,7 +77,7 @@ const TeamDispatched: React.FC = () => {
   const navigate = useNavigate();
   const actionRef = useRef<ActionType>();
   const cachedPageState = getCachedListPageState(PAGE_STATE_KEY);
-  const [month, setMonth] = useState<Dayjs | null>(() => getCachedMonth(PAGE_STATE_KEY));
+  const [month, setMonth] = useState<Dayjs | null>(() => getCachedMonthOrNull(PAGE_STATE_KEY));
 
   const columns: ProColumns<DispatchedOrderItem>[] = useMemo(() => applyCachedColumnFilters<DispatchedOrderItem>([
     {
@@ -152,12 +152,12 @@ const TeamDispatched: React.FC = () => {
             <span>工单月份：</span>
             <DatePicker
               picker="month"
-              allowClear={false}
+              allowClear
+              placeholder="全部月份"
               value={month}
               onChange={(value) => {
-                const nextMonth = value || dayjs();
-                setMonth(nextMonth);
-                updateCachedListPageState(PAGE_STATE_KEY, { month: toMonthKey(nextMonth), current: 1 });
+                setMonth(value);
+                updateCachedListPageState(PAGE_STATE_KEY, { month: value ? toMonthKey(value) : '', current: 1 });
                 actionRef.current?.reload();
               }}
             />
@@ -166,6 +166,7 @@ const TeamDispatched: React.FC = () => {
       }}
     >
       <ProTable<DispatchedOrderItem>
+        getPopupContainer={() => document.body}
         actionRef={actionRef}
         columns={columns}
         request={async (params: PageParams & Record<string, unknown>, _sort, filters) => {

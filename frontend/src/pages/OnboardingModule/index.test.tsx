@@ -83,7 +83,6 @@ describe('OnboardingModule header table filters', () => {
       current: 1,
       pageSize: 20,
       module_code: 'data_entry',
-      orderMonth: expect.stringMatching(/^\d{4}-\d{2}$/),
       statuses: 'pending',
     })));
   });
@@ -100,7 +99,6 @@ describe('OnboardingModule header table filters', () => {
       current: 1,
       pageSize: 20,
       module_code: 'data_entry',
-      orderMonth: expect.stringMatching(/^\d{4}-\d{2}$/),
       statuses: 'processing',
       createdByName: '张三',
     })));
@@ -119,7 +117,6 @@ describe('OnboardingModule header table filters', () => {
       current: 1,
       pageSize: 20,
       module_code: 'resignation_social_insurance',
-      orderMonth: expect.stringMatching(/^\d{4}-\d{2}$/),
     })));
   });
 
@@ -142,7 +139,7 @@ describe('OnboardingModule header table filters', () => {
     await waitFor(() => expect(mocks.getDispatchedOrders).toHaveBeenCalled());
     const params = mocks.getDispatchedOrders.mock.calls.at(-1)?.[0] as Record<string, unknown>;
     expect(params.module_code).toBe('data_entry');
-    expect(params.orderMonth).toEqual(expect.stringMatching(/^\d{4}-\d{2}$/));
+    expect(params.orderMonth).toBeUndefined();
     expect(params.statuses).toBeUndefined();
   });
 });

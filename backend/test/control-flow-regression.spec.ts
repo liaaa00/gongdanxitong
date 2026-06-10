@@ -114,6 +114,7 @@ function makeService(options: {
     { getPermissionsForUser: jest.fn(), applyExtraData: jest.fn(), applyFieldViews: jest.fn() } as unknown as FieldPermissionService,
     { supplement: jest.fn(), getLogs: jest.fn() } as unknown as FieldSupplementService,
     { exportSingleDispatchedOrder: jest.fn() } as never,
+    { resolveUserDepartmentIds: jest.fn(async () => []) } as never,
   );
   return { service, dispatchedRepo, workOrderRepo, moduleHandlerRepo, userRoleRepo, notificationRepo, operationLogRepo };
 }
@@ -123,7 +124,7 @@ describe('five control-flow regression coverage', () => {
   const handler: JwtUserPayload = { sub: 'handler-1', username: 'handler', roles: ['data_entry_team'] };
 
   it('creator void from RETURNED must stay approval-bound and never direct void', async () => {
-    const order = makeChild({ status: DispatchedOrderStatus.RETURNED, parentOrder: makeParent({ status: WorkOrderStatus.RETURNED }) });
+    const order = makeChild({ status: DispatchedOrderStatus.RETURNED, acceptedAt: new Date(), parentOrder: makeParent({ status: WorkOrderStatus.RETURNED }) });
     const dispatchedRepo = repoMock<DispatchedOrder>({ findOne: jest.fn(async () => order) });
     const notificationRepo = repoMock<Notification>();
     const operationLogRepo = repoMock<OperationLog>({ count: jest.fn(async () => 0) });
@@ -140,7 +141,7 @@ describe('five control-flow regression coverage', () => {
   });
 
   it('creator void from WITHDRAWN goes straight to VOID terminal without downstream approval', async () => {
-    const order = makeChild({ status: DispatchedOrderStatus.WITHDRAWN, parentOrder: makeParent({ status: WorkOrderStatus.WITHDRAWN }) });
+    const order = makeChild({ status: DispatchedOrderStatus.WITHDRAWN, acceptedAt: new Date(), parentOrder: makeParent({ status: WorkOrderStatus.WITHDRAWN }) });
     const dispatchedRepo = repoMock<DispatchedOrder>({ findOne: jest.fn(async () => order) });
     const notificationRepo = repoMock<Notification>();
     const operationLogRepo = repoMock<OperationLog>({ count: jest.fn(async () => 0) });

@@ -90,7 +90,6 @@ describe('MyDispatched processing status filter', () => {
       page: 1,
       pageSize: 20,
       moduleCode: 'contract',
-      orderMonth: expect.stringMatching(/^\d{4}-\d{2}$/),
       status: 'processing',
     })));
     const params = mocks.getDispatchedOrders.mock.calls.at(-1)?.[0] as Record<string, unknown>;
@@ -105,7 +104,6 @@ describe('MyDispatched processing status filter', () => {
     await waitFor(() => expect(mocks.getDispatchedOrders).toHaveBeenCalledWith(expect.objectContaining({
       page: 1,
       pageSize: 20,
-      orderMonth: expect.stringMatching(/^\d{4}-\d{2}$/),
       statuses: 'pending,processing,modify_pending,withdraw_pending,void_pending',
     })));
     const params = mocks.getDispatchedOrders.mock.calls.at(-1)?.[0] as Record<string, unknown>;
@@ -126,7 +124,6 @@ describe('MyDispatched processing status filter', () => {
       pageSize: 20,
       moduleCode: 'contract',
       idCardNo: '3301',
-      orderMonth: expect.stringMatching(/^\d{4}-\d{2}$/),
       statuses: 'pending,processing,modify_pending,withdraw_pending,void_pending',
     })));
   });
@@ -212,7 +209,6 @@ describe('MyDispatched processing status filter', () => {
       page: 1,
       pageSize: 20,
       employeeName: '张三',
-      orderMonth: expect.stringMatching(/^\d{4}-\d{2}$/),
       includeReturned: true,
     })));
     const params = mocks.getDispatchedOrders.mock.calls.at(-1)?.[0] as Record<string, unknown>;
@@ -230,7 +226,6 @@ describe('MyDispatched processing status filter', () => {
       page: 1,
       pageSize: 20,
       status: 'completed',
-      orderMonth: expect.stringMatching(/^\d{4}-\d{2}$/),
     })));
     const params = mocks.getDispatchedOrders.mock.calls.at(-1)?.[0] as Record<string, unknown>;
     expect(params.handlerId).toBeUndefined();
@@ -247,7 +242,6 @@ describe('MyDispatched processing status filter', () => {
     await waitFor(() => expect(mocks.getDispatchedOrders).toHaveBeenCalledWith(expect.objectContaining({
       status: 'completed',
       handlerId: 'current',
-      orderMonth: expect.stringMatching(/^\d{4}-\d{2}$/),
     })));
     const params = mocks.getDispatchedOrders.mock.calls.at(-1)?.[0] as Record<string, unknown>;
     expect(params.completedFrom).toBeUndefined();
@@ -293,7 +287,6 @@ describe('MyDispatched processing status filter', () => {
 
     await waitFor(() => expect(mocks.getDispatchedOrders).toHaveBeenCalledWith(expect.objectContaining({
       status: 'returned',
-      orderMonth: expect.stringMatching(/^\d{4}-\d{2}$/),
       includeReturned: true,
     })));
     expect(result.data).toEqual([{ id: 'd-returned', status: 'returned', module_code: 'contract', order_type: 'onboarding' }]);

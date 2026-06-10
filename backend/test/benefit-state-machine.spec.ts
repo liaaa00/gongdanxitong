@@ -80,6 +80,7 @@ describe('P7 benefit state machine (phase-1 hidden)', () => {
       {} as FieldPermissionService,
       {} as FieldSupplementService,
       { exportSingleDispatchedOrder: jest.fn() } as never,
+      { resolveUserDepartmentIds: jest.fn(async () => []) } as never,
       orderStageRepo,
     );
     return { service, workOrderRepo, operationLogRepo };

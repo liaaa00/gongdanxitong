@@ -14,6 +14,7 @@ export * from './field-permission.entity';
 export * from './field-supplement-log.entity';
 export * from './field-supplement-rule.entity';
 export * from './import-job.entity';
+export * from './import-template-field.entity';
 export * from './module-field.entity';
 export * from './module-handler.entity';
 export * from './module-supervisor.entity';

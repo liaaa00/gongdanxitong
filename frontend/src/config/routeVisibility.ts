@@ -51,29 +51,13 @@ const OFFBOARDING_ROLES = [
   ROLE.DATA_ENTRY_LEADER,
 ] as const satisfies readonly CanonicalRole[];
 
-// 我的工单入口按角色分层：业务员不显示“我的待办”；业务负责人只保留团队/历史；后道不显示“我发起的/我的退回”。
-const BUSINESS_SELF_WORK_ROLES = [
-  ROLE.ADMIN,
-  ROLE.BUSINESS_GROUP_LEADER,
-  ROLE.BUSINESS_GROUP_MEMBER,
-] as const satisfies readonly CanonicalRole[];
+// 我的工单入口整体仅管理员可见；普通角色通过入职/离职模块入口处理自己的子工单。
+const MY_WORK_ADMIN_ONLY_ROLES = [ROLE.ADMIN] as const satisfies readonly CanonicalRole[];
 
-const BACKEND_WORK_ROLES = [
-  ROLE.ADMIN,
-  ROLE.DATA_ENTRY_LEADER,
-  ROLE.SHARED_TEAM_OWNER,
-  ROLE.LABOR_CONTRACT_MEMBER,
-  ROLE.ONBOARDING_RESIGNATION_MEMBER,
-  ROLE.SOCIAL_INSURANCE_SPECIALIST,
-] as const satisfies readonly CanonicalRole[];
-
-const INITIATED_WORK_ROLES = BUSINESS_SELF_WORK_ROLES;
-const RETURNED_WORK_ROLES = BUSINESS_SELF_WORK_ROLES;
-const PENDING_WORK_ROLES = BACKEND_WORK_ROLES;
-const DONE_WORK_ROLES = [
-  ...BUSINESS_SELF_WORK_ROLES,
-  ...BACKEND_WORK_ROLES,
-] as const satisfies readonly CanonicalRole[];
+const INITIATED_WORK_ROLES = MY_WORK_ADMIN_ONLY_ROLES;
+const RETURNED_WORK_ROLES = MY_WORK_ADMIN_ONLY_ROLES;
+const PENDING_WORK_ROLES = MY_WORK_ADMIN_ONLY_ROLES;
+const DONE_WORK_ROLES = MY_WORK_ADMIN_ONLY_ROLES;
 
 const NOTIFICATION_ROLES = [
   ROLE.ADMIN,
@@ -86,13 +70,10 @@ const NOTIFICATION_ROLES = [
   ROLE.SOCIAL_INSURANCE_SPECIALIST,
 ] as const satisfies readonly CanonicalRole[];
 
-const TEAM_WORK_ROLES = [
-  ROLE.ADMIN,
-  ROLE.BUSINESS_OWNER,
-  ROLE.BUSINESS_GROUP_LEADER,
-] as const satisfies readonly CanonicalRole[];
+const TEAM_WORK_ROLES = MY_WORK_ADMIN_ONLY_ROLES;
+const HISTORY_WORK_ROLES = MY_WORK_ADMIN_ONLY_ROLES;
 
-const HISTORY_WORK_ROLES = [
+const DISPATCHED_DETAIL_ROLES = [
   ROLE.ADMIN,
   ROLE.BUSINESS_OWNER,
   ROLE.BUSINESS_GROUP_LEADER,
@@ -102,13 +83,6 @@ const HISTORY_WORK_ROLES = [
   ROLE.LABOR_CONTRACT_MEMBER,
   ROLE.ONBOARDING_RESIGNATION_MEMBER,
   ROLE.SOCIAL_INSURANCE_SPECIALIST,
-] as const satisfies readonly CanonicalRole[];
-
-const DISPATCHED_DETAIL_ROLES = [
-  ...BUSINESS_SELF_WORK_ROLES,
-  ...BACKEND_WORK_ROLES,
-  ROLE.BUSINESS_OWNER,
-  ROLE.BUSINESS_GROUP_LEADER,
 ] as const satisfies readonly CanonicalRole[];
 
 export const ROUTE_VISIBILITY = {
@@ -125,7 +99,7 @@ export const ROUTE_VISIBILITY = {
 
   '/my-field-permissions': [ROLE.ADMIN],
 
-  // 我的工单 4 视图（FE-08 会承接页面/路由实现；本文件先统一权限口径）。
+  // 我的工单 6 视图：业务侧保留发起/退回/已办/历史，后道保留待办/已办/历史，业务负责人保留团队/历史。
   '/my-work/initiated': INITIATED_WORK_ROLES,
   '/my-work/returned': RETURNED_WORK_ROLES,
   '/my-work/pending': PENDING_WORK_ROLES,
@@ -174,6 +148,7 @@ export const ROUTE_VISIBILITY = {
   '/admin/customer-assignees': [ROLE.ADMIN],
   '/admin/module-config': [ROLE.ADMIN],
   '/admin/fields': [ROLE.ADMIN],
+  '/admin/import-templates': [ROLE.ADMIN],
   '/admin/field-permissions': [ROLE.ADMIN],
   '/admin/dispatch-config': [ROLE.ADMIN],
   '/admin/flow-config': [ROLE.ADMIN],
@@ -256,15 +231,14 @@ function normalizePermissions(permissions?: string[]): Set<string> {
   return new Set((permissions || []).map((item) => String(item || '').trim()).filter(Boolean));
 }
 
-const BUSINESS_OWNER_DYNAMIC_ROUTES: readonly VisibilityRoute[] = ['/dashboard', '/my-work/team', '/my-work/history', '/my-dispatched/:id'];
-const BUSINESS_MEMBER_DYNAMIC_ROUTES: readonly VisibilityRoute[] = ['/my-work/initiated', '/my-work/returned', '/my-work/done', '/my-work/history', '/my-dispatched/:id'];
-const BACKEND_DYNAMIC_ROUTES: readonly VisibilityRoute[] = ['/my-work/pending', '/my-work/done', '/my-work/history', '/my-dispatched/:id'];
+const BUSINESS_OWNER_DYNAMIC_ROUTES: readonly VisibilityRoute[] = ['/dashboard', '/my-dispatched/:id'];
+const BUSINESS_MEMBER_DYNAMIC_ROUTES: readonly VisibilityRoute[] = ['/my-dispatched/:id'];
+const BACKEND_DYNAMIC_ROUTES: readonly VisibilityRoute[] = ['/my-dispatched/:id'];
 
 const RESTRICTED_DYNAMIC_PERMISSION_ROUTES: Partial<Record<CanonicalRole, readonly VisibilityRoute[]>> = {
   [ROLE.BUSINESS_OWNER]: BUSINESS_OWNER_DYNAMIC_ROUTES,
   [ROLE.BUSINESS_GROUP_LEADER]: [
-    '/dashboard', '/work-orders', '/work-orders/create', '/work-orders/import', '/work-orders/:id',
-    '/my-work/initiated', '/my-work/returned', '/my-work/done', '/my-work/team', '/my-work/history', '/my-dispatched/:id',
+    '/dashboard', '/work-orders', '/work-orders/create', '/work-orders/import', '/work-orders/:id', '/my-dispatched/:id',
     '/onboarding', '/onboarding/onboarding_contact', '/onboarding/contract', '/onboarding/data_entry', '/onboarding/social_insurance',
     '/offboarding', '/onboarding/resignation_contact', '/onboarding/data_entry_resign', '/onboarding/social_insurance_resign',
   ],
@@ -294,18 +268,8 @@ function hasDynamicPermissionForPath(pathname: string, permissions?: string[], u
   const route = resolveVisibilityRoute(pathname);
   const permissionSet = normalizePermissions(permissions);
   if (!route || PHASE1_HIDDEN_ROUTES.has(route) || permissionSet.size === 0 || !allowsDynamicPermissionWithinRoleScope(route, userRoles)) return false;
+  if (String(route).startsWith('/my-work/')) return false;
   if (permissionSet.has('*') || permissionSet.has('all') || permissionSet.has('work_order.*')) return true;
-  if (route === '/my-work/team') {
-    return permissionSet.has('work_order.view_team')
-      || permissionSet.has('work_order.view_all')
-      || permissionSet.has('data_scope.team')
-      || permissionSet.has('data_scope.all');
-  }
-  if (route === '/my-work/history') {
-    return permissionSet.has('work_order.view_history')
-      || permissionSet.has('work_order.view_all')
-      || permissionSet.has('data_scope.all');
-  }
   return false;
 }
 

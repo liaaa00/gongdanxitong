@@ -3,6 +3,7 @@ import { DataSource } from 'typeorm';
 import { seedCustomers } from './seed-customers';
 import { seedDepartments } from './seed-departments';
 import { seedDispatchRules } from './seed-dispatch-rules';
+import { seedExportTemplates } from './seed-export-templates';
 import { seedFieldPermissions } from './seed-field-permissions';
 import { seedFields } from './seed-fields';
 import { seedModuleConfigs } from './seed-module-configs';
@@ -37,6 +38,7 @@ export class SeedOnBootstrapService implements OnApplicationBootstrap {
     await seedFieldPermissions(this.dataSource);
     await seedModuleHandlers(this.dataSource);
     await seedModuleConfigs(this.dataSource);
+    await seedExportTemplates(this.dataSource);
     await seedNotificationTemplates(this.dataSource);
 
     this.logger.log('Startup seed completed: roles, departments, customers, users, module handlers, module configs, rules and permissions are up to date');

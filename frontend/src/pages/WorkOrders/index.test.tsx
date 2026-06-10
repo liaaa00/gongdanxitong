@@ -110,9 +110,8 @@ describe('WorkOrders initiated read-only view', () => {
       idCardNo: '3301',
       createdByName: '陶明月',
       orderType: 'onboarding',
-      createdAfter: expect.any(String),
-      createdBefore: expect.any(String),
     })));
+    expect(mocks.getWorkOrders).toHaveBeenCalledWith(expect.not.objectContaining({ createdAfter: expect.anything() }));
   });
 
   it('passes all main work-order header filters to the backend query', async () => {
@@ -141,9 +140,8 @@ describe('WorkOrders initiated read-only view', () => {
       idCardNo: '3301',
       createdByName: '陶明月',
       orderType: 'resignation',
-      createdAfter: expect.any(String),
-      createdBefore: expect.any(String),
     })));
+    expect(mocks.getWorkOrders).toHaveBeenCalledWith(expect.not.objectContaining({ createdAfter: expect.anything() }));
   });
 
   it('keeps main work-order list operations outside the initiated route', async () => {
@@ -190,10 +188,8 @@ describe('WorkOrders initiated read-only view', () => {
 
     const result = await mocks.latestTableProps.request({ current: 1, pageSize: 20 });
 
-    expect(mocks.getWorkOrders).toHaveBeenCalledWith(expect.objectContaining({
-      createdAfter: expect.any(String),
-      createdBefore: expect.any(String),
-    }));
+    expect(mocks.getWorkOrders).toHaveBeenCalledWith(expect.not.objectContaining({ createdAfter: expect.anything() }));
+    expect(mocks.getWorkOrders).toHaveBeenCalledWith(expect.not.objectContaining({ createdBefore: expect.anything() }));
     expect(mocks.getWorkOrders).toHaveBeenCalledWith(expect.not.objectContaining({ orderType: 'onboarding' }));
     expect(result.data).toHaveLength(2);
   });
@@ -215,8 +211,7 @@ describe('WorkOrders initiated read-only view', () => {
 
     expect(mocks.getWorkOrders).toHaveBeenCalledWith(expect.objectContaining({
       orderType: 'resignation',
-      createdAfter: expect.any(String),
-      createdBefore: expect.any(String),
     }));
+    expect(mocks.getWorkOrders).toHaveBeenCalledWith(expect.not.objectContaining({ createdAfter: expect.anything() }));
   });
 });
