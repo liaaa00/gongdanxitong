@@ -24,12 +24,6 @@ interface ValueNormalizeResult {
 }
 
 const SOFT_REQUIRED_SAFE_DEFAULTS: Record<string, string> = {};
-const ONBOARDING_IMPORT_EXCLUDED_FIELDS = new Set([
-  'contract_feedback',
-  'onboarding_feedback',
-  'data_entry_feedback',
-  'contract_template',
-]);
 
 const HEADER_ALIASES: Record<string, string[]> = {
   customer_name: ['客户', '客户名称', '客户全称', '公司名称', '用工客户', '客户单位', '商社名称'],
@@ -87,24 +81,6 @@ const HEADER_ALIASES: Record<string, string[]> = {
   need_company_payroll: ['是否企服发薪', '是否公司发薪', '是否代发薪', '是否发薪'],
   special_remark: ['特殊备注', '特别备注', '特殊说明'],
   data_entry_feedback: ['增员报岗录入反馈', '数据录入反馈', '报岗录入反馈', '录入反馈', '数据反馈'],
-  position_type: ['岗位类型', '岗位性质', '职位类型'],
-  id_card_type: ['证件类型', '证件种类', '身份证件类型'],
-  education: ['学历', '最高学历', '文化程度'],
-  marital_status: ['婚姻状况', '婚姻情况', '婚否'],
-  probation_other_salary: ['试用期其他工资', '试用期其它工资', '试用期补贴', '试用期津贴'],
-  need_esign: ['是否电子签', '是否电子签署', '是否需要电子签', '电子签'],
-  esign_platform: ['电子签平台', '电子签署平台', '电签平台', '签署平台'],
-  company_address: ['甲方住所', '甲方地址', '甲方注册地址', '公司住所', '用人单位住所'],
-  project_name: ['项目名称', '项目', '所属项目'],
-  work_arrangement: ['安排或调整工作的情况', '工作安排', '安排或调整工作', '可调整工作地点', '工作调整情况'],
-  feedback_deadline: ['反馈截止日期', '需要反馈截止日期', '反馈截止时间', '反馈期限'],
-  is_common_template: ['是否为通用模板', '是否通用模板', '通用模板'],
-  template_name: ['模板名称', '模版名称', '通用模板名称'],
-  social_pay_region: ['缴纳地区', '社保缴纳地区', '参保地区', '社保公积金缴纳地区', '社保公积金缴纳地'],
-  social_stop_month: ['社保公积金停保月', '停保月', '社保停保月', '公积金停保月', '减员月份', '停保月份'],
-  resignation_reason: ['离职原因', '减员原因', '离职事由'],
-  resignation_date: ['离职日期', '离职时间', '减员日期', '减员时间'],
-  need_resignation_share: ['离职材料是否需要共享收集', '离职材料是否需要集约收集', '是否共享收集离职材料', '离职材料共享收集'],
 };
 
 @Injectable()
@@ -116,7 +92,7 @@ export class ImportFieldValidationService {
   ) {}
 
   async getActiveFields(orderType: OrderType): Promise<FieldConfig[]> {
-    const fields = await this.fieldConfigRepository
+    return this.fieldConfigRepository
       .createQueryBuilder('field')
       .where('field.is_active = true')
       .andWhere(
@@ -125,8 +101,6 @@ export class ImportFieldValidationService {
       )
       .orderBy('field.display_order', 'ASC')
       .getMany();
-
-    return this.filterImportFields(orderType, fields);
   }
 
   async buildCandidateFields(orderType: OrderType): Promise<CandidateField[]> {
@@ -139,56 +113,6 @@ export class ImportFieldValidationService {
     }));
   }
 
-  private filterImportFields(orderType: OrderType, fields: FieldConfig[]): FieldConfig[] {
-    if (orderType !== OrderType.ONBOARDING) {
-      return fields;
-    }
-    return this.applyInferredImportRules(fields);
-  }
-
-  private applyInferredImportRules(fields: FieldConfig[]): FieldConfig[] {
-    const isOnboardingImport = fields.some((field) => field.fieldCode === 'need_onboarding_contact');
-    if (!isOnboardingImport) {
-      return fields;
-    }
-
-    return fields
-      .filter((field) => !ONBOARDING_IMPORT_EXCLUDED_FIELDS.has(field.fieldCode))
-      .map((field) => {
-        if (field.fieldCode === 'feedback_deadline' || field.fieldCode === 'is_common_template') {
-          return {
-            ...field,
-            isRequired: false,
-            defaultRequired: false,
-            conditionalRequired: this.needOnboardingContactCondition() as unknown as Record<string, unknown>,
-          } as FieldConfig;
-        }
-        if (field.fieldCode === 'template_name') {
-          return {
-            ...field,
-            isRequired: false,
-            defaultRequired: false,
-            conditionalRequired: this.commonOnboardingTemplateCondition() as unknown as Record<string, unknown>,
-          } as FieldConfig;
-        }
-        return field;
-      });
-  }
-
-  private needOnboardingContactCondition(): AstNode {
-    return { field: 'need_onboarding_contact', op: 'EQ', value: '是' } as AstNode;
-  }
-
-  private commonOnboardingTemplateCondition(): AstNode {
-    return {
-      op: 'AND',
-      children: [
-        this.needOnboardingContactCondition(),
-        { field: 'is_common_template', op: 'EQ', value: '是' } as AstNode,
-      ],
-    } as AstNode;
-  }
-
   async validateRow(input: {
     rowNo: number;
     raw: Record<string, unknown>;
@@ -196,13 +120,12 @@ export class ImportFieldValidationService {
     defaults?: Record<string, unknown>;
     fields: FieldConfig[];
   }): Promise<RowValidationResult> {
-    const fields = this.applyInferredImportRules(input.fields);
-    const mapped = this.mapRow(input.raw, input.mapping, fields, input.defaults ?? {});
+    const mapped = this.mapRow(input.raw, input.mapping, input.fields, input.defaults ?? {});
     const normalized = mapped.normalized;
     const warnings = mapped.warnings;
     const errors: RowValidationError[] = [];
 
-    for (const field of fields) {
+    for (const field of input.fields) {
       const value = normalized[field.fieldCode];
       const required = await this.isRequired(field, normalized);
       if (required && !this.hasValue(value)) {
