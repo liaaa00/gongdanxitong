@@ -1,4 +1,5 @@
 import request from './request';
+import axios from 'axios';
 import { isMockMode, mockDelay, type PageParams, type PageResult } from './mock';
 import * as XLSX from 'xlsx';
 import { addMockNotification } from './notifications';
@@ -470,6 +471,13 @@ export function reloadMockWorkOrders(): void {
 
 const mockWorkOrders: WorkOrderItem[] = loadMockWorkOrders();
 
+const ONBOARDING_IMPORT_TEMPLATE_EXCLUDED_FIELD_CODES = new Set([
+  'contract_feedback',
+  'onboarding_feedback',
+  'data_entry_feedback',
+  'contract_template',
+]);
+
 const AVAILABLE_FIELDS_MOCK = [
   { field_code: 'customer_name', field_name: '客户名称', is_required: true },
   { field_code: 'customer_code', field_name: '客户代码', is_required: true },
@@ -525,6 +533,10 @@ const AVAILABLE_FIELDS_MOCK = [
   { field_code: 'special_remark', field_name: '特殊备注' },
   { field_code: 'data_entry_feedback', field_name: '增员报岗录入反馈' },
 ];
+
+const AVAILABLE_IMPORT_FIELDS_MOCK = AVAILABLE_FIELDS_MOCK.filter(
+  (field) => !ONBOARDING_IMPORT_TEMPLATE_EXCLUDED_FIELD_CODES.has(field.field_code),
+);
 
 let importJobCounter = 1;
 const mockImportJobs = new Map<string, ImportJob>();
@@ -1187,6 +1199,26 @@ const HEADER_SUGGESTIONS: Record<string, { code: string; name: string; confidenc
   '特殊备注': { code: 'special_remark', name: '特殊备注', confidence: 0.9 },
   '增员报岗录入反馈': { code: 'data_entry_feedback', name: '增员报岗录入反馈', confidence: 0.95 },
   '数据录入反馈': { code: 'data_entry_feedback', name: '增员报岗录入反馈', confidence: 0.9 },
+  '岗位类型': { code: 'position_type', name: '岗位类型', confidence: 0.95 },
+  '证件类型': { code: 'id_card_type', name: '证件类型', confidence: 0.95 },
+  '学历': { code: 'education', name: '学历', confidence: 0.95 },
+  '婚姻状况': { code: 'marital_status', name: '婚姻状况', confidence: 0.95 },
+  '试用期其他工资': { code: 'probation_other_salary', name: '试用期其他工资', confidence: 0.93 },
+  '是否电子签': { code: 'need_esign', name: '是否电子签', confidence: 0.95 },
+  '电子签平台': { code: 'esign_platform', name: '电子签平台', confidence: 0.95 },
+  '甲方住所': { code: 'company_address', name: '甲方住所', confidence: 0.95 },
+  '项目名称': { code: 'project_name', name: '项目名称', confidence: 0.95 },
+  '安排或调整工作的情况': { code: 'work_arrangement', name: '安排或调整工作的情况', confidence: 0.95 },
+  '反馈截止日期': { code: 'feedback_deadline', name: '反馈截止日期', confidence: 0.93 },
+  '需要反馈截止日期': { code: 'feedback_deadline', name: '反馈截止日期', confidence: 0.9 },
+  '是否为通用模板': { code: 'is_common_template', name: '是否为通用模板', confidence: 0.95 },
+  '模板名称': { code: 'template_name', name: '模板名称', confidence: 0.93 },
+  '缴纳地区': { code: 'social_pay_region', name: '缴纳地区', confidence: 0.94 },
+  '社保公积金停保月': { code: 'social_stop_month', name: '社保公积金停保月', confidence: 0.94 },
+  '停保月': { code: 'social_stop_month', name: '社保公积金停保月', confidence: 0.85 },
+  '离职原因': { code: 'resignation_reason', name: '离职原因', confidence: 0.93 },
+  '离职日期': { code: 'resignation_date', name: '离职日期', confidence: 0.93 },
+  '离职材料是否需要共享收集': { code: 'need_resignation_share', name: '离职材料是否需要共享收集', confidence: 0.93 },
 };
 
 async function readExcelFile(file: File): Promise<{ headers: string[]; rows: Record<string, unknown>[] }> {
@@ -1212,7 +1244,7 @@ function normalizeHeader(s: string): string {
 const NORMALIZED_SUGGESTIONS: Record<string, { code: string; name: string; confidence: number }> = (() => {
   const out: Record<string, { code: string; name: string; confidence: number }> = {};
   for (const [k, v] of Object.entries(HEADER_SUGGESTIONS)) out[normalizeHeader(k)] = v;
-  for (const f of AVAILABLE_FIELDS_MOCK) {
+  for (const f of AVAILABLE_IMPORT_FIELDS_MOCK) {
     const key = normalizeHeader(f.field_name);
     if (!out[key]) out[key] = { code: f.field_code, name: f.field_name, confidence: 0.9 };
   }
@@ -1293,7 +1325,7 @@ export async function previewImport(file: File, orderType = 'onboarding'): Promi
     const { headers, rows } = await readExcelFile(file);
     if (headers.length === 0) {
       return mockDelay({
-        mapping: [], availableFields: AVAILABLE_FIELDS_MOCK, suggestedMapping: {},
+        mapping: [], availableFields: AVAILABLE_IMPORT_FIELDS_MOCK, suggestedMapping: {},
         totalRows: 0, previewRows: [], missingRequired: [],
       }, 300);
     }
@@ -1311,7 +1343,7 @@ export async function previewImport(file: File, orderType = 'onboarding'): Promi
     for (const m of mapping) if (m.systemFieldCode) suggestedMapping[m.excelColumn] = m.systemFieldCode;
     return mockDelay({
       mapping,
-      availableFields: AVAILABLE_FIELDS_MOCK,
+      availableFields: AVAILABLE_IMPORT_FIELDS_MOCK,
       suggestedMapping,
       totalRows: rows.length,
       previewRows: rows.slice(0, 10),
@@ -1379,43 +1411,76 @@ export async function confirmImport(
   return normalizeImportJobResponse(result);
 }
 
-const IMPORT_TEMPLATE_SHEET_NAME = '当前字段配置';
 function getImportTemplateFileName(orderType: string): string {
   const label = orderType === 'resignation' ? '离职' : '入职';
   return `工单管理系统-${label}导入模板.xlsx`;
 }
 
-function buildImportTemplateExample(fieldCode: string, fieldType?: string): string | number {
-  const normalized = fieldCode.toLowerCase();
-  if (normalized.includes('customer_name')) return '示例客户';
-  if (normalized.includes('customer_code')) return 'CUST001';
-  if (normalized.includes('employee_name')) return '张三';
-  if (normalized.includes('id_card') || normalized.includes('identity')) return '330106199001011234';
-  if (normalized.includes('mobile') || normalized.includes('phone')) return '13800138000';
-  if (normalized.includes('email')) return 'demo@example.com';
-  if (normalized.includes('date') || fieldType === 'date') return '2026-06-01';
-  if (normalized.startsWith('need_') || normalized.includes('是否')) return '是';
-  if (fieldType === 'number') return 1000;
-  return '';
+function parseContentDispositionFileName(disposition: string | undefined): string | null {
+  if (!disposition) return null;
+  const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      return null;
+    }
+  }
+  const asciiMatch = disposition.match(/filename="?([^";]+)"?/i);
+  return asciiMatch ? asciiMatch[1] : null;
 }
 
 export async function downloadCurrentImportTemplate(orderType = 'onboarding'): Promise<{ fieldCount: number; fileName: string }> {
-  const fields = (await getFields(orderType))
-    .filter((field) => field.is_active !== false)
-    .sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
-  if (fields.length === 0) {
-    throw new Error('NO_FIELDS');
+  const token = localStorage.getItem('token');
+  const base = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || '';
+  // 直接用 axios（绕过 request 的响应拦截器，拦截器会把 blob 当 ApiResponse 处理而报错）
+  let response;
+  try {
+    response = await axios.get<Blob>(`${base}/api/work-orders/import/template`, {
+      params: { orderType },
+      responseType: 'blob',
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+  } catch (err) {
+    // 后端业务异常（如 NO_FIELDS）以非 2xx + JSON blob 返回，需解出 message
+    const respData = (err as { response?: { data?: unknown } }).response?.data;
+    if (respData instanceof Blob) {
+      const message = await extractBlobErrorMessage(respData);
+      throw new Error(message);
+    }
+    throw err instanceof Error ? err : new Error('下载模板失败');
   }
 
-  const headers = fields.map((field) => field.field_name || field.field_code);
-  const example = fields.map((field) => buildImportTemplateExample(field.field_code, field.field_type));
-  const worksheet = XLSX.utils.aoa_to_sheet([headers, example]);
-  worksheet['!cols'] = headers.map((header) => ({ wch: Math.max(12, Math.min(28, String(header).length + 4)) }));
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, IMPORT_TEMPLATE_SHEET_NAME);
-  const fileName = getImportTemplateFileName(orderType);
-  XLSX.writeFile(workbook, fileName);
-  return { fieldCount: fields.length, fileName };
+  const blob = response.data;
+  if (blob.type && blob.type.includes('application/json')) {
+    throw new Error(await extractBlobErrorMessage(blob));
+  }
+
+  const fileName =
+    parseContentDispositionFileName(response.headers['content-disposition']) ||
+    getImportTemplateFileName(orderType);
+  const fieldCount = Number(response.headers['x-field-count'] ?? 0);
+
+  const url = window.URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  window.URL.revokeObjectURL(url);
+
+  return { fieldCount, fileName };
+}
+
+async function extractBlobErrorMessage(blob: Blob): Promise<string> {
+  try {
+    const parsed = JSON.parse(await blob.text()) as { message?: string };
+    if (parsed.message === 'NO_FIELDS') return 'NO_FIELDS';
+    return parsed.message || '下载模板失败';
+  } catch {
+    return '下载模板失败';
+  }
 }
 
 export function downloadImportErrorReport(jobId: string) {

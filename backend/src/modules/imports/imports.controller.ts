@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { Response } from 'express';
@@ -6,13 +6,15 @@ import { randomBytes } from 'crypto';
 import { BusinessPermission } from 'src/common/decorators/business-permission.decorator';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { businessException } from 'src/common/exceptions/business-exception';
+import { OrderType } from 'src/entities';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { UploadsService } from 'src/modules/uploads/uploads.service';
 import { FieldsService } from 'src/modules/admin/fields/fields.service';
 import { ConfirmImportDto, ConfirmNewFieldDto } from './dto/confirm-import.dto';
 import { PreviewImportDto } from './dto/preview-import.dto';
 import { ImportJobService } from './import-job.service';
-import { assertCanImportWorkOrder } from './import-permissions';
+import { ImportTemplateService } from './import-template.service';
+import { assertCanImportWorkOrder, FIRST_PHASE_IMPORT_ORDER_TYPES } from './import-permissions';
 
 const excelFilter = (_req: unknown, file: Express.Multer.File, callback: (error: Error | null, acceptFile: boolean) => void): void => {
   const ok = file.originalname.toLowerCase().endsWith('.xlsx') || file.originalname.toLowerCase().endsWith('.xls');
@@ -25,7 +27,30 @@ export class ImportsController {
     private readonly importJobService: ImportJobService,
     private readonly uploadsService: UploadsService,
     private readonly fieldsService: FieldsService,
+    private readonly importTemplateService: ImportTemplateService,
   ) {}
+
+  @Get('import/template')
+  @BusinessPermission('work_order.import')
+  async downloadTemplate(
+    @Query('orderType') orderTypeRaw: string | undefined,
+    @CurrentUser() user: JwtUserPayload,
+    // 必须用裸 @Res()（非 passthrough）：手动 res.send 文件流后，全局 ResponseInterceptor 仍会
+    // 把返回值包成 {code,data} 再次发送，触发 ERR_HTTP_HEADERS_SENT 并使进程崩溃。
+    @Res() res: Response,
+  ) {
+    const orderType = (orderTypeRaw as OrderType) ?? OrderType.ONBOARDING;
+    if (!FIRST_PHASE_IMPORT_ORDER_TYPES.includes(orderType)) {
+      throw businessException(4400, 400, '当前阶段仅开放入职、离职导入模板');
+    }
+    assertCanImportWorkOrder(user, orderType);
+    const result = await this.importTemplateService.generate(orderType);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(result.fileName)}"`);
+    res.setHeader('X-Field-Count', String(result.fieldCount));
+    res.setHeader('Access-Control-Expose-Headers', 'X-Field-Count, Content-Disposition');
+    res.send(result.buffer);
+  }
 
   @Post('import/preview')
   @BusinessPermission('work_order.import')
@@ -139,11 +164,11 @@ export class ImportsController {
   }
 
   @Get('import/:jobId/error-report')
-  async errorReport(@Param('jobId') jobId: string, @CurrentUser() user: JwtUserPayload, @Res({ passthrough: true }) res: Response) {
+  async errorReport(@Param('jobId') jobId: string, @CurrentUser() user: JwtUserPayload, @Res() res: Response) {
     const report = await this.importJobService.getErrorReport(jobId, user);
     res.setHeader('Content-Type', report.mimeType);
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(report.fileName)}"`);
-    return res.download(report.filePath, report.fileName);
+    res.download(report.filePath, report.fileName);
   }
 
   // Frontend compat alias: services/workOrders.ts and components/ExcelUploader/index.tsx
@@ -152,9 +177,9 @@ export class ImportsController {
   async errorReportAlias(
     @Param('jobId') jobId: string,
     @CurrentUser() user: JwtUserPayload,
-    @Res({ passthrough: true }) res: Response,
+    @Res() res: Response,
   ) {
-    return this.errorReport(jobId, user, res);
+    await this.errorReport(jobId, user, res);
   }
 
   private normalizeMapping(payload: ConfirmImportDto): { mapping: Record<string, string>; defaults: Record<string, unknown> } {

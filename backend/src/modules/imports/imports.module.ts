@@ -11,6 +11,7 @@ import { ImportErrorExcelService } from './error-excel.service';
 import { ImportFieldValidationService } from './field-validation.service';
 import { ImportJobService } from './import-job.service';
 import { ImportsController } from './imports.controller';
+import { ImportTemplateService } from './import-template.service';
 import { WorkOrderImportService } from './work-order-import.service';
 
 @Module({
@@ -28,6 +29,7 @@ import { WorkOrderImportService } from './work-order-import.service';
     ImportFieldValidationService,
     ImportErrorExcelService,
     ImportJobService,
+    ImportTemplateService,
     WorkOrderImportService,
   ],
   exports: [ImportJobService, WorkOrderImportService],
