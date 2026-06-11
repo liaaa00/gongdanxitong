@@ -138,3 +138,34 @@
 - 验证：`backend` 下 `npx jest --config ./test/jest-unit.json --runInBand import-template-config.service.spec.ts import-template.service.spec.ts import.service.spec.ts` 通过（3 个测试文件，30 条）；`backend` 下 `npx tsc --noEmit -p tsconfig.json` 通过；追加后 `backend` 下 `npx jest --config ./test/jest-unit.json --runInBand import-template-config.service.spec.ts` 通过；`frontend` 下 `npm test -- --run src/pages/Admin/ImportTemplates/index.test.tsx` 通过（1 个测试文件，3 条）；`frontend` 下 `npx tsc -b --noEmit` 通过；`frontend` 下 `npm test -- --run src/layouts/BasicLayout.test.tsx src/config/routeVisibility.test.ts src/pages/Admin/ImportTemplates/index.test.tsx` 通过（3 个测试文件，36 条）。
 - 代码提交：未提交，待 Leader 汇总。
 - 未提交无关文件：待提交前检查；工作区已有大量历史/他人无关改动、截图、上传 Excel 和临时文件，本次不清理不纳入提交范围。
+
+## 2026-06-11 · 新建根目录 CLAUDE.md 作为规则强制入口
+- 用户要求：每次只让 AI 改一个错误，AI 有时会顺手动到之前已完成的成果；已建 `docs/AI修改前必读.md`、`docs/业务规则回归清单.md`、`docs/AI修改记录.md` 三份文档但效果不佳，要求分析原因并给出更好方法。
+- 根因诊断：上述三份文档（以及 `docs/project-rules/CLAUDE.md`）都在 `docs/` 下，Claude Code 新会话只会自动加载“项目根目录”的 `CLAUDE.md`，因此这些规则永远不会被自动读取；而“必须先读这些文档”的指令本身也写在没被读的文件里，形成死循环。每个新会话的 AI 失忆进场、只靠聊天上下文，自然会碰到旧成果。
+- 是否覆盖旧规则：否；未改动任何既有文档内容与业务口径，仅新增一个自动加载入口指向既有文档。
+- 同步更新规则文档：新增项目根目录 `CLAUDE.md`（约 50 行极简入口），内容为：动手前按顺序读 `docs/AI修改前必读.md`、`docs/业务规则回归清单.md`、`docs/project-rules/CLAUDE.md` 和相关测试；固化“最小改动铁律”（只改用户本次明确指定内容）；固化“改前先回报落点和影响面”；改后留痕+跑 `回归测试.ps1`；以及四级优先级。未修改 `docs/业务规则回归清单.md`，无新增业务口径。
+- 实现/测试覆盖：仅新增文档文件，无代码与测试改动。
+- 验证：无需构建/测试；机制是否生效以后续新会话能否一进场即遵守“先读 docs 规则、只改指定内容”为准。保持根 `CLAUDE.md` 短小是其被严格执行的关键。
+- 代码提交：未提交，待用户决定。
+- 未提交无关文件：本次仅涉及新增根目录 `CLAUDE.md` 与本记录追加，未触碰其他文件。
+
+## 2026-06-11 · 修复按固定模板导出导致后端假死（治标）
+- 用户要求：点击"劳动合同签订批导出模板-速创.xlsx"固定模板导出后后端假死（无响应），先只诊断不擅自重启或改代码，确认后批准"先做治标"，修好再重启假死后端。
+- 根因诊断：速创模板主表"劳动合同批导入模板2026-05-26"含一个数据校验范围拉到 XFD（第16384）列、覆盖约 1,616,368 个单元格的超大 data validation。ExcelJS `writeBuffer` 写出时算出列索引 16385，稳定抛 `16385 is out of bounds`，且该异步错误未被捕获，拖死 event loop，导致后端 TCP 端口仍监听但所有 HTTP 请求超时（PID 8836 假死、堆积约 186 个卡住连接、内存钉约 861MB）。原 `clearWorksheetDataValidations` 逐格 getCell+delete 遍历约 120 万次（约 1.2 秒、阻塞 event loop），且 `copyDataRowShape` 把源格 dataValidation 逐格复制回数据行，清了又被引回。
+- 是否覆盖旧规则：否；回归清单第 255 条"因 ExcelJS 兼容限制无法写出的数据验证规则可清理，但不得改变可见模板结构和字段列序"正好允许本方案，未改变模板结构/字段列序/平台路由。
+- 同步更新规则文档：未修改 `docs/业务规则回归清单.md`，无新增业务口径，仅在本记录追加。
+- 实现/测试覆盖：仅改 `backend/src/modules/admin/export-templates/export-templates.service.ts` 三处：(1) `clearWorksheetDataValidations` 从逐格遍历改为一次性 `dataValidations.model = {}`（止血点）；(2) `copyDataRowShape` 删掉把源格 `dataValidation` 逐格复制到数据行那行（清了又被引回的元凶）；(3) 新增 `writeWorkbookBuffer` 辅助方法把两处 `workbook.xlsx.writeBuffer()` 包进 try/catch，失败抛 `InternalServerErrorException`，杜绝未捕获异步错误拖死进程。`appendWorkbookSheets` 仍复制 dataValidation 但其读取的源表已被前置清空，sourceCell.dataValidation 返回 undefined，按最小改动保持不动。
+- 验证：`npx tsc --noEmit` 零错误；查 ExcelJS 源码确认 `DataValidations.model` 是无缓存实例属性、worksheet 序列化直接读该属性，赋空对象即清空全部校验；真实速创模板端到端复刻：主表 1,616,368 项校验一次性清空为 0，`writeBuffer` 42ms 成功写出约 15KB，不再抛 `16385 out of bounds`。临时验证脚本已删除。
+- 代码提交：未提交，待用户决定。
+- 未提交无关文件：本次仅改动 `export-templates.service.ts` 与本记录追加；工作区另有上轮遗留的 `.gitignore`、`frontend/tsconfig.tsbuildinfo`、新增 `CLAUDE.md` 等，不属于本次范围。
+- 遗留事项：治本（清理或修复速创模板源文件本身那约 161 万项越界校验）是否做、何时做尚未拍板，约定治标稳定后单独决定；治本改的是只读二进制资产，需先确认校验非业务需要，且挡不住管理员重新上传脏模板复发。
+
+## 2026-06-11 · 修复劳动合同子工单批量导出无法按电子签平台拆分多文件
+- 用户要求：劳动合同模块子工单批量导出时，应按电子签平台拆成两个不同模板文件（速创模板 vs E签宝模板），但实际所有数据被并到同一文件，拆分逻辑失效；定位并修复（最终选定方案 A：改后端补字段，前端零改）。
+- 根因诊断（接口/数据库/代码三方比对）：前端 `handleBatchExport` 按 `row.extra_data?.esign_platform` 分组发请求，但子工单列表接口的 `toListItem`（`dispatched-order.service.ts`）从不返回 `extra_data` / `esign_platform`，导致所有数据归为「未指定平台」单一组，只发一次 batch-export 请求，按平台拆多文件逻辑从未生效。
+- 是否覆盖旧规则：否；纯缺陷修复，使行为回归到设计预期，未改动任何既有业务口径与字段语义。
+- 同步更新规则文档：未修改 `docs/业务规则回归清单.md`，无新增业务口径，仅在本记录追加。
+- 实现/测试覆盖：仅改两处——(1) `dispatched-order.service.ts` 的 `toListItem` 末尾补 `extraData` / `extra_data`，取自 `order.parentOrder.extraData`，与详情接口（`toDetailItem`）、导出后端口径完全一致；(2) `dispatched-order.types.ts` 的 `DispatchedOrderListItem` 接口加 `extraData?` / `extra_data?` 可选声明。前端零改动。
+- 验证：`npx tsc --noEmit` 零错误；后端 build 后重启（PID 21928 监听 3000）加载新代码；列表接口实测正确返回 `extra_data`，平台分布 E签宝 5 + 速创 5；端到端导出二次下载确认两文件模板完全不同（速创组约 16.9KB / 13 sheet，E签宝组约 9.4KB / 1 sheet）；`回归测试.ps1 -SkipBuild` 前端 10 套件 76 用例全过。
+- 代码提交：未提交，待用户决定。
+- 未提交无关文件：本次仅改 `dispatched-order.service.ts`、`dispatched-order.types.ts` 与本记录追加；工作区另有上轮遗留的 `.gitignore`、`http-exception.filter.ts`、`export-templates.service.ts`、`OnboardingModule/*`、`frontend/tsconfig.tsbuildinfo`、新增 `CLAUDE.md` 等，均不属于本次范围。已清理本次及前序诊断遗留的临时产物 `backend/_repro_export.js`、`field_configs_custom.csv`、`import_template_fields.csv`、`local_import_template_field_codes.txt`。

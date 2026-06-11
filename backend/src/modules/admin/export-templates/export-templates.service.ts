@@ -8,7 +8,7 @@ import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 import { toPageResult } from 'src/common/types/pagination.types';
 import { DispatchedOrder, ExportTemplate, FieldConfig, OperationLog } from 'src/entities';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
-import { DispatchedOrderExportResult } from 'src/modules/dispatched-orders/dispatched-order.types';
+import { DispatchedOrderExportFile, DispatchedOrderExportResult } from 'src/modules/dispatched-orders/dispatched-order.types';
 import { fallbackBusinessLabel } from 'src/modules/notifications/notification-display.util';
 import { UploadService } from 'src/modules/upload/upload.service';
 
@@ -151,8 +151,6 @@ export class ExportTemplatesService {
     const orders = await this.loadOrdersByIds(ids);
     const fieldNameMap = await this.loadFieldNameMap();
     const fieldOptionsMap = await this.loadFieldOptionsMap();
-    let workbook = new Workbook();
-    const usedSheetNames = new Set<string>();
     let rowCount = 0;
     const grouped = new Map<string, { moduleCode: string; signPlatform: string | null; orders: DispatchedOrder[] }>();
     for (const order of orders) {
@@ -164,7 +162,11 @@ export class ExportTemplatesService {
       grouped.set(groupKey, group);
     }
 
+    // 每个分组（模块+电子签平台）各自生成一个独立文件，前端逐个下载，互不合并。
+    const files: DispatchedOrderExportFile[] = [];
     for (const { moduleCode, signPlatform, orders: moduleOrders } of grouped.values()) {
+      let workbook = new Workbook();
+      const usedSheetNames = new Set<string>();
       const visibleFields = Array.from(new Set(moduleOrders.flatMap((order) => order.visibleFields ?? [])));
       const template = await this.resolveDefaultTemplate(moduleCode, visibleFields, signPlatform);
       const result = this.buildResult(template, moduleOrders, fieldNameMap);
@@ -181,31 +183,48 @@ export class ExportTemplatesService {
           template.signPlatform ?? signPlatform ?? null,
         );
       }
+      const buffer = await this.writeWorkbookBuffer(workbook);
+      const platformLabel = signPlatform ? `-${signPlatform}` : '';
+      const meta = await this.uploadService.saveBuffer({
+        kind: 'excel',
+        buffer,
+        originalName: `${template.templateName || moduleCode}${platformLabel}-${Date.now()}.xlsx`,
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      files.push({
+        fileId: meta.fileId,
+        fileName: meta.originalName,
+        downloadUrl: `/api/files/${meta.fileId}`,
+        moduleCode,
+        signPlatform,
+        count: moduleOrders.length,
+      });
     }
 
-    const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
-    const meta = await this.uploadService.saveBuffer({
-      kind: 'excel',
-      buffer,
-      originalName: `子工单批量导出-${Date.now()}.xlsx`,
-      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    });
-    const exportGroups = Array.from(grouped.values()).map(({ moduleCode, signPlatform, orders: groupOrders }) => ({
-      moduleCode,
-      signPlatform,
-      count: groupOrders.length,
-    }));
+    const exportGroups = files.map(({ moduleCode, signPlatform, count }) => ({ moduleCode, signPlatform, count }));
     const moduleCodes = Array.from(new Set(exportGroups.map((group) => group.moduleCode)));
+    const primary = files[0];
     await this.operationLogRepository.save(this.operationLogRepository.create({
       entityType: 'dispatched_order',
       entityId: ids[0],
       userId: user.sub,
       actionType: 'batch_export_auto_template',
       beforeData: null,
-      afterData: { dispatchedOrderIds: ids, fileId: meta.fileId, rowCount, moduleCodes, exportGroups },
+      afterData: { dispatchedOrderIds: ids, fileIds: files.map((f) => f.fileId), rowCount, moduleCodes, exportGroups },
       ipAddress: null,
     }));
-    return { templateId: null, templateName: '子工单批量导出', moduleCode: moduleCodes.length === 1 ? moduleCodes[0] : 'mixed', columns: [], rows: [], rowCount, fileId: meta.fileId, fileName: meta.originalName, downloadUrl: `/api/files/${meta.fileId}` };
+    return {
+      templateId: null,
+      templateName: '子工单批量导出',
+      moduleCode: moduleCodes.length === 1 ? moduleCodes[0] : 'mixed',
+      columns: [],
+      rows: [],
+      rowCount,
+      fileId: primary?.fileId,
+      fileName: primary?.fileName,
+      downloadUrl: primary?.downloadUrl,
+      files,
+    };
   }
 
   private async applyTemplateToOrders(
@@ -223,7 +242,7 @@ export class ExportTemplatesService {
     if (workbook.worksheets.length === 0) {
       this.writeWorksheet(workbook, exportTemplate.templateName, this.resolveRichColumns(exportTemplate, fieldNameMap, fieldOptionsMap), orders, exportTemplate.signPlatform ?? null);
     }
-    const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+    const buffer = await this.writeWorkbookBuffer(workbook);
     const meta = await this.uploadService.saveBuffer({
       kind: 'excel',
       buffer,
@@ -481,13 +500,22 @@ export class ExportTemplatesService {
     return workbook;
   }
 
+  private async writeWorkbookBuffer(workbook: Workbook): Promise<Buffer> {
+    try {
+      return Buffer.from(await workbook.xlsx.writeBuffer());
+    } catch (error) {
+      // 捕获 ExcelJS 写出异常（如越界数据校验导致的 out of bounds），避免未处理的异步错误拖死后端进程。
+      const message = error instanceof Error ? error.message : String(error);
+      throw new InternalServerErrorException(`导出文件生成失败：${message}`);
+    }
+  }
+
   private clearWorksheetDataValidations(worksheet: Worksheet): void {
-    const model = (worksheet as unknown as { dataValidations?: { model?: Record<string, unknown> } }).dataValidations?.model;
-    if (model) {
-      for (const key of Object.keys(model)) {
-        delete (worksheet.getCell(key) as unknown as { dataValidation?: unknown }).dataValidation;
-        delete model[key];
-      }
+    // ExcelJS 中 cell.dataValidation 代理到 dataValidations.model，整体置空即可清掉全部校验。
+    // 不逐格 getCell+delete：速创模板含覆盖约 161 万格的越界校验，逐格遍历会同步阻塞 event loop 导致后端假死。
+    const dv = (worksheet as unknown as { dataValidations?: { model?: Record<string, unknown> } }).dataValidations;
+    if (dv && dv.model) {
+      dv.model = {};
     }
   }
 
@@ -545,7 +573,6 @@ export class ExportTemplatesService {
       const sourceCell = sourceRow.getCell(columnIndex);
       const targetCell = targetRow.getCell(columnIndex);
       targetCell.style = this.cloneExcelObject(sourceCell.style) ?? {};
-      if (sourceCell.dataValidation) targetCell.dataValidation = this.cloneExcelObject(sourceCell.dataValidation);
     }
   }
 
@@ -561,7 +588,7 @@ export class ExportTemplatesService {
         pageSetup: this.cloneExcelObject(sourceSheet.pageSetup),
         views: this.cloneExcelObject(sourceSheet.views),
       });
-      worksheet.columns = sourceSheet.columns.map((column, index) => ({
+      worksheet.columns = (sourceSheet.columns ?? []).map((column, index) => ({
         key: `c${index}`,
         width: column.width,
         hidden: column.hidden,

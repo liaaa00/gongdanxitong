@@ -53,3 +53,13 @@ read_excel.js
 
 # SpectrAI worktree isolation
 .spectrai-worktrees/
+
+# TS build cache
+*.tsbuildinfo
+
+# Runtime uploads
+backend/uploads/
+
+# Debug screenshots & temp scripts (root)
+/*.png
+/tmp_*

@@ -5,6 +5,8 @@ import OnboardingModule from './index';
 const mocks = vi.hoisted(() => ({
   latestProTableProps: undefined as any,
   getDispatchedOrders: vi.fn(),
+  batchExportDispatchedOrders: vi.fn(),
+  downloadDispatchedExport: vi.fn(),
   reload: vi.fn(),
   navigate: vi.fn(),
   moduleCode: 'data_entry',
@@ -55,9 +57,9 @@ vi.mock('@/components/DispatchedBatchImportModal', () => ({
 vi.mock('@/services/dispatchedOrders', () => ({
   getDispatchedOrders: (...args: unknown[]) => mocks.getDispatchedOrders(...args),
   batchCompleteDispatchedOrders: vi.fn(),
-  batchExportDispatchedOrders: vi.fn(),
+  batchExportDispatchedOrders: (...args: unknown[]) => mocks.batchExportDispatchedOrders(...args),
   batchUrgeDispatchedOrders: vi.fn(),
-  downloadDispatchedExport: vi.fn(),
+  downloadDispatchedExport: (...args: unknown[]) => mocks.downloadDispatchedExport(...args),
 }));
 
 describe('OnboardingModule header table filters', () => {
@@ -141,5 +143,86 @@ describe('OnboardingModule header table filters', () => {
     expect(params.module_code).toBe('data_entry');
     expect(params.orderMonth).toBeUndefined();
     expect(params.statuses).toBeUndefined();
+  });
+});
+
+describe('OnboardingModule contract export grouping by esign platform', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.latestProTableProps = undefined;
+    mocks.moduleCode = 'contract';
+    mocks.getDispatchedOrders.mockResolvedValue({ list: [], total: 0 });
+    mocks.downloadDispatchedExport.mockResolvedValue(undefined);
+  });
+
+  const selectRows = (rows: Array<Record<string, unknown>>) => {
+    const rowSelection = mocks.latestProTableProps.rowSelection as {
+      onChange: (keys: unknown[], rows: unknown[]) => void;
+    };
+    rowSelection.onChange(rows.map((row) => row.id), rows);
+  };
+
+  const clickExport = async () => {
+    const buttons = mocks.latestProTableProps.toolBarRender() as Array<{ key: string; props: { onClick: () => void } }>;
+    const exportButton = buttons.find((button) => button.key === 'export');
+    await act(async () => {
+      await exportButton!.props.onClick();
+    });
+  };
+
+  it('downloads one file per platform returned by backend (一次请求，按 files 拆分下载)', async () => {
+    mocks.batchExportDispatchedOrders.mockResolvedValue({
+      files: [
+        { fileId: 'f-sc', fileName: 'sc.xlsx', downloadUrl: '/api/files/f-sc', signPlatform: '速创', count: 2 },
+        { fileId: 'f-es', fileName: 'es.xlsx', downloadUrl: '/api/files/f-es', signPlatform: 'E签宝', count: 1 },
+      ],
+    });
+    render(<OnboardingModule />);
+
+    const rows = [
+      { id: 'c1', module_code: 'contract', status: 'pending', extra_data: { esign_platform: '速创' } },
+      { id: 'c2', module_code: 'contract', status: 'pending', extra_data: { esign_platform: 'E签宝' } },
+      { id: 'c3', module_code: 'contract', status: 'pending', extra_data: { esign_platform: '速创' } },
+    ];
+
+    await act(async () => {
+      selectRows(rows);
+    });
+    await clickExport();
+
+    // 前端只发一次请求，传入全部选中 id；按平台拆分由后端完成。
+    await waitFor(() => expect(mocks.batchExportDispatchedOrders).toHaveBeenCalledTimes(1));
+    expect(mocks.batchExportDispatchedOrders.mock.calls[0][0]).toEqual(['c1', 'c2', 'c3']);
+
+    // 后端返回两个文件，前端逐个下载，文件名带平台后缀。
+    await waitFor(() => expect(mocks.downloadDispatchedExport).toHaveBeenCalledTimes(2));
+    const fileNames = mocks.downloadDispatchedExport.mock.calls.map((call) => call[1] as string);
+    expect(fileNames).toEqual(expect.arrayContaining([
+      expect.stringContaining('-速创.xlsx'),
+      expect.stringContaining('-E签宝.xlsx'),
+    ]));
+  });
+
+  it('exports a single file when backend returns one platform group', async () => {
+    mocks.batchExportDispatchedOrders.mockResolvedValue({
+      files: [
+        { fileId: 'f-sc', fileName: 'sc.xlsx', downloadUrl: '/api/files/f-sc', signPlatform: '速创', count: 2 },
+      ],
+    });
+    render(<OnboardingModule />);
+
+    const rows = [
+      { id: 'c1', module_code: 'contract', status: 'pending', extra_data: { esign_platform: '速创' } },
+      { id: 'c2', module_code: 'contract', status: 'pending', extra_data: { esign_platform: '速创' } },
+    ];
+
+    await act(async () => {
+      selectRows(rows);
+    });
+    await clickExport();
+
+    await waitFor(() => expect(mocks.batchExportDispatchedOrders).toHaveBeenCalledTimes(1));
+    expect(mocks.batchExportDispatchedOrders.mock.calls[0][0]).toEqual(['c1', 'c2']);
+    await waitFor(() => expect(mocks.downloadDispatchedExport).toHaveBeenCalledTimes(1));
   });
 });

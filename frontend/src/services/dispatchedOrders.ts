@@ -842,6 +842,15 @@ export async function reassignDispatchedOrder(id: string, handlerId: string, rea
   }
 }
 
+export interface DispatchedOrderExportFile {
+  fileId: string;
+  fileName: string;
+  downloadUrl: string;
+  moduleCode?: string;
+  signPlatform?: string | null;
+  count?: number;
+}
+
 export interface DispatchedOrderExportResult {
   templateId?: string | null;
   templateName?: string;
@@ -850,6 +859,7 @@ export interface DispatchedOrderExportResult {
   fileId?: string;
   fileName?: string;
   downloadUrl?: string;
+  files?: DispatchedOrderExportFile[];
 }
 
 export function resolveExportDownloadUrl(result: DispatchedOrderExportResult): string {

@@ -69,6 +69,8 @@ export interface DispatchedOrderListItem {
   dirty_count?: number;
   configuredHandlerNames?: string[];
   configured_handler_names?: string[];
+  extraData?: Record<string, any>;
+  extra_data?: Record<string, any>;
 }
 
 export interface DispatchedOrderDetailItem extends DispatchedOrderListItem {
@@ -99,6 +101,15 @@ export interface DispatchedOrderDetailItem extends DispatchedOrderListItem {
   cleared_dirty_count?: number;
 }
 
+export interface DispatchedOrderExportFile {
+  fileId: string;
+  fileName: string;
+  downloadUrl: string;
+  moduleCode: string;
+  signPlatform: string | null;
+  count: number;
+}
+
 export interface DispatchedOrderExportResult {
   templateId: string | null;
   templateName: string;
@@ -109,4 +120,5 @@ export interface DispatchedOrderExportResult {
   fileName?: string;
   downloadUrl?: string;
   rowCount?: number;
+  files?: DispatchedOrderExportFile[];
 }

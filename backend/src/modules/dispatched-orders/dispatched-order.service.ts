@@ -1833,6 +1833,8 @@ export class DispatchedOrderService {
       updated_at: order.updatedAt,
       configuredHandlerNames,
       configured_handler_names: configuredHandlerNames,
+      extraData,
+      extra_data: extraData,
     };
   }
 

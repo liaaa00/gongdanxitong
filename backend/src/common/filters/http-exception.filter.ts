@@ -4,6 +4,7 @@ import {
   ExceptionFilter,
   HttpException,
   HttpStatus,
+  Logger,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { QueryFailedError } from 'typeorm';
@@ -25,6 +26,8 @@ interface NormalizedError {
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
+  private readonly logger = new Logger('HttpExceptionFilter');
+
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
@@ -35,6 +38,13 @@ export class HttpExceptionFilter implements ExceptionFilter {
       exception instanceof HttpException
         ? exception.getStatus()
         : typeOrmError?.status ?? HttpStatus.INTERNAL_SERVER_ERROR;
+
+    if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
+      const traceId = request.traceId ?? 'req_unknown';
+      const where = `${request.method} ${request.url}`;
+      const stack = exception instanceof Error ? exception.stack ?? exception.message : String(exception);
+      this.logger.error(`[${traceId}] ${where} -> ${status}\n${stack}`);
+    }
 
     const normalized =
       exception instanceof HttpException

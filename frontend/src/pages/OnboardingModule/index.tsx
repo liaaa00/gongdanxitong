@@ -358,16 +358,38 @@ const OnboardingModule: React.FC = () => {
   };
 
   const handleBatchExport = async (rows: DispatchedOrderItem[] = selectedRows) => {
-    const ids = rows.filter((row) => row.module_code === backendModuleCode).map((row) => row.id);
-    if (ids.length === 0) {
+    const exportRows = rows.filter((row) => row.module_code === backendModuleCode);
+    if (exportRows.length === 0) {
       message.warning('请先选择当前子工单页面中要导出的数据');
       return;
     }
+    // 后端按 模块::电子签平台 分组，每组生成一个独立文件并在 result.files 返回；
+    // 前端只发一次请求，拿到 files 后逐个下载（速创、E签宝各自成独立文件）。
     setExporting(true);
     try {
-      const result = await batchExportDispatchedOrders(ids);
-      await downloadDispatchedExport(result, `${moduleLabel}子工单.xlsx`);
-      message.success('导出成功');
+      const result = await batchExportDispatchedOrders(exportRows.map((row) => row.id));
+      const files = result.files && result.files.length > 0 ? result.files : null;
+      if (files) {
+        let failed = 0;
+        for (const file of files) {
+          const platform = file.signPlatform ? `-${file.signPlatform}` : '';
+          try {
+            await downloadDispatchedExport(file, `${moduleLabel}子工单${platform}.xlsx`);
+          } catch {
+            failed += 1;
+          }
+        }
+        if (failed === 0) {
+          message.success(files.length > 1 ? `导出成功，共 ${files.length} 个文件` : '导出成功');
+        } else if (failed < files.length) {
+          message.warning(`部分导出失败，${files.length - failed} 个文件已下载，${failed} 个失败`);
+        } else {
+          message.error('导出失败');
+        }
+      } else {
+        await downloadDispatchedExport(result, `${moduleLabel}子工单.xlsx`);
+        message.success('导出成功');
+      }
     } catch {
       message.error('导出失败');
     } finally {
