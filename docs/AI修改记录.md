@@ -169,3 +169,13 @@
 - 验证：`npx tsc --noEmit` 零错误；后端 build 后重启（PID 21928 监听 3000）加载新代码；列表接口实测正确返回 `extra_data`，平台分布 E签宝 5 + 速创 5；端到端导出二次下载确认两文件模板完全不同（速创组约 16.9KB / 13 sheet，E签宝组约 9.4KB / 1 sheet）；`回归测试.ps1 -SkipBuild` 前端 10 套件 76 用例全过。
 - 代码提交：未提交，待用户决定。
 - 未提交无关文件：本次仅改 `dispatched-order.service.ts`、`dispatched-order.types.ts` 与本记录追加；工作区另有上轮遗留的 `.gitignore`、`http-exception.filter.ts`、`export-templates.service.ts`、`OnboardingModule/*`、`frontend/tsconfig.tsbuildinfo`、新增 `CLAUDE.md` 等，均不属于本次范围。已清理本次及前序诊断遗留的临时产物 `backend/_repro_export.js`、`field_configs_custom.csv`、`import_template_fields.csv`、`local_import_template_field_codes.txt`。
+
+## 2026-06-11 · 单条新增入职工单表单排除后道反馈字段，与导入模板字段口径对齐
+- 用户要求：入职模块「单条新增」表单里仍出现「入职联系反馈」「劳动合同签订反馈」「增员报岗录入反馈」等后道字段，与已修好的批量导入模板字段不一致；要求让单条新增与导入模板字段口径保持一致。
+- 根因诊断：`frontend/src/pages/WorkOrders/New/index.tsx` 直接把 `getFields`/`getFallbackFields` 的字段全集交给 `DynamicForm`，`DynamicForm` 只按 `order_type`/`collection_group` 过滤，不排除后道办理岗反馈字段。而入职导入模板早已在 `services/workOrders.ts` 用 `ONBOARDING_IMPORT_TEMPLATE_EXCLUDED_FIELD_CODES` 排除 `contract_feedback`/`onboarding_feedback`/`data_entry_feedback`，两边口径不一致。这三个反馈字段的 help_text 均写明「由子工单办理岗在子单完成时填写」，本不属于业务员发起表单。
+- 是否覆盖旧规则：否；与回归清单第 17 条「业务员入职导入不输出后道反馈/处理字段」口径一致，把同一排除规则补到发起表单场景，未改动任何既有业务口径、字段语义或子工单详情（办理岗仍可填反馈）。
+- 同步更新规则文档：未修改 `docs/业务规则回归清单.md`，无新增业务口径，仅在本记录追加。
+- 实现/测试覆盖：仅改 `WorkOrders/New/index.tsx`——新增并导出常量 `AGENT_INITIATED_EXCLUDED_FIELD_CODES`（三个反馈字段）与纯函数 `excludeBackofficeFeedbackFields`，在 `setAllFields` 前对 admin/非 admin 两条取字段路径统一过滤；`contract_template` 等发起阶段字段不在排除集合中，保持保留。新增测试 `WorkOrders/New/excludeFeedbackFields.test.ts`（4 用例）：断言排除集合与导入模板一致、从入职全集剔除三反馈字段、不误伤发起阶段字段（contract_template/payroll_location/special_remark/need_onboarding_contact）、对离职字段无副作用。
+- 验证：`npx tsc --noEmit` 零错误；新增测试 4 用例全过；`回归测试.ps1 -FrontendOnly` 回归。
+- 代码提交：本次随最终结果一并提交。
+- 未提交无关文件：本次仅改 `WorkOrders/New/index.tsx` 与新增测试、本记录追加。

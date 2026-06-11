@@ -35,6 +35,18 @@ function getOrderTypeFromSearch(search: string): SupportedOrderType {
   return value === 'resignation' ? 'resignation' : 'onboarding';
 }
 
+// 业务员发起（单条新增）阶段不展示后道办理岗反馈字段，口径与入职导入模板一致（业务规则清单 17）：
+// 这三个字段由对应子工单办理岗在子单完成时填写，不属于发起表单。
+export const AGENT_INITIATED_EXCLUDED_FIELD_CODES = new Set([
+  'contract_feedback',
+  'onboarding_feedback',
+  'data_entry_feedback',
+]);
+
+export function excludeBackofficeFeedbackFields<T extends { field_code: string }>(list: T[]): T[] {
+  return list.filter((f) => !AGENT_INITIATED_EXCLUDED_FIELD_CODES.has(f.field_code));
+}
+
 const WorkOrdersNew: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -55,11 +67,11 @@ const WorkOrdersNew: React.FC = () => {
   useEffect(() => {
     formRef.current?.resetFields?.();
     if (!hasRole('admin')) {
-      setAllFields(getFallbackFields(orderType));
+      setAllFields(excludeBackofficeFeedbackFields(getFallbackFields(orderType)));
       return;
     }
     getFields(orderType)
-      .then((list) => setAllFields(list))
+      .then((list) => setAllFields(excludeBackofficeFeedbackFields(list)))
       .catch(() => message.error(`加载${orderTypeLabel}字段配置失败`));
   }, [hasRole, message, orderType, orderTypeLabel]);
 
