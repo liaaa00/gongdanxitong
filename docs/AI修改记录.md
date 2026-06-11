@@ -179,3 +179,15 @@
 - 验证：`npx tsc --noEmit` 零错误；新增测试 4 用例全过；`回归测试.ps1 -FrontendOnly` 回归。
 - 代码提交：本次随最终结果一并提交。
 - 未提交无关文件：本次仅改 `WorkOrders/New/index.tsx` 与新增测试、本记录追加。
+
+## 2026-06-11 · 单条新增页面出现两个「劳动合同模板」字段——定位为数据库脏字段并停用
+- 用户反馈：批量导入模板字段已正常，但入职「单条新增工单」页面里出现了两个「劳动合同模板（标准模板/特殊模板）」。质疑是字段匹配/检测出错。
+- 拒绝凭推断，实地查库定位：`field_configs` 表 onboarding 业务下名字含「劳动合同模板」的记录有两条——(1) 正规字段 `field_code=contract_template`，collection_group=业务判断项，display_order=54；(2) 脏字段 `field_code=f_field_343814`（自动生成乱码 code），field_name 仅多一个空格「标准模板 / 特殊模板」，collection_group=null，display_order=999，is_active=true。前端 `getFields` 把后端返回的全部 active 字段交给表单渲染，于是同名渲染两次。导入模板没问题是因为它走 `import_template_fields` 配置表，只配了正规那条。后端种子 `seed-fields.ts` 只有一条 contract_template，故脏字段是运行期（后台字段管理手动新增）产生的数据，不是代码缺陷。
+- 影响面核查（删除前必查）：脏字段 `f_field_343814` 已被 10 个工单 `work_orders.extra_data` 填过值、195 条 `field_permissions`、1 条 `import_template_fields` 引用。直接删会丢历史值并留悬空引用，风险高。
+- 处理方案（经用户确认）：不删，改为停用——`UPDATE field_configs SET is_active=false WHERE field_code='f_field_343814'`。脏字段从新增表单消失（前端 `getFields` 末尾 `.filter(f=>f.is_active)` 过滤），10 个历史工单已填值、195 条权限、1 条导入配置全部保留，可逆。正规 `contract_template` 保持 active。
+- 是否覆盖旧规则：否；纯数据订正，未改任何业务口径/字段语义/代码逻辑。
+- 同步更新规则文档：未改 `docs/业务规则回归清单.md`，无新增业务口径。
+- 实现/验证：本次为数据库数据变更，无代码改动。停用脚本（已即用即删，未留仓库）打印停用前后状态确认仅命中 1 条且正规字段仍 active；二次校验脚本模拟前端 `getFields` 过滤后，onboarding 下「劳动合同模板」可渲染字段数=1（✅）。临时脚本 `_check_*`/`_deactivate_dirty_field`/`_verify_single_template` 全部已清理。
+- 代码提交：数据库改动不入 git；本条记录随最终结果一并提交。
+- 未提交无关文件：无新增仓库文件（临时脚本已删）。
+- 遗留提示：后台「字段管理」页若允许手动新增与既有字段同名的字段，建议后续加唯一性/重名校验，避免脏字段再次产生（本次未改该入口，仅记录）。

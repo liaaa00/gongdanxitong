@@ -37,6 +37,8 @@ function getOrderTypeFromSearch(search: string): SupportedOrderType {
 
 // 业务员发起（单条新增）阶段不展示后道办理岗反馈字段，口径与入职导入模板一致（业务规则清单 17）：
 // 这三个字段由对应子工单办理岗在子单完成时填写，不属于发起表单。
+// 注意：contract_template（劳动合同模板）虽不进导入模板，但在单条新增中是「企服发起劳动合同」的
+// 条件必填发起字段（见 CONDITIONAL_REQUIRED_BY_TYPE），必须保留，不能为对齐导入模板而移除。
 export const AGENT_INITIATED_EXCLUDED_FIELD_CODES = new Set([
   'contract_feedback',
   'onboarding_feedback',
