@@ -201,3 +201,13 @@
 - 代码提交：数据库改动不入 git；本条记录随最终结果一并提交。
 - 未提交无关文件：无新增仓库文件（临时脚本已删）。
 - 遗留提示：后台「字段管理」页若允许手动新增与既有字段同名的字段，建议后续加唯一性/重名校验，避免脏字段再次产生（本次未改该入口，仅记录）。
+
+## 2026-06-12 · 登录页输入错误账号/密码无任何提示——修复 request 拦截器 401 强制跳转吞提示
+- 用户反馈：主页登录时账号或密码错误，没有任何「账号或密码错误」的提示。
+- 根因定位：链路本身完整——后端 `auth.service.ts` 登录失败抛 `UnauthorizedException('用户名或密码错误')`（HTTP 401，响应体 `{code:401,message:'用户名或密码错误'}`），登录页 `Login/index.tsx` 的 catch 里有 `message.error`。但 `frontend/src/services/request.ts` 响应拦截器对**所有** 401 一律执行 `window.location.href='/login'` 强制刷新跳转，登录接口本就在登录页发起，页面 reload 把还没显示出来的 `message.error` 冲掉，且该分支未附加 `_friendlyMsg`，导致提示永远看不到。
+- 处理方案：`request.ts` 的 401 分支区分场景——`silentError` 接口（登录正是以 `{ silentError:true }` 调用）视为「凭据错误」，不再重定向，附加 `_friendlyMsg` 后正常 reject，交由调用方 `message.error` 提示；其余接口的 401 仍视为「会话过期」，保持原有清登录态 + 跳转登录页行为不变。
+- 是否覆盖旧规则：否；未改任何业务口径，仅修复前端错误提示链路。会话过期自动跳登录页的既有行为完全保留。
+- 同步更新规则文档：未改 `docs/业务规则回归清单.md`，无新增业务口径。
+- 实现/验证：`frontend/src/services/request.ts` 调整 401 分支；`Login/index.test.tsx` 新增「凭据错误时调用 message.error 且不跳转/不写 token」用例。`npx tsc --noEmit` 零错误；登录页测试 3 用例全过；`回归测试.ps1 -SkipBuild` 前端 10 文件 76 用例全过。
+- 代码提交：等用户确认后再提交。
+- 未提交无关文件：本次仅改 `request.ts`、`Login/index.test.tsx` 与本记录追加。

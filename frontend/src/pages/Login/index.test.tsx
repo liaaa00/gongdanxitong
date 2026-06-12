@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   setToken: vi.fn(),
   setUser: vi.fn(),
   setMustChangePassword: vi.fn(),
+  messageError: vi.fn(),
+  messageSuccess: vi.fn(),
 }));
 
 vi.mock('@/services/auth', () => ({
@@ -62,7 +64,7 @@ vi.mock('antd', async () => {
     ...(actual as object),
     App: {
       ...((actual as Record<string, unknown>).App as object),
-      useApp: () => ({ message: { success: vi.fn(), error: vi.fn() } }),
+      useApp: () => ({ message: { success: mocks.messageSuccess, error: mocks.messageError } }),
     },
     theme: {
       ...((actual as Record<string, unknown>).theme as object),
@@ -138,5 +140,24 @@ describe('LoginPage mustChangePassword synchronization', () => {
     await waitFor(() => expect(mocks.setUser).toHaveBeenCalledWith(expect.objectContaining({ must_change_password: false, mustChangePassword: false })));
     expect(mocks.setMustChangePassword).toHaveBeenCalledWith(false);
     expect(mocks.navigate).toHaveBeenCalledWith('/dashboard', { replace: true });
+  });
+
+  it('shows the backend error message when credentials are wrong', async () => {
+    const user = userEvent.setup();
+    mocks.login.mockRejectedValue(new Error('用户名或密码错误'));
+
+    render(
+      <MemoryRouter>
+        <LoginPage />
+      </MemoryRouter>,
+    );
+
+    await user.type(screen.getByPlaceholderText('用户名'), 'jianglu');
+    await user.type(screen.getByPlaceholderText('密码'), 'wrong-pass');
+    await user.click(screen.getByRole('button', { name: '登录' }));
+
+    await waitFor(() => expect(mocks.messageError).toHaveBeenCalledWith('用户名或密码错误'));
+    expect(mocks.navigate).not.toHaveBeenCalled();
+    expect(mocks.setToken).not.toHaveBeenCalled();
   });
 });

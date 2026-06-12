@@ -132,6 +132,13 @@ const onResponseRejected = (error: AxiosError) => {
   const friendlyMsg = getFriendlyErrorMessage(error);
 
   if (error.response?.status === 401) {
+    // 登录等静默接口：401 仅表示「用户名或密码错误」，不应强制刷新跳转，
+    // 否则页面 reload 会冲掉调用方的 message.error 提示。附加友好消息后交调用方处理。
+    if (isSilentError(error.config)) {
+      (error as AxiosError & { _friendlyMsg: string })._friendlyMsg = friendlyMsg;
+      return Promise.reject(error);
+    }
+    // 其余接口的 401 视为会话过期：清除登录态并回到登录页。
     localStorage.removeItem('token');
     localStorage.removeItem('refresh_token');
     localStorage.removeItem('user');
