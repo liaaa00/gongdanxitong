@@ -16,7 +16,14 @@
 - 未提交无关文件：...
 ```
 
-## 2026-06-11 · 纠正误停用并收敛重复「劳动合同模板」字段到种子字段
+## 2026-06-12 · 恢复「劳动合同模板」字段进入职导入模板（前后端口径对齐）
+- 用户要求：单条新增页面已不再重复「劳动合同模板（标准模板/特殊模板）」，但入职批量导入模板又少了这个字段，质疑不稳定。确认后选择「恢复该字段进导入模板」。
+- 根因：导入模板/导入校验由后端两处排除集合控制——`import-template-config.service.ts`、`field-validation.service.ts` 的 `ONBOARDING_IMPORT_EXCLUDED_FIELDS` 仍含 `contract_template`（系 6/11 旧需求固化）。而前端 mock `workOrders.ts` 已先行移除该排除（注释「必须保留」），导致本地预览有该字段、真实后端下载没有，表现为「时有时无」。单条新增页 `New/index.tsx` 的排除集合本就不含它，故单条新增正常。
+- 是否覆盖旧规则：是。覆盖业务规则清单第 17 节中「业务员入职导入模板排除 contract_template」的旧口径。新口径：contract_template 重新进入入职导入模板与单条新增页面；但导入下载/校验阶段不作必填（导入阶段清空其条件必填），单条新增页仍按 need_company_contract=是 条件必填。后道反馈三字段（contract_feedback/onboarding_feedback/data_entry_feedback）仍排除。
+- 改了什么：1) 两处后端排除集合移除 `contract_template`；2) `import-template-config.service.ts#applyTemplateRules` 与 `field-validation.service.ts#applyInferredImportRules` 新增 contract_template 分支，入职导入时 isRequired/defaultRequired=false、conditionalRequired=null（进模板但不必填）；3) 同步测试 `import.service.spec.ts`（2 用例改为保留值且不必填）、`import-template-config.service.spec.ts`（fallback 列表含 contract_template、available 保留、replace 拒绝改用 contract_feedback 验证）。
+- 代码提交：<待提交>
+- 验证：后端 `import.service`/`import-template-config`/`import-template.service`/`work-order-validation`/`module-fields-baseline`/`import-job.service` 共 38 用例全过；待跑 `./回归测试.ps1`。
+- 未提交无关文件：沿用此前 git 堆积（http-exception.filter/export-templates/OnboardingModule 等），不在本次范围。
 - 用户要求：导入模板里确实有「劳动合同模板(标准模板/特殊模板)」字段，质疑上次检测/匹配出错；确认后选择方案 B——收敛到种子字段 `contract_template`。
 - 背景纠错：上一会话(commit `8556c579`)误把后台手建字段 `f_field_343814` 当脏数据停用。实地查库发现 `f_field_343814` 才是导入模板第54行实际引用、且挂着 10 条 processing 在途工单(值=标准模板)的活字段；`contract_template` 是 seed 种子字段(带「企服发起劳动合同=是」条件必填规则)但无数据、未被导入模板引用。误停用导致导入模板第54行字段无法渲染(配置在、字段被 is_active 过滤)。
 - 处理(事务内，已 COMMIT)：1) 10 条工单 `extra_data` 键 `f_field_343814`→`contract_template`(jsonb 改名，旧键删除)；2) 激活 `contract_template`(本就 true)；3) 导入模板第54行 field_code 改指向 `contract_template`(唯一约束 order_type+field_code 无冲突)；4) 停用 `f_field_343814`。迁移前已备份 10 条工单值到工作树外 `../工单系统_迁移备份_contract_template_20260611.json`。

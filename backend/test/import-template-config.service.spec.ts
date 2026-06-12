@@ -93,16 +93,17 @@ describe('ImportTemplateConfigService', () => {
 
     const list = await service.list(OrderType.ONBOARDING);
 
-    expect(list.map((item) => item.fieldCode)).toEqual(['employee_name', 'feedback_deadline', 'template_name']);
+    expect(list.map((item) => item.fieldCode)).toEqual(['employee_name', 'contract_template', 'feedback_deadline', 'template_name']);
     expect(list.every((item) => item.source === 'fallback')).toBe(true);
   });
 
-  it('returns allowed available fields without excluded onboarding fields', async () => {
+  it('returns allowed available fields without downstream feedback fields but keeps contract_template', async () => {
     const { service } = buildService(onboardingFields);
 
     const available = await service.listAvailableFields(OrderType.ONBOARDING);
 
-    expect(available.map((item) => item.fieldCode)).not.toEqual(expect.arrayContaining(['contract_template', 'contract_feedback']));
+    expect(available.map((item) => item.fieldCode)).toContain('contract_template');
+    expect(available.map((item) => item.fieldCode)).not.toContain('contract_feedback');
   });
 
   it('uses configured rows, aliases and required override before fallback', async () => {
@@ -120,7 +121,7 @@ describe('ImportTemplateConfigService', () => {
   it('rejects replacing with excluded or unavailable fields', async () => {
     const { service } = buildService(onboardingFields);
 
-    await expect(service.replace(OrderType.ONBOARDING, [{ fieldCode: 'contract_template' }])).rejects.toBeDefined();
+    await expect(service.replace(OrderType.ONBOARDING, [{ fieldCode: 'contract_feedback' }])).rejects.toBeDefined();
   });
 
   it('replaces configured fields and deactivates removed rows', async () => {

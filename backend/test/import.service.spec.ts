@@ -218,7 +218,7 @@ describe('ImportFieldValidationService scenarios', () => {
     expect(results.filter((item) => !item.ok)).toHaveLength(1);
   });
 
-  it('ignores legacy contract_template columns during onboarding import validation', async () => {
+  it('keeps contract_template value during onboarding import validation without requiring it', async () => {
     const result = await service.validateRow({
       rowNo: 10,
       raw: {
@@ -230,7 +230,7 @@ describe('ImportFieldValidationService scenarios', () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(result.normalized.contract_template).toBeUndefined();
+    expect(result.normalized.contract_template).toBe('标准模板');
     expect(result.errors).not.toContainEqual(expect.objectContaining({ fieldCode: 'contract_template' }));
   });
 
@@ -282,7 +282,7 @@ describe('ImportFieldValidationService scenarios', () => {
     expect(result.errors).toHaveLength(0);
   });
 
-  it('does not require removed contract_template during onboarding import even when company contract is required', async () => {
+  it('keeps contract_template in onboarding import but does not require it even when company contract is required', async () => {
     const result = await service.validateRow({
       rowNo: 14,
       raw: validRow({ 姓名: '吴十', 是否签合同: '是', 合同主体: '北仑' }),
@@ -292,7 +292,6 @@ describe('ImportFieldValidationService scenarios', () => {
 
     expect(result.ok).toBe(true);
     expect(result.errors).not.toContainEqual(expect.objectContaining({ fieldCode: 'contract_template' }));
-    expect(result.normalized.contract_template).toBeUndefined();
   });
 
   it('keeps other missing required fields as required errors', async () => {

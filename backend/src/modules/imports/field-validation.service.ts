@@ -25,11 +25,11 @@ interface ValueNormalizeResult {
 }
 
 const SOFT_REQUIRED_SAFE_DEFAULTS: Record<string, string> = {};
+// contract_template（劳动合同模板）是业务员发起阶段字段，保留在入职导入校验中，不再排除。
 const ONBOARDING_IMPORT_EXCLUDED_FIELDS = new Set([
   'contract_feedback',
   'onboarding_feedback',
   'data_entry_feedback',
-  'contract_template',
 ]);
 
 const HEADER_ALIASES: Record<string, string[]> = {
@@ -180,6 +180,10 @@ export class ImportFieldValidationService {
     return fields
       .filter((field) => !ONBOARDING_IMPORT_EXCLUDED_FIELDS.has(field.fieldCode))
       .map((field) => {
+        if (field.fieldCode === 'contract_template') {
+          // 劳动合同模板进入导入模板，但导入阶段不作必填（业务规则清单 17）。
+          return { ...field, isRequired: false, defaultRequired: false, conditionalRequired: null } as FieldConfig;
+        }
         if (field.fieldCode === 'feedback_deadline' || field.fieldCode === 'is_common_template') {
           return {
             ...field,

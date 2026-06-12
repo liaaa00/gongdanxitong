@@ -44,11 +44,12 @@ export interface ImportTemplateFieldView {
   conditional_required: FieldConfig['conditionalRequired'];
 }
 
+// 入职导入模板排除：办理岗在子单完成时填写的反馈字段，不进业务员发起的导入表。
+// 注意：contract_template（劳动合同模板）是业务员发起阶段字段，必须保留在导入模板与导入校验中。
 const ONBOARDING_IMPORT_EXCLUDED_FIELDS = new Set([
   'contract_feedback',
   'onboarding_feedback',
   'data_entry_feedback',
-  'contract_template',
 ]);
 
 const RESIGNATION_IMPORT_TEMPLATE_FIELDS = [
@@ -230,6 +231,10 @@ export class ImportTemplateConfigService {
 
   private applyTemplateRules(orderType: OrderType, field: FieldConfig): FieldConfig {
     if (orderType !== OrderType.ONBOARDING) return field;
+    if (field.fieldCode === 'contract_template') {
+      // 劳动合同模板进入导入模板，但导入阶段不作必填（业务规则清单 17）。
+      return { ...field, isRequired: false, defaultRequired: false, conditionalRequired: null } as FieldConfig;
+    }
     if (field.fieldCode === 'feedback_deadline' || field.fieldCode === 'is_common_template') {
       return {
         ...field,
