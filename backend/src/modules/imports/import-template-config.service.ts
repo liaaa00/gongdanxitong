@@ -225,6 +225,8 @@ export class ImportTemplateConfigService {
     if (configured.isRequiredOverride !== null && configured.isRequiredOverride !== undefined) {
       withTemplateRules.isRequired = configured.isRequiredOverride;
       withTemplateRules.defaultRequired = false;
+      // 后台已显式覆盖必填状态时，清掉内置条件必填，避免导出路径被回灌覆盖
+      withTemplateRules.conditionalRequired = null;
     }
     return withTemplateRules;
   }
@@ -259,7 +261,7 @@ export class ImportTemplateConfigService {
       op: 'AND',
       children: [
         this.needOnboardingContactCondition(),
-        { field: 'is_common_template', op: 'EQ', value: '是' },
+        { field: 'is_common_template', op: 'EQ', value: '否' },
       ],
     };
   }

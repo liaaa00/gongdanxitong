@@ -215,7 +215,7 @@ export class ImportFieldValidationService {
       op: 'AND',
       children: [
         this.needOnboardingContactCondition(),
-        { field: 'is_common_template', op: 'EQ', value: '是' } as AstNode,
+        { field: 'is_common_template', op: 'EQ', value: '否' } as AstNode,
       ],
     } as AstNode;
   }

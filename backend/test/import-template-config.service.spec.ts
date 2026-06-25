@@ -140,4 +140,31 @@ describe('ImportTemplateConfigService', () => {
     expect(templateRepo.store.find((row) => row.fieldCode === 'feedback_deadline')?.isActive).toBe(false);
     expect(templateRepo.store.find((row) => row.fieldCode === 'template_name')).toEqual(expect.objectContaining({ headerAlias: '模板名', isRequiredOverride: false, isActive: true }));
   });
+
+  it('clears built-in conditionalRequired when admin sets explicit isRequiredOverride=false', async () => {
+    const { service } = buildService(onboardingFields, [
+      templateField({ fieldCode: 'feedback_deadline', displayOrder: 1, isRequiredOverride: false }),
+    ]);
+
+    const list = await service.list(OrderType.ONBOARDING);
+    const fd = list.find((item) => item.fieldCode === 'feedback_deadline');
+
+    expect(fd?.isRequired).toBe(false);
+    expect(fd?.conditionalRequired).toBeNull();
+  });
+
+  it('flips template_name condition to require it when is_common_template is 否 (方案A)', async () => {
+    const { service } = buildService(onboardingFields);
+
+    const list = await service.list(OrderType.ONBOARDING);
+    const tpl = list.find((item) => item.fieldCode === 'template_name');
+
+    expect(tpl?.conditionalRequired).toEqual({
+      op: 'AND',
+      children: [
+        { field: 'need_onboarding_contact', op: 'EQ', value: '是' },
+        { field: 'is_common_template', op: 'EQ', value: '否' },
+      ],
+    });
+  });
 });

@@ -313,3 +313,15 @@
   3. `auth-password-and-seed.spec.ts`：「保留已改密用户密码」用例原期望 seed 会 save 已存在用户并在 savedUsers 里找 maoyani；但现行 seedUsers 对已存在用户根本不调 user.save（这是更强的保留保证）。断言改为直接验证 existingUsers 中 maoyani 的 passwordHash/mustChangePassword/passwordUpdatedAt 未被覆盖、且 savedUsers 不含 maoyani。
 - 验证：后端 jest 全量 `54 套件全过(1 skipped)、368 passed`，之前 4 failed 归零。前端 `MyDispatched > batch accept` 存在一个独立的 waitFor 超时 flaky 失败，与本次（仅动后端测试）无关，本来就存在。
 - 是否覆盖旧规则：否。仅把测试断言对齐到现行生产口径（是/否、唯 need_esign 用 1.是/2.否；种子分条格式；已改密用户不被覆盖），未改任何业务逻辑。
+
+
+## 2026-06-25 · 入职批量导入两个 bug 修复（方案A翻转 template_name 必填规则 + 导出条件必填被回灌）
+- 背景：代码基线 `e429b69` 已强推留存到 GitHub `main`，旧 main 备份为远程分支 `backup/remote-main-20260625`，可回溯。
+- 问题一（纯代码 bug）：导出 Excel 模板不随后台「非必填」配置变化。根因 `import-template-config.service.ts:applyConfiguredRules` 在写入 `isRequiredOverride` 时未清掉内置 `conditionalRequired`，`applyTemplateRules` 对 feedback_deadline/is_common_template/template_name 回灌的条件必填仍生效，导出路径覆盖了后台显式「非必填」。页面 `toView` 走 override 显示正确，导出却被回灌。
+  - 修复：`applyConfiguredRules` 中当 `isRequiredOverride !== null/undefined` 时，同步置 `conditionalRequired = null`，让后台显式覆盖在导出路径生效；不动 `applyTemplateRules` 的无配置回退分支。
+- 问题二（方案A翻转规则，用户已确认）：后台「通用模板=是」时 template_name 仍必填，与期望相反。
+  - 修复：把 `import-template-config.service.ts:commonOnboardingTemplateCondition` 与 `field-validation.service.ts:commonOnboardingTemplateCondition` 的 `is_common_template` 条件值由 `'是'` 翻转为 `'否'`，即「need_onboarding_contact=是 且 is_common_template=否 → template_name 必填」；通用模板=是 → 非必填。
+- 改动边界：仅动这两个 service 的合并/条件逻辑；不动物理模板文件、不动 need_esign（保留 1.是/2.否 例外）、不动其他字段口径、不动导入查重与状态流转。
+- 测试：`import-template-config.service.spec.ts` 新增 2 例（override=false 清条件必填、template_name 条件翻转为 is_common_template=否）；`import.service.spec.ts` 翻转顶部 needsOnboardingContactAndCommonTemplate 常量 + 两个 template_name 必填语义用例为方案A方向。
+- 验证：见本轮 `回归测试.ps1` 结果。
+- 是否覆盖旧规则：是。覆盖原「template_name 仅在 need_onboarding_contact=是 且 is_common_template=是 时必填」（业务规则回归清单第253条 + 本文 2026 早前记录），已同步翻转回归清单第253条。

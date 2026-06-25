@@ -29,7 +29,7 @@ const needsOnboardingContactAndCommonTemplate = {
   op: 'AND' as const,
   children: [
     needsOnboardingContact,
-    { field: 'is_common_template', op: 'EQ' as const, value: '是' },
+    { field: 'is_common_template', op: 'EQ' as const, value: '否' },
   ],
 };
 
@@ -145,7 +145,7 @@ describe('ImportFieldValidationService scenarios', () => {
     expect(result.errors).not.toContainEqual(expect.objectContaining({ fieldCode: 'template_name' }));
   });
 
-  it('does not require template_name when need_onboarding_contact is yes but is_common_template is no', async () => {
+  it('requires template_name when need_onboarding_contact is yes and is_common_template is no (方案A)', async () => {
     const result = await service.validateRow({
       rowNo: 5,
       raw: validRow({
@@ -158,11 +158,11 @@ describe('ImportFieldValidationService scenarios', () => {
       fields,
     });
 
-    expect(result.ok).toBe(true);
-    expect(result.errors).toHaveLength(0);
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContainEqual(expect.objectContaining({ fieldCode: 'template_name', reason: 'required' }));
   });
 
-  it('requires template_name only when need_onboarding_contact and is_common_template are both yes', async () => {
+  it('does not require template_name when need_onboarding_contact and is_common_template are both yes (方案A)', async () => {
     const result = await service.validateRow({
       rowNo: 6,
       raw: validRow({
@@ -175,8 +175,8 @@ describe('ImportFieldValidationService scenarios', () => {
       fields,
     });
 
-    expect(result.ok).toBe(false);
-    expect(result.errors).toContainEqual(expect.objectContaining({ fieldCode: 'template_name', reason: 'required' }));
+    expect(result.ok).toBe(true);
+    expect(result.errors).not.toContainEqual(expect.objectContaining({ fieldCode: 'template_name' }));
   });
 
   it('accepts onboarding contact yes when all conditional fields are present', async () => {
