@@ -1,0 +1,85 @@
+{
+  "_meta": {
+    "title": "路由×角色可见性表",
+    "source": "架构任务 81e0783f《角色×页面可见性矩阵》 + 24人真实组织结构",
+    "updated": "2026-05-15",
+    "roles": [
+      "admin",
+      "business_owner",
+      "business_group_leader",
+      "business_group_member",
+      "data_entry_leader",
+      "shared_team_owner",
+      "labor_contract_member",
+      "onboarding_resignation_member"
+    ],
+    "rules": {
+      "multiRole": "用户多角色按 OR 合并：任一角色命中即可见",
+      "dynamicPath": "动态段如 /work-orders/:id 用 react-router 的 matchPath 解析后查表",
+      "miss": "表里未列出的路径默认拒绝；命中为空数组也拒绝",
+      "guard": "前端 RoleRoute 命中失败跳 /403（不要白屏），后端 Guard 必须二次校验",
+      "alias": "旧路径在 _aliases 中映射到权威路径后再查 routes；别名仅为 UX/兼容层，后端 Guard 必须按权威路径或 moduleCode 校验"
+    }
+  },
+  "_aliases": {
+    "/work-orders/new": "/work-orders/create",
+    "/renewal": "/in-service/contract-renewal",
+    "/resignation": "/offboarding",
+    "/benefit": "/in-service/benefit-claim",
+    "/onboarding/:moduleCode": "/onboarding"
+  },
+  "routes": {
+    "/dashboard": ["admin","business_owner","business_group_leader","business_group_member","data_entry_leader","shared_team_owner","labor_contract_member","onboarding_resignation_member"],
+    "/notifications": ["admin","business_owner","business_group_leader","business_group_member","data_entry_leader","shared_team_owner","labor_contract_member","onboarding_resignation_member"],
+    "/profile": ["admin","business_owner","business_group_leader","business_group_member","data_entry_leader","shared_team_owner","labor_contract_member","onboarding_resignation_member"],
+    "/work-orders": ["admin","business_owner","business_group_leader","business_group_member","data_entry_leader","shared_team_owner","labor_contract_member","onboarding_resignation_member"],
+    "/work-orders/create": ["admin","business_group_leader","business_group_member"],
+    "/work-orders/import": ["admin","business_group_leader","business_group_member"],
+    "/work-orders/:id": ["admin","business_owner","business_group_leader","business_group_member","data_entry_leader","shared_team_owner","labor_contract_member","onboarding_resignation_member"],
+    "/my-field-permissions": ["admin","business_owner"],
+    "/dispatched-orders": ["admin","business_owner","business_group_leader","business_group_member","data_entry_leader","shared_team_owner","labor_contract_member","onboarding_resignation_member"],
+    "/onboarding": ["admin","business_owner","business_group_leader","business_group_member","data_entry_leader","shared_team_owner","labor_contract_member","onboarding_resignation_member"],
+    "/onboarding/contact-pool": ["admin","shared_team_owner","onboarding_resignation_member"],
+    "/onboarding/contract-pool": ["admin","shared_team_owner","labor_contract_member"],
+    "/onboarding/data-entry-pool": ["admin","data_entry_leader"],
+    "/in-service": ["admin","business_owner","business_group_leader","business_group_member","data_entry_leader","shared_team_owner","labor_contract_member"],
+    "/in-service/contract-renewal": ["admin","shared_team_owner","labor_contract_member"],
+    "/in-service/benefit-claim": ["admin","data_entry_leader"],
+    "/offboarding": ["admin","business_owner","business_group_leader","business_group_member","data_entry_leader","shared_team_owner","onboarding_resignation_member"],
+    "/offboarding/contact-pool": ["admin","shared_team_owner","onboarding_resignation_member"],
+    "/offboarding/proof-pool": ["admin","shared_team_owner","onboarding_resignation_member"],
+    "/offboarding/social-suspend-pool": ["admin","data_entry_leader"],
+    "/withdraw": ["admin","business_group_leader","business_group_member"],
+    "/withdraw/approvals": ["admin","shared_team_owner","labor_contract_member","onboarding_resignation_member","data_entry_leader"],
+    "/dashboards/leader": ["admin","business_owner","business_group_leader","data_entry_leader","shared_team_owner"],
+    "/admin": ["admin"],
+    "/admin/users": ["admin"],
+    "/admin/roles": ["admin"],
+    "/admin/departments": ["admin"],
+    "/admin/branches": ["admin"],
+    "/admin/customers": ["admin"],
+    "/admin/customer-assignees": ["admin"],
+    "/admin/fields": ["admin"],
+    "/admin/field-permissions": ["admin"],
+    "/admin/dispatch-rules": ["admin"],
+    "/admin/export-templates": ["admin"],
+    "/admin/module-handlers": ["admin"],
+    "/admin/notifications": ["admin"],
+    "/admin/approval-flows": ["admin"],
+    "/admin/audit-log": ["admin"]
+  },
+  "pendingConfirmations": [
+    {
+      "id": "Q1",
+      "route": "/withdraw",
+      "question": "是否对 business_owner 开放（当前仅业务员/组长可发起，老板只查看）",
+      "blocking": false
+    },
+    {
+      "id": "Q2",
+      "route": "/in-service/benefit-claim, /offboarding/social-suspend-pool",
+      "question": "实际办理角色是否为 data_entry_leader（若有专岗请改）",
+      "blocking": false
+    }
+  ]
+}

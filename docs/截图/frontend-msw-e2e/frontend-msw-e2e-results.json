@@ -1,0 +1,124 @@
+{
+  "baseURL": "http://127.0.0.1:5173",
+  "generatedAt": "2026-05-11T04:55:03.938Z",
+  "totals": {
+    "total": 13,
+    "passed": 11,
+    "failed": 2
+  },
+  "results": [
+    {
+      "name": "login admin MSW/mock token",
+      "passed": true,
+      "screenshot": "docs/截图/frontend-msw-e2e/01-login-dashboard.png",
+      "url": "http://127.0.0.1:5173/dashboard",
+      "notes": [
+        "serviceWorker=activated",
+        "token=mock-jwt-acc..."
+      ],
+      "durationMs": 1923
+    },
+    {
+      "name": "dashboard admin/manager/sales mock data",
+      "passed": true,
+      "screenshot": "docs/截图/frontend-msw-e2e/02-dashboard-admin-manager-sales-mock-data.png",
+      "url": "http://127.0.0.1:5173/dashboard",
+      "notes": [],
+      "durationMs": 1383
+    },
+    {
+      "name": "admin users page",
+      "passed": false,
+      "screenshot": null,
+      "url": null,
+      "notes": [],
+      "durationMs": 6279,
+      "error": "locator.waitFor: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByText('用户管理').first() to be visible\u001b[22m\n"
+    },
+    {
+      "name": "admin roles page",
+      "passed": false,
+      "screenshot": null,
+      "url": null,
+      "notes": [],
+      "durationMs": 6232,
+      "error": "locator.waitFor: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByText('角色管理').first() to be visible\u001b[22m\n"
+    },
+    {
+      "name": "work order new dynamic form",
+      "passed": true,
+      "screenshot": "docs/截图/frontend-msw-e2e/05-work-order-new-dynamic-form.png",
+      "url": "http://127.0.0.1:5173/work-orders/new",
+      "notes": [],
+      "durationMs": 1290
+    },
+    {
+      "name": "work order new submit attempt",
+      "passed": true,
+      "screenshot": "docs/截图/frontend-msw-e2e/06-work-order-new-submit-attempt.png",
+      "url": "http://127.0.0.1:5173/work-orders/new",
+      "notes": [
+        "buttons=8"
+      ],
+      "durationMs": 1279
+    },
+    {
+      "name": "work order import mapping/progress page",
+      "passed": true,
+      "screenshot": "docs/截图/frontend-msw-e2e/07-work-order-import-mapping-progress-page.png",
+      "url": "http://127.0.0.1:5173/work-orders/import",
+      "notes": [],
+      "durationMs": 1305
+    },
+    {
+      "name": "my dispatched list page",
+      "passed": true,
+      "screenshot": "docs/截图/frontend-msw-e2e/08-my-dispatched-list-page.png",
+      "url": "http://127.0.0.1:5173/my-dispatched",
+      "notes": [],
+      "durationMs": 1267
+    },
+    {
+      "name": "my dispatched detail accept supplement complete page",
+      "passed": true,
+      "screenshot": "docs/截图/frontend-msw-e2e/09-my-dispatched-detail-accept-supplement-complete-page.png",
+      "url": "http://127.0.0.1:5173/my-dispatched/70011",
+      "notes": [],
+      "durationMs": 1311
+    },
+    {
+      "name": "work order detail withdraw page",
+      "passed": true,
+      "screenshot": "docs/截图/frontend-msw-e2e/10-work-order-detail-withdraw-page.png",
+      "url": "http://127.0.0.1:5173/work-orders/5001",
+      "notes": [],
+      "durationMs": 1307
+    },
+    {
+      "name": "my todos approval tabs page",
+      "passed": true,
+      "screenshot": "docs/截图/frontend-msw-e2e/11-my-todos-approval-tabs-page.png",
+      "url": "http://127.0.0.1:5173/my-todos",
+      "notes": [],
+      "durationMs": 1300
+    },
+    {
+      "name": "export templates create preview page",
+      "passed": true,
+      "screenshot": "docs/截图/frontend-msw-e2e/12-export-templates-create-preview-page.png",
+      "url": "http://127.0.0.1:5173/export-templates",
+      "notes": [],
+      "durationMs": 1265
+    },
+    {
+      "name": "notifications route availability",
+      "passed": true,
+      "screenshot": "docs/截图/frontend-msw-e2e/13-notifications-route.png",
+      "url": "http://127.0.0.1:5173/notifications",
+      "notes": [
+        "notifications route not implemented; captured 404"
+      ],
+      "durationMs": 1241
+    }
+  ]
+}

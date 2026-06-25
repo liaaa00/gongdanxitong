@@ -1,0 +1,521 @@
+### P4 smoke/self-check HTTP script (prepared only; do not execute in this task)
+### Usage: VS Code REST Client / JetBrains HTTP Client / Postman import.
+### Replace tokens and ids before real execution.
+
+@baseUrl = http://localhost:3000/api
+@frontendUrl = http://localhost:5173
+@runId = P4-0520-manual
+
+@adminToken = <ADMIN_JWT>
+@salesToken = <SALES_JWT>
+@nonAdminToken = <NON_ADMIN_JWT>
+@backendSupervisorToken = <BACKOFFICE_SUPERVISOR_JWT>
+@backendHandlerToken = <BACKOFFICE_HANDLER_JWT>
+@sharedOwnerToken = <SHARED_OWNER_JWT>
+@fieldManagerToken = <FIELD_MANAGER_OR_NON_ADMIN_JWT>
+
+@workflowId = <WORKFLOW_UUID_AFTER_CREATE>
+@workOrderId = <WORK_ORDER_UUID>
+@r4WorkOrderId = <PROCESSING_WORK_ORDER_UUID_FOR_R4>
+@dispatchedOrderId = <DISPATCHED_ORDER_UUID>
+@exportTemplateId = <EXPORT_TEMPLATE_UUID>
+@roleIdForTest = <ROLE_UUID_FOR_FIELD_PERMISSION_TEST>
+
+### -----------------------------------------------------------------------------
+### 0. Token / role sanity checks
+### -----------------------------------------------------------------------------
+
+### admin identity
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{adminToken}}
+
+### salesperson identity
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{salesToken}}
+
+### non-admin identity
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{nonAdminToken}}
+
+### backend handler identity
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{backendHandlerToken}}
+
+### shared owner identity
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{sharedOwnerToken}}
+
+### -----------------------------------------------------------------------------
+### 1. G-18 Field management permission: admin allowed / non-admin denied
+### -----------------------------------------------------------------------------
+
+### G18 admin can read fields - EXPECT 200
+GET {{baseUrl}}/admin/fields?page=1&pageSize=20
+Authorization: Bearer {{adminToken}}
+
+### G18 admin can read field permission matrix - EXPECT 200
+GET {{baseUrl}}/admin/field-permissions/matrix
+Authorization: Bearer {{adminToken}}
+
+### G18 admin can update test field permission - EXPECT 200/201
+POST {{baseUrl}}/admin/field-permissions/batch
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "items": [
+    {
+      "roleId": "{{roleIdForTest}}",
+      "fieldCode": "mobile",
+      "scenario": "main",
+      "permission": "visible"
+    }
+  ]
+}
+
+### G18 non-admin cannot read fields - EXPECT 403
+GET {{baseUrl}}/admin/fields?page=1&pageSize=20
+Authorization: Bearer {{nonAdminToken}}
+
+### G18 non-admin cannot read field permission matrix - EXPECT 403
+GET {{baseUrl}}/admin/field-permissions/matrix
+Authorization: Bearer {{nonAdminToken}}
+
+### G18 non-admin cannot update field permissions - EXPECT 403
+POST {{baseUrl}}/admin/field-permissions/batch
+Authorization: Bearer {{nonAdminToken}}
+Content-Type: application/json
+
+{
+  "items": [
+    {
+      "roleId": "{{roleIdForTest}}",
+      "fieldCode": "mobile",
+      "scenario": "main",
+      "permission": "visible"
+    }
+  ]
+}
+
+### -----------------------------------------------------------------------------
+### 2. G-19 Workflow configuration CRUD / publish / guard
+### -----------------------------------------------------------------------------
+
+### G19 admin list workflows - EXPECT 200
+GET {{baseUrl}}/admin/workflows?page=1&pageSize=20&orderType=onboarding
+Authorization: Bearer {{adminToken}}
+
+### G19 non-admin list workflows denied - EXPECT 403
+GET {{baseUrl}}/admin/workflows?page=1&pageSize=20&orderType=onboarding
+Authorization: Bearer {{nonAdminToken}}
+
+### G19 create draft workflow - EXPECT 201/200; copy returned id to @workflowId
+POST {{baseUrl}}/admin/workflows
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "name": "P4入职流程自检-{{runId}}",
+  "orderType": "onboarding",
+  "description": "P4 smoke workflow; delete after test if needed",
+  "definitionJson": {
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "label": "开始",
+        "position": { "x": 40, "y": 120 },
+        "form_schema": { "visible_fields": [], "editable_fields": [], "action_buttons": ["submit"] }
+      },
+      {
+        "id": "data_entry",
+        "type": "process",
+        "label": "数据录入-P4",
+        "module_code": "data_entry",
+        "assignee_role": "data_entry_leader",
+        "sla_hours": 24,
+        "position": { "x": 260, "y": 40 },
+        "form_schema": {
+          "visible_fields": ["employee_name", "id_card_no", "mobile"],
+          "editable_fields": ["employee_name", "id_card_no", "mobile"],
+          "action_buttons": ["complete", "return"]
+        }
+      },
+      {
+        "id": "contract",
+        "type": "approval",
+        "label": "合同签约-P4",
+        "module_code": "contract",
+        "assignee_role": "labor_contract_member",
+        "sla_hours": 48,
+        "position": { "x": 260, "y": 190 },
+        "form_schema": {
+          "visible_fields": ["employee_name", "contract_start_date", "contract_end_date"],
+          "editable_fields": ["contract_feedback"],
+          "action_buttons": ["complete", "return"]
+        }
+      },
+      {
+        "id": "end",
+        "type": "end",
+        "label": "结束",
+        "position": { "x": 540, "y": 120 },
+        "form_schema": { "visible_fields": [], "editable_fields": [], "action_buttons": [] }
+      }
+    ],
+    "edges": [
+      { "id": "start-data_entry", "source": "start", "target": "data_entry", "condition": "提交后派发" },
+      { "id": "data_entry-end", "source": "data_entry", "target": "end", "condition": "录入完成" },
+      { "id": "start-contract", "source": "start", "target": "contract", "condition": "需要合同" },
+      { "id": "contract-end", "source": "contract", "target": "end", "condition": "签约完成" }
+    ]
+  }
+}
+
+### G19 get workflow detail - EXPECT 200
+GET {{baseUrl}}/admin/workflows/{{workflowId}}
+Authorization: Bearer {{adminToken}}
+
+### G19 update workflow definition - EXPECT 200
+PUT {{baseUrl}}/admin/workflows/{{workflowId}}
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "name": "P4入职流程自检-已编辑-{{runId}}",
+  "orderType": "onboarding",
+  "description": "Updated by P4 smoke script",
+  "definitionJson": {
+    "nodes": [
+      { "id": "start", "type": "start", "label": "开始", "position": { "x": 40, "y": 120 }, "form_schema": { "visible_fields": [], "editable_fields": [], "action_buttons": ["submit"] } },
+      { "id": "data_entry", "type": "process", "label": "数据录入-P4-编辑后", "module_code": "data_entry", "assignee_role": "data_entry_leader", "sla_hours": 12, "position": { "x": 280, "y": 50 }, "form_schema": { "visible_fields": ["employee_name", "id_card_no", "mobile"], "editable_fields": ["mobile"], "action_buttons": ["complete", "return"] } },
+      { "id": "end", "type": "end", "label": "结束", "position": { "x": 540, "y": 120 }, "form_schema": { "visible_fields": [], "editable_fields": [], "action_buttons": [] } }
+    ],
+    "edges": [
+      { "id": "start-data_entry", "source": "start", "target": "data_entry", "condition": "提交后派发" },
+      { "id": "data_entry-end", "source": "data_entry", "target": "end", "condition": "录入完成" }
+    ]
+  }
+}
+
+### G19 publish workflow - EXPECT 200 and status published/active
+POST {{baseUrl}}/admin/workflows/{{workflowId}}/publish
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{}
+
+### G19 non-admin cannot publish - EXPECT 403
+POST {{baseUrl}}/admin/workflows/{{workflowId}}/publish
+Authorization: Bearer {{nonAdminToken}}
+Content-Type: application/json
+
+{}
+
+### G19 create onboarding work order after workflow publish - EXPECT created id; then submit and inspect dispatched nodes
+POST {{baseUrl}}/work-orders
+Authorization: Bearer {{salesToken}}
+Content-Type: application/json
+
+{
+  "orderType": "onboarding",
+  "extraData": {
+    "employee_name": "P4流程配置{{runId}}",
+    "id_card_no": "330102199001010019",
+    "customer_code": "P4-CUST",
+    "customer_name": "P4测试客户",
+    "mobile": "13800000000",
+    "need_onboarding_contact": "是",
+    "need_company_contract": "是"
+  }
+}
+
+### G19 submit work order; copy created id to @workOrderId first - EXPECT dispatched child orders follow published workflow
+POST {{baseUrl}}/work-orders/{{workOrderId}}/submit
+Authorization: Bearer {{salesToken}}
+Content-Type: application/json
+
+{}
+
+### G19 inspect work order detail
+GET {{baseUrl}}/work-orders/{{workOrderId}}
+Authorization: Bearer {{salesToken}}
+
+### G19 inspect timeline
+GET {{baseUrl}}/work-orders/{{workOrderId}}/timeline
+Authorization: Bearer {{adminToken}}
+
+### -----------------------------------------------------------------------------
+### 3. G-20 Export template and portal/system setting guard
+### -----------------------------------------------------------------------------
+
+### G20 admin list export templates - EXPECT 200
+GET {{baseUrl}}/admin/export-templates?page=1&pageSize=20
+Authorization: Bearer {{adminToken}}
+
+### G20 non-admin list export templates denied - EXPECT 403
+GET {{baseUrl}}/admin/export-templates?page=1&pageSize=20
+Authorization: Bearer {{nonAdminToken}}
+
+### G20 alias endpoint should also deny non-admin if enabled - EXPECT 403
+GET {{baseUrl}}/export-templates?page=1&pageSize=20
+Authorization: Bearer {{nonAdminToken}}
+
+### G20 admin create export template - EXPECT 200/201; copy id to @exportTemplateId if needed
+POST {{baseUrl}}/admin/export-templates
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "templateName": "P4导出模板{{runId}}",
+  "moduleCode": "onboarding_contact",
+  "fieldList": [
+    { "fieldCode": "employee_name", "fieldName": "员工姓名" },
+    { "fieldCode": "id_card_no", "fieldName": "证件号码" },
+    { "fieldCode": "mobile", "fieldName": "手机号" }
+  ],
+  "isShared": false
+}
+
+### G20 non-admin cannot create export template - EXPECT 403
+POST {{baseUrl}}/admin/export-templates
+Authorization: Bearer {{nonAdminToken}}
+Content-Type: application/json
+
+{
+  "templateName": "P4越权导出模板{{runId}}",
+  "moduleCode": "onboarding_contact",
+  "fieldList": [
+    { "fieldCode": "employee_name", "fieldName": "员工姓名" }
+  ],
+  "isShared": false
+}
+
+### G20 admin can read portal/system setting - EXPECT 200
+GET {{baseUrl}}/admin/system-settings/operation-log-retention
+Authorization: Bearer {{adminToken}}
+
+### G20 non-admin cannot read portal/system setting - EXPECT 403
+GET {{baseUrl}}/admin/system-settings/operation-log-retention
+Authorization: Bearer {{nonAdminToken}}
+
+### G20 non-admin cannot update portal/system setting - EXPECT 403
+PUT {{baseUrl}}/admin/system-settings/operation-log-retention
+Authorization: Bearer {{nonAdminToken}}
+Content-Type: application/json
+
+{
+  "days": 180
+}
+
+### -----------------------------------------------------------------------------
+### 4. G-21 Edit must resubmit: status, reset, UI prompt backend evidence
+### -----------------------------------------------------------------------------
+
+### G21 inspect R4 order before edit - EXPECT processing/returned and active child orders
+GET {{baseUrl}}/work-orders/{{r4WorkOrderId}}
+Authorization: Bearer {{salesToken}}
+
+### G21 salesperson edits processing/returned order - EXPECT status changes to pending or requires/auto triggers resubmit semantics
+PUT {{baseUrl}}/work-orders/{{r4WorkOrderId}}
+Authorization: Bearer {{salesToken}}
+Content-Type: application/json
+
+{
+  "extraData": {
+    "mobile": "13900000000",
+    "special_remark": "P4编辑后必须重新提交{{runId}}"
+  }
+}
+
+### G21 explicit resubmit if UI/API design requires second call - EXPECT new dispatch / pending / latest data snapshots
+POST {{baseUrl}}/work-orders/{{r4WorkOrderId}}/resubmit
+Authorization: Bearer {{salesToken}}
+Content-Type: application/json
+
+{
+  "extraData": {
+    "mobile": "13900000000",
+    "special_remark": "P4编辑后必须重新提交{{runId}}"
+  }
+}
+
+### G21 inspect after edit/resubmit - EXPECT status/audit/timeline reflect salesperson_modify_resubmit
+GET {{baseUrl}}/work-orders/{{r4WorkOrderId}}
+Authorization: Bearer {{salesToken}}
+
+### G21 timeline after edit/resubmit - EXPECT salesperson_modify_resubmit / dispatch_resubmit evidence
+GET {{baseUrl}}/work-orders/{{r4WorkOrderId}}/timeline
+Authorization: Bearer {{adminToken}}
+
+### G21 backend handler messages after resubmit - EXPECT dispatch_resubmit/field changed notification visible if available
+GET {{baseUrl}}/notifications?page=1&pageSize=20
+Authorization: Bearer {{backendHandlerToken}}
+
+### -----------------------------------------------------------------------------
+### 5. Dashboard / notification regression for Q02-Q06 / B3
+### -----------------------------------------------------------------------------
+
+### dashboard cards admin
+GET {{baseUrl}}/dashboard/cards
+Authorization: Bearer {{adminToken}}
+
+### dashboard cards salesperson
+GET {{baseUrl}}/dashboard/cards
+Authorization: Bearer {{salesToken}}
+
+### dashboard cards backend handler
+GET {{baseUrl}}/dashboard/cards
+Authorization: Bearer {{backendHandlerToken}}
+
+### dashboard order type matrix by node
+GET {{baseUrl}}/dashboard/order-type-matrix?dimension=node
+Authorization: Bearer {{adminToken}}
+
+### dashboard leader trend by module
+GET {{baseUrl}}/dashboard/leader-trend?orderType=onboarding&moduleCode=onboarding_contact
+Authorization: Bearer {{adminToken}}
+
+### notification unread total
+GET {{baseUrl}}/notifications/unread-count
+Authorization: Bearer {{salesToken}}
+
+### notification unread by bucket
+GET {{baseUrl}}/notifications/unread-count-by-bucket
+Authorization: Bearer {{salesToken}}
+
+### notification list
+GET {{baseUrl}}/notifications?page=1&pageSize=20
+Authorization: Bearer {{salesToken}}
+
+### -----------------------------------------------------------------------------
+### 6. Work order process R1-R6 and historical bug probes
+### -----------------------------------------------------------------------------
+
+### R1/B4 accept dispatched order
+POST {{baseUrl}}/dispatched-orders/{{dispatchedOrderId}}/accept
+Authorization: Bearer {{backendHandlerToken}}
+Content-Type: application/json
+
+{}
+
+### R1 complete dispatched order; remark should be required by business rule
+POST {{baseUrl}}/dispatched-orders/{{dispatchedOrderId}}/complete
+Authorization: Bearer {{backendHandlerToken}}
+Content-Type: application/json
+
+{
+  "remark": "P4常规办理完成{{runId}}"
+}
+
+### B4 batch complete empty remark - EXPECT 400
+POST {{baseUrl}}/dispatched-orders/batch-complete
+Authorization: Bearer {{backendHandlerToken}}
+Content-Type: application/json
+
+{
+  "ids": ["{{dispatchedOrderId}}"],
+  "remark": ""
+}
+
+### B4 batch complete with remark - EXPECT 200 for <=50 valid ids
+POST {{baseUrl}}/dispatched-orders/batch-complete
+Authorization: Bearer {{backendHandlerToken}}
+Content-Type: application/json
+
+{
+  "ids": ["{{dispatchedOrderId}}"],
+  "remark": "P4批量办理{{runId}}"
+}
+
+### R2/R3 return dispatched order
+POST {{baseUrl}}/dispatched-orders/{{dispatchedOrderId}}/return
+Authorization: Bearer {{backendHandlerToken}}
+Content-Type: application/json
+
+{
+  "returnReason": "P4后道退回{{runId}}"
+}
+
+### R5 withdraw request
+POST {{baseUrl}}/work-orders/{{workOrderId}}/withdraw
+Authorization: Bearer {{salesToken}}
+Content-Type: application/json
+
+{
+  "reason": "P4申请撤回{{runId}}"
+}
+
+### R5 withdraw approve by supervisor
+POST {{baseUrl}}/work-orders/{{workOrderId}}/withdraw/approve
+Authorization: Bearer {{backendSupervisorToken}}
+Content-Type: application/json
+
+{
+  "approved": true,
+  "comment": "P4同意撤回{{runId}}"
+}
+
+### R2 void request
+POST {{baseUrl}}/work-orders/{{workOrderId}}/void
+Authorization: Bearer {{salesToken}}
+Content-Type: application/json
+
+{
+  "reason": "P4申请作废{{runId}}"
+}
+
+### R2 void approve by supervisor
+POST {{baseUrl}}/work-orders/{{workOrderId}}/void/approve
+Authorization: Bearer {{backendSupervisorToken}}
+Content-Type: application/json
+
+{
+  "approved": true,
+  "comment": "P4同意作废{{runId}}"
+}
+
+### -----------------------------------------------------------------------------
+### 7. Import / social_urge / search / shared owner regression probes
+### -----------------------------------------------------------------------------
+
+### Q12 social_urge should not be active/visible in admin fields query - EXPECT empty or inactive/non-required only
+GET {{baseUrl}}/admin/fields?keyword=social_urge
+Authorization: Bearer {{adminToken}}
+
+### Q12 Chinese removed field keyword should not be visible in runtime field list
+GET {{baseUrl}}/admin/fields?keyword=社保公积金未办是否需要催办
+Authorization: Bearer {{adminToken}}
+
+### Q13 work order search by employee name / customer / id card / status
+GET {{baseUrl}}/work-orders?page=1&pageSize=20&keyword=P4&status=processing
+Authorization: Bearer {{salesToken}}
+
+### B5 shared owner filters by module code
+GET {{baseUrl}}/dispatched-orders?page=1&pageSize=20&moduleCode=onboarding_contact
+Authorization: Bearer {{sharedOwnerToken}}
+
+### B5 shared owner filters by Chinese module name, if backend supports keyword/moduleName
+GET {{baseUrl}}/dispatched-orders?page=1&pageSize=20&moduleName=入职联系
+Authorization: Bearer {{sharedOwnerToken}}
+
+### Import preview standard file example (manual: replace path in curl/Postman; REST Client may need local path support)
+# POST {{baseUrl}}/work-orders/import/preview
+# Authorization: Bearer {{salesToken}}
+# Content-Type: multipart/form-data
+# file=@D:/fixtures/onboarding-valid.xlsx; orderType=onboarding
+
+### -----------------------------------------------------------------------------
+### 8. Frontend manual URL checklist (record screenshots; not executable here)
+### -----------------------------------------------------------------------------
+
+### Open as admin: {{frontendUrl}}/admin/fields
+### Open as non-admin: {{frontendUrl}}/admin/fields -> EXPECT no permission / redirect
+### Open as admin: {{frontendUrl}}/admin/workflows
+### Open as admin: {{frontendUrl}}/admin/workflows/{{workflowId}} -> test visual editor drag/drop/save/publish
+### Open as non-admin: {{frontendUrl}}/admin/workflows -> EXPECT no permission / redirect
+### Open as admin: {{frontendUrl}}/admin/export-templates
+### Open as non-admin: {{frontendUrl}}/admin/export-templates -> EXPECT no permission / redirect
+### Open as admin: {{frontendUrl}}/admin/system-settings
+### Open as non-admin: {{frontendUrl}}/admin/system-settings -> EXPECT no permission / redirect
+### Open as salesperson: {{frontendUrl}}/work-orders/{{r4WorkOrderId}}?edit=1 -> EXPECT "保存并重新提交" prompt and confirmation
