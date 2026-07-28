@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ProForm,
   ProFormText,
@@ -35,7 +35,8 @@ export interface FieldConfig {
 
 export interface ConditionalRequired {
   field: string;
-  value: string | string[];
+  operator?: 'equals' | 'exists' | 'notEquals';
+  value?: string | string[];
   requireFields: string[];
 }
 
@@ -56,6 +57,23 @@ interface DynamicFormProps {
   loading?: boolean;
   highlightedFields?: string[];
   focusField?: string | null;
+}
+
+function hasConditionalValue(value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  return true;
+}
+
+function matchesConditionalRule(condition: ConditionalRequired, triggerValue: unknown): boolean {
+  if (condition.operator === 'exists') return hasConditionalValue(triggerValue);
+  if (condition.operator === 'notEquals') {
+    const expectedValues = Array.isArray(condition.value) ? condition.value : [condition.value];
+    return !expectedValues.filter((value): value is string => typeof value === 'string').includes(String(triggerValue ?? ''));
+  }
+  const expectedValues = Array.isArray(condition.value) ? condition.value : [condition.value];
+  return expectedValues.filter((value): value is string => typeof value === 'string').includes(String(triggerValue ?? ''));
 }
 
 function getPermission(
@@ -100,6 +118,7 @@ function DynamicForm({
   focusField,
 }: DynamicFormProps) {
   const { message } = App.useApp();
+  const [currentValues, setCurrentValues] = useState<Record<string, unknown>>(initialValues ?? {});
 
   const fieldNameMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -163,23 +182,29 @@ function DynamicForm({
     return () => window.clearTimeout(timer);
   }, [normalizedFocusField]);
 
-  const getConditionalRules = (fieldCode: string) => {
-    if (!conditionalRequired) return [];
-    return conditionalRequired
-      .filter((cond) => cond.requireFields.includes(fieldCode))
-      .map((cond) => ({
-        validator: async (_: unknown, value: unknown) => {
-          const triggerValue = formRef?.current?.getFieldValue?.(cond.field);
-          const expectedValues = Array.isArray(cond.value) ? cond.value : [cond.value];
-          const shouldRequire = expectedValues.includes(String(triggerValue ?? ''));
-          const isEmpty = value === undefined || value === null || value === '';
-          if (shouldRequire && isEmpty) {
-            const condFieldName = fieldNameMap[cond.field] || cond.field;
-            throw new Error(`当「${condFieldName}」为${expectedValues.join('/')}时此项为必填`);
+  const getFieldConditions = (fieldCode: string) => (
+    (conditionalRequired ?? []).filter((condition) => condition.requireFields.includes(fieldCode))
+  );
+
+  const isConditionallyRequired = (fieldCode: string) => (
+    getFieldConditions(fieldCode).some((condition) => matchesConditionalRule(condition, currentValues[condition.field]))
+  );
+
+  const getConditionalRules = (fieldCode: string) => (
+    getFieldConditions(fieldCode).map((condition) => ({
+      validator: async (_: unknown, value: unknown) => {
+        const triggerValue = currentValues[condition.field];
+        if (matchesConditionalRule(condition, triggerValue) && !hasConditionalValue(value)) {
+          const conditionFieldName = fieldNameMap[condition.field] || condition.field;
+          if (condition.operator === 'exists') {
+            throw new Error(`当「${conditionFieldName}」有值时此项为必填`);
           }
-        },
-      }));
-  };
+          const expectedValues = Array.isArray(condition.value) ? condition.value : [condition.value];
+          throw new Error(`当「${conditionFieldName}」为${expectedValues.filter(Boolean).join('/')}时此项为必填`);
+        }
+      },
+    }))
+  );
 
   const buildValidationRules = (field: FieldConfig) => {
     const rules: Array<Record<string, unknown>> = [];
@@ -213,6 +238,7 @@ function DynamicForm({
     const commonProps = {
       name: field.field_code,
       label: field.field_name,
+      required: field.is_required || isConditionallyRequired(field.field_code),
       placeholder: field.placeholder || `请输入${field.field_name}`,
       disabled,
       tooltip: field.help_text,
@@ -280,6 +306,11 @@ function DynamicForm({
     return result;
   };
 
+  const handleValuesChange = (changedValues: Record<string, unknown>, allValues: Record<string, unknown>) => {
+    setCurrentValues(allValues);
+    onValuesChange?.(changedValues, allValues);
+  };
+
   const handleFinish = async (values: Record<string, unknown>) => {
     if (!onFinish) return;
     try {
@@ -296,7 +327,7 @@ function DynamicForm({
       formRef={formRef as React.RefObject<ProFormInstance>}
       initialValues={initialValues}
       onFinish={handleFinish}
-      onValuesChange={onValuesChange}
+      onValuesChange={handleValuesChange}
       submitter={
         onFinish && !hideSubmit
           ? {

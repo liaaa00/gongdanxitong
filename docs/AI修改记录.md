@@ -1,6 +1,273 @@
 # AI 修改记录
 
+## 2026-07-28 · 入职合同期限 + 终止日期改为条件必填（无固定期限时非必填）
+
+- 背景：用户反馈入职批量导入时，当合同期限形式为“无固定期限”时，仍然报错“合同期限为必填项”，形成逻辑矛盾（无固定期限本身就不需要填写合同期限持续时长和终止日期）。
+- 根因：
+  1. 代码修改正确，但启动脚本使用 `Start-Process` 启动后端时 `$env:AUTO_SEED='true'` **未被子进程继承**，导致服务启动日志显示“Startup seed skipped because AUTO_SEED/SEED_ON_BOOT is false”。
+  2. 数据库中 `contract_term` / `contract_end_date` 字段仍保留旧定义（固定必填），导入校验仍按旧规则执行。
+  3. 之前只修改了 `contract_end_date`，**漏改了 `contract_term`**（合同期限字段）。
+- 改了什么：
+  1. `backend/src/database/seeds/seed-fields.ts`：`contract_term` 从 `required: true` 改为 `required: false, defaultRequired: false, conditionalRequired: conditionNotEq('contract_term_type', '无固定期限')`。
+  2. `局域网启动.ps1`：删除 `$env:AUTO_SEED` 设置（子进程不继承），改为 build 后显式执行 `node dist\database\seeds\index.js` 同步字段定义。
+  3. 前端 `fields.ts` fallback 同步修改 `contract_term` 为条件必填。
+- 为什么这样改：“无固定期限”合同不需要填写合同期限持续时长和终止日期，只有“固定期限”和“任务期限”需要。启动时显式 seed 比 AUTO_SEED 更可控（字段定义变更频率低）。
+- 是否覆盖旧规则：否。修正逻辑矛盾，未改其他字段必填规则、字段列表或子工单派发逻辑。
+- 验证：后端 `npm run build` 通过。重启后数据库字段定义将同步为条件必填，导入校验应通过。
+
+## 2026-07-28 · 入职合同终止日期改为条件必填（无固定期限时非必填）[已废弃-漏改 contract_term]
+
+- 背景：用户反馈入职批量导入时，当合同期限形式为“无固定期限”时，合同终止日期仍为必填项，形成逻辑矛盾（无固定期限本身就没有终止日期），导致数据无法录入。
+- 根因：`contract_end_date` 字段在后端 seed 和前端 fallback 中均配置为 `required: true, defaultRequired: true`，没有条件必填规则。
+- 改了什么：
+  1. `backend/src/database/seeds/seed-fields.ts`：新增 `conditionNotEq` 辅助函数（NEQ 操作符，“不等于时必填”）；`contract_end_date` 改为 `required: false, defaultRequired: false, conditionalRequired: conditionNotEq('contract_term_type', '无固定期限')`。
+  2. `frontend/src/components/DynamicForm/index.tsx`：`ConditionalRequired` 类型定义增加 `'notEquals'` 操作符；`matchesConditionalRule` 函数增加 `notEquals` 逻辑处理（不包含期望值时返回 true）。
+  3. `frontend/src/services/fields.ts`：同步 `contract_end_date` 为 `is_required: false, default_required: false, conditional_required: { op: 'NEQ', field: 'contract_term_type', value: '无固定期限' }`。
+  4. `docs/业务规则回归清单.md`：新增「## 13.1 入职批量导入字段必填规则」章节，明确“无固定期限”时终止日期非必填、其他期限形式必填。
+- 为什么这样改：后端 AST 评估器已支持 NEQ 操作符，前端只需增加 DynamicForm 层反向条件判断逻辑；条件必填相比特殊值约定（`9999-12-31` / `null`）更符合业务逻辑，前端展示也更直观。
+- 是否覆盖旧规则：否。本次修正业务逻辑矛盾，没有改变其他字段必填规则、字段列表或子工单派发逻辑。
+- 验证：后端 `module-fields-baseline.spec.ts` 通过（字段列表未变）；回归测试将覆盖入职工单新建/导入/校验全链路。
+
+## 2026-07-07 · 导入预览「仍有 N 个表格表头未自动匹配」误报修复（模板结构列 + 占位符列剔除）
+
+- 背景：用户按系统生成的模板导入离职工单，预览页始终提示「仍有 2 个表格表头未自动匹配」，标记的两列是「字段名」和「附件」。重启测试无效，因为这是运行时解析行为、非测试问题。
+- 根因：
+  1. 「字段名」是模板 A 列的标签列表头（`import-template.service.ts` `headerRow.getCell(1).value='字段名'`，A 列下方是「是否必填/填写要求/填写示例」标签，数据字段从 B 列起）；「附件」是离职模板的附件提示列（附件按物理行号关联，设计上不参与映射/写库）。二者都是模板自带结构列，却被解析器当成数据表头，AI 映射层无别名，归入 `unmatched` → 前端弹黄条。
+  2. 连带发现 `isPlaceholderHeader` 正则 `/^[?锛焅s]+$/` 是乱码损坏的，本应匹配 `__col_N__` 空列占位符——导致浙江模板那类空列也会误触发同类黄条。
+- 改了什么：
+  1. `backend/src/modules/imports/excel-parser.service.ts`：新增 `TEMPLATE_STRUCTURAL_HEADERS = {'字段名','附件'}`；`buildHeaders` 命中结构列的表头替换为 `__col_N__` 占位符（下游默认「不导入」）。
+  2. `backend/src/modules/imports/import-job.service.ts`：修复 `isPlaceholderHeader` 正则为 `/^__col_\d+__$/`；`toPreviewResult` 用它过滤映射表与 `unmatched`/`unmatchedHeaders`，占位符列（空列 + 结构列）不进映射表也不计入未匹配。
+- 为什么这样改：结构列不是数据字段，最合适的剔除点在解析层降级为占位符 + 预览层统一过滤占位符，一处修复覆盖「字段名」「附件」及历史空列误报；附件仍按物理行号关联，写库/校验口径不变。
+- 是否覆盖旧规则：否。仅修正表头误报与损坏正则，不改字段映射口径、必填规则、附件关联逻辑。
+- 验证：后端 `tsc --noEmit` 零错误；`excel-parser.service.spec.ts` 新增「结构列降级为占位符」用例（6 测试全过）；`import-job.service.spec.ts` + `ai-mapping.service.spec.ts`（8 测试全过），无回归。
+
+## 2026-07-07 · 导出 Excel 附件超链接点击 401 修复（带签名的临时下载令牌）
+
+- 背景：单条工单/子工单导出后，附件列已能生成蓝色超链接，但点击下载后端返回 `{"code":401,"message":"Token 无效或已过期"}`，无法打开附件。
+- 根因：全局 `JwtAuthGuard` 拦截所有请求，`JwtStrategy` 只从 `Authorization: Bearer` 头取 token；而 Excel 里的超链接是浏览器直接发 GET，带不了 Authorization 头，因此对受保护的 `/api/files/:id` 必然 401。附件为离职材料（含身份证复印件等敏感 PII），下载端点不能裸公开。
+- 改了什么：
+  1. `backend/src/modules/upload/upload.service.ts`：新增带 HMAC 签名的临时下载令牌能力。`signSecret()` 复用 `app.jwtSecret`；`computeSignature(fileId, exp)` 用 `createHmac('sha256')` 对 `fileId.exp` 签名；`buildSignedDownloadUrl(base, fileId, ttl=7天)` 生成 `/api/files/download?fileId=&exp=&sig=` 形式的下载 URL；`verifyDownloadToken(fileId, exp, sig)` 校验过期与签名（`timingSafeEqual` 防时序攻击，长度不等直接拒绝）。
+  2. `backend/src/modules/upload/file.controller.ts`：新增 `@Public()` 的 `GET /api/files/download` 端点，先 `verifyDownloadToken` 校验令牌，通过才流式返回文件；令牌无效/过期抛 `UnauthorizedException('下载链接无效或已过期')`。声明顺序在 `:id` 之前以优先匹配。原受保护端点 `GET /api/files/:id`（UI 内部下载用）**完全不动**。
+  3. `backend/src/modules/admin/export-templates/export-templates.service.ts`：`loadAttachmentSummaries` 生成附件 URL 改为调用 `uploadService.buildSignedDownloadUrl(base, fileId)`；`attachmentFileBaseUrl()` 只返回 base，签名 URL 由 UploadService 拼接。
+- 为什么这样改：Excel 超链接无法携带鉴权头，用短期 HMAC 签名令牌既能让链接可点击下载，又不把含 PII 的附件端点裸公开；令牌绑定 fileId+过期时间，默认 7 天有效覆盖常规下载窗口。现有 UI 下载链路与受保护端点零改动，无回归面。
+- 验证：`npm run build` 通过；新增 `test/upload.service.signed-download.spec.ts`（签名闭环/篡改拒绝/过期拒绝/长度不等拒绝）+ 扩展 `test/file.controller.spec.ts`（公开端点校验通过与失败），共 9 测试全通过；导出相关 `export-template*` 4 套件 16 测试全通过，无回归。
+
+## 2026-07-07 · 登录诊断从静态 mock 改为动态真实诊断
+
+- 背景：用户反馈登录诊断页面是「静态的、完全没用」，要改成动态有用的。
+- 根因：旧页面所有诊断函数（`getAllUserPasswordStatus`/`verifyAllSeedUserCredentials` 等）只读浏览器 localStorage 里的 mock 数据，把明文密码和硬编码的 `DEFAULT_SEED_PASSWORDS`（全 123456）做字符串对比，与真实后端 `/auth/login`（bcrypt 校验）完全脱节——mock 永远显示「可登录」，但真实账号可能 401，诊断不出真实问题。
+- 改了什么：
+  1. `frontend/src/services/users.ts`：
+     - `UserItem` 与 `normalizeUserItem` 增加 `last_login_at` 字段（来源后端 `list` 已返回的 `last_login_at`）。
+     - 新增动态诊断纯函数 `diagnoseUserLoginReadiness()`：拉取真实 `/admin/users` 全量用户，依据后端登录规则逐个判定登录就绪状态。判据来自后端 `auth.service.ts` 真实逻辑：`login` 查询条件 `{ username, isActive: true }`（禁用直接拒绝）、登录成功才写 `lastLoginAt`（为空=从未成功登录）、无角色可登录但无菜单权限。状态：`ok/disabled/no_role/never_logged_in`，每条带修复建议。
+     - 新增 `probeRealLogin(username, password)`：用 `silentError` 实调 `/auth/login` 做真实登录验证，区分 401/网络/其他错误，不写入任何会话状态。Mock 模式下直接返回不可用。
+  2. `frontend/src/pages/Admin/LoginDebug/index.tsx`：整页重写。上半部为「用户登录就绪诊断」表格（总数/可登录/异常统计 + 可按诊断状态筛选 + 后端不可达告警），下半部为「真实登录验证」表单。移除全部基于 localStorage 明文密码的静态展示与「清缓存/重置种子密码」按钮。
+- 保留未删：`users.ts` 中旧的静态诊断函数（`getAllUserPasswordStatus`/`resetAllSeedPasswords`/`clearAllAuthCache`/`verifyAllSeedUserCredentials` 等）已无任何引用，但其牵连 mock 密码体系（`DEFAULT_SEED_PASSWORDS`/`loadPasswords`），删除改动面过大且非本次需求，保留更安全。
+- 为什么这样改：让诊断真正反映后端认证事实，能定位「倩雯账号登不上」这类真实问题（禁用/无角色/密码从未成功登录），而不是永远显示绿灯。
+- 验证：前端 `tsc` 类型检查通过；跑登录相关关键回归 `Login/index`、`authLoginRegression`、`auth.changePassword` 共 3 套件 13 测试全通过。
+- 是否覆盖旧规则：否。未改动登录、改密、菜单权限等既有业务口径；仅重写诊断页与新增诊断函数。
+
+## 2026-07-06 · 离职工单批量导入附件支持 + 社保等三字段办结前必填 + 导出附件超链接修复
+
+- 背景：用户测试发现三个问题：①单条工单导出时附件列无法点击下载；②批量导入时Excel内嵌的附件丢失；③社保/医保/公积金字段未与办结状态关联强制校验。
+- 根因分析：
+  1. **导出超链接问题**：`export-templates.service.ts` 中通过 `addRow()` 批量写入单元格时，`{ text, hyperlink }` 对象格式未被 exceljs 正确识别为超链接，需要在单元格级别显式设置 `cell.value = { text, hyperlink }`。
+  2. **批量导入附件丢失**：代码已有完整的附件提取功能（`extractXlsxEmbeddedAttachments` 和 `import-job.service.ts:220-273`），实际已实现按物理行号关联附件并自动上传到工单，功能正常无需修改。
+  3. **社保等字段未必填**：`work-order-validation.service.ts` 的 `STRICT_REQUIRED_FIELD_CODES` 未包含这三个字段，办结时不会强制校验。
+- 改了什么：
+  1. `backend/src/modules/work-orders/work-order-validation.service.ts`：
+     - `STRICT_REQUIRED_FIELD_CODES` 新增 `'social_insurance_result'`（社保是否办结）、`'medical_insurance_result'`（医保是否办结）、`'housing_fund_result'`（公积金是否办结）
+     - `STRICT_REQUIRED_FIELD_NAMES` 新增对应中文名称映射
+     - 办结前未填写这三个字段将抛出 4110 错误，提示"必填字段缺失：社保是否办结、医保是否办结、公积金是否办结"
+  2. `backend/src/modules/admin/export-templates/export-templates.service.ts`：
+     - `writeWorksheet()` 方法中，在 `addRow()` 后遍历 `cellValues`，检测附件超链接对象（`{ text, hyperlink }`）
+     - 对附件单元格显式设置：`cell.value = { text, hyperlink }` + `cell.font = { color: 'blue', underline: true }`
+     - 确保 exceljs 正确生成可点击的超链接
+  3. **批量导入附件功能确认**：代码已完整实现（`import-job.service.ts:220-273` + `extractXlsxEmbeddedAttachments`），无需修改。用户反馈的"附件丢失"问题需进一步测试验证，可能是 Excel 文件格式或嵌入方式不符合预期。
+- 为什么这样改：
+  - 社保等字段为离职办结的必要前置条件，必须强制校验防止遗漏。
+  - exceljs 要求在单元格对象级别设置超链接属性，批量赋值 `addRow(row)` 时对象格式会被当作普通值处理。
+  - 批量导入附件功能代码已完备，支持从 Excel 的 `xl/embeddings` 和 `xl/media` 目录提取文件，按 `drawing` / `vml` 锚点行号匹配数据行并自动上传。
+- 验证：
+  1. 重启后端，创建离职工单不填社保/医保/公积金三字段，尝试办结应报错"必填字段缺失"。
+  2. 导出单条离职工单，附件列应显示蓝色下划线超链接，点击可下载。
+  3. 批量导入时在 Excel 行内嵌入附件（插入→对象→文件），导入后详情页和导出表都能看到附件。
+- 是否覆盖旧规则：是，社保等三字段从可选改为办结前必填；附件导出超链接和批量导入功能不改变业务逻辑，仅修复显示和数据完整性。
+
+## 2026-07-06 · 导出附件列改为超链接（兼容多种字段命名）
+
+- 背景：用户反馈导出Excel中的附件列只显示文件名纯文本（如`1776221541.pptx`），点击提示"无法打开指定的文件"，无法下载附件。
+- 根因：代码已实现附件超链接逻辑（`export-templates.service.ts:467-476`），但硬编码检查字段代码必须完全匹配`attachments_summary`，而实际导出模板配置的字段代码可能是`附件`或其他名称，导致超链接生成条件未触发，只输出普通文本。
+- 改了什么：
+  1. `backend/src/modules/admin/export-templates/export-templates.service.ts`：
+     - `renderRichValue()` 方法中的附件字段判断改为正则匹配`/attachment|附件/i.test(column.valueCode)`
+     - 兼容多种字段命名：`attachments_summary`、`attachments`、`附件`等
+     - 保持原有超链接格式：`{ text: "文件名", hyperlink: "/api/files/文件ID" }`
+     - 多附件时显示"XX.pdf 等3个"，首个附件可点击下载
+- 为什么这样改：原硬编码字段名限制导致实际模板配置的附件列无法生成超链接，改为模糊匹配后自动适配各种命名习惯。
+- 验证：重启后端后重新导出，附件列应显示为蓝色超链接，点击可直接下载文件。
+- 是否覆盖旧规则：否，仅增强字段匹配逻辑，不改变业务行为。
+
+## 2026-07-06 · 完全删除「申请用印」功能
+
+- 背景：用户明确要求完全删除「申请用印」功能，该功能在之前的改动中被保留了。
+- 改了什么：
+  1. **前端 MaterialsUpload 组件**（`frontend/src/components/MaterialsUpload/index.tsx`）：
+     - 删除 `stampModalOpen`、`stampTarget`、`stampNo` 三个 state
+     - 删除 `handleStamp` 函数
+     - 删除 `FileProtectOutlined` 图标导入和 `stampOrderAttachment` 函数导入
+     - 删除 STATUS_LABELS 中的 `stamped: { label: '已用印', color: 'purple' }`
+     - 删除「申请用印」按钮（`status === 'approved'` 分支改为直接显示「确认收齐」）
+     - 删除 `status === 'stamped'` 分支（用印单号 Tag + 确认收齐按钮）
+     - 删除用印申请 Modal（包含用印单号输入框）
+     - 删除 `Modal`、`Input` 从 antd 的导入
+  2. **前端 services**（`frontend/src/services/attachments.ts`）：
+     - 删除 `AttachmentStatus` 类型中的 `'stamped'`
+     - 删除 `OrderAttachmentItem` 接口中的 `stamp_no`、`stamped_at` 字段
+     - 删除 `stampOrderAttachment` 函数（包括 mock 和真实接口调用）
+     - 删除 `normalizeAttachment` 中对 `stamp_no`、`stamped_at` 的处理
+  3. **前端 StagesTimeline 组件**（`frontend/src/components/StagesTimeline/index.tsx`）：
+     - 删除 `FileProtectOutlined` 图标导入
+     - 删除 STAGE_ICONS 中的 `stamp_requested`、`stamp_confirmed`
+     - 删除 STAGE_COLORS 中的 `stamp_requested`、`stamp_confirmed`
+     - 删除 DEFAULT_STAGES mock 数据中的两条用印相关记录（`stamp_requested` 和 `stamp_confirmed`）
+  4. **后端 service**（`backend/src/modules/attachments/attachments.service.ts`）：
+     - 删除 `StampOrderAttachmentDto` 导入
+     - 删除 `stamp()` 方法
+     - 删除 `upload()` 和 `createFromBuffer()` 中对 `stampNo`、`stampedAt` 的赋值（设为 null）
+     - 删除 `toResponse()` 中对 `stamp_no`、`stamped_at` 的映射
+  5. **后端 controller**（`backend/src/modules/attachments/attachments.controller.ts`）：
+     - 删除 `StampOrderAttachmentDto` 导入
+     - 删除 `@Post(':id/stamp')` 路由及 `stamp()` 方法
+  6. **后端 DTO**（`backend/src/modules/attachments/dto.ts`）：
+     - 删除整个 `StampOrderAttachmentDto` 类定义
+- 为什么这样改：用户明确要求完全删除「申请用印」功能，该功能不再需要。
+- 实体字段保留：`backend/src/entities/order-attachment.entity.ts` 中的 `stampNo`、`stampedAt` 字段保留（数据库已存在这些列，删除实体字段需要 migration，但功能层面已完全不再使用）。
+- 是否覆盖旧规则：否。仅删除用印相关功能，不影响附件上传/审核/退回/收齐/删除等其他业务流程。
+- 验证：待运行回归测试。
+
+## 2026-07-06 · 修复附件列表只显示「附件」+ 点击预览报错
+
+- 背景：用户反馈离职材料附件卡片只显示「附件」（非真实文件名）、大小 0KB、日期为空，点「预览」报错打不开。经只读排查为两个叠加根因，需一并修复。
+- 根因：
+  1. 列表接口未做字段名转换：`backend/src/modules/attachments/attachments.service.ts` 的 `list()` 直接 `repository.find()` 返回驼峰实体（`fileName`/`originalName`/`fileId`），而前端 `normalizeAttachment`（`frontend/src/services/attachments.ts`）读下划线字段（`file_name`/`original_name`/`file_id`/`download_url`）。取不到 → 文件名 fallback 到默认值「附件」、`download_url` 空、`file_size` 0。同文件 `toResponse()` 本就做了转换并拼 `download_url`，upload/review/stamp 都走它，唯独 `list()` 漏掉。
+  2. 预览新标签不带鉴权：`MaterialsUpload/index.tsx` 用 `window.open(download_url)` 开新标签，而 `/api/files/:id` 受全局 `JwtAuthGuard` 保护、`jwt.strategy.ts` 只从 Authorization header 取 token，新标签请求不带 localStorage token → 401。
+- 改了什么：
+  1. `backend/src/modules/attachments/attachments.service.ts`：`list()` 返回改为 `rows.map((r) => this.toResponse(r))`，返回类型 `Promise<Record<string, unknown>[]>`，where/order 逻辑不动。
+  2. `frontend/src/services/attachments.ts`：新增 `downloadOrderAttachment(item)`，仿现成 `dispatchedOrders.ts` 的 `downloadBinaryFile` 鉴权模式（`fetch` 带 `Authorization: Bearer <localStorage token>` → blob → `<a download>` 触发下载 → `revokeObjectURL`），文件名取 `original_name || file_name`；mock 模式生成占位 blob 下载。
+  3. `frontend/src/components/MaterialsUpload/index.tsx`：预览按钮改为「下载」（图标 `EyeOutlined`→`DownloadOutlined`），onClick 改调 `downloadOrderAttachment`，失败 `message.error`，`disabled={!item.download_url}` 保留。用户已确认行为选「直接下载文件」。
+- 复用而非新写：`downloadBinaryFile` 的鉴权下载模式、`toResponse()` 的驼峰→下划线转换。
+- 是否覆盖旧规则：否。仅修复展示/下载链路，不改附件审核/用印/收齐流程语义，不改字段定义、必填口径或上传黑名单。
+- 验证：后端 `npm test -- attachments.service.list` 通过（新增 `backend/test/attachments.service.list.spec.ts`，断言 list 返回含下划线字段+download_url、不泄漏驼峰）；前端 `vitest run attachments.download` 2 测试通过（新增 `frontend/src/services/attachments.download.test.ts`，断言下载走带 Authorization 的 fetch+createObjectURL 而非裸 `window.open`）。
+
+## 2026-07-06 · 附件展示接入主工单详情页 + 三个离职子工单详情页
+
+- 背景：用户反馈上传的附件在主工单详情页和三个离职子工单详情页都看不到。经排查根因不是 id 对不上，而是这些详情页从未挂载附件展示 UI（既不渲染 `MaterialsUpload`，也不调 `GET /attachments`）。附件其实已正确落库（离职单条新建 + 离职批量导入都会写，均挂在主工单 id 上）。
+- 改了什么：
+  1. `frontend/src/pages/WorkOrders/Detail/index.tsx`：引入 `MaterialsUpload`，在工单字段信息区块后新增离职材料附件区块，仅当 `isResignationOrder`（离职/offboarding/leave）且有 `id` 时渲染，传 `workOrderId={id}`、`bizPurpose="resignation_material"`。
+  2. `frontend/src/pages/MyDispatched/Detail/index.tsx`：引入 `MaterialsUpload`，在「工单信息」Card 后新增附件区块。当 `order.module_code` 属于离职材料收集/减员报岗录入/社保公积金减员（显式列举 `resignation_contact`/`resignation_cert`/`data_entry_resign`/`social_insurance_resign`/`resignation_social_insurance`，兼容前端旧码）且有 `parent_order_id` 时渲染，`workOrderId` 传子工单的 `parent_order_id`（即主工单 id）。
+- 用户已确认决策：①子工单附件范围=共享主工单附件（不做子工单级隔离，不扩展 `dispatched_order_id` 过滤）；②附件操作权限=允许操作（直接复用 `MaterialsUpload` 带全套上传/删除/审核/用印/预览按钮的版本）；③主工单详情页仅离职类型显示。
+- 复用而非新写：现成 `MaterialsUpload` 组件（自带列表加载/上传/审核/用印/删除/预览全套 UI），`GET /attachments` 按 `work_order_id + biz_purpose` 查询；子工单借返回体 `parent_order_id` 关联主工单附件。
+- 是否覆盖旧规则：否。仅新增详情页展示入口，不改附件存储模型、校验口径、字段定义；批量导入附件链路无改动（离职 Excel 内嵌附件按物理行号关联已实现，仅经确认生效）。
+- 验证：前端 `tsc --noEmit` 零错误；跑根目录回归测试。
+
+## 2026-07-06 · 去掉附件上传的「材料类型」下拉框
+
+- 改了什么：离职材料收集/申报材料附件区，去掉上传前的「材料类型」下拉框（原有身份证复印件、离职申请书、离职交接单、离职证明、劳动合同、社保缴费记录、其他材料 7 项），并按用户确认把附件列表、暂存列表、用印弹窗里的材料类型标签一并去掉。界面上上传区只剩「选择文件」按钮，各处不再出现材料类型。
+- 为什么这样改：用户认为材料类型下拉框没必要。
+- 涉及文件：仅 `frontend/src/components/MaterialsUpload/index.tsx`。删除 `MATERIAL_TYPES` 常量、`materialType` state、`<Select>`、`StagedFile.materialType` 字段、`getMaterialType` 函数，以及三处类型 `<Tag>`；上传/暂存不再传 `material_type`（service 层 `attachments.ts` 默认填「其他材料」，后端与历史数据不受影响）。上传/审核/退回/用印/收齐/删除全部业务流程、forwardRef 暂存上传能力、bizPurpose 分支均保持不变。
+- 是否覆盖旧规则：否。附件材料类型不在业务规则回归清单管辖范围；未改动任何状态/月份/权限/字段口径。
+- 验证：前端 tsc --noEmit 通过；WorkOrders 4 套件 18 测试、Benefit 1 套件 5 测试全部通过。
+
+## 2026-07-06 · 离职工单单条新建支持「提交前选附件、提交后自动上传」
+
+- 改了什么：新建离职工单页面，附件区从"提交成功后才出现"改为"表单里常驻"，可在提交前先选好附件（本地暂存），点「提交并拆分工单」后系统建单拿到 ID 再自动把暂存附件全部上传。解决了原来提交成功弹窗点「关闭」直接跳转、来不及用上传卡片的问题。
+- 为什么这样改：用户希望填表时一并选好附件，提交一步到位，不用提交后回头找上传入口。附件后端必须挂在已存在工单上，故真实上传发生在建单成功那一刻，对用户无感。
+- 涉及文件：
+  1. `frontend/src/components/MaterialsUpload/index.tsx`：改为 forwardRef，新增暂存模式——workOrderId 为空时「确认上传」只本地缓存（stagedFiles，显示「待上传」标签，可移除），通过 useImperativeHandle 暴露 `uploadStaged(workOrderId)`/`hasStaged()`；workOrderId 存在时行为完全不变（详情页 Benefit/Detail 等不受影响）
+  2. `frontend/src/pages/WorkOrders/New/index.tsx`：附件卡片不再以 createdWorkOrderId 为渲染条件，离职类型常驻显示；加 materialsRef；handleSubmit 建单成功后 `await materialsRef.current?.uploadStaged(result.id)` 再弹成功框，上传失败仅提示可去详情页重试
+- 是否覆盖旧规则：否。附件上传不在业务规则回归清单管辖范围；未改动任何状态/月份/权限/字段口径
+- 验证：前端 tsc --noEmit 通过；WorkOrders 全套 6 套件 51 测试通过。MyDispatched「批量接单」1 例失败经 git stash 基线（84c6255）验证为既有 flaky，与本次改动无交集
+
+## 2026-07-06 · 离职工单后道导出补充附件列（resignation_contact / data_entry_resign）
+
+- 改了什么：在 `backend/src/database/seeds/seed-export-templates.ts` 新增两套批导出模板 seed：
+  - `离职材料收集批导出模板`（moduleCode: resignation_contact，11 列）：姓名/身份证号/客户名称/客户代码/社保缴纳地区/停保月份/离职日期/需要反馈截止日期/是否为通用模板/模板名称/附件
+  - `减员报岗录入批导出模板`（moduleCode: data_entry_resign，8 列）：姓名/身份证号/客户名称/客户代码/社保缴纳地区/停保月份/离职日期/附件
+  最后一列均为 `attachments_summary`，导出时渲染为 Excel 可点击超链接，指向 `/api/files/{id}`。
+- 为什么这样改：导出引擎已内置 `attachments_summary` 列类型（export-templates.service.ts:466-473），社保公积金减员模板已有附件列，但离职材料收集和减员报岗录入模块缺少导出模板，走兜底动态列不含附件，用户导出看不到附件。
+- 涉及文件：仅 `backend/src/database/seeds/seed-export-templates.ts`（新增约 40 行）。导出引擎、附件查询逻辑、业务规则均未改动。
+- 是否覆盖旧规则：否。附件导出为新增能力，未改动任何字段口径/状态/权限规则。
+- 验证：后端 tsc --noEmit 通过；npm run seed 执行无报错，两套模板已写入数据库（幂等键保证不重复插入）；社保公积金减员原有模板不受影响。
+
+## 2026-07-03 · 离职工单附件上传功能
+
+**改了什么：**
+1. 新增 `backend/src/modules/imports/xlsx-attachment-extractor.ts`：用 JSZip 解析 .xlsx ZIP 结构，从 `xl/drawings/drawing*.xml`（新版）和 `vmlDrawing*.vml`（老版 OLE）读取行号映射，提取 `xl/embeddings/` 和 `xl/media/` 的嵌入文件，返回 `Map<rowIndex, EmbeddedFile[]>`，失败时静默返回空 Map。
+2. `backend/src/modules/attachments/attachments.service.ts`：新增 `createFromBuffer` 方法，直接接受 Buffer 创建附件记录，`bizPurpose='resignation_material'`，供批量导入调用。
+3. `backend/src/modules/imports/import-job.service.ts`：注入 `AttachmentsService`；`processJob` 中仅 RESIGNATION 类型时提取嵌入附件；写入每行工单成功后按行号关联附件，失败只 log warning 不影响主体。
+4. `backend/src/modules/imports/imports.module.ts`：新增 `AttachmentsModule` 导入。
+5. `frontend/src/pages/WorkOrders/New/index.tsx`：import `MaterialsUpload`；新增 `createdWorkOrderId` state；提交成功（仅 resignation）后 set id；JSX 底部条件渲染 `<MaterialsUpload workOrderId={...} bizPurpose="resignation_material" />`。
+6. `backend/src/modules/admin/export-templates/export-templates.service.ts`：注入 `OrderAttachment` repository；新增 `loadAttachmentSummaries` 方法批量预取；`renderRichValue` 增加 `attachments_summary` 虚拟字段处理；`writeWorksheet` 接受可选 `attachmentSummaries` 参数并传递；两处导出入口按需预取。
+7. `backend/src/modules/admin/export-templates/export-templates.module.ts`：`TypeOrmModule.forFeature` 注册 `OrderAttachment`。
+8. `backend/src/database/seeds/seed-export-templates.ts`：`resignationSocialColumns` 末尾追加 `['attachments_summary', '附件']`。
+
+**为什么：**
+用户要求离职工单支持附件上传（单条新建 / 批量导入嵌入 / 导出带附件列）。ExcelJS 不支持读取嵌入 OLE 对象，改用 JSZip 直接解析 .xlsx ZIP 结构突破限制。
+
+**如何验证：** `tsc --noEmit` 零错误；后端 55 套件 419 测试全过（1 skipped 为既有问题）。
+
+## 2026-07-01 · 社保公积金反馈字段对业务员只读可见 + 新增社保导出模板
+
+**改了什么：**
+1. `backend/src/database/seeds/seed-field-permissions.ts`
+   - `upsertPermission` 改为真正的 upsert：已存在记录时若 permission 不同会更新，确保 seed 可重跑修正历史数据。
+   - `SOCIAL_INSURANCE_ROLE_CODES` 新增 `...BUSINESS_MEMBER_ROLE_CODES`（`business_group_member`、`biz_member`），使业务员也进入社保/减员社保场景的权限计算。
+   - `dispatchedPermission` 将 `BUSINESS_MANAGER_ROLE_CODES.includes(roleCode)` 改为 `BUSINESS_ROLE_CODES.includes(roleCode)`，业务员成员与业务员主管同样返回 READONLY，避免业务员拿到可编辑权限。
+   - 上述改动同时覆盖 `dispatched:social_insurance` 和 `dispatched:resignation_social_insurance` 两个场景。
+2. `backend/src/database/seeds/seed-export-templates.ts`
+   - 新增「社保公积金增员批导出模板」（moduleCode=`social_insurance`）：13列，含员工基础信息、社保参数、三项办结结果及备注。
+   - 新增「社保公积金减员批导出模板」（moduleCode=`resignation_social_insurance`）：11列，含员工信息、减员参数、三项办结结果及备注。
+
+**为什么：**
+- 业务员发起工单后希望在社保子工单详情页看到四个反馈字段（社保/医保/公积金是否办结 + 备注），但之前业务员成员（business_group_member）不在 SOCIAL_INSURANCE_ROLE_CODES，导致这些字段 HIDDEN。
+- 系统没有社保模块的导出模板 seed，傅倩雯的社保子工单无法通过「批导出」下载跟踪结果。
+
+**如何验证：** `tsc --noEmit` 编译零错误；55 套件 419 测试全过（1 skipped 为既有问题）。
+
+## 2026-07-01 · 入职导入模板排除社保四字段（缺口补丁）
+
+**改了什么：**
+1. `backend/src/modules/imports/import-template-config.service.ts` — `ONBOARDING_IMPORT_EXCLUDED_FIELDS` 新增 `social_insurance_result`、`social_insurance_remark`、`medical_insurance_result`、`housing_fund_result` 四个字段，入职导入 Excel 模板列不再显示这四列。
+2. `backend/src/modules/imports/field-validation.service.ts` — 同一 Set 同步新增，保证模板不显示与导入校验排除一致，不会出现"模板没这列但校验还认它"的不一致。
+
+**为什么：** 这四字段是傅倩雯（社保岗）在子单完成阶段填写的办结结果，业务员发起入职时填不到，不应出现在业务员的批量导入模板中。离职侧已通过白名单正确排除，入职侧为存量缺口。
+
+**如何验证：** `tsc --noEmit` 通过；import 相关6套件42测试全过（PASS）。
+
+## 2026-07-01 · 社保公积金字段口径二次清理（seed/DTO/弹窗文案）
+
+**改了什么：**
+1. `backend/src/database/seeds/seed-fields.ts` — 从 `onboardingCollectionGroups` 及字段定义中移除 `medical_insurance_remark`（医保办理备注）和 `housing_fund_remark`（公积金办理备注），确保种子执行后系统字段库只保留 `social_insurance_remark`（社保公积金办理备注）一个备注字段。
+2. `backend/src/database/seeds/seed-field-permissions.ts` — `HANDLING_FEEDBACK_FIELDS` 同步移除上述两个备注字段，避免权限配置创建多余备注字段。
+3. `backend/src/modules/dispatched-orders/dto/feedback.dto.ts` — 移除 `medical_insurance_remark` 和 `housing_fund_remark` 两个 DTO 字段（数据库列不变，保守方案）。
+4. `frontend/src/components/DispatchedBatchImportModal.tsx` — 批导入弹窗文案「办理结果」统一改为「是否办结」（第 119、279 行）。
+
+**为什么：** 上轮改动后 seed/DTO/弹窗文案存在旧口径残留，本次补齐清理。
+
+**如何验证：** 前后端 `npx tsc --noEmit` 均无报错通过。未覆盖业务规则回归清单中已有条目。
+
 > 目的：记录每次 AI/开发人员根据用户要求修改后的结果，尤其是是否覆盖了既有业务规则。固定规则写在 `业务规则回归清单.md`，本文件写变更历史。
+
+## 2026-07-01 · 批导入弹窗"按表内办理结果反馈"文案补丁
+
+**改了什么：** `frontend/src/components/DispatchedBatchImportModal.tsx` 第 246 行，`isSocialFeedbackModule` 分支的 `selectedActionLabel` 由 `'按表内办理结果反馈'` 改为 `'按表内是否办结反馈'`，与社保公积金新口径一致。
+
+**为什么：** 上轮二次清理时漏掉此处，为社保反馈专属分支，必须统一口径。
+
+**如何验证：** grep 已确认弹窗内无剩余"社保/医保/公积金办理结果"旧表述；seeds / DTO 在本次 grep 中均无 `medical_insurance_remark` / `housing_fund_remark`，确认上轮修复有效。
+
+---
 
 ## 记录格式
 
@@ -16,7 +283,18 @@
 - 未提交无关文件：...
 ```
 
-## 2026-06-12 · 详情页字段配置功能接入子工单详情页
+## 2026-07-01 · 回归验证并修复批量导入弹窗 JSX 中文弯引号解析错误
+
+- 用户要求：再跑一遍回归，确认当前工作区状态。
+- 发现问题：`frontend/src/components/DispatchedBatchImportModal.tsx:282` 的 `Alert` 组件 `description` 属性误用中文弯引号 `”…”` 作为 JSX 定界符，导致 oxc 解析失败（`Invalid Character ”`），`OnboardingModule/filterParams.test.ts` 等套件加载报 PARSE_ERROR。
+- 改了什么：将该属性定界符改为标准直引号 `"…"`，内部提示文案中的中文引号「是」「否」保留不变。
+- 是否覆盖旧规则：否。仅修复语法，文案与行为不变。
+- 同步更新规则文档：无。
+- 验证：
+  - 前端关键测试重跑：8 passed / 1 failed，唯一失败为既有 flaky `MyDispatched > offers batch accept for selected pending rows in pending mode`（单独重跑仍 1 failed|11 passed，与本次无关）。
+  - 后端全套：55 套件 / 403 测试通过，1 skipped，无回归。
+- 未提交无关文件：工作区存在若干 `.tmp_*` 临时脚本与 `.spectrai-skills/` 等未跟踪文件，非本次改动，未处理。
+
 
 - 用户要求：管理后台虽然可以配置详情页字段，但子工单详情页没有实际使用该配置，仍使用硬编码的 FIELD_GROUPS。要求打通配置与详情页的连接。
 - 根因：详情页模板后端已实现但缺少公开接口；前端详情页未调用配置接口，仍使用硬编码分组。
@@ -325,3 +603,418 @@
 - 测试：`import-template-config.service.spec.ts` 新增 2 例（override=false 清条件必填、template_name 条件翻转为 is_common_template=否）；`import.service.spec.ts` 翻转顶部 needsOnboardingContactAndCommonTemplate 常量 + 两个 template_name 必填语义用例为方案A方向。
 - 验证：见本轮 `回归测试.ps1` 结果。
 - 是否覆盖旧规则：是。覆盖原「template_name 仅在 need_onboarding_contact=是 且 is_common_template=是 时必填」（业务规则回归清单第253条 + 本文 2026 早前记录），已同步翻转回归清单第253条。
+
+
+## 2026-06-25 · 批量导入两个体验问题：「必填字段缺失」不指明字段 + 下载错误报告按钮无效
+- 用户反馈：批量导入工单一直提示「必填字段缺失」但不说是哪个字段；且「下载错误报告」按钮点了没反应。
+- 问题一根因（后端，纯修 bug）：落库校验 `work-order-validation.service.ts` 招 4110 异常时，字段名只放在 `details.missing`/`details.fieldCode`，message 固定为字符串「必填字段缺失」；而 `import-job.service.ts:toRowError` 只取 `body.message`、丢弃 details，导致前端错行表「字段」列显示「整行」、原因列只有干巴巴的「必填字段缺失」。（行内校验 field-validation.service.ts:254 本来就带字段名，此次不动）
+  - 修复（仅 `import-job.service.ts`）：`toRowError` 增加可选 `fieldNameMap` 参数 + 新增 `extractMissingFieldCodes` 读取 `details.missing`/`details.fieldCode`，把 fieldCode 翻译为 fieldName 拼进 message（形如「必填字段缺失：员工姓名、客户名称」），并把首个 fieldCode 写进 failRows；processJob 中由已有的 `fields` 构造 `fieldNameMap` 传入。不动后端异常结构、不动校验逻辑。
+- 问题二根因（前端，纯 bug）：`downloadImportErrorReport` 用 `window.open(url?token=...)` 下载，但 JWT 策略 `jwt.strategy.ts` 只 `fromAuthHeaderAsBearerToken()`、不读 query token，请求 401，新标页报错，按钮表现为「无效」（模板下载能成是因为额外带了 Authorization header）。
+  - 修复（前端）：`workOrders.ts:downloadImportErrorReport` 改为与 `downloadServerImportTemplate` 一致的 `fetch + Authorization header + blob` 下载，文件名从 Content-Disposition 解析（新增 `parseContentDispositionFileName`）、回退默认名；`Import/index.tsx:handleDownloadErrorReport` 改 async/await + 失败 message.error 提示。不动后端 guard/路由。
+- 测试：后端 `import-job.service.spec.ts` 新增「expands missing field codes into field names」用例（3 passed）；前端新增 `workOrdersImportErrorReport.download.test.ts`（2 用例：验证走 fetch+Authorization 不再 window.open / 错误状态抛异常）；现有 `Import/index.test.tsx` 2 passed 未破坏。前后端 `tsc --noEmit` 零错误。
+- 是否覆盖旧规则：否。仅修复错误提示文案与下载鉴权两个 bug，不改校验口径/必填规则/字段定义。
+
+## 2026-06-25 · 批量导入两个体验问题复查与根治（承上条）
+- 背景：上条修复后用户复测仍反映【必填字段缺失】不指明字段、下载错误报告按钮无效。重查后定位到两个更深的根因，上次修复未覆盖。
+- 问题一根因（后端，纯修 bug）：上次只在 `import-job.service.ts:toRowError` 用 `getActiveFields` 的 fieldNameMap 翻译，但该字段集经 `filterImportFields`/`applyInferredImportRules` 过滤，缺的字段可能不在该集合里→ fieldNameMap.get 返回 undefined→回退显示英文 code。而原始 4110 源头 message 始终是固定字符串。
+  - 根治修复（`work-order-validation.service.ts`）：让 4110 源头直接带中文字段名——`validateWorkOrder` 手上有完整 `FieldConfig`，收集 `missingNames`（取 `field.fieldName`）拼进 message（形如「必填字段缺失：姓名」）；`requireText` 新增 `STRICT_REQUIRED_FIELD_NAMES` 映射给 4 个 strict 字段中文名。保留 `details.missing`/`details.fieldCode` 不变，不动校验口径，与上游 toRowError 翻译叠加互不冲突。
+- 问题二根因（后端，纯修 bug）：上次只改前端 fetch+Authorization，但 `error-excel.service.ts:generate` 将错误报告文件 `ownerId` 写死 `'system'`；下载时 `uploadsService.resolveForUser`→`assertReadable` 对非 admin 业务员（sub≠'system'）抛 403，前端 fetch 修复后拿到 403 仍表现为下载失败。
+  - 修复：`generate` 新增可选 `ownerId` 参数（默认仍 'system'）；`import-job.service.ts:buildErrorReport`/`processJob` 传入发起导入的 `user.sub`，使业务员能下载自己任务的报告；admin 依旧由 roles 放行。不动路由/guard。
+- 测试：`work-order-validation.service.spec.ts` 扩展 strict 用例断言 message 含「姓名」+新增 requireText 中文名用例；`import-job.service.spec.ts` 新增「ownerId=user.sub」用例。import-job/work-order-validation/work-order.service/return-resubmit/p1-split4 全过。
+- 是否覆盖旧规则：否。仅修复提示文案与下载鉴权两个 bug，不改校验口径/必填规则/字段定义。
+
+## 2026-06-30 social_insurance 4字段反馈后端测试
+- 任务：e06658bd — 社保公积金4字段后道反馈（social_insurance_result / medical_insurance_result / housing_fund_result / social_insurance_remark）
+- 新增：`backend/test/social-insurance-feedback.spec.ts`（15个单元测试）
+- 覆盖：①全部3项已完成→自动COMPLETED；②任一未完成→保持PROCESSING；③4字段写入extraData；④handler可填；⑤模块主管可填；⑥非handler非主管403；⑦business_owner即使在主管表中也被拒；⑧admin可填；⑨无效值/空值报4224 BAD_REQUEST；⑩别名映射(social_security_result/housingFundResult)；⑪已完成状态409；⑫父单已作废409
+- 是否覆盖旧规则：否。核心实现已存在，仅补充测试覆盖。
+
+## 2026-06-30 P0修复：前后端值契约统一为"是/否"
+- 任务：b14d697b — 最终integration验收（P0 BLOCK修复）
+- 改动：
+  1. `backend/src/modules/dispatched-orders/dispatched-order.service.ts`：FEEDBACK_COMPLETED 'YES'→'是'，FEEDBACK_NOT_COMPLETED 'NO'→'否'，错误提示从"已完成/未完成"→"是/否"
+  2. `backend/src/database/seeds/seed-fields.ts`：social_insurance_result / medical_insurance_result / housing_fund_result 三字段 options ['YES','NO']→['是','否']
+  3. `backend/test/social-insurance-feedback.spec.ts`：所有测试用例值同步更新（payload/断言），field validation 测试的无效值改为'YES'（英文），15/15全绿
+- 为什么：前端传"是/否"，后端期望'YES'/'NO'，造成API 400、自动办结永不触发、下拉回显断裂
+- 验证：npx jest --config test/jest-unit.json test/social-insurance-feedback.spec.ts → 15 passed, 0 failed
+- 是否覆盖旧规则：否，seed-fields options本身是新建字段，不影响既有是/否字段
+
+## 2026-07-01 · 社保公积金四字段功能合入主项目
+
+- 用户要求：将 worktree 仓库 reports/tmp-bundle-restore-contract-export 中的社保四字段功能合并到主项目
+- 改动范围（后端）：
+  1. `handling-feedback.ts`：字段名改为 social_insurance_result/medical_insurance_result/housing_fund_result，选项值改为"是/否"
+  2. `seed-fields.ts`：三字段 displayName/options/fieldCode 同步更新
+  3. `seed-field-permissions.ts`：HANDLING_FEEDBACK_FIELDS 改为新字段名
+  4. `dispatched-order.service.ts`：aliasMap 更新，新增 feedback() 方法（支持别名归一化 + 严格值校验），新增 WorkOrderValidationService import
+  5. `dto/feedback.dto.ts`：新建，定义 FeedbackDispatchedOrderDto
+  6. `test/social-insurance-feedback.spec.ts`：从 worktree 复制，修复构造参数（WorkOrderValidationService mock、dirtyMarkRepository undefined 占位）
+- 改动范围（前端）：
+  1. `constants/socialInsuranceFeedback.ts`：新建常量文件
+  2. `pages/MyDispatched/Detail/index.tsx`：HANDLING_FEEDBACK_FIELDS/HANDLING_RESULT_OPTIONS 改为新字段名和"是/否"
+  3. `services/dispatchedOrders.ts`：visible_fields 改为新字段名
+  4. `components/DispatchedBatchImportModal.tsx`：HANDLING_FEEDBACK_ALIASES/缺失检查/摘要列/提示文案全部改为新口径
+  5. `pages/OnboardingModule/index.tsx`：同步更新
+- 是否覆盖旧规则：否，四字段为新增功能
+- 验证：npx jest --config test/jest-unit.json → 55 passed (1 skipped), 403 tests passed
+
+---
+
+## 2026-07-01 社保公积金备注三合一（方案一）
+
+- 改了什么：将三个独立备注字段（social_insurance_remark / medical_insurance_remark / housing_fund_remark）合并为一个「社保公积金办理备注」（social_insurance_remark）；三个结果字段标签改为新口径「是否办结」
+- 涉及文件：
+  1. `backend/src/modules/dispatched-orders/handling-feedback.ts`：SOCIAL_FUND_FEEDBACK_ITEMS 中 resultLabel 改为「X是否办结」，medical/fund 的 remarkField 统一改为 social_insurance_remark
+  2. `backend/src/modules/dispatched-orders/dispatched-order.service.ts`：手工完成 payload 删除独立 medical/housing remark；批量导入 aliasMap 删除独立 medical/housing remark 条目，别名并入 social_insurance_remark
+  3. `frontend/src/pages/MyDispatched/Detail/index.tsx`：HANDLING_FEEDBACK_FIELDS 去掉 remark 字段，新增 HANDLING_SHARED_REMARK；表单改为三个结果选择 + 一个共享备注
+  4. `frontend/src/pages/OnboardingModule/index.tsx`：同上
+  5. `frontend/src/components/DispatchedBatchImportModal.tsx`：HANDLING_FEEDBACK_ALIASES 删除独立 medical/housing remark 条目，别名并入 social_insurance_remark
+- 是否覆盖旧规则：备注字段由三个合并为一个（方案一保留 DB 字段，仅前端不再独立展示/写入）
+- 验证：前后端 tsc --noEmit 通过；后端 3 套件 69 测试通过
+
+---
+
+## 2026-07-06 · 离职工单附件上传功能补全（批量嵌入 / 导出下载链接 / 前端格式白名单）
+
+- 背景：离职工单附件要覆盖三场景+格式约束。①单条新建详情页上传已完整可用，无改动。经只读探查发现 ②批量嵌入存在「行号对齐」缺陷且模板缺附件列、③导出仅输出文件名文字无法下载、④前端无格式校验。用户已定：批量导入先实测再改、导出改为可点击下载链接、格式加前端白名单。
+- 改了什么：
+  1. `backend/src/modules/imports/types.ts`：`ParsedSheet.meta` 新增 `rowNumbers: number[]`（与 `rows` 一一对应的 0-based 物理行号）。
+  2. `backend/src/modules/imports/excel-parser.service.ts`：`parseWorksheet` push 每条数据行时同步记录物理行号（`rowNo-1`）写入 `meta.rowNumbers`；`KNOWN_FIELD_LABELS` 增加「附件」避免该表头被判未知列。
+  3. `backend/src/modules/imports/import-job.service.ts`：嵌入附件关联改为按物理行号取（`parsed.meta.rowNumbers?.[index] ?? index`），修复数组下标≠物理行号导致附件挂错工单/丢失的缺陷。
+  4. `backend/src/modules/imports/import-template.service.ts`：离职模板追加「附件」提示列（落在 fieldCount+2），仅引导用户在数据行任意单元格插入附件，不参与字段映射/写库。
+  5. `backend/src/modules/admin/export-templates/export-templates.service.ts`：`loadAttachmentSummaries` 返回结构改为 `Map<workOrderId, AttachmentLink[]>`（含 name+url，url=基址+/api/files/fileId）；新增 `attachmentFileBaseUrl`（读 `EXPORT_FILE_BASE_URL`，缺省回退相对路径）；`renderRichValue` 的 attachments_summary 分支改用 exceljs 超链接（`{text, hyperlink}`），多附件显示「首个 等N个」。
+  6. `frontend/src/components/MaterialsUpload/index.tsx`：`<Upload>` 加 `accept="image/*,.pdf,.doc,.docx"` + `beforeUpload` 扩展名白名单校验（图片/Word/PDF），命中非白名单 `message.error` 提示并 `Upload.LIST_IGNORE`。
+- 复用而非新写：附件落盘 `attachmentsService.createFromBuffer`、下载路由 `/api/files/{fileId}`、exceljs 原生 hyperlink 能力。
+- 是否覆盖旧规则：否。仅补全附件上传/导出链路，不改校验口径/必填规则/字段定义；后端上传黑名单+20MB 兜底保持不变。
+- 验证：后端 `tsc --noEmit` 零错误、jest 相关 8 套件 50 测试全过（含 excel-parser 新增「物理行号对齐」用例）；前端 `tsc --noEmit` 零错误。
+
+
+## 2026-07-07 · 修复 Excel 导入附件提取功能（JSZip 导入错误 + oneCellAnchor 解析缺失）
+- 背景：用户反馈批量导入 Excel 时嵌入的图片附件无法提取，日志显示「提取到 0 行的嵌入附件」，但之前添加的详细调试日志完全没有输出。
+- 根因分析：
+  1. **JSZip 导入错误**：`xlsx-attachment-extractor.ts` 使用 `import JSZip from 'jszip'` 的 ES6 默认导入，编译为 CommonJS 后变成 `jszip_1.default.loadAsync()`，但 JSZip 的 CommonJS 导出不提供 `default`，导致 `jszip_1.default` 为 `undefined`，ZIP 文件加载时抛出 `Cannot read properties of undefined (reading 'loadAsync')` 异常。
+  2. **oneCellAnchor 解析缺失**：`parseDrawingRows` 函数只匹配 `<xdr:twoCellAnchor>` 标签，但 ExcelJS 生成的嵌入图片使用 `<xdr:oneCellAnchor>` 标签（单单元格锚点，更常见的图片插入方式），导致即使 ZIP 加载成功也无法提取行号映射。
+  3. **错误日志被吞掉**：早期版本的 catch 块没有输出错误信息，导致问题难以定位（后续已修复为输出完整错误和堆栈）。
+- 修复方案：
+  1. `backend/src/modules/imports/xlsx-attachment-extractor.ts` 第 1 行：将 `import JSZip from 'jszip'` 改为 `import * as JSZip from 'jszip'`，确保 CommonJS 兼容性（编译后为 `const JSZip = require('jszip')`，直接使用导出对象）。
+  2. 同文件 `parseDrawingRows` 函数（约第 58 行）：正则表达式 `/<xdr:twoCellAnchor[^>]*>([\s\S]*?)<\/xdr:twoCellAnchor>/g` 改为 `/<xdr:(?:twoCellAnchor|oneCellAnchor)[^>]*>([\s\S]*?)<\/xdr:(?:twoCellAnchor|oneCellAnchor)>/g`，同时支持两种锚点类型；函数注释也更新为「同时支持 twoCellAnchor 和 oneCellAnchor」。
+- 测试验证：
+  - 创建带嵌入图片的测试 Excel 文件（使用 ExcelJS 生成 oneCellAnchor 类型图片）。
+  - 独立测试脚本 `test-attachment-extraction.js` 验证：
+    - ✅ ZIP 文件加载成功（24个文件）
+    - ✅ 成功解析 drawing1.xml（1个图片映射）
+    - ✅ 成功提取图片附件（70 bytes PNG，image/png 类型）
+    - ✅ 行号映射正确（图片关联到第1行）
+- 改动边界：仅修复附件提取逻辑的两个 bug，不改变导入流程、字段映射、校验规则或其他业务逻辑。
+- 是否覆盖旧规则：否。纯 bug 修复，补全了之前缺失的 oneCellAnchor 支持和正确的 JSZip 导入方式。
+
+## 2026-07-07 · 修复离职导入模板附件列超链接未关联问题
+- 背景：用户提供 `工单管理系统-离职导入模板.xlsx` 后复测仍失败；自动检查发现该文件没有 `xl/media` / `xl/embeddings` / drawing 嵌入对象，附件位于 P5 单元格的外部超链接（KDocs），因此原“嵌入附件提取”逻辑无法捕获。
+- 根因：`ExcelParserService.normalizeCellValue` 会把 ExcelJS 超链接单元格 `{ text, hyperlink }` 归一化成显示文本，URL 信息丢失；导入任务只处理嵌入二进制附件，没有处理“附件列单元格超链接”。
+- 改了什么：
+  1. `backend/src/modules/imports/types.ts`：新增 `ParsedAttachmentLink`，`ParsedSheet.meta.attachmentLinks` 记录附件列超链接及 0-based 物理行号。
+  2. `backend/src/modules/imports/excel-parser.service.ts`：附件列改用 `/attachment|附件/i` 识别并保留为表头；解析数据行时读取超链接 URL、显示文本、列号和物理行号。
+  3. `backend/src/modules/imports/import-job.service.ts`：按物理行号同时关联嵌入附件与附件列超链接；仅接受 http/https 外链。
+  4. `backend/src/modules/attachments/attachments.service.ts`：新增 `createFromExternalLink`，用 `metadata.externalUrl` 保存外链型附件，列表响应的 `download_url` 返回外部 URL；删除外链附件时不再尝试解析本地文件。
+  5. `frontend/src/services/attachments.ts`：附件 `download_url` 为 http/https 外链时直接新窗口打开，避免用带 Authorization 的 fetch 去请求第三方站点。
+- 用户文件验证：解析 `D:\download\工单管理系统-离职导入模板.xlsx` 得到 `attachmentLinks[0] = { rowIndex: 4, columnIndex: 15, header: "附件", text: "北京聚汇融盛互联网科技有限公司_20260506202802(1).pdf", hyperlink: "https://www.kdocs.cn/l/coZXvNkbQcDu" }`。
+- 测试验证：
+  - `npx jest --config ./test/jest-unit.json --runInBand test/excel-parser.service.spec.ts test/import-job.service.spec.ts test/attachments.service.list.spec.ts` → 3 suites / 14 tests passed。
+  - `npx vitest run src/services/attachments.download.test.ts` → 1 file / 3 tests passed。
+  - `npm run build`（backend）→ passed。
+- 改动边界：不改变原嵌入附件提取逻辑，不改变受保护 `/api/files/:id` 与签名下载 `/api/files/download`；新增外链型附件兼容 WPS/KDocs 等云文档导出的超链接单元格。
+- 注意：KDocs 链接本身返回登录页/网页而非 PDF 二进制，系统会保存并打开该外链；若希望系统内直接下载真实 PDF，需要用户在 Excel 中插入/上传真实文件或提供可匿名下载的直链。
+
+## 2026-07-07 · 追加支持 WPS cellImages 嵌入图片提取
+- 背景：用户再次提供同一离职导入模板，并说明已嵌入图片；复测发现 ZIP 内出现 `xl/media/image1.png`，但没有标准 Excel drawing / worksheet rels。
+- 根因：WPS/金山表格把单元格图片存为 `xl/cellimages.xml` + `xl/_rels/cellimages.xml.rels`，图片坐标位于 `<a:off x=... y=...>`，不走标准 `xl/drawings/drawing*.xml`；原提取器找不到 `sheet1.xml.rels` 就直接返回空 Map。
+- 改了什么：`backend/src/modules/imports/xlsx-attachment-extractor.ts` 新增 WPS cellImages 解析：读取 sheet 行高/列宽，按 EMU 坐标换算 0-based 物理行号，再通过 `cellimages.xml.rels` 解析图片路径并提取 Buffer。
+- 用户文件验证：`D:\download\工单管理系统-离职导入模板.xlsx` 提取结果为 `rowIndex=4`，附件 `image1.png`，`image/png`，大小 55392 bytes，对应 Excel 第 5 行数据。
+- 验证：`npm run build`（backend）通过；`npx jest --config ./test/jest-unit.json --runInBand test/excel-parser.service.spec.ts test/import-job.service.spec.ts test/attachments.service.list.spec.ts` → 3 suites / 14 tests passed。
+- 改动边界：保留原 drawing / vml / 外链附件逻辑，仅补充 WPS cellImages 兼容分支。
+
+## 2026-07-07 · 附件上传/导入后直接收齐，移除审核通过+确认收齐两步
+- 背景：用户反馈附件已能上传/提取，但系统还要求先“审核通过”再“确认收齐”，需要点两次才消失。
+- 根因：系统附件状态机原设计为 `uploaded -> approved -> received`；前端按状态显示“审核通过”和“确认收齐”两个按钮，后端创建附件默认 `uploaded`。
+- 改了什么：
+  1. `backend/src/modules/attachments/attachments.service.ts`：普通上传、Excel 嵌入附件、Excel 外链附件创建时默认 `status='received'` 并写入 `receivedAt`；保留 review/receive 旧接口兼容历史数据。
+  2. `frontend/src/components/MaterialsUpload/index.tsx`：上传/暂存上传时传 `status: 'received'`；附件列表不再显示“审核通过 / 退回 / 确认收齐”操作，只保留下载和删除。
+  3. `frontend/src/services/attachments.ts`：mock/真实上传默认状态改为 `received`，mock 数据补 `received_at`。
+  4. `backend/test/attachments.service.list.spec.ts`：新增创建附件默认 received 的覆盖。
+- 验证：
+  - `npx jest --config ./test/jest-unit.json --runInBand test/attachments.service.list.spec.ts test/import-job.service.spec.ts test/excel-parser.service.spec.ts` → 3 suites / 15 tests passed。
+  - `npm run build`（backend）→ passed。
+  - `npx vitest run src/services/attachments.download.test.ts` → 1 file / 3 tests passed。
+  - `npm run build`（frontend）→ passed。
+- 改动边界：不删除后端审核/收齐接口，仅改变新上传/新导入附件的默认状态与前端操作展示；历史 `uploaded/approved` 数据仍可被接口处理。
+
+## 2026-07-15 生产代码全量同步与 seed 默认禁用
+
+- 改了什么：将 `backend/docker-entrypoint.sh` 的 seed 改为仅在 `AUTO_SEED=true` 或 `SEED_ON_BOOT=true` 时执行；`docker-compose.yml` 默认注入 `AUTO_SEED=false`；新增 `backend/test/docker-seed-guard.spec.ts`；按本地代码清单同步后端、前端、测试、迁移、文档、锁文件及运行时模板共 835 个文件。
+- 为什么：旧生产入口每次启动都会无条件执行 seed，且此前仅按选定文件同步，可能遗漏未跟踪源码；本次改为 seed 显式开启，并以完整路径和内容哈希清单校验本地与服务器一致。
+- 数据边界：未上传本地 `.env`、数据库、SQL、uploads、构建产物或测试结果；保留生产 `.env`、PostgreSQL 数据卷、uploads、Nginx 配置和回退备份。
+- 本地验证：seed guard Jest 2 tests passed；根目录 `回归测试.ps1` 通过（前端 10 files / 96 tests、前端 build、后端 build）；`git diff --check` 通过。
+- 生产验证：前后端候选 Docker 镜像构建通过；backend healthy，日志明确显示 `Skipping database seeds`，容器环境 `AUTO_SEED=false`；首页 HTTP 200、`/api/health` 正常、近期错误日志 0；部署前后规范化 schema/data dump 哈希完全一致，核心表计数、生产 `.env`、uploads、PostgreSQL/Nginx 容器 ID 均未变化。
+
+## 2026-07-16 本地配置基线整理与生产选择性同步
+
+- 改了什么：本地删除测试残留文本字段 `f_field_c5dfc7` 及其 117 条权限，将速创导出列名改为完整“劳动合同模板（标准模板/特殊模板）”，并给唯一“离职材料导出模板”补入真实附件汇总列；生产仅定向更新 `export_templates/detail_view_templates/import_template_fields/user_roles`，不做整表覆盖。
+- 同步结果：劳动合同详情补入 `contract_template`；速创与 E签宝均显示完整劳动合同模板名称；删除重复“离职材料收集批导出模板”，唯一离职材料模板末尾为“附件、备注”；入职发起/导入配置由 69 项恢复为确认的 63 项；陶明月删除多余 `data_entry_leader`，仅保留业务4组 `biz_member` 主角色。
+- 数据边界：未修改 `users`、客户、主工单、子工单、真实附件、通知、日志、导入任务及其他业务/流水数据；未删除 6 个后道办理系统字段，只从 onboarding 发起/导入配置中移除；未改代码、迁移或业务规则清单，未重建或重启容器。
+- 回退点：生产完整库与四表定向备份位于 `/data/apps/work-order-system/backups/config_sync_20260716_120442/`；SHA-256 分别为 `cd785efebbd260203e42dc2d5d1de4d79f5cd399583990b8a4c318cc04443817` 与 `95097e9f91127bd337f1e6ed8d9256a9e40bf380811a3616b9c38f3a99dc3c58`；本地配置备份为 `.tmp_server_sync/local_config_before_20260716_120442.dump`。
+- 生产验证：目标表行数由 `12/7/83/36` 变为 `11/7/77/35`；独立查询确认陶明月仅有业务员主角色、入职有效字段 63、两个平台列名完整、劳动合同详情两项齐全、离职材料模板仅 1 个且含附件/备注；`users/work_orders/dispatched_orders/order_attachments` 行数与内容哈希同步前后完全一致；`ticket_backend` 与 `ticket_postgres` 均为 running healthy。
+- 回归验证：根目录 `回归测试.ps1 -SkipBuild` 通过，前端关键业务测试 10 files / 96 tests passed；按参数跳过构建。
+
+## 2026-07-16 用户账号编辑与 seed 身份保留最小修复
+
+- 改了什么：更新用户 DTO/服务允许按既有账号格式修改用户名，保存前拒绝重复用户名，用户名变更递增 `authVersion`；seed 按用户名未命中时再按固定邮箱复用原用户，避免改名账号被重新创建；前端编辑载荷保留用户名，权限预览 Drawer 与重置密码确认框挂到 `document.body`。
+- 为什么：修复管理员编辑用户名不落库、seed 重建改名账号，以及固定操作列遮挡确认浮层/权限预览的回归问题；不改变角色权限计算或交接规则。
+- 是否覆盖旧规则：否。仅补充账号唯一性、会话失效和身份复用保护，不改变既有角色菜单与工单权限口径。
+- 验证：后端 `auth-password-and-seed.spec.ts` 8 tests passed；前端用户管理 7 tests passed；固定前端关键回归 10 files / 96 tests passed（单 worker 等价参数，默认 Vitest fork 在当前环境超时）；前后端 build 均通过。
+
+## 2026-07-17 /safe-server-sync 同步流程门禁完善
+
+- 改了什么：完善并重新注册 SpectrAI `/safe-server-sync` 技能，新增本地功能改动账本、逐功能/逐文件服务器对比、可复现 commit/tag 部署门禁、业务数据绝对保护，以及 `complete/partial/emergency exception/blocked` 完成状态口径。
+- 为什么：修正此前未先完整盘点本地功能、生产运行代码无法由 Git commit 复现、可能漏报本地未提交功能的流程缺陷；以后必须先确认本地实际修改，再与服务器逐项比较，最后仅部署确认范围。
+- 数据边界：明确禁止从本地同步 `work_orders`、`dispatched_orders`、`order_attachments`、`users`、`user_roles` 等业务、身份与流水数据；只允许对服务器业务数据做只读计数和哈希保护。
+- 验证：已通过 `install_skill(localDir=...)` 重新注册且无警告，运行时确认五项核心规则存在；根目录 `回归测试.ps1 -SkipBuild` 通过，前端 10 files / 96 tests passed。未修改应用代码、数据库或服务器。
+
+## 2026-07-17 /safe-server-sync Git 与服务器状态双轴修正
+
+- 改了什么：技能新增四轴状态模型，要求逐功能分别记录本地 Git 状态、服务器部署状态、来源可复现性和服务器验证结果；明确“未提交”不等于“未部署”。
+- 为什么：此前服务器可能已运行从脏工作树上传、但未进入 commit 的代码；工时制三选项即属于“服务器已部署但本地 Git 未提交”，不能误报为未部署。
+- 预防规则：服务器未检查时只能写“部署状态未知”；服务器已存在但无 commit 时必须写“已部署但 Git 不可复现”，并在后续生产写入前先完成盘点和 commit 对账。
+- 数据边界：本次只更新技能、项目错误模式记录和修改记录，不修改应用代码、数据库或服务器。
+- 验证：新版技能已通过 `install_skill(localDir=...)` 重新注册且无警告；运行时五项规则检查全部命中；根目录 `回归测试.ps1 -SkipBuild` 通过，前端 10 files / 96 tests passed。
+
+## 2026-07-17 /safe-server-sync 远程目标身份绑定门禁修正
+
+- 改了什么：在项目技能源与 SpectrAI 注册版 `/safe-server-sync` 中新增连接前 Target identity binding gate，要求当前仓库必须通过可信证据绑定唯一 SSH profile、host、port、部署根目录和运行时标识；禁止按 profile 名称/描述/时间/顺序、`new`/`prod` 字样、其他项目会话或排除法推断，禁止通过试连候选主机识别项目；明确本工单仓库绝不使用 `xiangxin-new`。
+- 为什么：此前把 SpectrAI 全局 profile `xiangxin-new` 的“新生产服务器”描述误当作工单项目归属证据，显式连接后才通过只读容器检查发现它属于另一套 `sub2api` 项目。全局 profile 不随当前 cwd 隔离，连接本身必须受项目身份门禁约束。
+- 重新执行结果：新版技能已重新调用处理 commit `5f3e239` 的部署请求；当前项目没有保存同时包含 profile/host/port/部署根目录/运行时标识的可信正向绑定，因此在任何 `ssh_connect` 或远程探测前按规则返回 `blocked`。本次没有连接 `xiangxin-new`、`xiangxin-prod` 或其他主机，没有上传、远程 Git、数据库写入、容器重启或生产变更。
+- 验证：`install_skill(localDir=...)` 成功，1 个技能/1 个文件写入、0 warning；运行时搜索摘要和调用结果均包含唯一目标绑定、禁止候选试连、`xiangxin-new` 排除和连接前停止规则；`git diff --check` 通过（仅既存 CRLF 提示）；根目录 `回归测试.ps1 -SkipBuild` 通过，前端 10 files / 96 tests passed，按参数跳过后端 build。
+
+## 2026-07-17 commit 5f3e239 正确内网目标部署
+
+- 目标修正：工单系统只使用 SpectrAI 加密 profile `work-order-local-ssh`，绑定内网 SSH 目标 `192.168.26.195:22`、用户 `admin`、部署根目录 `/data/apps/work-order-system`；`xiangxin-new`、`xiangxin-prod` 属于其他项目，本次未连接、未写入。
+- 部署范围：仅同步 commit `5f3e239 fix(users): allow safe username edits` 的 7 个文件。服务器不是 Git 仓库且已有强制下线、离职交接等后续功能，原始 commit patch dry-run 因上下文差异失败后，改为以服务器实时副本为基线做最小语义合并；实时基线与 staging 双 SHA-256 门禁通过后才写入，未上传当前脏工作树的其他修改。
+- 备份与回退：备份目录 `/data/apps/work-order-system/backups/username-edit-5f3e239_20260717_104250`，包含 7 个源文件与 compose 归档、完整 PostgreSQL dump、原补丁和 staging；旧镜像标签为 `work-order-system-backend:username-edit-5f3e239-backup-20260717_104250`、`work-order-system-frontend:username-edit-5f3e239-backup-20260717_104250`。
+- 测试与构建：backend 候选镜像 build 通过，`auth-password-and-seed.spec.ts` 1 suite / 8 tests passed；frontend builder production build 通过，用户管理 1 file / 7 tests passed（仅既存 Vite/jsdom 警告）；最终 backend/frontend 镜像构建通过。
+- 本地固定回归：根目录 `回归测试.ps1 -SkipBuild` 通过，前端关键业务回归 10 files / 96 tests passed；按参数跳过后端 build，仅有既存 Vite/jsdom 警告。
+- 运行验证：仅重建 `ticket_backend` 与 `ticket_frontend`；backend healthy，首页 HTTP 200，`/api/health` 返回 `status=ok`；启动日志为 `No migrations are pending` 且 entrypoint/bootstrap 两层 seed 均跳过；postgres、ticket_nginx 和全部 legacy 容器 ID 未变化。
+- 数据保护：部署前后 14 张业务保护表的行数与排序内容哈希逐项完全一致，包括 `users=31`、`user_roles=35`、`work_orders=11`、`dispatched_orders=34`、`operation_logs=211`、`notifications=93`；未执行数据迁移、seed、配置 SQL 或本地数据库覆盖。
+- 结果：`complete`。目标 commit 已在正确工单服务器部署并验证，服务器后续独立功能已保留；本地其他未提交修改未部署。
+
+## 2026-07-18 子工单重新提交原因与处理日志
+
+- 改了什么：所有类型子工单在已退回、已撤回或已作废后重新提交时，统一弹出最多 500 字的选填“重新提交原因”；详情页新增默认收起、首次展开懒加载的“工单处理日志”，按时间展示当前子单的退回、修改、撤回、作废、重新提交等操作、说明与字段差异，并支持失败重试和分页加载。
+- 流程边界：复用现有退回、撤回、作废和重新提交状态，不新增状态，不做离职日期自动判断，不改变接单、审批、退回或重新流转规则；重新提交原因统一写入操作日志和后道通知。
+- 权限与安全：时间线复用子工单详情读取权限，只查询当前子单日志；字段差异继续按当前子单可见字段和字段权限过滤，脱敏字段仅返回 `******`，接口不返回原始审计 JSON；字段业务名称随安全 DTO 返回，缺失时回退字段码。
+- 是否覆盖旧规则：否。仅增加选填说明和已有操作日志的安全展示，不改变既有九种状态、角色权限、撤回审批、作废恢复或返回路径。
+- 验证：前端定向 2 files / 26 tests passed；后端定向 2 suites / 17 tests passed；根目录 `回归测试.ps1` 通过（前端关键业务 10 files / 99 tests、前端 build、后端 build）；`git diff --check` 通过（仅既存 CRLF 提示）。
+
+## 2026-07-21 最新本地功能可复现收敛（部署前）
+
+- 改了什么：将当前工作区涉及的认证会话安全与首次改密守卫、管理员强制下线、人员离职交接、模块负责人临时委托、派发配置原子保存与负责人资格校验、团队工单批量转派、工时制三选项恢复、Docker seed 默认禁用、后端依赖与 `package-lock` 规范化、子工单重新提交原因与处理日志、前端服务降级与配套测试/迁移/文档，收敛为同一可复现部署范围。
+- 服务器对账：绑定目标为 `work-order-local-ssh`（`192.168.26.195:22`，`/data/apps/work-order-system`）；79 个候选文件逐一比较 SHA-256，其中 59 个已与服务器相同但此前未进入本地 commit，16 个存在真实内容差异，4 个为服务器缺失的新文件。对差异文件下载服务器副本并忽略行尾做语义核查，未发现需要保留的服务器独有业务逻辑。
+- 排除与数据边界：`.tmp_server_sync/`、构建产物、上传文件、环境变量、本地数据库和一次性产物不提交、不上传；不从本地覆盖 `users`、`user_roles`、`work_orders`、`dispatched_orders`、附件、日志或通知等生产业务数据。三条迁移仅用于认证安全字段、委托表和工时制配置恢复，生产写入前必须完整备份并校验业务数据保护基线。
+- 是否覆盖旧规则：否。保留九种工单状态、月份统计、角色菜单、审批、字段权限和导入导出既有口径；本次是把已实现功能变成可追溯、可回滚的发布来源。
+- 本地验证：后端定向 10 suites / 81 tests passed；前端定向 7 files / 55 tests passed；根目录 `回归测试.ps1` 通过（固定前端 10 files / 99 tests、前端生产 build、后端 build）；仅有既存 Vite/jsdom 警告。
+
+## 2026-07-21 commit 94e85bf 最新功能全量同步
+
+- 来源与范围：以 commit `94e85bf32138fc68893c478cecb35f221ce41aa7` 为唯一可复现来源，同步认证会话安全、强制下线、人员交接、模块委托、派发配置、批量转派、工时制选项、seed 保护、依赖锁文件、重新提交原因/处理日志及配套测试和文档；无本地功能排除项。
+- 文件对账：59 个文件服务器原已与本地相同但 Git 不可复现，实际上传 16 个差异文件和 4 个新增文件；上传后及容器切换后两次校验均为 79/79 SHA-256 匹配。服务器运行时代码确认包含 `getTimeline`、`batchReassign`、`handover-preview`，前端产物确认包含“工单处理日志”和“重新提交原因”。
+- 备份与回退：备份目录 `/data/apps/work-order-system/backups/latest-sync-94e85bf_20260721_153510`，包含源码归档、完整 PostgreSQL dump 和部署 manifest；回滚镜像为 `work-order-system-backend:latest-sync-94e85bf-backup-20260721_153510` 与 `work-order-system-frontend:latest-sync-94e85bf-backup-20260721_153510`。
+- 构建与运行：backend/frontend 镜像构建成功，仅以 `--no-deps` 替换两个应用容器；`ticket_backend` healthy、首页 HTTP 200、`/api/health` 返回 `status=ok`，新时间线接口未登录返回 401；PostgreSQL 与 Nginx 容器 ID 完全未变。三条迁移 211/212/213 部署前已应用，启动时 seed 明确跳过。
+- 依赖验证：容器内 `bcrypt=true`、`jszip=true`，`bcryptjs=false`、`@types/jszip=false`，与规范化依赖清单一致。
+- 数据保护：11 张核心业务表行数与全行哈希前后完全一致；`users`、`operation_logs`、`notifications` 的差异分别定位为部署窗口内一次正常登录、对应 `login_success` 日志和 15:50 定时生成的 `sla_breach` 通知，行数变化为 0/+1/+1，不是同步覆盖。未执行本地数据库恢复、seed 或配置 SQL。
+- 最终结果：`complete`。全部本地功能均已提交、部署并获得源码、容器运行时、HTTP、依赖、数据库和功能文案证据；不存在未部署、未验证或 Git 不可复现的本地功能。
+
+## 2026-07-22 biz_member 劳动合同模板字段只读修复
+
+- 改了什么：新增固定的 `GET /work-order-export-templates/contract` 只读接口，仅供 `admin` 与 `biz_member` 读取共享的速创/E签宝劳动合同导出模板；劳动合同子工单详情改用该接口获取两套模板字段并集，接口失败或为空时回退子工单自身 `visible_fields`，不再退化为固定 6 个字段。
+- 为什么：原详情页调用管理员模板接口，`biz_member` 收到 403 后被前端静默转为空数组，再由合同必备字段逻辑错误收缩成性别、出生日期、年龄、试用期结束日期、劳动合同模板、劳动合同主体 6 项；管理员因能读取模板而未暴露此问题。
+- 权限边界：未修改角色表、`field_permissions`、管理员 `/admin/export-templates` 及兼容 `/export-templates` 的权限；`biz_member` 仍不能读取管理员模板列表，也不能新增、编辑、删除或应用模板；新接口不接受任意模块，只查询 `contract + is_shared=true + 速创/E签宝`。
+- 是否覆盖旧规则：否。继续按速创/E签宝两套导出模板字段并集展示劳动合同详情，仅修复业务员读取通道与异常回退，不改变其他子工单、角色菜单或字段权限口径。
+- 验证：前端定向 2 files / 22 tests passed；后端权限定向 2 suites / 44 tests passed，其中新增边界 7 tests；根目录 `回归测试.ps1` 通过（前端关键业务 10 files / 100 tests、前端 build、后端 build）；本地以徐嘉胤现有 `biz_member` 身份只读实测返回 E签宝/速创 2 份模板，同一身份访问管理员模板接口仍为 403；`git diff --check` 通过（仅既存 CRLF 提示）。
+- 同步部署：以 commit `3e34fa7963f5b80e335cca21b4151abcf0600756` 为可复现来源，9/9 文件上传后 SHA-256 与本地一致；备份目录为 `/data/apps/work-order-system/backups/latest-sync-3e34fa7_20260722_133606`，包含源码归档、完整 PostgreSQL dump 和部署清单，前后端旧镜像均已创建同名回退标签。
+- 生产验证：仅重建并以 `--no-deps` 替换 backend/frontend；backend healthy、首页 HTTP 200、健康接口返回 `status=ok`，新接口未登录为 401。生产现有 `biz_member` 只读请求返回 200、2 份速创/E签宝模板，同一身份访问管理员模板接口为 403；前后端容器运行制品均确认包含新代码，PostgreSQL 与 Nginx 容器 ID 未变化。
+- 数据保护与结果：未执行 migration、seed、配置 SQL 或本地数据库恢复；9 张核心表与通知的行数/全行哈希不变，`users` 哈希变化与 `operation_logs` 新增 1 行精确对应部署窗口内一次正常 `login_success`。最终结果为 `complete`。
+
+## 2026-07-22 缓存子工单列表重新激活自动刷新
+
+- 改了什么：保留现有页面缓存和列表筛选状态，在已缓存路由从详情页、创建页或其他页面重新激活时发送一次精确路径通知；`OnboardingModule` 与 `MyDispatched` 仅在通知路径匹配自身时调用现有 ProTable `reload()`，首次进入和无关路由切换不重复请求。
+- 为什么：修复工单创建成功后进入已缓存子工单页面看不到新子单，以及子工单办结后返回列表仍显示旧状态/空完成时间、必须手动刷新才更新的问题。后端创建拆单与办结写库均为同步操作，根因是 KeepAlive 列表重新显示时未重新取数。
+- 权限与业务边界：未修改后端、数据库、状态枚举、字段配置、菜单或角色权限；月份、筛选、分页和页面缓存继续保留，仅更新列表数据。
+- 是否覆盖旧规则：否。仅修复缓存列表的数据新鲜度，不改变九种子工单状态、数据范围、月份口径或任何处理流程。
+- 验证：新增布局缓存重进、模块列表路径匹配和我的工单路径匹配测试；前端定向 3 files / 47 tests passed；前端生产 build 通过；根目录 `回归测试.ps1` 通过（前端关键业务 10 files / 102 tests、前端 build、后端 build）；`git diff --check` 通过（仅既存 CRLF 提示）。
+
+## 2026-07-22 已完成子工单受控操作与入职条件必填
+
+- 改了什么：已完成子工单复用现有 `modify_pending`、`withdraw_pending`、`void_pending` 审批流，业务员可发起修改、撤回和作废申请；当前办理人可填写原因退回已完成节点，模块主管和管理员权限保持不变。完成态修改审批恢复 `completed` 时保留原办结时间，其他已完成兄弟子单受共享字段影响时仍阻止跨模块一次性修改。
+- 条件必填：`need_onboarding_contact=否` 时现住地址必填；试用期开始日期保持非必填，其有值时试用期（月）、结束日期和工资必填。规则已同步字段种子、数据库迁移、本地 fallback、单条新建、子工单修改/重提、后端提交校验和导入校验；导入自动生成的试用期结束日期视为已填写。
+- 权限与数据边界：未修改菜单、路由、角色表、字段权限或状态枚举；业务员不能直接让已完成数据生效，仍由原办理链审批；作废不删除历史数据，所有动作继续写入现有处理日志。
+- 是否覆盖旧规则：是。覆盖“已完成子工单不允许线上修改”的旧边界，并把试用期开始/月数/结束日期的旧全局必填种子口径改为新的条件必填口径；其他未接单、已接单审批和退回/重提规则不变。
+- 验证：后端定向 4 suites / 57 tests passed；前端定向 3 files / 35 tests passed；根目录 `回归测试.ps1` 通过（固定前端 10 files / 105 tests、前端 build、后端 build）；`git diff --check` 通过（仅既存 CRLF 提示）。
+- 同步来源与文件对账：以 commit `e110db48217d48487b84ce85b6d2c463cb5bc6e9` 为可复现来源，同步 25 个文件（后端 8、前端 15、文档 2）；服务器 24 个旧文件在忽略 CRLF 后全部精确匹配该提交父版本，新增迁移为 `local-only`，无 `server-only` 或冲突文件；上传后 25/25 SHA-256 与本地一致。
+- 备份与回退：备份目录 `/data/apps/work-order-system/backups/deploy_e110db4_20260723_095046`，包含旧源码与 Compose 归档、完整 PostgreSQL dump、配置表 dump 和部署清单；旧镜像标签为 `work-order-system-backend:rollback-e110db4-20260723_095046` 与 `work-order-system-frontend:rollback-e110db4-20260723_095046`。
+- 构建与迁移：backend/frontend 镜像构建退出码均为 0；迁移 `OnboardingConditionalRequiredRules20260722001000` 在事务中成功执行并登记为 ID 214，未运行 seed；仅以 `--no-deps` 重建 `ticket_backend` 与 `ticket_frontend`，PostgreSQL 和 Nginx 容器 ID 未变化。
+- 生产验证：backend healthy，首页 HTTP 200，`/api/health` 返回 `status=ok`；后端容器内 4 个运行时/迁移源文件 SHA-256 与本地一致；前端运行容器 80/80 个本地构建产物全部存在且哈希一致，额外仅有 Nginx 自带 `50x.html`；目标 5 个入职字段的条件必填配置与预期一致。
+- 数据保护与结果：`work_orders=15`、`dispatched_orders=46`、`users=31`、`customers=25`、`notifications=141`，五张表部署前后行数与全行哈希逐项完全一致；未覆盖本地数据库、`.env`、uploads、node_modules 或 `.tmp_server_sync/`。最终结果为 `complete`。
+
+## 2026-07-24 子工单模块页批量退回
+
+- 改了什么：劳动合同新签、入离职联系、增减员报岗录入、社保公积金增减员等现有子工单模块页新增批量退回入口和必填原因弹窗；混合选择时仅提交当前模块中 `pending`、`processing` 状态的行，接口按既有规则逐条返回成功和跳过数量，成功后清空选择并刷新列表。
+- 权限边界：复用现有“当前模块可办理”权限，不新增或修改角色动作矩阵；业务员仍只有原有批量催办能力，后道人员也不能跨模块操作。后端继续使用现有 `batch-return` 接口及单条退回校验，不改变状态、数据范围、通知或操作日志规则。
+- 仅分析未修改：基本工资和试用期工资当前由数据库字段配置及前端 fallback 定义为数字类型，导入会执行数值转换；业务员提交的待审批新值已保存并由接口返回，但详情页目前只显示待修改字段名称，不显示旧值和新值。本次未修改这两项。
+- 验证：前端定向 `OnboardingModule` 1 file / 12 tests passed，覆盖混合状态仅提交可退回行；前后端生产构建通过；根目录 `回归测试.ps1` 通过（前端关键业务 10 files / 106 tests、前端 build、后端 build）；`git diff --check` 通过，仅有既存 CRLF 提示。
+
+## 2026-07-24 入职工资文本与待审批修改值展示
+
+- 改了什么：入职 `base_salary`、`probation_salary` 从数字字段改为文本字段，支持按原文保存数字、货币格式和文字说明；新增可回滚迁移并同步字段种子、前端 fallback、mock 与导入模板测试。`base_salary` 继续必填，`probation_salary` 继续在试用期开始日期有值时条件必填。
+- 审批展示：子工单详情“待审批修改”同时展示修改原因及“原值 → 修改后值”，业务员和后道人员共用同一展示；审批前正式数据仍保持旧值，审批通过/拒绝继续走原有流程。
+- 权限边界：未修改角色、菜单或操作权限；详情正式字段和待审批字段均复用现有字段权限，`hidden` 不展示、`masked` 只显示星号。后端字段权限拦截器同步处理 `extraData/extra_data` 与 `pendingModify/pending_modify` 两套别名，避免网络响应绕过脱敏。
+- 规则覆盖：更新 `docs/业务规则回归清单.md`，覆盖入职基本工资和试用期工资的旧数字口径；不影响续签工资、社保基数、公积金基数等数字字段，也不改变试用期条件必填规则、字段编码或导出模板映射。
+- 验证：前端定向 2 files / 32 tests passed；后端工资导入、模板、提交校验和 AI 映射 5 suites / 48 tests passed，字段权限拦截器 1 suite / 1 test passed；根目录 `回归测试.ps1` 通过（前端关键业务 10 files / 109 tests、前端 build、后端 build）；`git diff --check` 通过，仅有既存 CRLF 提示。
+- 当前状态：代码和迁移已完成但尚未提交、部署或在数据库执行迁移；既有 `.tmp_server_sync/` 未修改。
+
+
+
+
+## 2026-07-27 阶段1派单引擎扩展架构契约
+
+- 改了什么：新增 `docs/阶段1派单引擎扩展架构契约-20260727.md`，明确 ModuleType/TeamRole/OrderType 稳定值、模块边界、DispatchEngine/HandlerPicker 可选上下文契约，以及 Sheet4（在职单项业务）和 Sheet5（省外增减员）独立数据结构。
+- 关键口径：双人省份严格按配置原文 `/` 顺序，排前为默认接单人、排后为转派备选；Sheet4/Sheet5 不混读；保留但不读取 assignee_user_id/fallback_user_id；不把 businessScope 写入 appStore。
+- 风险与验收：文档列出 PostgreSQL enum 扩展、seed 唯一键、旧订单兼容、映射隔离和账号缺失风险，并给出阶段1单测/集成测试/全局回归验收标准。
+- 规则覆盖：本次仅新增架构约束，不改变既有九种子工单状态、角色权限、月份统计或入职/续签/离职业务口径。
+- 验证：完成文档内容自检；代码实现与 `回归测试.ps1` 留待阶段1后端、QA任务完成后执行。
+
+## 2026-07-27 在职与省外派单引擎底座
+
+- 改了什么：补充 `IN_SERVICE`、`OUT_OF_PROVINCE` 订单类型与 `single_business`、省外增减员模块枚举；新增 27 省简称常量、`province_handlers` 实体/迁移/注册及 Sheet4、Sheet5 独立种子定义。派单引擎按 `province + businessType` 优先选取省份映射，未命中时继续使用原有团队、权重和策略链路。
+- 业务边界：Sheet4 使用 `single_business`，Sheet5 使用 `provincial_dispatch`，查询与唯一约束均按业务类型隔离；双人省份按 `priority ASC`，排前者默认接单、排后者仅作为转派备选。`dispatch_rules.assignee_user_id/fallback_user_id` 保留且新逻辑不读取，原入职、续签、离职规则未修改。
+- 数据前置：当前仓库与架构资料未包含 Sheet4/Sheet5 的真实专员账号名册，种子以占位账号保存完整 27 省及双人顺序，账号不存在时安全跳过。生产启用前必须用业务方实扫名册替换 `handlerUsername`，不得把占位账号当成正式映射。
+- 验证：后端构建通过；派单定向 3 suites / 32 tests passed，覆盖两表隔离、双人默认顺序、27 省完整扫描、`pick()` 新入口、省份映射不被模块配置覆盖及旧派单回归；根目录 `回归测试.ps1 -BackendOnly` 通过；`git diff --check` 通过。
+
+## 2026-07-27 阶段1 Sheet4/Sheet5 派单测试覆盖
+
+- 改了什么：新增 15 个省份派单单测与服务级集成测试，覆盖正式枚举、现有 `module_handlers` 命名空间键、Sheet4/Sheet5 普通省份与跨表隔离、五个双人省份主办/备选语义、在职/省外增减员子单生成及旧续签/离职派单路径；新增任务专属 QA 报告。
+- 为什么：新派单底座引入 `province + mappingSource` 双维度，主要风险是双人配置顺序失效、Sheet4/Sheet5 串表、备选人被错误首派，以及新映射误伤原入职/续签/离职逻辑。
+- 是否覆盖旧规则：否。测试保护既有派单与九状态口径，不修改业务代码、枚举或业务规则清单。
+- 验证：既有派单基线 3 suites、31 tests passed，1 historical test skipped；此前对未验收 `ProvinceHandler` 候选实现的 14 tests 结果已作废，不作为正式验收证据。
+- Integration 验证：后端合入后的 HEAD `42324b0` 未满足正式契约，QA 套件在编译阶段因缺少两个 `TeamRole`、两个省外 `OrderType` 以及 `mappingSource` 上下文失败（0 tests executed）；实现另新增了契约禁止的 `ProvinceHandler` 表。阶段1判定 P0 NO-GO，待后端返工后重跑新增套件、旧派单联合回归及根目录 `回归测试.ps1 -BackendOnly` 或全局回归。
+
+## 2026-07-27 阶段1派单底座 P0 契约返工
+
+- 改了什么：删除候选实现新增的 `ProvinceHandler` 实体、建表迁移和所有 Repository 注册；Sheet4/Sheet5 seed 改为写入现有 `module_handlers` 的 `<moduleCode>__<province>` 键，主办固定 `isBackup=false, weight=100`，备选固定 `isBackup=true, weight=1`，缺账号逐候选 warn 并跳过。
+- 接口与枚举：`HandlerPicker.pick()` 上下文改为 `{ province, mappingSource: 'sheet4' | 'sheet5' }`；`DispatchEngineService` 按固定模块码和三个订单类型构造 `ProvinceDispatchContext`，并在 `applyModuleConfig` 二次选人时透传同一上下文。补齐 `TeamRole.IN_SERVICE/OUT_OF_PROVINCE`、两个省外订单类型及 `in_service_single_business/out_of_province_dispatch` 固定模块码，旧枚举值保留。
+- 业务边界：Sheet4/Sheet5 只查各自 namespaced key；省份缺失、非法、无映射或主办停用均返回空 handler，不跨表、不用备选首派。`assignee_user_id/fallback_user_id` 保留且新路径零读取；入职、续签、离职无上下文派单逻辑未改。
+- 验证：后端构建通过；QA 正式契约 `province-handler-dispatch.spec.ts` 15/15 passed；旧派单基线 3 suites 为 31 passed / 1 historical skipped；新增 seed 契约 2/2 passed；根目录 `回归测试.ps1 -BackendOnly` 通过；`git diff --check` 通过。
+
+## 2026-07-27 阶段1 integration 最终 QA 验收
+
+- 改了什么：新增 `reports/50886fe6-qa-integration-verify-report.md`，在 integration HEAD `a699585` 上复核后端返工 `4408cdf`，逐项验证第二套人员表移除、`mappingSource` 签名和两个稳定模块码。
+- 是否覆盖旧规则：否。仅验证 Sheet4/Sheet5 新分支与既有入职、续签、离职、待遇派单兼容，不修改业务代码或规则口径。
+- 验证：正式契约套件 15/15 通过；旧派单回归 3 suites、31 passed、1 historical skipped；根目录 `回归测试.ps1 -SkipBuild` 通过（前端关键业务 10 files / 109 tests，按参数跳过 build）；integration Git 状态 clean。
+- 结论：阶段1由 P0 NO-GO 转为 GO，可以进入阶段2。
+
+
+
+## 2026-07-27 阶段2 在职管理后端
+
+- 改了什么：新增在职单项业务 `in_service_orders` 实体、迁移、Request/Response DTO、REST CRUD 与审批/驳回/开始办理/补料重提/完成/关闭端点；新增 `OrderType.IN_SERVICE`、在职状态机及 Sheet2 三级分类幂等种子，并注册到应用、TypeORM 和启动 seed。
+- 派单与权限：审批通过 `HandlerPickerService.pick()` 的 Sheet4 上下文按省份选择主办；无活动映射时才接受请求中的人工处理人，否则保持空处理人进入待指派。新逻辑不读取 `dispatch_rules.assignee_user_id/fallback_user_id`；既有入职、续签、离职、待遇派单路径不变。端点复用 JWT 与既有管理/发起人/办理人角色边界。
+- 状态机：`draft -> dispatched -> processing -> pending_info -> processing` 可多次补料往返；办理完成后进入 `completed -> archived`，审批驳回/关闭进入 `archived`，非法流转返回 400。
+- 规则覆盖：新增 Sheet2 在职分类和 Sheet4 单项业务规则，不覆盖既有业务规则；分类权威原表未随仓库提供，当前使用已有稳定业务枚举并在代码中保留扩充边界。
+- 验证：`npm run build` 通过；阶段2与既有派单定向 2 suites / 34 tests passed。全量后端 63 suites passed、1 skipped、478 tests passed、16 skipped；3 个 bcrypt 套件因本机跳过原生安装脚本缺少二进制，1 个既有 `p1-split4-dirty-return` 状态记录断言失败，均与本次改动无关。`回归测试.ps1 -BackendOnly` 通过；安装缺失的前端依赖后，根目录 `回归测试.ps1` 通过（前端关键 10 suites / 109 tests、前端构建、后端构建）。
+
+
+
+## 2026-07-27 阶段2在职管理模块 QA 验收（任务 372358c1，GO）
+
+- 改了什么：仅新增 QA 验收报告 `reports/372358c1-qa-在职模块测试报告.md`，对后端权威实现 `in-service-orders`（integration HEAD 20ffcaa）做验收。
+- 为什么：集成时后端已交付权威在职模块并自带单测，QA 首轮自建的骨架 `in-service-business` 与重复枚举被废弃（会产生重复声明编译冲突），本轮改为验收权威实现。
+- 验证：权威 `in-service-orders.spec.ts` 11/11 passed（覆盖状态机、pending_info 多次往返、Sheet4 派单 + 双人省份 fallback 不覆盖主办）；派单+province-handler 12 suites/115 passed；后端全量 498 passed/16 skipped/1 failed；tsc 通过；前端关键回归 48 files/336 tests passed。
+- 唯一失败 `p1-split4-dirty-return.spec.ts`：对 in-service 零引用，后端阶段2仅对 dispatched-order.service.ts 纯 +38 行新增，未触碰 split4/returnOrder，判定基线预存失败，另案跟踪。
+- 未改动既有业务规则口径，无需更新业务规则回归清单。
+- 结论：GO。
+
+
+
+
+## 2026-07-27 阶段2在职管理前端
+
+- 改了什么：解禁在职单项业务路由并接入实际角色矩阵；新增 Sheet1 单项业务表单（客户、部门、三级分类联动、27 省、联系电话、服务费、办理渠道、优先级、业务说明、最多 5 个附件），新增分页筛选列表、接单人/优先级展示、详情与审批/驳回/补料/办理/完成/关闭动作。
+- 接口与隔离：新增 `inServiceOrders` 服务，生产环境调用 `/in-service-orders` REST 接口，测试/dev mock 使用独立 localStorage 数据；三级枚举和状态元数据集中维护，待后端阶段2接口合入后联调。
+- 规则边界：未引入 `businessScope` 到 appStore；未解禁续签/待遇旧入口；未改变既有入职、续签、离职、待遇页面行为；本次未覆盖省外表单。
+- 验证：在职/路由/布局定向 4 文件 49 项通过；前端 `tsc -b` 与 Vite production build 通过（仅已有 Vite 插件弃用警告）。
+
+## 2026-07-27 阶段3省外派单架构契约
+
+- 改了什么：新增 `reports/phase3-architect-contract.md`，固化省外增员/减员 OrderType 与入职/离职状态流复用关系、Sheet5 基于 `module_handlers` 的独立命名空间、`businessScope` 后端隔离、派单引擎接入签名、前端切换器边界、迁移风险和三端验收标准。
+- 为什么：阶段3后端、前端和 QA 需要在开始实现前统一 Sheet4/Sheet5 禁止混用、福建双人默认人、北仑/省外数据隔离，以及“不把 businessScope 引入 appStore”的最终口径；契约采用阶段1 P0 提交 `4408cdf`，不沿用已撤销的独立 `province_handlers` 表方案。
+- 业务边界：不修改业务代码，不删除或复用 `assignee/fallback` 死字段，不新增状态机；`OutOfProvinceForm` 与 Sheet4/Sheet5 真实名册继续列为业务待办。本次未覆盖 `docs/业务规则回归清单.md` 中的既有规则。
+- 验证：Markdown 标题、UTF-8 中文和 11 项强制术语自检通过；`回归测试.ps1 -SkipBuild` 未进入用例执行，当前隔离工作树缺少前端 `vitest` 可执行文件，属于依赖未安装的环境阻塞。
+
+## 2026-07-27 阶段3+4 省外派单 QA 骨架与基线回归
+
+- 改了什么：新增 `backend/test/out-of-province-qa.spec.ts`，覆盖 Sheet5 增减员枚举、福建双人省份默认主办/转派备选、Sheet4/Sheet5 同省隔离、缺映射不跨表兜底和主办停用不提升备选；新增 `backend/test/e2e/out-of-province-dispatch.e2e.spec.ts` 作为切换器持久化、导入增减员、派单和列表隔离的暂缓骨架；新增 `reports/phase3-4-qa-report.md`。
+- 规则边界：未修改业务实现或既有口径；E2E 在阶段3 backend/frontend 合入前保持 `describe.skip`，省外表单继续等待菜鸟模板和浙江自签字段清单，不用入职/离职模板替代。
+- 验证：新增 Sheet5 QA 1 suite / 6 tests passed，E2E 3 tests skipped；阶段4后端定向 10 suites / 121 tests、前端根回归 10 files / 109 tests、菜单/通知/在职定向 4 files / 49 tests 全通过；前后端 production build 通过。
+- 结论：当前为条件性 NO-GO；阶段3实现合入后需复测 businessScope 数据隔离、切换器刷新保持、导入派单，并在最新 integration 上执行完整 `回归测试.ps1`。
+
+## 2026-07-27 阶段3省外派单前端骨架
+
+- 改了什么：新增北仑/省外业务范围切换器并使用 `business_scope_v1` 持久化，切换时只过滤前端菜单并跳转对应落地页；解禁省外列表、导入和新建占位路由，配置业务角色可见；新增省外增减员列表、批量导入页面和请求服务。
+- 数据边界：`businessScope` 未进入任何 store。省外列表、导入预览、确认、任务轮询和错误报告请求均显式携带 `out_of_province`；列表响应缺少范围时拒绝展示，混入北仑范围的数据会在前端过滤。
+- 表单边界：`OutOfProvinceForm` 仅保留 TODO 告警，明确“业务侧未提供菜鸟模板/浙江自签字段清单，不能用入职/离职模板顶替，需业务提供字段清单”，未复用入职或离职表单。
+- 契约与联调：rebase 后已按 `reports/phase3-architect-contract.md` 对齐两个精确 OrderType、`business_scope_v1`、专用 `/out-of-province-orders` 列表及 `/import/preview|confirm` 路径；后端省外 Controller 尚未合入，分页 DTO、导入轮询和错误报告扩展仍待接口就绪后联调。
+- 是否覆盖旧规则：否。未修改入职、续签、离职、在职现有页面、状态或业务口径。
+- 验证：省外定向 4 files / 51 tests passed；前端 production build 通过；lint 0 error（仅既有 10 warnings）；本机 Edge + Vite 浏览器 E2E 1/1 passed，覆盖切换、刷新持久化、范围参数、列表、导入入口和表单 TODO。根目录固定回归通过（前端关键业务 10 files / 110 tests、前端 build、后端 build；后端依赖按锁文件补齐后执行）。
+
+## 2026-07-27 阶段3省外增减员后端与 businessScope 隔离
+
+- 改了什么：新增 `BusinessScope.BEILUN/OUT_OF_PROVINCE`、`work_orders.business_scope` 迁移和只读 `out_of_province_orders` 视图实体；新增 `/out-of-province-orders` DTO/Service/Controller/Module，省外增减员创建、更新、提交和重提委托既有 `WorkOrderService`，子单接单、退回、转派和完成继续使用 `DispatchedOrderService`，未新建状态机。
+- 派单与隔离：为两个省外订单类型补生产 `dispatch_rules`，固定指向 `out_of_province_dispatch`；派发列表未传 scope 时默认北仑，显式 `businessScope=out_of_province` 才查询省外类型和 Sheet5 模块。福建转派校验同省 namespaced Sheet5 主/备配置，首次派单仍只选排前主办；Sheet4/Sheet5 不混读，`assignee_user_id/fallback_user_id` 保留且新逻辑不读取。
+- 导入边界：开放两个省外类型的 Excel 上传预览和确认，最小字段为客户名称、客户代码、员工姓名、证件号、省份；省份复用统一 27 省字典并在提交前严格校验。省外模板下载继续禁用，未使用入职/离职模板冒充省外字段清单；客户端传入的 `businessScope/business_scope` 会在创建、更新和提交入口剥离。
+- 规则覆盖：新增省外数据隔离规则，不覆盖既有九种子工单状态、入职/续签/离职/待遇派单、月份或角色菜单口径；已同步 `docs/业务规则回归清单.md` 第20节。
+- 验证：后端 `npm run build` 通过；省外/主单/派发定向 3 suites / 50 tests passed；导入与 Sheet5 相关 10 suites / 83 tests passed；根目录 `回归测试.ps1 -BackendOnly` 通过；`git diff --check` 通过。阶段3架构契约报告在实现期间未落盘，代码遵循 `docs/阶段1派单引擎扩展架构契约-20260727.md` 与方案定稿。
+- 待办：省外单条表单继续 TODO，等待业务提供菜鸟模板/浙江自签字段清单；Sheet4/Sheet5 当前仍为占位账号种子，等待业务提供真实名册后替换并复测。
+
+## 2026-07-27 主会话：团队 integration 落地 feature 分支 + 最终回归
+
+- 改了什么：团队 `9aca7b`（阶段3省外+阶段4回归，全员 codex）第2轮 finalize 后，将已验证的 integration（`c0358af`）以 fast-forward 落回 `feature/in-service-out-of-province`（`2a841af`→`c0358af`，93 文件 +7264/-85）。落地前把主工作区遗留的旧前端残留（`BusinessScopeSwitcher/`、`InService/`、`businessTypes.ts` 及 3 个本地改文件——均为团队改用 worktree 前的废弃尝试，路径与团队权威实现不同）安全 stash 至 `stash@{0}`，未删除。
+- 为什么：plan.md 全部 4 阶段 14 任务完成，integration 经团队 build+72 测试验证；feature 是 integration 直系祖先，零冲突纯 fast-forward，最低风险。
+- 如何验证：`回归测试.ps1 -SkipBuild` 通过——前端 10 files / 110 tests 全过；后端 build 按团队既有 GO 结论跳过。工作区仅剩 `.spectrai/plans/`、`.tmp_server_sync/` 两个无关未跟踪目录。
+- 待办：Sheet4/Sheet5 占位账号种子待业务真实名册替换后复测；省外表单 `OutOfProvinceForm` 保持 TODO 待菜鸟模板字段清单；`stash@{0}` 旧残留确认无用后可 drop。
+
+## 2026-07-28 后端全局回归失败修复
+
+- 改了什么：修复 `province-handler.seed.ts` 在 Sheet4/Sheet5 缺省省份上直接调用 `split` 的加载异常；浙江及同样缺少来源的青海保留为停用空行，seed 校验覆盖完整 27 省但只要求活动行配置 1~2 个处理人。同步更新真实拼音账号的主办/备选顺序测试。
+- 退回测试：`p1-split4-dirty-return.spec.ts` 改用非当前办理人验证拒绝，先断言未写退回记录，再验证模块主管成功且仅保存一次 `beforeStatus=completed` 的记录；未修改 `returnOrder` 生产逻辑。
+- 规则覆盖：补充 `docs/业务规则回归清单.md` 第 18 节。浙江、青海业务映射未确认前不得激活、虚构处理人或跨 Sheet 兜底；既有已完成工单退回权限仍为当前办理人、模块主管或管理员。
+- 验证：两个定向套件 6/6 tests passed；后端全量 69 suites passed、3 skipped，517 tests passed、20 skipped；`npm run build` 与根目录 `回归测试.ps1 -BackendOnly` 均通过。
+
+## 2026-07-28 前端在职 mock 与路由可见性回归修复
+
+- 改了什么：在职 mock 创建 ID 从随机 UUID 改为项目统一的 `is-${Date.now()}` 格式，并在既有完整生命周期测试中锁定 `is-123456`；恢复 `/in-service/contract-renewal`、`/in-service/benefit-claim` 两个占位路由的冻结，使 `/renewal`、`/benefit` 旧别名和动态广域权限都不能绕过隐藏规则；为模块权限工具补充 `isModuleAccessible` 兼容导出，继续复用唯一实现 `canAccessModuleCode`。
+- 为什么：阶段2后续提交误删了两个权威占位路由的冻结项；在职 mock 使用 UUID 又与现有 mock E2E 的可预测 ID 契约不一致。验收侧提到的 `inServiceMockE2E.test.ts` 在当前分支、全部 worktree、Git reflog 及未引用提交中均不存在，因此在现有生命周期测试补同一契约；`isModuleAccessible` 报错通过兼容导出直接覆盖。
+- 是否覆盖旧规则：否。恢复既定的“开放在职单项业务，但不开放续签/待遇旧入口”规则，并同步补充到业务规则回归清单。
+- 验证：路由、在职生命周期与模块权限定向 3 files / 31 tests passed；前端全量 52 files / 348 tests passed；`回归测试.ps1 -FrontendOnly` 的关键回归 10 files / 110 tests passed。`npm run build` 已执行，但被本次未修改的 `OutOfProvinceOrderForm.tsx` 5 个既有 TypeScript 类型错误阻塞。
+
+## 2026-07-28 阶段4全局回归与交付收尾
+
+- 改了什么：基于最新 integration 后端修复 `7b6ed3a` 与前端修复 `15252c3` 完成验证，保留两边并行追加的业务规则和修改记录；以 `b9fb3ca` 对齐省外占位表单与现有客户/部门 service 类型契约，修复阻塞全局构建的 5 个 TypeScript 错误，未扩展等待业务模板的表单字段。
+- 为什么：阶段4交付要求前后端全量测试和根目录完整回归全部通过；省外表单仍使用旧的客户/部门 API 形态，导致前端构建无法进入最终验收。
+- 业务规则：已确认 `docs/业务规则回归清单.md` 第 18、19 节包含浙江/青海停用空映射、Sheet4/Sheet5 不跨表兜底，以及开放在职单项业务但冻结续签/待遇占位路由的口径；本轮类型修复不改变入职、续签、离职或省外业务规则。
+- 验证：后端 `npm test` 69 suites / 517 tests passed（3 suites / 20 tests skipped）；前端修复后 `npm test` 52 files / 348 tests passed；根目录 `回归测试.ps1` 完整通过，包含前端关键业务 10 files / 110 tests、前端 production build 和后端 build。
+
+
+## 2026-07-28 合同终止日期条件必填逻辑修复
+
+- 改了什么：将"合同终止日期"从固定必填改为条件必填——当"合同期限形式"为"无固定期限"时非必填，其他情况（"固定期限"或"任务期限"）必填。后端新增 `conditionNotEq` 辅助函数表示"不等于时必填"；前端 DynamicForm 组件补齐 `notEquals` 操作符支持。
+- 为什么：用户反馈入职批量导入时，选择"无固定期限"合同后仍要求填写终止日期，形成逻辑矛盾——无固定期限合同本身就没有明确终止日期。
+- 技术实现：后端 `seed-fields.ts` 中 `contract_end_date` 改为 `required: false, defaultRequired: false, conditionalRequired: conditionNotEq('contract_term_type', '无固定期限')`；前端 `ConditionalRequired` 接口增加 `'notEquals'` 操作符，`matchesConditionalRule` 函数增加 NEQ 判断逻辑；前端 fallback 字段定义同步修改。
+- 业务规则：已在 `docs/业务规则回归清单.md` 第 13.1 节记录"合同终止日期条件必填"规则。
+- 验证：后端字段相关测试 8 suites / 27 tests passed；前端关键业务测试 10 files / 110 tests passed；前后端 build 均通过；根目录回归测试前端部分完整通过。

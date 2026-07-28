@@ -116,16 +116,20 @@ else { Assert-Path $pgBin 'PostgreSQL pg_ctl'; $logFile = "D:\pgsql16portable\pg
 
 Write-Step '[3/7] Build latest backend dist...'
 Push-Location $backendPath
-try { npm run build; Assert-LastExit 'npm run build'; if ($runSeed) { Write-Step '[4/7] Run idempotent seed (base data only, no business data cleanup)...'; npm run seed; Assert-LastExit 'npm run seed' } else { Write-Step '[4/7] Seed skipped by script config.' } }
+try { npm run build; Assert-LastExit 'npm run build' }
 finally { Pop-Location }
+
+Write-Step '[4/7] Sync field definitions from compiled seed...'
+Push-Location $backendPath
+try {
+    & (Join-Path $nodeDir 'node.exe') 'dist\database\seeds\index.js'
+    Assert-LastExit 'Seed execution'
+    Write-Host '  Seed completed.' -ForegroundColor Green
+} finally { Pop-Location }
 
 Write-Step '[5/7] Start backend on 0.0.0.0:3000...'
 $backendOut = Join-Path $rootPath 'backend-run.out.log'
 $backendErr = Join-Path $rootPath 'backend-run.err.log'
-$env:HOST = '0.0.0.0'
-$env:PORT = [string]$backendPort
-# Seed has already run in step [4/7]; skip startup seed to avoid health-check timeout.
-$env:AUTO_SEED = 'false'
 $backendProcess = Start-Process -FilePath (Join-Path $nodeDir 'node.exe') -ArgumentList @('dist\main.js') -WorkingDirectory $backendPath -PassThru -WindowStyle Hidden -RedirectStandardOutput $backendOut -RedirectStandardError $backendErr
 Start-Sleep -Seconds 3
 $backendPid = Assert-ServiceReady $backendPort "http://127.0.0.1:$backendPort/api/health" 'Backend'
