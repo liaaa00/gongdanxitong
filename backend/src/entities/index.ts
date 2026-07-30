@@ -1,5 +1,6 @@
 export * from './action-config.entity';
 export * from './branch.entity';
+export * from './certificate-type.entity';
 export * from './customer-assignee.entity';
 export * from './customer.entity';
 export * from './department.entity';

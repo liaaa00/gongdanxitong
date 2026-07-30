@@ -1,4 +1,5 @@
 import AppDataSource from 'src/database/data-source';
+import { seedCertificateTypes } from './seed-certificate-types';
 import { seedCustomers } from './seed-customers';
 import { seedDepartments } from './seed-departments';
 import { seedDispatchRules } from './seed-dispatch-rules';
@@ -28,6 +29,7 @@ async function runSeeds(): Promise<void> {
     await seedProvinceHandlers(AppDataSource);
     await seedModuleConfigs(AppDataSource);
     await seedInServiceCategories(AppDataSource);
+    await seedCertificateTypes(AppDataSource);
     await seedExportTemplates(AppDataSource);
     await seedNotificationTemplates(AppDataSource);
     // eslint-disable-next-line no-console

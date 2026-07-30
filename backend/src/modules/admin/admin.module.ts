@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AiSettingsModule } from './ai-settings/ai-settings.module';
 import { BranchesModule } from './branches/branches.module';
+import { CertificateTypesModule } from './certificate-types/certificate-types.module';
 import { CustomerAssigneesModule } from './customer-assignees/customer-assignees.module';
 import { CustomersModule } from './customers/customers.module';
 import { DepartmentsModule } from './departments/departments.module';
@@ -22,6 +23,7 @@ import { UsersModule } from './users/users.module';
   imports: [
     AiSettingsModule,
     BranchesModule,
+    CertificateTypesModule,
     CustomerAssigneesModule,
     CustomersModule,
     DepartmentsModule,

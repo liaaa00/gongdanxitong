@@ -62,6 +62,7 @@ const AdminAISettings = lazy(() => import('@/pages/Admin/AISettings'));
 const AdminSystemSettings = lazy(() => import('@/pages/Admin/SystemSettings'));
 const AdminLoginDebug = lazy(() => import('@/pages/Admin/LoginDebug'));
 const AdminCustomerAssignees = lazy(() => import('@/pages/Admin/CustomerAssignees'));
+const AdminCertificateTypes = lazy(() => import('@/pages/Admin/CertificateTypes'));
 const WorkOrderPool = lazy(() => import('@/pages/WorkOrderPool'));
 
 const Loading: React.FC = () => (
@@ -257,6 +258,7 @@ const AppRoutes: React.FC = () => (
           <Route path="logs" element={<RouteGuard moduleName="操作日志"><AdminLogs /></RouteGuard>} />
           <Route path="ai-settings" element={<RouteGuard moduleName="智能设置"><AdminAISettings /></RouteGuard>} />
           <Route path="system-settings" element={<RouteGuard moduleName="系统设置"><AdminSystemSettings /></RouteGuard>} />
+          <Route path="certificate-types" element={<RouteGuard moduleName="证明类型管理"><AdminCertificateTypes /></RouteGuard>} />
           <Route path="login-debug" element={<RouteGuard moduleName="登录诊断"><AdminLoginDebug /></RouteGuard>} />
           <Route path="customer-assignees" element={<RouteGuard moduleName="业务员客户绑定"><AdminCustomerAssignees /></RouteGuard>} />
         </Route>

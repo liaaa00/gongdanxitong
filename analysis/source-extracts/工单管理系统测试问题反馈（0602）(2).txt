@@ -1,0 +1,54 @@
+﻿SOURCE: C:\Users\Asus\AppData\Local\Temp\aionui\general\工单管理系统测试问题反馈（0602）(2).docx
+TYPE: .docx
+EXTRACTED_AT: 2026-07-29T17:42:00.5660648+08:00
+====================================================================================================
+[/body/p[@paraId=584D637A]] 
+[/body/p[@paraId=732E3BFD]] 
+[/body/p[@paraId=299493DC]] 
+[/body/p[@paraId=6B527299]] 
+[/body/p[@paraId=27248B92]] 仍然显示为两行：
+[/body/p[@paraId=3605B5ED]] 
+[/body/p[@paraId=7D51C282]] 
+[/body/p[@paraId=2224CFE1]] 仍有非本人工单数据显示：
+[/body/p[@paraId=1E5119F3]] 
+[/body/p[@paraId=14171FD9]] 
+[/body/p[@paraId=318431AF]] 
+[/body/p[@paraId=242E8456]] 
+[/body/p[@paraId=36902DD4]] 业务负责人仍有相关菜单（业务负责人不发起工单，不需要入职、在职、离职模块功能和“我的工单”中“我发起的”工单列表）
+[/body/p[@paraId=560CA41E]] 
+[/body/p[@paraId=5419D9B8]] 
+[/body/p[@paraId=507D48C9]] 
+[/body/p[@paraId=744D2AC6]] 业务员“我的工单”中，缺少“历史工单”列表：
+[/body/p[@paraId=6798775D]] 
+[/body/p[@paraId=17697D93]] 
+[/body/p[@paraId=15AF1D09]] 后道办理人员仍有不归属其负责的工单子菜单列表：
+[/body/p[@paraId=1A5D5F67]] 
+[/body/p[@paraId=2241FB8C]] 
+[/body/p[@paraId=6C5C0963]] 
+[/body/p[@paraId=194C6A3F]] 业务员撤销作废功能未增加：
+[/body/p[@paraId=1155E935]] 
+[/body/p[@paraId=2FFC9668]] 
+[/body/p[@paraId=1A2E298F]] ①取消“催办反馈”类消息通知；
+[/body/p[@paraId=0A75D817]] 
+[/body/p[@paraId=4DC8615B]] ②保留消息的“已读”处理功能，如点击“已读”则消息提醒消失；“处理”功能变更为必须点击处理，并将工单办结，或工单以其他方式结束——已办结/已作废/管理员已删除后，消息提醒才消失。
+[/body/p[@paraId=43A06047]] 注：各类消息提醒的显示按时间排序，最新生成的排位靠前。
+[/body/p[@paraId=1914F4AF]] 
+[/body/p[@paraId=74AA01C2]] 
+[/body/p[@paraId=5E667FC3]] 
+[/body/p[@paraId=2B2EBD57]] 业务已撤回数据，修改后，没有重新提交的按键，同时该数据在业务员及后道子工单界面仍然显示为“已撤回”状态（应显示为正常“处理中”状态），无法进一步办理：
+[/body/p[@paraId=6FF40BFB]] 
+[/body/p[@paraId=0F4C1AAF]] 
+[/body/p[@paraId=11925EEB]] 撤回经后道同意后，再做作废处理时，提示仍需经过后道审批（实际不需要，可直接变成作废状态）
+[/body/p[@paraId=456B2E92]] 
+[/body/p[@paraId=7B862CEE]] 
+[/body/p[@paraId=78718009]] 
+[/body/p[@paraId=2B3A622C]] 该处应为二选一，不可编辑
+[/body/p[@paraId=2E61B3BC]] 
+[/body/p[@paraId=2E3F365D]] 
+[/body/p[@paraId=01CCA096]] 批量导入办理仍然失败
+[/body/p[@paraId=3367F397]] 
+[/body/p[@paraId=3DABD92F]] 
+[/body/p[@paraId=371E04E6]] 页面配置问题，重复内容：
+[/body/p[@paraId=54AF2A64]] 
+[/body/p[@paraId=06CCAF7E]] 
+[/body/p[@paraId=67489252]]

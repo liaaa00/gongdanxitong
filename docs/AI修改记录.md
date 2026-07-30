@@ -1095,3 +1095,9 @@
 - 导出流程：新增 `POST /in-service-orders/:id/renewal-template`。办理人或管理角色发起导出后，系统按 `esign_platform` 选择既有速创/E签宝共享合同模板，在内存渲染适配视图中补齐客户、姓名和证件号；速创模板的“1.新签”常量只在克隆字段列表中改为“续签”，不创建或保存伪造的 `WorkOrder` / `DispatchedOrder`。导出日志绑定真实 `in_service_order`。
 - UI 与隔离：续签详情新增“导出续签模板”按钮；省外范围切换继续位于侧栏标题下方，不再挤压底部账号操作。所有修改只发生在本地部署快照，未运行 migration/seed，未连接或修改本地及生产业务数据，也未同步生产服务器。
 - 验证：前端续签规则 5/5、续签列表与布局合计 33/33，前端全量 52 files / 354 tests；后端续签/平台导出 22/22，实际解析速创 Excel 并验证第 4 行“签订方式”为“续签”，后端全量 72 suites / 536 tests passed（3 suites / 20 tests skipped）；根目录固定回归 10 files / 112 tests 及前后端 production build 全部通过。
+
+## 2026-07-30 本地入口止血：统一桌面启动到 main
+
+- 改了什么：桌面 `工单系统.lnk` 改为调用 `D:\AI\SpeceAppDate\工单系统\快速启动.ps1`，工作目录同步改为 `D:\AI\SpeceAppDate\工单系统`；将 `backend/src` 与 `frontend/src` 下未跟踪源码隔离到 `.tmp_quarantine_untracked_src_20260730-164042/` 和 `.tmp_quarantine_untracked_src_20260730-164112/`，避免主仓库 build 混入旧分支残留。未删除业务数据、未改服务器。
+- 为什么：原桌面入口指向 `work-order-feature`，且主仓库存在未跟踪源码污染，导致本地启动与服务器/main 不一致。
+- 验证：主仓库快速启动脚本 `-NoBrowser -NoPause` 成功，`/api/health` 返回 ok，前端 `5173` 返回 200，快捷方式目标与工作目录均为 `D:\AI\SpeceAppDate\工单系统`；`git diff --check` 通过；`./回归测试.ps1 -SkipBuild` 通过（前端关键 10 files / 114 tests）。

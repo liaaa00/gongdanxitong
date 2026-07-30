@@ -219,6 +219,7 @@ const RAW_MENU: MenuItem[] = [
           { path: '/admin/departments', name: '部门管理', icon: <ApartmentOutlined /> },
           { path: '/admin/customers', name: '客户管理', icon: <IdcardOutlined /> },
           { path: '/admin/system-settings', name: '门户配置', icon: <SettingOutlined />, key: 'admin-portal-config' },
+          { path: '/admin/certificate-types', name: '证明类型管理', icon: <FileTextOutlined /> },
         ],
       },
       {

@@ -1,0 +1,42 @@
+﻿[
+    {
+        "Path":  "backend/docker-entrypoint.sh",
+        "Head":  "7982c625318d8b6c3bc75bf6a0f0bc09a5cb41761e2ad44a7f8a4b3f1699cc01",
+        "Server":  "f7b3dba6163164c2f38a83499d5585e1c0900c2a77a7874b32ee8a31ecf70005"
+    },
+    {
+        "Path":  "backend/package.json",
+        "Head":  "8aca2b00cec187fb6e8822519224b083832ea2a4dd6dffdde431f73ee41f2d59",
+        "Server":  "f902d03513e5a15bdc54ba1335faad81dfcc20748c671bc9ee90642f7d704079"
+    },
+    {
+        "Path":  "backend/package-lock.json",
+        "Head":  "MISSING",
+        "Server":  "6ed78b638197a852fbcd12604e59e5be2fb31c0a8894d87e33af1253fdffc978"
+    },
+    {
+        "Path":  "backend/src/assets/export-templates/劳动合同签订批导出模板-e签宝.xlsx",
+        "Head":  "\u003cmissing\u003e",
+        "Server":  "540c80bf8cda478fabc582f3e46ee70bf519f206d26c0a7b29eb6de2c3c87e37"
+    },
+    {
+        "Path":  "backend/src/assets/export-templates/劳动合同签订批导出模板-速创.bak-20260625101016.xlsx",
+        "Head":  "\u003cmissing\u003e",
+        "Server":  "804deac64d728ef01182c30345bfc63d4201df4f371fc9e527d702dc31cd05a8"
+    },
+    {
+        "Path":  "backend/src/assets/export-templates/劳动合同签订批导出模板-速创.xlsx",
+        "Head":  "\u003cmissing\u003e",
+        "Server":  "0b74dc98205fd1c032fc4876cf4e523557a3de64f254478f57decebcf605c8ef"
+    },
+    {
+        "Path":  "docker-compose.override.yml",
+        "Head":  "f516c93363f6855fcba4df386c8c87b2002e6cf5c87ded5c4b62d92c57c05691",
+        "Server":  "dcd17c4d572f9b6c98e72c50d6c76e3e371fe07d635eae24fbe0f8a562cff333"
+    },
+    {
+        "Path":  "frontend/package-lock.json",
+        "Head":  "MISSING",
+        "Server":  "abdad73a051d3dc5af245cf15fa4b99a5bf5f0ad24742ef3f5b4f1247976a1b3"
+    }
+]

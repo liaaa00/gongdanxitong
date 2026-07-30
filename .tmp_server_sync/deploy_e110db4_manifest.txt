@@ -1,0 +1,34 @@
+Safe Server Sync deployment manifest
+timestamp=20260723_095046
+commit=e110db48217d48487b84ce85b6d2c463cb5bc6e9
+target=admin@192.168.26.195:/data/apps/work-order-system
+backend_before_image=sha256:377dbd328ebb16c159d69a2fb259f0a400d2f0d4c875d654e6f4d21a03f816ed
+frontend_before_image=sha256:539e242d8b37c23162c8ab50719f2fa9a5984d5e46584b98fde61339d28a9e16
+business_baseline=work_orders:15:a72bb9c2b74b3745fbb24b5d9705ef3e;dispatched_orders:46:f143491856404e7f72279c97be6bec19;users:31:24d4fc00b07acef3418a74e4b71d8029;customers:25:4533509c786b91616d49dba5708aad41;notifications:141:fe3405e9d0bd8077997a5ce292ead2a3
+excluded=.tmp_server_sync,.env,uploads,node_modules
+files:
+- backend/src/database/migrations/20260722001000-OnboardingConditionalRequiredRules.ts
+- backend/src/database/seeds/seed-fields.ts
+- backend/src/modules/dispatched-orders/dispatched-order.service.ts
+- backend/src/modules/work-orders/work-order-validation.service.ts
+- backend/test/dispatched-field-sync.spec.ts
+- backend/test/dispatched-resubmit.spec.ts
+- backend/test/import.service.spec.ts
+- backend/test/work-order-validation.service.spec.ts
+- frontend/src/components/DynamicForm/index.tsx
+- frontend/src/components/DynamicForm/index.test.tsx
+- frontend/src/layouts/BasicLayout.tsx
+- frontend/src/layouts/BasicLayout.test.tsx
+- frontend/src/pages/MyDispatched/Detail/index.tsx
+- frontend/src/pages/MyDispatched/Detail/index.test.tsx
+- frontend/src/pages/MyDispatched/index.tsx
+- frontend/src/pages/MyDispatched/index.test.tsx
+- frontend/src/pages/OnboardingModule/index.tsx
+- frontend/src/pages/OnboardingModule/index.test.tsx
+- frontend/src/pages/WorkOrders/New/index.tsx
+- frontend/src/pages/WorkOrders/New/excludeFeedbackFields.test.ts
+- frontend/src/services/fields.ts
+- frontend/src/services/workOrders.ts
+- frontend/src/utils/listPageState.ts
+- docs/AI修改记录.md
+- docs/业务规则回归清单.md

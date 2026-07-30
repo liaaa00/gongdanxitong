@@ -1,0 +1,344 @@
+Exit code: 0
+Wall time: 2.6 seconds
+Output:
+diff --git a/backend/src/database/seeds/seed-users.ts b/backend/src/database/seeds/seed-users.ts
+index edb8b8b..1118abd 100644
+--- a/backend/src/database/seeds/seed-users.ts
++++ b/backend/src/database/seeds/seed-users.ts
+@@ -172,6 +172,9 @@ export async function seedUsers(dataSource: DataSource): Promise<void> {
+ 
+   for (const seed of userSeeds) {
+     let user = await userRepository.findOne({ where: { username: seed.username } });
++    if (!user) {
++      user = await userRepository.findOne({ where: { email: seed.email } });
++    }
+     if (!user) {
+       user = await userRepository.save(userRepository.create({
+         username: seed.username,
+diff --git a/backend/src/modules/admin/users/users.controller.ts b/backend/src/modules/admin/users/users.controller.ts
+index ddaed1b..89f1859 100644
+--- a/backend/src/modules/admin/users/users.controller.ts
++++ b/backend/src/modules/admin/users/users.controller.ts
+@@ -179,6 +179,11 @@ class CreateUserDto {
+ }
+ 
+ class UpdateUserDto {
++  @IsOptional()
++  @IsString()
++  @Matches(/^[a-zA-Z][a-zA-Z0-9_]{2,31}$/)
++  username?: string;
++
+   @IsOptional()
+   @IsString()
+   realName?: string;
+diff --git a/backend/src/modules/admin/users/users.service.ts b/backend/src/modules/admin/users/users.service.ts
+index ccafaec..02f3ce7 100644
+--- a/backend/src/modules/admin/users/users.service.ts
++++ b/backend/src/modules/admin/users/users.service.ts
+@@ -46,6 +46,7 @@ interface CreateUserInput {
+ }
+ 
+ interface UpdateUserInput {
++  username?: string;
+   realName?: string;
+   real_name?: string;
+   phone?: string;
+@@ -379,6 +380,17 @@ export class UsersService {
+   async update(id: string, input: UpdateUserInput): Promise<UserView> {
+     const current = await this.loadEntity(id);
+ 
++    const nextUsername = input.username?.trim();
++    const usernameChanged = Boolean(nextUsername && nextUsername !== current.username);
++    if (usernameChanged) {
++      const usernameExists = await this.userRepository.findOne({
++        where: { username: nextUsername },
++      });
++      if (usernameExists && usernameExists.id !== id) {
++        throw new BadRequestException('用户名已存在');
++      }
++    }
++
+     if (typeof (input.isActive ?? input.is_active) === 'boolean' && (input.isActive ?? input.is_active) === false) {
+       await this.assertNoProcessingDispatchedOrders(id);
+     }
+@@ -393,6 +405,7 @@ export class UsersService {
+     }
+ 
+     Object.assign(current, {
++      username: nextUsername || current.username,
+       realName: input.realName ?? input.real_name ?? current.realName,
+       phone: input.phone ?? current.phone,
+       email: input.email ?? current.email,
+diff --git a/backend/test/auth-password-and-seed.spec.ts b/backend/test/auth-password-and-seed.spec.ts
+index 66686d4..0173455 100644
+--- a/backend/test/auth-password-and-seed.spec.ts
++++ b/backend/test/auth-password-and-seed.spec.ts
+@@ -166,6 +166,90 @@ describe('admin password reset contract', () => {
+     expect(user.passwordUpdatedAt).toBeNull();
+     expect(userRepo.save).toHaveBeenCalledWith(user);
+   });
++  it('updates username and real name without rewriting role bindings', async () => {
++    const user = Object.assign(new User(), {
++      id: 'u-rename',
++      username: 'taomingyue',
++      realName: '陶明月',
++      email: 'taomingyue@example.com',
++      phone: null,
++      avatarUrl: null,
++      passwordHash: 'unchanged-hash',
++      isActive: true,
++      userRoles: [],
++    });
++    const transaction = jest.fn();
++    const userRepo = repoMock<User>({
++      findOne: jest.fn(async ({ where }: { where: { id?: string; username?: string } }) => {
++        if (where.username) return null;
++        return where.id === user.id ? user : null;
++      }),
++      save: jest.fn(async (input: User) => input),
++    });
++    const service = new UsersService(
++      { transaction } as never,
++      userRepo,
++      repoMock<Role>(),
++      repoMock<Department>(),
++      repoMock<UserRole>(),
++      repoMock<DispatchedOrder>(),
++    );
++
++    const result = await service.update(user.id, {
++      username: 'taomingyue_new',
++      real_name: '陶明月新',
++    });
++
++    expect(result).toMatchObject({ username: 'taomingyue_new', real_name: '陶明月新' });
++    expect(user.passwordHash).toBe('unchanged-hash');
++    expect(userRepo.save).toHaveBeenCalledWith(user);
++    expect(transaction).not.toHaveBeenCalled();
++  });
++
++  it('rejects a duplicate username before saving any user changes', async () => {
++    const current = Object.assign(new User(), {
++      id: 'u-current',
++      username: 'taomingyue',
++      realName: '陶明月',
++      email: 'taomingyue@example.com',
++      phone: null,
++      avatarUrl: null,
++      passwordHash: 'unchanged-hash',
++      isActive: true,
++      userRoles: [],
++    });
++    const duplicate = Object.assign(new User(), {
++      id: 'u-duplicate',
++      username: 'existing_user',
++    });
++    const save = jest.fn(async (input: User) => input);
++    const userRepo = repoMock<User>({
++      findOne: jest.fn(async ({ where }: { where: { id?: string; username?: string } }) => {
++        if (where.username === duplicate.username) return duplicate;
++        return where.id === current.id ? current : null;
++      }),
++      save,
++    });
++    const service = new UsersService(
++      {} as never,
++      userRepo,
++      repoMock<Role>(),
++      repoMock<Department>(),
++      repoMock<UserRole>(),
++      repoMock<DispatchedOrder>(),
++    );
++
++    await expect(service.update(current.id, {
++      username: duplicate.username,
++      real_name: '不应保存',
++    })).rejects.toThrow('用户名已存在');
++
++    expect(current).toMatchObject({
++      username: 'taomingyue',
++      realName: '陶明月',
++    });
++    expect(save).not.toHaveBeenCalled();
++  });
+ });
+ 
+ describe('seedUsers password preservation', () => {
+@@ -173,6 +257,7 @@ describe('seedUsers password preservation', () => {
+     const changedAt = new Date('2026-06-08T01:02:03.000Z');
+     const customHash = await bcrypt.hash('user-custom-password', 10);
+     const savedUsers: User[] = [];
++    const savedUserRoles: UserRole[] = [];
+     const existingUsers = new Map<string, User>();
+     existingUsers.set('maoyani', Object.assign(new User(), {
+       id: 'user-maoyani',
+@@ -185,10 +270,27 @@ describe('seedUsers password preservation', () => {
+       passwordUpdatedAt: changedAt,
+       isActive: true,
+     }));
++    existingUsers.set('taomingyue_new', Object.assign(new User(), {
++      id: 'user-taomingyue-renamed',
++      username: 'taomingyue_new',
++      realName: '陶明月',
++      email: 'taomingyue@example.com',
++      phone: '13800000017',
++      passwordHash: customHash,
++      mustChangePassword: false,
++      passwordUpdatedAt: changedAt,
++      isActive: true,
++    }));
+ 
+     const userRepo = repoMock<User>({
+       create: jest.fn((input: Partial<User>) => Object.assign(new User(), { id: `new-${input.username}` }, input)),
+-      findOne: jest.fn(async ({ where }: { where: { username: string } }) => existingUsers.get(where.username) ?? null),
++      findOne: jest.fn(async ({ where }: { where: { username?: string; email?: string } }) => {
++        if (where.username) return existingUsers.get(where.username) ?? null;
++        if (where.email) {
++          return Array.from(existingUsers.values()).find((user) => user.email === where.email) ?? null;
++        }
++        return null;
++      }),
+       findOneOrFail: jest.fn(async ({ where }: { where: { username: string } }) => {
+         const user = existingUsers.get(where.username);
+         if (!user) throw new Error(`missing user ${where.username}`);
+@@ -219,7 +321,10 @@ describe('seedUsers password preservation', () => {
+     });
+     const userRoleRepo = repoMock<UserRole>({
+       create: jest.fn((input: Partial<UserRole>) => input as UserRole),
+-      save: jest.fn(async (input: UserRole) => input),
++      save: jest.fn(async (input: UserRole) => {
++        savedUserRoles.push(input);
++        return input;
++      }),
+       delete: jest.fn(async () => ({ affected: 1 })),
+     });
+     const dataSource = {
+@@ -242,5 +347,12 @@ describe('seedUsers password preservation', () => {
+     expect(maoyani!.mustChangePassword).toBe(false);
+     expect(maoyani!.passwordUpdatedAt).toBe(changedAt);
+     await expect(bcrypt.compare('123456', maoyani!.passwordHash)).resolves.toBe(false);
++    expect(existingUsers.has('taomingyue')).toBe(false);
++    expect(savedUsers.some((item) => item.username === 'taomingyue')).toBe(false);
++    expect(savedUserRoles).toContainEqual(expect.objectContaining({
++      userId: 'user-taomingyue-renamed',
++      roleId: 'role-biz_member',
++      departmentId: 'dept-BUSINESS_GROUP_4',
++    }));
+   });
+ });
+diff --git a/docs/AI修改记录.md b/docs/AI修改记录.md
+index d68ec9d..bcb4cb6 100644
+--- a/docs/AI修改记录.md
++++ b/docs/AI修改记录.md
+@@ -719,3 +719,10 @@
+   - `npx vitest run src/services/attachments.download.test.ts` → 1 file / 3 tests passed。
+   - `npm run build`（frontend）→ passed。
+ - 改动边界：不删除后端审核/收齐接口，仅改变新上传/新导入附件的默认状态与前端操作展示；历史 `uploaded/approved` 数据仍可被接口处理。
++
++## 2026-07-16 用户账号编辑与 seed 身份保留最小修复
++
++- 改了什么：更新用户 DTO/服务允许按既有账号格式修改用户名，保存前拒绝重复用户名；seed 按用户名未命中时再按固定邮箱复用原用户，避免改名账号被重新创建；前端编辑载荷保留用户名，权限预览 Drawer 与重置密码确认框挂到 `document.body`。
++- 为什么：修复管理员编辑用户名不落库、seed 重建改名账号，以及固定操作列遮挡确认浮层/权限预览的问题；不改变角色权限计算或交接规则。
++- 是否覆盖旧规则：否。仅补充账号唯一性和身份复用保护，不改变既有角色菜单与工单权限口径。
++- 验证：后端用户名/seed 相关测试、前端用户管理测试、固定前端关键回归及前后端 build 均通过。
+diff --git a/frontend/src/pages/Admin/Users/index.test.tsx b/frontend/src/pages/Admin/Users/index.test.tsx
+index 03ea434..ec17878 100644
+--- a/frontend/src/pages/Admin/Users/index.test.tsx
++++ b/frontend/src/pages/Admin/Users/index.test.tsx
+@@ -1,6 +1,7 @@
+ import { describe, it, expect, vi, beforeEach } from 'vitest';
+ import { render, screen, waitFor, within } from '@testing-library/react';
+ import userEvent from '@testing-library/user-event';
++import { ConfigProvider } from 'antd';
+ import AdminUsers from './index';
+ 
+ const mockUsers = [
+@@ -129,7 +130,11 @@ vi.mock('@ant-design/pro-components', () => ({
+ }));
+ 
+ async function renderPage() {
+-  render(<AdminUsers />);
++  render(
++    <ConfigProvider getPopupContainer={(triggerNode) => triggerNode?.parentElement || document.body}>
++      <AdminUsers />
++    </ConfigProvider>,
++  );
+   await waitFor(() => expect(getUsers).toHaveBeenCalled());
+ }
+ 
+@@ -189,18 +194,26 @@ describe('AdminUsers user-role assignment', () => {
+     expect(createUser.mock.calls[0][0]).not.toHaveProperty('position');
+   });
+ 
+-  it('given roles are changed in edit form, when saving, then role data is sent to update API', async () => {
++  it('given account fields and roles are changed in edit form, when saving, then all supported fields are sent to update API', async () => {
+     const user = userEvent.setup();
+     await renderPage();
+ 
+     const row = screen.getByText('shenwenjun').closest('tr')!;
+     await user.click(within(row).getByRole('button', { name: /编辑/ }));
+-    const roleSelect = await screen.findByLabelText('角色');
++    const usernameInput = await screen.findByLabelText('用户名');
++    const realNameInput = screen.getByLabelText('姓名');
++    const roleSelect = screen.getByLabelText('角色');
++    await user.clear(usernameInput);
++    await user.type(usernameInput, 'shenwenjun_new');
++    await user.clear(realNameInput);
++    await user.type(realNameInput, '沈文君新');
+     await user.selectOptions(roleSelect, ['4', '7', '8']);
+     await user.click(screen.getByRole('button', { name: 'OK' }));
+ 
+     await waitFor(() => expect(updateUser).toHaveBeenCalled());
+     expect(updateUser).toHaveBeenCalledWith('u-1', expect.objectContaining({
++      username: 'shenwenjun_new',
++      real_name: '沈文君新',
+       roles: expect.arrayContaining([
+         expect.objectContaining({ role_id: '4', role_name: '业务员' }),
+         expect.objectContaining({ role_id: '7', role_name: '合同专员' }),
+@@ -208,7 +221,6 @@ describe('AdminUsers user-role assignment', () => {
+       ]),
+     }));
+     const updatePayload = updateUser.mock.calls[0][1];
+-    expect(updatePayload).not.toHaveProperty('username');
+     expect(updatePayload).not.toHaveProperty('position');
+     expect(updatePayload.roles.filter((role: { is_primary?: boolean }) => role.is_primary)).toHaveLength(1);
+     expect(updatePayload.roles[0]).toMatchObject({ is_primary: true, isPrimary: true });
+@@ -222,7 +234,9 @@ describe('AdminUsers user-role assignment', () => {
+     const row = screen.getByText('shenwenjun').closest('tr')!;
+     await user.click(within(row).getByRole('button', { name: /重置密码/ }));
+ 
+-    expect(await screen.findByText('密码将重置为默认密码 123456，用户下次登录必须先修改密码。')).toBeInTheDocument();
++    const description = await screen.findByText('密码将重置为默认密码 123456，用户下次登录必须先修改密码。');
++    expect(description).toBeInTheDocument();
++    expect(description.closest('.ant-popover')?.parentElement).toBe(document.body);
+     expect(resetUserPassword).not.toHaveBeenCalled();
+ 
+     await user.click(screen.getByRole('button', { name: '确认重置' }));
+diff --git a/frontend/src/pages/Admin/Users/index.tsx b/frontend/src/pages/Admin/Users/index.tsx
+index 686f298..67c9c11 100644
+--- a/frontend/src/pages/Admin/Users/index.tsx
++++ b/frontend/src/pages/Admin/Users/index.tsx
+@@ -181,6 +181,7 @@ const AdminUsers: React.FC = () => {
+     const data = editing
+       ? {
+           ...updatableFields,
++          username,
+           ...(password ? { password } : {}),
+           roles,
+         }
+@@ -277,6 +278,7 @@ const AdminUsers: React.FC = () => {
+           <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => setPreviewUser(r)}>权限预览</Button>
+           <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(r)}>编辑</Button>
+           <Popconfirm
++            getPopupContainer={() => document.body}
+             title={`确定重置 ${r.real_name || r.username} 的密码？`}
+             description="密码将重置为默认密码 123456，用户下次登录必须先修改密码。"
+             okText="确认重置"
+@@ -357,6 +359,7 @@ const AdminUsers: React.FC = () => {
+ 
+       <Drawer
+         title="权限预览"
++        getContainer={() => document.body}
+         open={Boolean(previewUser)}
+         width={720}
+         onClose={() => setPreviewUser(null)}

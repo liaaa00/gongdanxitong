@@ -141,7 +141,7 @@ export const ROUTE_VISIBILITY = {
   '/onboarding/contract': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.LABOR_CONTRACT_MEMBER, ROLE.SHARED_TEAM_OWNER],
   '/onboarding/data_entry': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.DATA_ENTRY_LEADER],
   '/onboarding/social_insurance': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SOCIAL_INSURANCE_SPECIALIST],
-  '/onboarding/renewal_contract': IN_SERVICE_ROLES,
+  '/onboarding/renewal_contract': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.LABOR_CONTRACT_MEMBER, ROLE.SHARED_TEAM_OWNER],
   '/onboarding/benefit_apply': IN_SERVICE_ROLES,
   '/onboarding/resignation_contact': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.ONBOARDING_RESIGNATION_MEMBER, ROLE.SHARED_TEAM_OWNER],
   '/onboarding/resignation_cert': [],
@@ -203,6 +203,7 @@ export const ROUTE_VISIBILITY = {
   '/admin/ai-settings': [ROLE.ADMIN],
   '/admin/login-debug': [ROLE.ADMIN],
   '/admin/system-settings': [ROLE.ADMIN],
+  '/admin/certificate-types': [ROLE.ADMIN],
 } as const satisfies Record<string, readonly CanonicalRole[]>;
 
 export type VisibilityRoute = keyof typeof ROUTE_VISIBILITY;

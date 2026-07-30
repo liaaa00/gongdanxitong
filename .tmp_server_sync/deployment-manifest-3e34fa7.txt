@@ -1,0 +1,26 @@
+SOURCE_COMMIT=3e34fa7963f5b80e335cca21b4151abcf0600756
+CODE_SYNC_METHOD=commit-derived explicit file upload
+BACKUP_ID=latest-sync-3e34fa7_20260722_133606
+SERVICES_TO_REBUILD=backend,frontend
+DATABASE_CHANGES=none
+CONFIG_TABLE_CHANGES=none
+DEPENDENCY_CHANGES=none
+AUTO_SEED=false
+IN_SCOPE_FILES:
+backend/src/modules/admin/export-templates/export-templates.controller.ts
+backend/src/modules/admin/export-templates/export-templates.module.ts
+backend/src/modules/admin/export-templates/export-templates.service.ts
+backend/test/work-order-export-template-permissions.spec.ts
+docs/AI修改记录.md
+frontend/src/pages/MyDispatched/Detail/index.test.tsx
+frontend/src/pages/MyDispatched/Detail/index.tsx
+frontend/src/services/exportTemplates.test.ts
+frontend/src/services/exportTemplates.ts
+EXCLUDED:
+.env
+uploads
+node_modules
+dist
+build
+local database data
+.tmp_server_sync

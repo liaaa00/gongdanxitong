@@ -1,0 +1,429 @@
+﻿[
+    {
+        "Name":  "HR工单系统测试评审会议记录-2026年05月27日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\HR工单系统测试评审会议记录-2026年05月27日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\HR工单系统测试评审会议记录-2026年05月27日-来自【得到大脑】(2).txt",
+        "Bytes":  114356,
+        "ExtractLines":  291
+    },
+    {
+        "Name":  "HR工单系统新增需求与增减员自动化开发讨论-2026年07月22日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\HR工单系统新增需求与增减员自动化开发讨论-2026年07月22日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\HR工单系统新增需求与增减员自动化开发讨论-2026年07月22日-来自【得到大脑】(2).txt",
+        "Bytes":  106980,
+        "ExtractLines":  221
+    },
+    {
+        "Name":  "HR人事工单系统开发需求讨论-2026年06月02日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\HR人事工单系统开发需求讨论-2026年06月02日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\HR人事工单系统开发需求讨论-2026年06月02日-来自【得到大脑】(2).txt",
+        "Bytes":  93058,
+        "ExtractLines":  78
+    },
+    {
+        "Name":  "HR系统社保公积金模块与批量导入附件功能测试问题讨论-2026年07月09日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\HR系统社保公积金模块与批量导入附件功能测试问题讨论-2026年07月09日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\HR系统社保公积金模块与批量导入附件功能测试问题讨论-2026年07月09日-来自【得到大脑】(2).txt",
+        "Bytes":  63560,
+        "ExtractLines":  156
+    },
+    {
+        "Name":  "offer邮件自动发送脚本开发对接讨论-2026年06月11日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\offer邮件自动发送脚本开发对接讨论-2026年06月11日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\offer邮件自动发送脚本开发对接讨论-2026年06月11日-来自【得到大脑】(2).txt",
+        "Bytes":  54679,
+        "ExtractLines":  135
+    },
+    {
+        "Name":  "报销流程优化及RPA自动化需求项目讨论会议-2026年06月11日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\报销流程优化及RPA自动化需求项目讨论会议-2026年06月11日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\报销流程优化及RPA自动化需求项目讨论会议-2026年06月11日-来自【得到大脑】(2).txt",
+        "Bytes":  64624,
+        "ExtractLines":  211
+    },
+    {
+        "Name":  "北仑通用收入证明(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\北仑通用收入证明(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\北仑通用收入证明(2).txt",
+        "Bytes":  12207,
+        "ExtractLines":  18
+    },
+    {
+        "Name":  "北仑通用在职证明(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\北仑通用在职证明(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\北仑通用在职证明(2).txt",
+        "Bytes":  11722,
+        "ExtractLines":  12
+    },
+    {
+        "Name":  "北仑项目工作梳理与工单系统选型讨论会议记录-2026年05月09日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\北仑项目工作梳理与工单系统选型讨论会议记录-2026年05月09日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\北仑项目工作梳理与工单系统选型讨论会议记录-2026年05月09日-来自【得到大脑】(2).txt",
+        "Bytes":  146599,
+        "ExtractLines":  433
+    },
+    {
+        "Name":  "本地工单系统需求讨论会议记录-2026年06月03日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\本地工单系统需求讨论会议记录-2026年06月03日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\本地工单系统需求讨论会议记录-2026年06月03日-来自【得到大脑】(2).txt",
+        "Bytes":  164690,
+        "ExtractLines":  589
+    },
+    {
+        "Name":  "表单配置与平台选择讨论-2026年05月07日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\表单配置与平台选择讨论-2026年05月07日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\表单配置与平台选择讨论-2026年05月07日-来自【得到大脑】(2).txt",
+        "Bytes":  28242,
+        "ExtractLines":  17
+    },
+    {
+        "Name":  "财务开票与发票匹配的流程讨论及自动化需求沟通-2026年06月11日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\财务开票与发票匹配的流程讨论及自动化需求沟通-2026年06月11日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\财务开票与发票匹配的流程讨论及自动化需求沟通-2026年06月11日-来自【得到大脑】(2).txt",
+        "Bytes":  81119,
+        "ExtractLines":  381
+    },
+    {
+        "Name":  "戴尔物理服务器采购沟通与入职工单管理系统开发进度讨论-2026年05月15日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\戴尔物理服务器采购沟通与入职工单管理系统开发进度讨论-2026年05月15日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\戴尔物理服务器采购沟通与入职工单管理系统开发进度讨论-2026年05月15日-来自【得到大脑】(2).txt",
+        "Bytes":  110707,
+        "ExtractLines":  474
+    },
+    {
+        "Name":  "给员工-入职人员信息表(16)(2).xlsx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\给员工-入职人员信息表(16)(2).xlsx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\给员工-入职人员信息表(16)(2).txt",
+        "Bytes":  12864,
+        "ExtractLines":  6
+    },
+    {
+        "Name":  "工单办理流程及各种情况处理规则(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\工单办理流程及各种情况处理规则(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\工单办理流程及各种情况处理规则(2).txt",
+        "Bytes":  12774,
+        "ExtractLines":  38
+    },
+    {
+        "Name":  "工单管理系统测试问题反馈（0528）(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\工单管理系统测试问题反馈（0528）(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\工单管理系统测试问题反馈（0528）(2).txt",
+        "Bytes":  484965,
+        "ExtractLines":  52
+    },
+    {
+        "Name":  "工单管理系统测试问题反馈（0602）(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\工单管理系统测试问题反馈（0602）(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\工单管理系统测试问题反馈（0602）(2).txt",
+        "Bytes":  775283,
+        "ExtractLines":  50
+    },
+    {
+        "Name":  "工单管理系统测试问题反馈0518(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\工单管理系统测试问题反馈0518(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\工单管理系统测试问题反馈0518(2).txt",
+        "Bytes":  1475609,
+        "ExtractLines":  112
+    },
+    {
+        "Name":  "工单管理系统-入职导入模板 (8)(2).xlsx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\工单管理系统-入职导入模板 (8)(2).xlsx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\工单管理系统-入职导入模板 (8)(2).txt",
+        "Bytes":  14489,
+        "ExtractLines":  19
+    },
+    {
+        "Name":  "工单管理系统-入职导入模板(2).xlsx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\工单管理系统-入职导入模板(2).xlsx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\工单管理系统-入职导入模板(2).txt",
+        "Bytes":  18474,
+        "ExtractLines":  28
+    },
+    {
+        "Name":  "工单流程操作与问题(2).xlsx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\工单流程操作与问题(2).xlsx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\工单流程操作与问题(2).txt",
+        "Bytes":  11479,
+        "ExtractLines":  27
+    },
+    {
+        "Name":  "工单流程测试步骤及用例(2).xlsx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\工单流程测试步骤及用例(2).xlsx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\工单流程测试步骤及用例(2).txt",
+        "Bytes":  14345,
+        "ExtractLines":  66
+    },
+    {
+        "Name":  "工单系统待推进事项(2).xlsx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\工单系统待推进事项(2).xlsx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\工单系统待推进事项(2).txt",
+        "Bytes":  10546,
+        "ExtractLines":  14
+    },
+    {
+        "Name":  "工单系统功能测试与项目对接沟通会议-2026年07月07日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\工单系统功能测试与项目对接沟通会议-2026年07月07日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\工单系统功能测试与项目对接沟通会议-2026年07月07日-来自【得到大脑】(2).txt",
+        "Bytes":  85769,
+        "ExtractLines":  213
+    },
+    {
+        "Name":  "工单系统离职日期不一致问题的处理功能优化讨论-2026年07月17日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\工单系统离职日期不一致问题的处理功能优化讨论-2026年07月17日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\工单系统离职日期不一致问题的处理功能优化讨论-2026年07月17日-来自【得到大脑】(2).txt",
+        "Bytes":  53992,
+        "ExtractLines":  76
+    },
+    {
+        "Name":  "工单系统上线前入离职表单字段需求讨论会议-2026年06月09日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\工单系统上线前入离职表单字段需求讨论会议-2026年06月09日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\工单系统上线前入离职表单字段需求讨论会议-2026年06月09日-来自【得到大脑】(2).txt",
+        "Bytes":  239499,
+        "ExtractLines":  1270
+    },
+    {
+        "Name":  "工单系统上线推进会议：操作要求、系统介绍与功能优化讨论-2026年07月24日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\工单系统上线推进会议：操作要求、系统介绍与功能优化讨论-2026年07月24日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\工单系统上线推进会议：操作要求、系统介绍与功能优化讨论-2026年07月24日-来自【得到大脑】(2).txt",
+        "Bytes":  146288,
+        "ExtractLines":  349
+    },
+    {
+        "Name":  "工单系统省外业务拓展与柜面业务工单功能需求讨论-2026年07月15日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\工单系统省外业务拓展与柜面业务工单功能需求讨论-2026年07月15日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\工单系统省外业务拓展与柜面业务工单功能需求讨论-2026年07月15日-来自【得到大脑】(2).txt",
+        "Bytes":  128791,
+        "ExtractLines":  306
+    },
+    {
+        "Name":  "工作优先级安排及新员工入职沟通-2026年05月07日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\工作优先级安排及新员工入职沟通-2026年05月07日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\工作优先级安排及新员工入职沟通-2026年05月07日-来自【得到大脑】(2).txt",
+        "Bytes":  42118,
+        "ExtractLines":  55
+    },
+    {
+        "Name":  "基于大模型的企业知识库问答系统开发讨论与财务需求调整-2026年06月16日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\基于大模型的企业知识库问答系统开发讨论与财务需求调整-2026年06月16日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\基于大模型的企业知识库问答系统开发讨论与财务需求调整-2026年06月16日-来自【得到大脑】(2).txt",
+        "Bytes":  68499,
+        "ExtractLines":  251
+    },
+    {
+        "Name":  "聚合A平台服务单创建流程与上下岗自动化开发计划讨论-2026年06月23日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\聚合A平台服务单创建流程与上下岗自动化开发计划讨论-2026年06月23日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\聚合A平台服务单创建流程与上下岗自动化开发计划讨论-2026年06月23日-来自【得到大脑】(2).txt",
+        "Bytes":  57445,
+        "ExtractLines":  137
+    },
+    {
+        "Name":  "离职工单导入导出模板配置(1)(2).xlsx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\离职工单导入导出模板配置(1)(2).xlsx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\离职工单导入导出模板配置(1)(2).txt",
+        "Bytes":  13346,
+        "ExtractLines":  54
+    },
+    {
+        "Name":  "内部自研工单系统上线前 入职离职模块字段与流程确认会议-2026年05月29日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\内部自研工单系统上线前 入职离职模块字段与流程确认会议-2026年05月29日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\内部自研工单系统上线前 入职离职模块字段与流程确认会议-2026年05月29日-来自【得到大脑】(2).txt",
+        "Bytes":  145896,
+        "ExtractLines":  570
+    },
+    {
+        "Name":  "企服工单系统权限分配表(2).xlsx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\企服工单系统权限分配表(2).xlsx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\企服工单系统权限分配表(2).txt",
+        "Bytes":  10946,
+        "ExtractLines":  26
+    },
+    {
+        "Name":  "企业AI平台选型与功能对比分析-2026年05月07日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\企业AI平台选型与功能对比分析-2026年05月07日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\企业AI平台选型与功能对比分析-2026年05月07日-来自【得到大脑】(2).txt",
+        "Bytes":  43588,
+        "ExtractLines":  69
+    },
+    {
+        "Name":  "企业业务外包开票税务处理与内部系统部署开发会议讨论-2026年06月08日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\企业业务外包开票税务处理与内部系统部署开发会议讨论-2026年06月08日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\企业业务外包开票税务处理与内部系统部署开发会议讨论-2026年06月08日-来自【得到大脑】(2).txt",
+        "Bytes":  97684,
+        "ExtractLines":  444
+    },
+    {
+        "Name":  "入离职报岗集约操作流程梳理与自动化实现方案讨论-2026年06月23日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\入离职报岗集约操作流程梳理与自动化实现方案讨论-2026年06月23日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\入离职报岗集约操作流程梳理与自动化实现方案讨论-2026年06月23日-来自【得到大脑】(2).txt",
+        "Bytes":  104065,
+        "ExtractLines":  278
+    },
+    {
+        "Name":  "入职offer、报销、离职证明等流程自动化需求讨论会议-2026年06月11日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\入职offer、报销、离职证明等流程自动化需求讨论会议-2026年06月11日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\入职offer、报销、离职证明等流程自动化需求讨论会议-2026年06月11日-来自【得到大脑】(2).txt",
+        "Bytes":  146068,
+        "ExtractLines":  824
+    },
+    {
+        "Name":  "入职工单系统测试问题讨论与需求调整-2026年05月21日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\入职工单系统测试问题讨论与需求调整-2026年05月21日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\入职工单系统测试问题讨论与需求调整-2026年05月21日-来自【得到大脑】(2).txt",
+        "Bytes":  123656,
+        "ExtractLines":  319
+    },
+    {
+        "Name":  "入职工单系统功能与流程需求讨论-2026年05月14日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\入职工单系统功能与流程需求讨论-2026年05月14日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\入职工单系统功能与流程需求讨论-2026年05月14日-来自【得到大脑】(2).txt",
+        "Bytes":  126164,
+        "ExtractLines":  558
+    },
+    {
+        "Name":  "入职工单系统需求确认与上线准备讨论-2026年06月09日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\入职工单系统需求确认与上线准备讨论-2026年06月09日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\入职工单系统需求确认与上线准备讨论-2026年06月09日-来自【得到大脑】(2).txt",
+        "Bytes":  86340,
+        "ExtractLines":  228
+    },
+    {
+        "Name":  "入职管理系统功能测试与开发问题讨论-2026年06月04日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\入职管理系统功能测试与开发问题讨论-2026年06月04日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\入职管理系统功能测试与开发问题讨论-2026年06月04日-来自【得到大脑】(2).txt",
+        "Bytes":  117281,
+        "ExtractLines":  264
+    },
+    {
+        "Name":  "入职离职工单系统开发测试讨论 兼财务利润指标沟通-2026年05月26日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\入职离职工单系统开发测试讨论 兼财务利润指标沟通-2026年05月26日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\入职离职工单系统开发测试讨论 兼财务利润指标沟通-2026年05月26日-来自【得到大脑】(2).txt",
+        "Bytes":  137479,
+        "ExtractLines":  443
+    },
+    {
+        "Name":  "入职离职批导入导出模板字段检查与bug修复讨论-2026年06月10日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\入职离职批导入导出模板字段检查与bug修复讨论-2026年06月10日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\入职离职批导入导出模板字段检查与bug修复讨论-2026年06月10日-来自【得到大脑】(2).txt",
+        "Bytes":  68512,
+        "ExtractLines":  137
+    },
+    {
+        "Name":  "四方系统增员报岗自动化开发讨论-2026年06月26日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\四方系统增员报岗自动化开发讨论-2026年06月26日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\四方系统增员报岗自动化开发讨论-2026年06月26日-来自【得到大脑】(2).txt",
+        "Bytes":  82313,
+        "ExtractLines":  231
+    },
+    {
+        "Name":  "速创手册-本地报岗(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\速创手册-本地报岗(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\速创手册-本地报岗(2).txt",
+        "Bytes":  268468,
+        "ExtractLines":  27
+    },
+    {
+        "Name":  "速创手册-外地入职单填报(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\速创手册-外地入职单填报(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\速创手册-外地入职单填报(2).txt",
+        "Bytes":  122596,
+        "ExtractLines":  19
+    },
+    {
+        "Name":  "外包入职信息同步(2).xlsx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\外包入职信息同步(2).xlsx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\外包入职信息同步(2).txt",
+        "Bytes":  29238,
+        "ExtractLines":  198
+    },
+    {
+        "Name":  "小微企业客户集约服务方案讨论会议纪要-2026年07月08日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\小微企业客户集约服务方案讨论会议纪要-2026年07月08日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\小微企业客户集约服务方案讨论会议纪要-2026年07月08日-来自【得到大脑】(2).txt",
+        "Bytes":  125114,
+        "ExtractLines":  285
+    },
+    {
+        "Name":  "新建 DOCX 文档(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\新建 DOCX 文档(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\新建 DOCX 文档(2).txt",
+        "Bytes":  13607,
+        "ExtractLines":  49
+    },
+    {
+        "Name":  "新上线工单系统操作宣贯与需求讨论会议-2026年06月15日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\新上线工单系统操作宣贯与需求讨论会议-2026年06月15日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\新上线工单系统操作宣贯与需求讨论会议-2026年06月15日-来自【得到大脑】(2).txt",
+        "Bytes":  114589,
+        "ExtractLines":  363
+    },
+    {
+        "Name":  "业务工单系统测试问题讨论与功能优化会议-2026年05月27日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\业务工单系统测试问题讨论与功能优化会议-2026年05月27日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\业务工单系统测试问题讨论与功能优化会议-2026年05月27日-来自【得到大脑】(2).txt",
+        "Bytes":  114686,
+        "ExtractLines":  441
+    },
+    {
+        "Name":  "业务客户派单表格调整讨论-2026年07月24日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\业务客户派单表格调整讨论-2026年07月24日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\业务客户派单表格调整讨论-2026年07月24日-来自【得到大脑】(2).txt",
+        "Bytes":  53406,
+        "ExtractLines":  66
+    },
+    {
+        "Name":  "业务系统工单功能测试问题讨论-2026年06月11日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\业务系统工单功能测试问题讨论-2026年06月11日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\业务系统工单功能测试问题讨论-2026年06月11日-来自【得到大脑】(2).txt",
+        "Bytes":  42165,
+        "ExtractLines":  100
+    },
+    {
+        "Name":  "业务系统开发平台选型讨论：妙搭扣子清流简道云对比与本地部署测试计划-2026年05月09日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\业务系统开发平台选型讨论：妙搭扣子清流简道云对比与本地部署测试计划-2026年05月09日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\业务系统开发平台选型讨论：妙搭扣子清流简道云对比与本地部署测试计划-2026年05月09日-来自【得到大脑】(2).txt",
+        "Bytes":  162869,
+        "ExtractLines":  621
+    },
+    {
+        "Name":  "员工离职证明开具工单流程讨论-2026年07月28日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\员工离职证明开具工单流程讨论-2026年07月28日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\员工离职证明开具工单流程讨论-2026年07月28日-来自【得到大脑】(2).txt",
+        "Bytes":  52459,
+        "ExtractLines":  96
+    },
+    {
+        "Name":  "员工入转离职工单系统功能测试与需求讨论-2026年05月26日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\员工入转离职工单系统功能测试与需求讨论-2026年05月26日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\员工入转离职工单系统功能测试与需求讨论-2026年05月26日-来自【得到大脑】(2).txt",
+        "Bytes":  96193,
+        "ExtractLines":  294
+    },
+    {
+        "Name":  "在职模块-工单系统配置表（派单+单项业务）(2).xlsx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\在职模块-工单系统配置表（派单+单项业务）(2).xlsx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\在职模块-工单系统配置表（派单+单项业务）(2).txt",
+        "Bytes":  440403,
+        "ExtractLines":  111
+    },
+    {
+        "Name":  "浙江企服服务外包增员信息表-模板（待确认版）(2).xlsx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\浙江企服服务外包增员信息表-模板（待确认版）(2).xlsx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\浙江企服服务外包增员信息表-模板（待确认版）(2).txt",
+        "Bytes":  18302,
+        "ExtractLines":  107
+    },
+    {
+        "Name":  "浙江企服增员信息表-入职导入模板01(2).xlsx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\浙江企服增员信息表-入职导入模板01(2).xlsx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\浙江企服增员信息表-入职导入模板01(2).txt",
+        "Bytes":  13726,
+        "ExtractLines":  14
+    },
+    {
+        "Name":  "自研人力资源工单系统上线前测试与字段调整讨论-2026年06月10日-来自【得到大脑】(2).docx",
+        "Source":  "C:\\Users\\Asus\\AppData\\Local\\Temp\\aionui\\general\\自研人力资源工单系统上线前测试与字段调整讨论-2026年06月10日-来自【得到大脑】(2).docx",
+        "Extract":  "D:\\AI\\SpeceAppDate\\工单系统\\analysis\\source-extracts\\自研人力资源工单系统上线前测试与字段调整讨论-2026年06月10日-来自【得到大脑】(2).txt",
+        "Bytes":  71778,
+        "ExtractLines":  189
+    }
+]

@@ -1,0 +1,157 @@
+﻿[
+    {
+        "Path":  "backend/package.json",
+        "Local":  "8aca2b00cec187fb6e8822519224b083832ea2a4dd6dffdde431f73ee41f2d59",
+        "Server":  "f902d03513e5a15bdc54ba1335faad81dfcc20748c671bc9ee90642f7d704079"
+    },
+    {
+        "Path":  "backend/package-lock.json",
+        "Local":  "eb012ce7e4994041d626146d324c8eb577b7d205f8f6cdb5ab9656fe9c28af07",
+        "Server":  "6ed78b638197a852fbcd12604e59e5be2fb31c0a8894d87e33af1253fdffc978"
+    },
+    {
+        "Path":  "backend/src/database/migrations/20260624001000-UpdateContractExportTemplateFields.ts",
+        "Local":  "21bfbea6fc5a67dece4dd6623e1f1c4affb8bf6ad6870983a809e474bd2ba66e",
+        "Server":  "17540e3eba8f53fec018df4c9d175363060ceaff0953402acc115893a5b415da"
+    },
+    {
+        "Path":  "backend/src/database/migrations/20260624001000-WorkOrderFieldSyncRecords.ts",
+        "Local":  "fd0375639de1ffc1b832c0a1ae1524a8f0be1d5c015a1d15e6c019174907d58e",
+        "Server":  "e3959b745c4c0897b718d2ab9feb79dc8781e7e08286deb332d1ab1739290699"
+    },
+    {
+        "Path":  "backend/src/database/migrations/20260624001200-OnboardingImportTemplateContractRules.ts",
+        "Local":  "3edb96ed82e3f840221fc55888602ae0e01be95afad53bb6bae0d36f119a324a",
+        "Server":  "0d79cff24f10a2963f7d18fdbb381726da8bad6bd36ea6e66ec5c36f34e0f6d4"
+    },
+    {
+        "Path":  "backend/src/database/migrations/20260625120000-RevertYesNoOptionsExceptEsign.ts",
+        "Local":  "9f2701cd3a6783451da0ddb4db70116c8f56f1897e72718afa273735ff438491",
+        "Server":  "9103497e8ad88478c351e9f2b5468e0805833c2dfa54c5c26806ffd35e0175bb"
+    },
+    {
+        "Path":  "backend/src/database/migrations/20260708001000-OnboardingSalaryTextAndCompanyAddressRule.ts",
+        "Local":  "bc1a50071734e080a542c35e44287385fa3631f6fe4774f3fcdd9c48338ddc66",
+        "Server":  "5ab06bf04156c35316912e4024ecc4f48307fb108975587454720b5eb0f4154c"
+    },
+    {
+        "Path":  "backend/src/database/seeds/seed-customers.ts",
+        "Local":  "b060019693a5b4061fc3979fdc955e8a89a5c2698ba872515c4d940f3171de4b",
+        "Server":  "28d1aa09f28143b1011d4cea1e8e68e00f20642580646e0a7d96e7da6728d9ca"
+    },
+    {
+        "Path":  "backend/src/entities/work-order-field-sync-batch.entity.ts",
+        "Local":  "a2ab4f6f7ec965c56e44b3e8dcfa4f4ce97ff0c6c6ad330ffcb58bcaed6875cf",
+        "Server":  "dad99853c94ddd86a847d7199da1e0ccc686d8a967e2f268f3d7bd59c06cf816"
+    },
+    {
+        "Path":  "backend/src/entities/work-order-field-sync-item.entity.ts",
+        "Local":  "4933f1a347c771c9d452fc810434b9d4e1e973d819cdd5558469ad4a4ebdbb15",
+        "Server":  "7c0e828729e68177f72d732dc123a67b8120dfde0ed27da7fb74c2ef0aed1eff"
+    },
+    {
+        "Path":  "backend/src/modules/admin/fields/fields.controller.ts",
+        "Local":  "c4b1011af03ffe8e017ea5192004e3214c16176af2d7663b178395bee78da475",
+        "Server":  "15416d0e4eff6e49264effa9e054ba7ff08c7af9c8a30c7e0c384739a3e40b93"
+    },
+    {
+        "Path":  "backend/src/modules/admin/fields/fields.module.ts",
+        "Local":  "99d283fd0bf6291bf51715b74fd8db5f8b34c88c78fb9dd1f014d3e589cb22ea",
+        "Server":  "ae0f56d418500470c32098866e82eb1ba49c7660456dc5e8452917deadfe05f1"
+    },
+    {
+        "Path":  "backend/src/modules/admin/users/users.controller.ts",
+        "Local":  "0da7ee484e124b8c58b0802cb154686c6decd6a044cdca681a050c67468f69ee",
+        "Server":  "4d42ca52ff669530dc3247a45c3aeb5908649b35ed67550e8d7ab1ceee16f7cb"
+    },
+    {
+        "Path":  "backend/src/modules/admin/users/users.service.ts",
+        "Local":  "5cc1ea5c012bbf44473a9b4cb11b11123382f34255b62f39b558f0f891b68615",
+        "Server":  "2398b7a7bc3943e1a62132e3e5155093c87d97495aeef22b2be006c5f8044e98"
+    },
+    {
+        "Path":  "backend/src/modules/auth/auth.service.ts",
+        "Local":  "11fb6a233395a66ba865d141fa01442f512cde947334ac677520a50fcc64a35c",
+        "Server":  "5fa26241bca4549035bb1868fef192a2beb47eba2e009840118956592965a469"
+    },
+    {
+        "Path":  "backend/src/modules/auth/auth.types.ts",
+        "Local":  "ec6ac14d656bbe8679c2d191177c92da3f3188df6252b940dbbd237728e9bd1e",
+        "Server":  "cfa6d03fe5db18aceebfbe63f7e4ef2f0b56c211a68239659afdb0b087d0a099"
+    },
+    {
+        "Path":  "backend/src/modules/dispatched-orders/dto/feedback.dto.ts",
+        "Local":  "91b289fbe2b03a644c54814949dfcb34ff36885ec7be4289bac867a5cf709f14",
+        "Server":  "9a0cf1f00689b817ad73ab89aa0ca9db7d1dafc5ad198a102eafeed4ee488aee"
+    },
+    {
+        "Path":  "backend/src/modules/imports/import-derived-fields.util.ts",
+        "Local":  "e67eb6fe446043fca402bd06a6c26b07d0953a97e32983229b8ce9de57fea486",
+        "Server":  "7fc720006f439f07c31947a15a63f09aa2bd922660da1b4b8e7c1502e76f576c"
+    },
+    {
+        "Path":  "backend/src/modules/imports/import-template.service.ts",
+        "Local":  "a31b55f11b8f2ef3339cba5840687d7f0a1d32911a99c7f27b352fc73d54938e",
+        "Server":  "498a8fda566ce128743c9eb7ef04e1c2b82a123103dd786f5ba005311c709480"
+    },
+    {
+        "Path":  "backend/src/modules/upload/file.controller.ts",
+        "Local":  "b5699a6bcf254fe3b8bc53dd2e7e4a56cbdfda264239d406f327142761bae54f",
+        "Server":  "a01a264c7dd1831cc68ea02670ad69ca84c2ae0d0e0e6743eb3c41578fde3f30"
+    },
+    {
+        "Path":  "frontend/src/pages/Admin/LoginDebug/index.tsx",
+        "Local":  "7af8a5fc0a52fcdf9e8db2cfe6e5cc06f4b96a46f84e145742c539f55e1d0e2e",
+        "Server":  "7acf791389a220304ca07f4ed6a3b1265ef85f86a3a24f2db5fd80e92bfc6afa"
+    },
+    {
+        "Path":  "frontend/src/pages/Admin/Users/index.test.tsx",
+        "Local":  "ce9b2bf3a603b368b03a22507366c56ef55d93fda911fe925954e784037b4271",
+        "Server":  "44547e818ae3dcb311d8c1b8c708ec8e1aa2d686a8f1d3216c9c1e225926011b"
+    },
+    {
+        "Path":  "frontend/src/pages/MyDispatched/Detail/index.test.tsx",
+        "Local":  "c7fd160c104bb6e9d3563083b0963bd9e5d45ed64eb662d5895ffe04d49d92ac",
+        "Server":  "374368c64d5990d6ff756fe1dcf15dc5ec43d0e04aadcf49fb6a9c675d215b77"
+    },
+    {
+        "Path":  "frontend/src/pages/WorkOrders/Detail/index.test.tsx",
+        "Local":  "b4ba1389f8df7e31b0f6bc007ea946a7c6f0279d1a5f219cceb3c62dcde055c8",
+        "Server":  "7e3b18b25cc078df9a388295bd3599aa279693f4e4238fb9691cbc53d44c6b96"
+    },
+    {
+        "Path":  "frontend/src/pages/WorkOrders/Detail/index.tsx",
+        "Local":  "bb9ea2e01c31ad9e50183e6a12962d718cffd33b3e04c1ce5e3de75315db8f53",
+        "Server":  "27e852e7894b654ec8fca273a4016aa43f9097d240c01bb14cf55e5494497d4c"
+    },
+    {
+        "Path":  "frontend/src/pages/WorkOrders/New/excludeFeedbackFields.test.ts",
+        "Local":  "a4ddbaa9ca0c3af2fd8db09b19751aa5cb9ea6fc7e6c1e8ec193965a97207055",
+        "Server":  "79fac9c8d3b34124bac4f369d073d157a9368ae63088c9638f1a8a9b2e396a51"
+    },
+    {
+        "Path":  "frontend/src/services/fields.test.ts",
+        "Local":  "7347bf066b366dfa5b76892a972f6d40c2dc1c8fe2c195e2ff20326dd51a0467",
+        "Server":  "eb3c7a2cd269682cdfd718e03d26fff77dd7d341ec03b0db05df9b70429e07bd"
+    },
+    {
+        "Path":  "frontend/src/services/importTemplates.ts",
+        "Local":  "3a03f1ec043b242fb9b91c067b4834c2d1b5a468a2d6c6a8bf46c4781f7e6a53",
+        "Server":  "e4ae8a2108066c88eaec53cc327bc5c1b4a607dcc0a96c098257498d32946137"
+    },
+    {
+        "Path":  "frontend/src/services/onboardingMockE2E.test.ts",
+        "Local":  "b1db8966e590e239bdb3e117c997848c5d5b658640835b6d0f1d7064c169fc70",
+        "Server":  "ebf1e0092283438e2173ad84c709263ea4218a8420850bbc5fbd1a8a4b1bccdb"
+    },
+    {
+        "Path":  "frontend/src/services/workOrders.ts",
+        "Local":  "4173ea05b191f0608c1f26fd6b6288875a700cb2ca6d1b81e5185e0a66f6fd86",
+        "Server":  "3a7a476c5bff72421ce894889a285fd5ec3f0b995e8a213d62f83f3cfc3f91b5"
+    },
+    {
+        "Path":  "frontend/src/services/workOrdersImportErrorReport.download.test.ts",
+        "Local":  "5fc812189d5bb3cb26dc2658597829a1304af6df53002eb3637602d40c5a9b3a",
+        "Server":  "eeb20a6fc664bd84cd141e774244e104920022d70577382dcc6f92b1f648c413"
+    }
+]

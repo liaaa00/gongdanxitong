@@ -1,0 +1,31 @@
+﻿SOURCE: C:\Users\Asus\AppData\Local\Temp\aionui\general\速创手册-本地报岗(2).docx
+TYPE: .docx
+EXTRACTED_AT: 2026-07-29T17:43:11.5950070+08:00
+====================================================================================================
+[/body/p[@paraId=1FCEFF80]] 
+[/body/p[@paraId=322D5215]] 浙江企服速创操作手册
+[/body/p[@paraId=037049FD]] 本地（杭州/宁波地区）报岗操作流程
+[/body/p[@paraId=06C6DFF8]] 
+[/body/tbl[1]] [Table: 1 rows]
+[/body/p[@paraId=18DAF1FD]] 1.1 点击全国速创系统程序，在系统登录界面，输入集约报岗录入账号及密码，点击登陆。
+[/body/p[@paraId=0633A7F2]] 
+[/body/tbl[2]] [Table: 1 rows]
+[/body/p[@paraId=565D9B31]] 2.1操作路径：全国速创登录->客户服务-通知单管理-入职通知单管理->点击左下角新增按钮->弹出入职通知单明细。
+[/body/p[@paraId=76612D3B]] 2.2参考图片：进入-入职通知单页面后，界面如下：红色框内必填，蓝色框有则填，其他根据信息完整性要求尽可能完整填写（可不填）。
+[/body/p[@paraId=5C8C4F69]] 
+[/body/p[@paraId=2F66878B]] 2.3填写要求：
+[/body/tbl[3]] [Table: 22 rows]
+[/body/p[@paraId=2B182449]] 
+[/body/p[@paraId=7803CE81]] 2.4保存：点击入职通知单保存按钮即完成入职通知单信息录入。
+[/body/p[@paraId=3BA09646]] 
+[/body/p[@paraId=4EDED0FD]] 
+[/body/tbl[4]] [Table: 1 rows]
+[/body/p[@paraId=3F76D2BB]] 3.1操作路径：全国速创登录->客户服务-通知单管理-入职通知单管理->依图片步骤操作->点击报岗按钮->弹出报岗信息框。
+[/body/p[@paraId=7C7F6E8D]] 通知单状态需为「受理」。
+[/body/p[@paraId=5DDB8A93]] 
+[/body/p[@paraId=5B81EC77]] 3.2参考图片：报岗信息界面如下：红色框内必填。
+[/body/p[@paraId=47A2EC92]] 
+[/body/p[@paraId=61E93243]] 3.3填写要求：
+[/body/tbl[5]] [Table: 8 rows]
+[/body/p[@paraId=2061EEA2]] 3.4保存：点击报岗信息保存按钮即完成本地报岗信息录入。
+[/body/p[@paraId=1ABB9F2F]]

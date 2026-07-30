@@ -16,7 +16,9 @@ const moduleHandlerSeeds: Array<{
   // 标准证明：毛雅妮主办，江璐备份；负责人仍可在后台调整。
   { moduleCode: 'in_service_certificate', username: 'maoyani', weight: 10, isBackup: false },
   { moduleCode: 'in_service_certificate', username: 'jianglu', weight: 1, isBackup: true },
-  { moduleCode: 'resignation_cert', username: 'maoyani', weight: 10, isBackup: false },
+
+  // 离职证明：杨纯主办，江璐备份（双人派单）。
+  { moduleCode: 'resignation_cert', username: 'yangchun', weight: 10, isBackup: false },
   { moduleCode: 'resignation_cert', username: 'jianglu', weight: 1, isBackup: true },
 
   // 入离职联系/材料收集：毛雅妮主办，江璐为共享负责人/备份；江璐可看到毛雅妮联系类合集。

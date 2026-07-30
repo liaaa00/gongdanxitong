@@ -1,0 +1,23 @@
+﻿SOURCE: C:\Users\Asus\AppData\Local\Temp\aionui\general\速创手册-外地入职单填报(2).docx
+TYPE: .docx
+EXTRACTED_AT: 2026-07-29T17:43:14.9739634+08:00
+====================================================================================================
+[/body/p[@paraId=1FCEFF80]] 
+[/body/p[@paraId=322D5215]] 浙江企服速创操作手册
+[/body/p[@paraId=037049FD]] 外地（非杭州/宁波地区）入职单填报操作流程
+[/body/p[@paraId=06C6DFF8]] 
+[/body/tbl[1]] [Table: 1 rows]
+[/body/p[@paraId=18DAF1FD]] 1.1 点击全国速创系统程序，在系统登录界面，输入集约报岗录入账号及密码，点击登陆。
+[/body/p[@paraId=0633A7F2]] 
+[/body/tbl[2]] [Table: 1 rows]
+[/body/p[@paraId=565D9B31]] 2.1操作路径：全国速创登录->客户服务-通知单管理-入职通知单管理->点击左下角新增按钮->弹出入职通知单明细。
+[/body/p[@paraId=76612D3B]] 2.2参考图片：进入-入职通知单页面后，界面如下：红色框内必填，蓝色框有则填，其他根据信息完整性要求尽可能完整填写（可不填）。
+[/body/p[@paraId=5C8C4F69]] 
+[/body/p[@paraId=2F66878B]] 2.3填写要求：
+[/body/tbl[3]] [Table: 10 rows]
+[/body/p[@paraId=740CD5CE]] 
+[/body/p[@paraId=738F3F1E]] 2.4保存：点击入职通知单保存按钮。
+[/body/p[@paraId=40DC777F]] 2.5上传平台：点击入职通知单上传平台按钮即完成入职通知单信息操作，具体步骤如下图。
+[/body/p[@paraId=6C30E3D8]] 
+[/body/p[@paraId=388CDA0A]] 
+[/body/p[@paraId=1ABB9F2F]]

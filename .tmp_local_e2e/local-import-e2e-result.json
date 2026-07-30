@@ -1,0 +1,79 @@
+{
+  "employeeName": "本地全流程厦门_1785373073275",
+  "idCardNo": "330203199001012757",
+  "mobile": "13973073275",
+  "email": "local.e2e.1785373073275@example.com",
+  "inputPath": "D:/ai/speceappdate/工单系统/.tmp_local_e2e/onboarding-local-e2e-input.xlsx",
+  "preview": {
+    "rowCount": 1,
+    "mappingMode": "fallback:fuzzy local:63 + llm:0",
+    "unmatched": [],
+    "missingRequired": []
+  },
+  "importJob": {
+    "id": "3859447c-e1a3-4551-bcf3-01333d298e26",
+    "status": "completed",
+    "successRows": 1,
+    "failRows": 0
+  },
+  "order": {
+    "id": "0bb150be-9ea0-4be9-af1d-cb7667747803",
+    "orderNo": "ON20260730027",
+    "status": "processing",
+    "moduleCodes": [
+      "contract",
+      "data_entry",
+      "onboarding_contact",
+      "social_insurance"
+    ]
+  },
+  "derived": {
+    "gender": "男",
+    "birthDate": "1990-01-01",
+    "age": 36
+  },
+  "education": {
+    "school": "厦门大学",
+    "major": "人力资源管理",
+    "graduationDate": "2012-06-30"
+  },
+  "childContacts": [
+    {
+      "id": "efa3e9bc-d421-4244-9b2c-6af1f948adf3",
+      "moduleCode": "data_entry",
+      "mobile": "13973073275",
+      "email": "local.e2e.1785373073275@example.com"
+    },
+    {
+      "id": "ed3a420f-1b4c-4bbd-82e5-d8a8d8ad953f",
+      "moduleCode": "onboarding_contact",
+      "mobile": "13973073275",
+      "email": "local.e2e.1785373073275@example.com"
+    },
+    {
+      "id": "792177e0-8910-43b8-977f-5a813e454ec7",
+      "moduleCode": "contract",
+      "mobile": "13973073275"
+    },
+    {
+      "id": "3f3088e4-fec0-4e60-8d4c-ec5bb20928ea",
+      "moduleCode": "social_insurance",
+      "mobile": "13973073275",
+      "email": "local.e2e.1785373073275@example.com"
+    }
+  ],
+  "duplicateJob": {
+    "id": "7e544e04-f4c2-4df3-a116-d068f8cb2b13",
+    "status": "failed",
+    "failRows": 1,
+    "errorMessage": "DUPLICATE_ID_CARD_IN_MONTH",
+    "validationErrors": [
+      {
+        "row": 1,
+        "message": "DUPLICATE_ID_CARD_IN_MONTH",
+        "code": "DUPLICATE_ID_CARD_IN_MONTH",
+        "existedOrderNo": "ON20260730027"
+      }
+    ]
+  }
+}
