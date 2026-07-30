@@ -11,6 +11,7 @@ import { RolesGuard } from './common/guards/roles.guard';
 import {
   ActionConfig,
   Branch,
+  CertificateType,
   Customer,
   CustomerAssignee,
   Department,
@@ -92,6 +93,7 @@ import { OperationLogCleanupService } from './modules/operation-logs/operation-l
         entities: [
           ActionConfig,
           Branch,
+          CertificateType,
           Customer,
           CustomerAssignee,
           Department,

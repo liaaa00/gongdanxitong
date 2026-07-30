@@ -1,5 +1,21 @@
 # AI 修改记录
 
+## 2026-07-30 · 修复入职联系导出模板"移动电话"字段表头错误
+
+- 背景：后道反馈按固定模板导出入职联系工单时，Excel表头显示"联系电话"，与系统字段定义"移动电话"不一致，且字段定义中 `mobile` 字段名称就是"移动电话"。
+- 根因：`backend/src/database/seeds/seed-export-templates.ts` 第34行入职联系导出模板配置中，`mobile` 字段的表头错误写成了"联系电话"，应为"移动电话"。
+- 改了什么：
+  1. 修改 `seed-export-templates.ts` 第34行：`['mobile', '联系电话']` → `['mobile', '移动电话']`
+  2. 修复 `backend/src/entities/certificate-type.entity.ts` TypeScript类型错误：所有属性添加 `!` 断言，nullable字段改为 `| null` 类型
+  3. 修复 `backend/src/modules/admin/certificate-types/dto/create-certificate-type.dto.ts`：`name` 属性添加 `!` 断言
+  4. **关键修复**：`backend/src/app.module.ts` 的 TypeORM entities 数组中添加 `CertificateType` 实体注册（之前缺失导致种子数据执行失败"No metadata for CertificateType was found"）
+- 为什么这样改：
+  1. 表头必须与字段定义一致，`mobile` 在 `seed-fields.ts` 第104行定义为"移动电话"
+  2. TypeScript strict模式要求属性初始化或添加 `!` 断言，nullable字段需明确 `| null` 类型
+  3. **新增实体必须在 app.module.ts 注册才能被 TypeORM 识别**，否则种子数据和CRUD操作都会失败
+- 是否覆盖旧规则：否。只修正字段表头错误，不影响导出逻辑、字段权限或其他模板。
+- 验证：系统启动时自动执行 `npm run seed` 更新导出模板，导出入职联系工单时 Excel 表头应显示"移动电话"。
+
 ## 2026-07-28 · 合同期限条件必填修复已同步生产服务器（192.168.1.101）
 
 - 背景：上次修复合同期限条件必填逻辑只在本地生效，生产环境数据库仍保留旧定义（固定必填），导致用户导入时仍然报错。

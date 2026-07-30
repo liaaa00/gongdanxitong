@@ -3,6 +3,7 @@ import { DataSource } from 'typeorm';
 import {
   ActionConfig,
   Branch,
+  CertificateType,
   Customer,
   CustomerAssignee,
   Department,
@@ -52,6 +53,7 @@ const AppDataSource = new DataSource({
   entities: [
     ActionConfig,
     Branch,
+    CertificateType,
     Customer,
     CustomerAssignee,
     Department,

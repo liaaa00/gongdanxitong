@@ -46,6 +46,57 @@ const certificateTypeSeeds: Array<{
 ];
 
 export async function seedCertificateTypes(dataSource: DataSource): Promise<void> {
+  // 检查表是否存在，不存在则创建
+  const queryRunner = dataSource.createQueryRunner();
+  await queryRunner.connect();
+
+  try {
+    const tableExists = await queryRunner.hasTable('certificate_types');
+
+    if (!tableExists) {
+      await queryRunner.query(`
+        CREATE TABLE certificate_types (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          name VARCHAR(100) NOT NULL UNIQUE,
+          description TEXT,
+          template_url VARCHAR(500),
+          is_active BOOLEAN NOT NULL DEFAULT true,
+          created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+      `);
+      console.log('✓ 表 certificate_types 已创建');
+    } else {
+      // 表存在，检查列是否正确
+      const hasTemplateUrl = await queryRunner.query(`
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'certificate_types'
+          AND column_name = 'template_url'
+      `);
+
+      if (!hasTemplateUrl || hasTemplateUrl.length === 0) {
+        // 列不存在，删除表重建
+        await queryRunner.query(`DROP TABLE IF EXISTS certificate_types CASCADE`);
+        await queryRunner.query(`
+          CREATE TABLE certificate_types (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            name VARCHAR(100) NOT NULL UNIQUE,
+            description TEXT,
+            template_url VARCHAR(500),
+            is_active BOOLEAN NOT NULL DEFAULT true,
+            created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+          )
+        `);
+        console.log('✓ 表 certificate_types 已重建（修复列名）');
+      }
+    }
+  } finally {
+    await queryRunner.release();
+  }
+
   const certificateTypeRepo = dataSource.getRepository(CertificateType);
 
   for (const seed of certificateTypeSeeds) {

@@ -3,7 +3,7 @@ import { IsString, IsOptional, IsBoolean, MaxLength } from 'class-validator';
 export class CreateCertificateTypeDto {
   @IsString()
   @MaxLength(100)
-  name: string;
+  name!: string;
 
   @IsOptional()
   @IsString()

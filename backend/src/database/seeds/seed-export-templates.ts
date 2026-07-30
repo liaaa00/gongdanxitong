@@ -31,7 +31,7 @@ interface TemplateSeed {
 // ── 3A. 入职联系导出（onboarding_contact，12 列，单行表头）─────────────────
 const onboardingContactColumns: Array<[string, string]> = [
   ['employee_name', '姓名'],
-  ['mobile', '联系电话'],
+  ['mobile', '移动电话'],
   ['id_card_no', '证件号码'],
   ['education', '学历'],
   ['graduation_school', '毕业院校'],
