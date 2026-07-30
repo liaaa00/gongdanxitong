@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { DispatchRule, DispatchStrategy, ModuleHandler, OrderType, WorkOrderModuleConfig } from 'src/entities';
+import { DataSource, In, Repository } from 'typeorm';
+import { canHandleModule, getRequiredModuleHandlerRoles } from 'src/common/auth/role-permissions';
+import { DispatchedOrder, DispatchedOrderStatus, DispatchRule, DispatchStrategy, ModuleHandler, OrderType, User, WorkOrderModuleConfig } from 'src/entities';
 import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 import { toPageResult } from 'src/common/types/pagination.types';
 import { AstValidator } from 'src/modules/dispatch/ast.validator';
@@ -33,15 +34,28 @@ interface SaveDispatchRuleInput {
 export interface DispatchConfigPerson {
   userId: string | null;
   displayName: string | null;
+  isActive: boolean;
+  roleCodes: string[];
+  openOrderCount: number;
 }
 
 export interface DispatchConfigResponse {
   rows: Array<Record<string, unknown>>;
 }
 
+export interface SaveModuleDispatchConfigInput {
+  handlerIds: string[];
+  dispatchStrategy: DispatchStrategy;
+  slaHours?: number | null;
+  slaReminderBeforeHours?: number | null;
+  isActive: boolean;
+  changeReason?: string;
+}
+
 @Injectable()
 export class DispatchRulesService {
   constructor(
+    private readonly dataSource: DataSource,
     @InjectRepository(DispatchRule)
     private readonly repository: Repository<DispatchRule>,
     @InjectRepository(ModuleHandler)
@@ -84,11 +98,26 @@ export class DispatchRulesService {
     const [handlers, moduleConfigs] = await Promise.all([
       this.moduleHandlerRepository.find({
         where: { isActive: true, isBackup: false },
-        relations: { handler: true },
+        relations: { handler: { userRoles: { role: true } } },
         order: { moduleCode: 'ASC', weight: 'DESC', id: 'ASC' },
       }),
       this.moduleConfigRepository.find({ order: { displayOrder: 'ASC', moduleCode: 'ASC' } }),
     ]);
+
+    const handlerIds = Array.from(new Set(handlers.map((handler) => handler.handlerId)));
+    const openRows = handlerIds.length > 0
+      ? await this.dataSource.getRepository(DispatchedOrder)
+          .createQueryBuilder('order')
+          .select('order.handler_id', 'handlerId')
+          .addSelect('COUNT(order.id)', 'openCount')
+          .where('order.handler_id IN (:...handlerIds)', { handlerIds })
+          .andWhere('order.status IN (:...statuses)', {
+            statuses: [DispatchedOrderStatus.PENDING, DispatchedOrderStatus.PROCESSING],
+          })
+          .groupBy('order.handler_id')
+          .getRawMany<{ handlerId: string; openCount: string }>()
+      : [];
+    const openCountByHandler = new Map(openRows.map((row) => [row.handlerId, Number(row.openCount)]));
 
     const handlersByModule = new Map<string, ModuleHandler[]>();
     for (const handler of handlers) {
@@ -97,8 +126,12 @@ export class DispatchRulesService {
       handlersByModule.set(handler.moduleCode, group);
     }
 
+    const dispatchableModuleConfigs = moduleConfigs.filter((item) =>
+      item.moduleType === 'sub_module'
+      || Boolean(item.parentModuleCode)
+      || handlersByModule.has(item.moduleCode));
     const moduleCodes = Array.from(new Set([
-      ...moduleConfigs.map((item) => item.moduleCode),
+      ...dispatchableModuleConfigs.map((item) => item.moduleCode),
       ...handlersByModule.keys(),
     ])).filter(Boolean);
 
@@ -108,7 +141,7 @@ export class DispatchRulesService {
       const orderedHandlers = [...(handlersByModule.get(moduleCode) ?? [])]
         .sort((left, right) => right.weight - left.weight || left.id.localeCompare(right.id));
       const people = orderedHandlers
-        .map((handler) => this.toDispatchConfigPerson(handler))
+        .map((handler) => this.toDispatchConfigPerson(handler, openCountByHandler))
         .filter((person): person is DispatchConfigPerson => Boolean(person));
       const handlerIds = orderedHandlers.map((handler) => handler.handlerId);
 
@@ -142,6 +175,81 @@ export class DispatchRulesService {
     });
 
     return { rows };
+  }
+
+  async saveModuleDispatchConfig(
+    moduleCode: string,
+    input: SaveModuleDispatchConfigInput,
+  ): Promise<Record<string, unknown>> {
+    const handlerIds = Array.from(new Set(input.handlerIds));
+    if (handlerIds.length === 0) {
+      throw new BadRequestException('请至少选择一名共同负责人');
+    }
+    if (handlerIds.length !== input.handlerIds.length) {
+      throw new BadRequestException('共同负责人不能重复');
+    }
+
+    return this.dataSource.transaction(async (manager) => {
+      const moduleConfig = await manager.findOne(WorkOrderModuleConfig, {
+        where: { moduleCode },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!moduleConfig) {
+        throw new NotFoundException(`模块 ${moduleCode} 不存在`);
+      }
+
+      const users = await manager.find(User, {
+        where: { id: In(handlerIds), isActive: true },
+        relations: { userRoles: { role: true } },
+      });
+      if (users.length !== handlerIds.length) {
+        throw new BadRequestException('共同负责人中包含不存在或已停用的账号');
+      }
+      for (const user of users) {
+        const roles = user.userRoles
+          .filter((binding) => binding.role?.isActive)
+          .map((binding) => binding.role.code);
+        if (!canHandleModule(moduleCode, roles)) {
+          const required = getRequiredModuleHandlerRoles(moduleCode);
+          throw new BadRequestException(`${user.realName} 缺少模块 ${moduleCode} 所需角色：${required.join('、')}`);
+        }
+      }
+
+      const existing = await manager.find(ModuleHandler, { where: { moduleCode } });
+      const selected = new Set(handlerIds);
+      for (const row of existing) {
+        if (!selected.has(row.handlerId)) {
+          row.isActive = false;
+        }
+      }
+
+      for (let index = 0; index < handlerIds.length; index += 1) {
+        const handlerId = handlerIds[index];
+        const row = existing.find((item) => item.handlerId === handlerId)
+          ?? manager.create(ModuleHandler, { moduleCode, handlerId });
+        row.weight = handlerIds.length - index;
+        row.isBackup = false;
+        row.isActive = true;
+        if (!existing.includes(row)) existing.push(row);
+      }
+      await manager.save(ModuleHandler, existing);
+
+      moduleConfig.dispatchStrategy = input.dispatchStrategy;
+      moduleConfig.slaHours = input.slaHours ?? null;
+      moduleConfig.slaReminderBeforeHours = input.slaReminderBeforeHours ?? null;
+      moduleConfig.isActive = input.isActive;
+      await manager.save(WorkOrderModuleConfig, moduleConfig);
+
+      return {
+        moduleCode,
+        handlerIds,
+        dispatchStrategy: moduleConfig.dispatchStrategy,
+        slaHours: moduleConfig.slaHours,
+        slaReminderBeforeHours: moduleConfig.slaReminderBeforeHours,
+        isActive: moduleConfig.isActive,
+        changeReason: input.changeReason?.trim() || null,
+      };
+    });
   }
 
   async getById(id: string): Promise<DispatchRule> {
@@ -214,19 +322,32 @@ export class DispatchRulesService {
     return this.dispatchEngine.evaluate(input);
   }
 
-  private toDispatchConfigPerson(handler?: ModuleHandler): DispatchConfigPerson | null {
+  private toDispatchConfigPerson(
+    handler: ModuleHandler | undefined,
+    openCountByHandler: ReadonlyMap<string, number>,
+  ): DispatchConfigPerson | null {
     if (!handler) return null;
-    return this.toDispatchConfigPersonFromUser(handler.handlerId, handler.handler);
+    return this.toDispatchConfigPersonFromUser(
+      handler.handlerId,
+      handler.handler,
+      openCountByHandler.get(handler.handlerId) ?? 0,
+    );
   }
 
   private toDispatchConfigPersonFromUser(
-    userId?: string | null,
-    user?: { realName?: string | null; username?: string | null } | null,
+    userId: string | null | undefined,
+    user: User | null | undefined,
+    openOrderCount: number,
   ): DispatchConfigPerson | null {
     if (!userId) return null;
     return {
       userId,
       displayName: user?.realName ?? user?.username ?? userId,
+      isActive: user?.isActive ?? false,
+      roleCodes: Array.from(new Set((user?.userRoles ?? [])
+        .filter((binding) => binding.role?.isActive)
+        .map((binding) => binding.role.code))),
+      openOrderCount,
     };
   }
 }

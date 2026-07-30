@@ -1,12 +1,15 @@
 import { act, render, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import MyDispatched from './index';
+import { KEEP_ALIVE_ROUTE_ACTIVATED_EVENT } from '@/utils/listPageState';
 
 const mocks = vi.hoisted(() => ({
   latestProTableProps: undefined as any,
   getDispatchedOrders: vi.fn(),
   batchAcceptDispatchedOrders: vi.fn(),
+  batchApproveModifyDispatchedOrders: vi.fn(),
   navigate: vi.fn(),
+  reload: vi.fn(),
   currentRoles: [] as string[],
 }));
 
@@ -14,6 +17,7 @@ vi.mock('@ant-design/pro-components', () => ({
   PageContainer: ({ children }: { children: React.ReactNode }) => children,
   ProTable: (props: any) => {
     mocks.latestProTableProps = props;
+    if (props.actionRef) props.actionRef.current = { reload: mocks.reload };
     return null;
   },
 }));
@@ -42,6 +46,7 @@ vi.mock('@/services/dispatchedOrders', () => ({
   getDispatchedOrdersSafe: (...args: unknown[]) => mocks.getDispatchedOrders(...args),
   acceptDispatchedOrder: vi.fn(),
   batchAcceptDispatchedOrders: (...args: unknown[]) => mocks.batchAcceptDispatchedOrders(...args),
+  batchApproveModifyDispatchedOrders: (...args: unknown[]) => mocks.batchApproveModifyDispatchedOrders(...args),
   batchExportDispatchedOrders: vi.fn(),
   batchCompleteDispatchedOrders: vi.fn(),
   batchReturnDispatchedOrders: vi.fn(),
@@ -61,6 +66,7 @@ describe('MyDispatched processing status filter', () => {
     mocks.currentRoles = [];
     mocks.getDispatchedOrders.mockResolvedValue({ list: [], total: 0 });
     mocks.batchAcceptDispatchedOrders.mockResolvedValue({ success: true, accepted: 1, skipped: [] });
+    mocks.batchApproveModifyDispatchedOrders.mockResolvedValue({ success: true, processed: 1, skipped: [] });
   });
 
   function getColumn(dataIndexOrKey: string) {
@@ -94,6 +100,25 @@ describe('MyDispatched processing status filter', () => {
     })));
     const params = mocks.getDispatchedOrders.mock.calls.at(-1)?.[0] as Record<string, unknown>;
     expect(params.statuses).toBeUndefined();
+  });
+
+  it('reloads only when its cached my-work route is reactivated', async () => {
+    render(<MyDispatched mode="pending" />);
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent(KEEP_ALIVE_ROUTE_ACTIVATED_EVENT, {
+        detail: { pathname: '/onboarding/data_entry', search: '' },
+      }));
+    });
+    expect(mocks.reload).not.toHaveBeenCalled();
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent(KEEP_ALIVE_ROUTE_ACTIVATED_EVENT, {
+        detail: { pathname: '/my-work/pending', search: '' },
+      }));
+    });
+
+    await waitFor(() => expect(mocks.reload).toHaveBeenCalledTimes(1));
   });
 
   it('clears status search without reusing stale statuses and keeps default todo statuses', async () => {
@@ -268,6 +293,36 @@ describe('MyDispatched processing status filter', () => {
     batchAcceptButton.props.onClick();
 
     await waitFor(() => expect(mocks.batchAcceptDispatchedOrders).toHaveBeenCalledWith(['d-pending']));
+  });
+
+  it('offers batch approval only for selected modify-pending rows', async () => {
+    render(<MyDispatched mode="pending" />);
+
+    await act(async () => {
+      mocks.latestProTableProps.rowSelection.onChange(['d-modify', 'd-pending'], [
+        { id: 'd-modify', status: 'modify_pending' },
+        { id: 'd-pending', status: 'pending' },
+      ]);
+    });
+
+    const option = mocks.latestProTableProps.tableAlertOptionRender({ onCleanSelected: vi.fn() }) as React.ReactElement;
+    const batchApproveButton = (option.props.children as React.ReactNode[]).find((child) =>
+      String((child as React.ReactElement)?.props?.children).includes('批量通过修改'),
+    ) as React.ReactElement;
+    batchApproveButton.props.onClick();
+
+    await waitFor(() => expect(mocks.batchApproveModifyDispatchedOrders).toHaveBeenCalledWith(['d-modify']));
+  });
+
+  it('shows contact details for every dispatched module when provided', () => {
+    render(<MyDispatched mode="pending" />);
+
+    const resignation = { module_code: 'resignation_contact', extra_data: { mobile: '13800138000', email: 'hr@example.com' } };
+    const contract = { module_code: 'contract', extra_data: { mobile: '13900139000', email: 'contract@example.com' } };
+    expect(getColumn('mobile')?.render?.(null, resignation)).toBe('13800138000');
+    expect(getColumn('email')?.render?.(null, resignation)).toBe('hr@example.com');
+    expect(getColumn('mobile')?.render?.(null, contract)).toBe('13900139000');
+    expect(getColumn('email')?.render?.(null, contract)).toBe('contract@example.com');
   });
 
   it('shows returned work as child-order rows only', async () => {

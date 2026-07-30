@@ -23,6 +23,15 @@ const TeamDispatched = lazy(() => import('@/pages/TeamDispatched'));
 const HistoryWorkOrders = lazy(() => import('@/pages/HistoryWorkOrders'));
 const ExportTemplates = lazy(() => import('@/pages/ExportTemplates'));
 const NotificationsPage = lazy(() => import('@/pages/Notifications'));
+const InServiceOrderList = lazy(() => import('@/pages/InServiceOrders'));
+const InServiceOrderNew = lazy(() => import('@/pages/InServiceOrders/New'));
+const InServiceOrderDetail = lazy(() => import('@/pages/InServiceOrders/Detail'));
+const OutOfProvinceList = lazy(() => import('@/pages/OutOfProvince'));
+const OutOfProvinceImport = lazy(() => import('@/pages/OutOfProvince/Import'));
+const OutOfProvinceForm = lazy(() => import('@/pages/OutOfProvince/Form'));
+const OutOfProvinceOrderList = lazy(() => import('@/pages/OutOfProvinceOrders'));
+const OutOfProvinceOrderNew = lazy(() => import('@/pages/OutOfProvinceOrders/New'));
+const OutOfProvinceOrderDetail = lazy(() => import('@/pages/OutOfProvinceOrders/Detail'));
 
 const RenewalList = lazy(() => import('@/pages/Renewal'));
 const RenewalNew = lazy(() => import('@/pages/Renewal/New'));
@@ -105,7 +114,15 @@ const RoleRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 const AppRoutes: React.FC = () => (
   <ErrorBoundary moduleName="路由层">
     <Routes>
-      <Route path="/login" element={<RouteGuard moduleName="登录页"><LoginPage /></RouteGuard>} />
+      <Route path="/login" element={<RouteGuard moduleName="北仑登录页"><LoginPage /></RouteGuard>} />
+      <Route
+        path="/zhejiang-login"
+        element={(
+          <RouteGuard moduleName="浙江自签登录页">
+            <LoginPage businessScope="out_of_province" />
+          </RouteGuard>
+        )}
+      />
       <Route path="/change-password" element={<RouteGuard moduleName="修改密码"><ChangePasswordPage /></RouteGuard>} />
       <Route path="/403" element={<RouteGuard moduleName="403"><Forbidden /></RouteGuard>} />
       <Route path="/404" element={<RouteGuard moduleName="404"><NotFound /></RouteGuard>} />
@@ -127,6 +144,38 @@ const AppRoutes: React.FC = () => (
         <Route path="work-orders/import" element={<RoleRoute><RouteGuard moduleName="批量导入"><WorkOrdersImport /></RouteGuard></RoleRoute>} />
         <Route path="work-orders/:id" element={<RoleRoute><RouteGuard moduleName="工单详情"><WorkOrdersDetail /></RouteGuard></RoleRoute>} />
 
+        <Route path="out-of-province" element={<RoleRoute><RouteGuard moduleName="省外增减员列表"><OutOfProvinceList /></RouteGuard></RoleRoute>} />
+        <Route path="out-of-province/import" element={<RoleRoute><RouteGuard moduleName="省外增减员导入"><OutOfProvinceImport /></RouteGuard></RoleRoute>} />
+        <Route path="out-of-province/new" element={<RoleRoute><RouteGuard moduleName="省外表单占位"><OutOfProvinceForm /></RouteGuard></RoleRoute>} />
+        <Route
+          path="out-of-province/increase"
+          element={<RoleRoute><RouteGuard moduleName="省外增员"><InServiceOrderList orderKind="out_of_province_increase" businessScope="out_of_province" createPath="/out-of-province/increase/new" /></RouteGuard></RoleRoute>}
+        />
+        <Route
+          path="out-of-province/increase/new"
+          element={<RoleRoute><RouteGuard moduleName="新建省外增员"><InServiceOrderNew orderKind="out_of_province_increase" listPath="/out-of-province/increase" businessScope="out_of_province" /></RouteGuard></RoleRoute>}
+        />
+        <Route
+          path="out-of-province/decrease"
+          element={<RoleRoute><RouteGuard moduleName="省外减员"><InServiceOrderList orderKind="out_of_province_decrease" businessScope="out_of_province" createPath="/out-of-province/decrease/new" /></RouteGuard></RoleRoute>}
+        />
+        <Route
+          path="out-of-province/decrease/new"
+          element={<RoleRoute><RouteGuard moduleName="新建省外减员"><InServiceOrderNew orderKind="out_of_province_decrease" listPath="/out-of-province/decrease" businessScope="out_of_province" /></RouteGuard></RoleRoute>}
+        />
+        <Route
+          path="out-of-province/single-business"
+          element={<RoleRoute><RouteGuard moduleName="省外单项业务"><InServiceOrderList orderKind="single_business" businessScope="out_of_province" createPath="/out-of-province/single-business/new" /></RouteGuard></RoleRoute>}
+        />
+        <Route
+          path="out-of-province/single-business/new"
+          element={<RoleRoute><RouteGuard moduleName="新建省外单项业务"><InServiceOrderNew orderKind="single_business" listPath="/out-of-province/single-business" businessScope="out_of_province" /></RouteGuard></RoleRoute>}
+        />
+
+        <Route path="out-of-province/orders" element={<RoleRoute><RouteGuard moduleName="省外派单列表"><OutOfProvinceOrderList /></RouteGuard></RoleRoute>} />
+        <Route path="out-of-province/orders/new" element={<RoleRoute><RouteGuard moduleName="新建省外派单"><OutOfProvinceOrderNew /></RouteGuard></RoleRoute>} />
+        <Route path="out-of-province/orders/:id" element={<RoleRoute><RouteGuard moduleName="省外派单详情"><OutOfProvinceOrderDetail /></RouteGuard></RoleRoute>} />
+
         <Route path="onboarding/:moduleCode" element={<RoleRoute><RouteGuard moduleName="入职模块"><OnboardingModule /></RouteGuard></RoleRoute>} />
 
         <Route path="my-work/initiated" element={<RoleRoute><RouteGuard moduleName="我发起的"><MyDispatched mode="initiated" /></RouteGuard></RoleRoute>} />
@@ -144,6 +193,18 @@ const AppRoutes: React.FC = () => (
         <Route path="export-templates" element={<RoleRoute><RouteGuard moduleName="导出模板"><ExportTemplates /></RouteGuard></RoleRoute>} />
         <Route path="notifications" element={<RoleRoute><RouteGuard moduleName="消息通知"><NotificationsPage /></RouteGuard></RoleRoute>} />
 
+        <Route path="in-service" element={<RoleRoute><RouteGuard moduleName="单项业务办理"><InServiceOrderList /></RouteGuard></RoleRoute>} />
+        <Route path="in-service/new" element={<RoleRoute><RouteGuard moduleName="新建单项业务"><InServiceOrderNew /></RouteGuard></RoleRoute>} />
+        <Route
+          path="in-service/certificates"
+          element={<RoleRoute><RouteGuard moduleName="证明开具"><InServiceOrderList orderKind="certificate" createPath="/in-service/certificates/new" /></RouteGuard></RoleRoute>}
+        />
+        <Route
+          path="in-service/certificates/new"
+          element={<RoleRoute><RouteGuard moduleName="发起证明开具"><InServiceOrderNew orderKind="certificate" listPath="/in-service/certificates" /></RouteGuard></RoleRoute>}
+        />
+        <Route path="in-service/:id" element={<RoleRoute><RouteGuard moduleName="独立工单详情"><InServiceOrderDetail /></RouteGuard></RoleRoute>} />
+
         {/* 字段权限入口仅管理员可访问；保留旧路径并由 RoleRoute 按 ADMIN 权限拦截。*/}
         <Route path="my-field-permissions" element={<RoleRoute><RouteGuard moduleName="字段权限"><AdminFieldPermissions /></RouteGuard></RoleRoute>} />
 
@@ -155,6 +216,14 @@ const AppRoutes: React.FC = () => (
         <Route path="resignation/new" element={<RoleRoute><RouteGuard moduleName="新建离职"><ResignationNew /></RouteGuard></RoleRoute>} />
         <Route path="resignation/:id" element={<RoleRoute><RouteGuard moduleName="离职详情"><ResignationDetail /></RouteGuard></RoleRoute>} />
         <Route path="resignation/:id/cert" element={<RoleRoute><RouteGuard moduleName="离职材料收集"><ResignationCert /></RouteGuard></RoleRoute>} />
+        <Route
+          path="resignation-certificates"
+          element={<RoleRoute><RouteGuard moduleName="离职证明"><InServiceOrderList orderKind="resignation_certificate" createPath="/resignation-certificates/new" /></RouteGuard></RoleRoute>}
+        />
+        <Route
+          path="resignation-certificates/new"
+          element={<RoleRoute><RouteGuard moduleName="发起离职证明"><InServiceOrderNew orderKind="resignation_certificate" listPath="/resignation-certificates" /></RouteGuard></RoleRoute>}
+        />
 
         <Route path="benefit" element={<RoleRoute><RouteGuard moduleName="待遇申报列表"><BenefitList /></RouteGuard></RoleRoute>} />
         <Route path="benefit/new" element={<RoleRoute><RouteGuard moduleName="新建申报"><BenefitNew /></RouteGuard></RoleRoute>} />

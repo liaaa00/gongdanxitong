@@ -8,6 +8,8 @@ import { seedFieldPermissions } from './seed-field-permissions';
 import { seedFields } from './seed-fields';
 import { seedModuleConfigs } from './seed-module-configs';
 import { seedModuleHandlers } from './seed-module-handlers';
+import { seedInServiceCategories } from './in-service-category.seed';
+import { seedProvinceHandlers } from './province-handler.seed';
 import { seedNotificationTemplates } from './seed-notification-templates';
 import { seedRoles } from './seed-roles';
 import { seedUsers } from './seed-users';
@@ -37,7 +39,9 @@ export class SeedOnBootstrapService implements OnApplicationBootstrap {
     await seedDispatchRules(this.dataSource);
     await seedFieldPermissions(this.dataSource);
     await seedModuleHandlers(this.dataSource);
+    await seedProvinceHandlers(this.dataSource);
     await seedModuleConfigs(this.dataSource);
+    await seedInServiceCategories(this.dataSource);
     await seedExportTemplates(this.dataSource);
     await seedNotificationTemplates(this.dataSource);
 

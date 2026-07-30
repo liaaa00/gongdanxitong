@@ -1,6 +1,7 @@
 import * as request from 'supertest';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { DataSource } from 'typeorm';
 import { DispatchConfigController } from 'src/modules/admin/dispatch-rules/dispatch-config.controller';
 import { DispatchRulesService } from 'src/modules/admin/dispatch-rules/dispatch-rules.service';
 
@@ -33,6 +34,7 @@ describe('DispatchConfigController', () => {
     const moduleRef = await Test.createTestingModule({
       controllers: [DispatchConfigController],
       providers: [
+        { provide: DataSource, useValue: {} },
         {
           provide: DispatchRulesService,
           useValue: { getDispatchConfig },

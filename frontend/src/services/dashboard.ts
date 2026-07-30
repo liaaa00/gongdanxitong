@@ -1,6 +1,6 @@
 import request from './request';
 import { isMockMode, mockDelay } from './mock';
-export type DashboardOrderType = 'onboarding' | 'renewal' | 'resignation' | 'benefit';
+export type DashboardOrderType = 'onboarding' | 'renewal' | 'resignation' | 'benefit' | 'in_service' | 'out_of_province';
 export type DashboardMatrixDimension = 'orderType' | 'node';
 export type DashboardAudience = 'business' | 'backend';
 export type DashboardScopeMode = 'mine' | 'team';
@@ -81,6 +81,8 @@ const ORDER_TYPE_LABELS: Record<DashboardOrderType, string> = {
   renewal: '续签工单',
   resignation: '离职工单',
   benefit: '待遇申报',
+  in_service: '在职管理',
+  out_of_province: '浙江自签',
 };
 
 const PHASE1_ORDER_TYPES: DashboardOrderType[] = ['onboarding', 'resignation'];
@@ -95,7 +97,10 @@ const MODULE_LABELS: Record<string, string> = {
   benefit: '待遇申报',
   benefit_apply: '待遇申报',
   resignation_contact: '离职材料收集',
-  resignation_cert: '离职材料收集',
+  resignation_cert: '离职证明',
+  in_service_certificate: '证明开具',
+  in_service_single_business: '单项业务办理',
+  out_of_province_dispatch: '省外增减员',
   data_entry_resign: '减员报岗录入',
   social_insurance_resign: '社保公积金减员',
 };
@@ -190,6 +195,8 @@ function calculateCompletionRate(completed: unknown, total: unknown, voided: unk
 
 function normalizeOrderType(value: unknown): DashboardOrderType {
   const raw = String(value || '').toLowerCase();
+  if (raw.includes('out_of_province')) return 'out_of_province';
+  if (raw === 'in_service' || raw.includes('in_service_')) return 'in_service';
   if (raw.includes('renewal')) return 'renewal';
   if (raw.includes('resignation') || raw.includes('resign')) return 'resignation';
   if (raw.includes('benefit')) return 'benefit';

@@ -1,6 +1,7 @@
 import { HttpException } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import {
+  BusinessScope,
   DispatchedOrder,
   DispatchedOrderStatus,
   FieldConfig,
@@ -214,6 +215,41 @@ describe('WorkOrderService unit tests', () => {
     expect(operationLogRepository.save).toHaveBeenCalledTimes(1);
     expect(result.id).toBe('wo-1');
     expect(result.extraData.need_company_contract).toBe('是');
+  });
+
+  it('derives province scope on the backend and strips client scope aliases', async () => {
+    const provinceOrder = makeWorkOrder({
+      orderType: OrderType.OUT_OF_PROVINCE_INCREASE,
+      businessScope: BusinessScope.OUT_OF_PROVINCE,
+      extraData: {
+        customer_name: 'Acme',
+        customer_code: 'C001',
+        employee_name: 'Alice',
+        id_card_no: '110101199001011234',
+        province: '福建',
+      },
+      dispatchedOrders: [],
+    });
+    workOrderRepository.save.mockImplementation(async (input) => input as WorkOrder);
+    workOrderRepository.findOne.mockResolvedValue(provinceOrder);
+
+    await service.createDraft({
+      orderType: OrderType.OUT_OF_PROVINCE_INCREASE,
+      extraData: {
+        ...provinceOrder.extraData,
+        businessScope: BusinessScope.BEILUN,
+        business_scope: BusinessScope.BEILUN,
+      },
+    }, makeUser());
+
+    expect(workOrderRepository.create).toHaveBeenCalledWith(expect.objectContaining({
+      orderType: OrderType.OUT_OF_PROVINCE_INCREASE,
+      businessScope: BusinessScope.OUT_OF_PROVINCE,
+      extraData: expect.not.objectContaining({
+        businessScope: expect.anything(),
+        business_scope: expect.anything(),
+      }),
+    }));
   });
 
   it('updates draft extraData and records an operation log', async () => {

@@ -15,6 +15,7 @@ const FIELD_NAMES: Record<string, string> = {
   customer_name: '客户名称', customer_code: '客户代码', outsource_type: '外包类型', position: '岗位',
   employee_name: '姓名', id_card_no: '身份证号码', gender: '性别',
   birth_date: '出生日期', age: '年龄', household_type: '户籍性质', ethnicity: '民族',
+  education: '学历', graduation_school: '毕业院校', major: '专业', graduation_date: '毕业时间',
   mobile: '移动电话', email: '电子邮件', current_address: '现住地址', household_address: '户籍地址', postal_code: '邮编',
   contract_term_type: '合同期限形式', contract_term: '合同期限', contract_start_date: '合同开始日期', contract_end_date: '合同终止日期',
   probation_start_date: '试用期开始日期', probation_months: '试用期(月)', probation_end_date: '试用期结束日期',
@@ -59,6 +60,7 @@ const CONTRACT_FIELDS = [
 const SALARY_FIELDS = ['base_salary', 'other_salary', 'probation_salary', 'salary_form', 'payroll_cycle', 'payroll_date'];
 const BANK_FIELDS = ['bank_name', 'bank_account', 'pay_location'];
 const ADDRESS_FIELDS = ['current_address', 'household_address', 'postal_code', 'work_city'];
+const EDUCATION_FIELDS = ['education', 'graduation_school', 'major', 'graduation_date'];
 
 let _permId = 1000;
 function p(roleId: string, fieldCode: string, perm: string, scenario: string): FieldPermissionItem {
@@ -168,13 +170,13 @@ function buildMockPermissions(): FieldPermissionItem[] {
     'dispatched:contract',
   ));
 
-  const contactVisible = [...BASIC_FIELDS, ...BANK_FIELDS, ...ADDRESS_FIELDS,
+  const contactVisible = [...BASIC_FIELDS, ...BANK_FIELDS, ...ADDRESS_FIELDS, ...EDUCATION_FIELDS,
     'need_onboarding_contact', 'onboarding_feedback', 'special_remark',
     'mobile', 'email', 'id_card_no', 'remark'];
   result.push(...buildDispatchPerms(
     'onboarding_contact', ['15'],
     contactVisible,
-    ['onboarding_feedback', 'bank_name', 'bank_account'],
+    [...EDUCATION_FIELDS, 'onboarding_feedback', 'bank_name', 'bank_account'],
     'dispatched:onboarding_contact',
   ));
 

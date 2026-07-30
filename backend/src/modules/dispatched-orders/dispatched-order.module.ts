@@ -16,6 +16,7 @@ import {
   WorkOrderFieldSyncBatch,
   WorkOrderFieldSyncItem,
 } from 'src/entities';
+import { DetailViewTemplatesModule } from 'src/modules/admin/detail-view-templates/detail-view-templates.module';
 import { ExportTemplatesModule } from 'src/modules/admin/export-templates/export-templates.module';
 import { FieldPermissionsModule } from 'src/modules/field-permissions/field-permissions.module';
 import { FieldSupplementModule } from 'src/modules/field-supplement/field-supplement.module';
@@ -43,6 +44,7 @@ import { SlaNotificationService } from './sla-notification.service';
       WorkOrderFieldSyncBatch,
       WorkOrderFieldSyncItem,
     ]),
+    DetailViewTemplatesModule,
     ExportTemplatesModule,
     FieldPermissionsModule,
     FieldSupplementModule,

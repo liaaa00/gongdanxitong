@@ -1,5 +1,5 @@
 import { DataSource } from 'typeorm';
-import { DispatchRule, DispatchStrategy, OrderType } from 'src/entities';
+import { DispatchModuleCode, DispatchRule, DispatchStrategy, OrderType } from 'src/entities';
 
 const yesCondition = (field: string): Record<string, unknown> => ({
   op: 'AND',
@@ -83,6 +83,22 @@ const dispatchRuleSeeds: Array<{
     orderType: OrderType.BENEFIT,
     triggerConditions: null,
     targetModule: 'benefit_apply',
+    strategy: DispatchStrategy.FIXED,
+    priority: 10,
+  },
+  {
+    name: 'out-of-province-increase-default',
+    orderType: OrderType.OUT_OF_PROVINCE_INCREASE,
+    triggerConditions: null,
+    targetModule: DispatchModuleCode.OUT_OF_PROVINCE_DISPATCH,
+    strategy: DispatchStrategy.FIXED,
+    priority: 10,
+  },
+  {
+    name: 'out-of-province-decrease-default',
+    orderType: OrderType.OUT_OF_PROVINCE_DECREASE,
+    triggerConditions: null,
+    targetModule: DispatchModuleCode.OUT_OF_PROVINCE_DISPATCH,
     strategy: DispatchStrategy.FIXED,
     priority: 10,
   },

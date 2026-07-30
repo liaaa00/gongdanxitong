@@ -33,12 +33,10 @@ const REMARK_ALIASES = ['办理备注', '完成备注', '备注', 'remark'];
 const BANK_NAME_ALIASES = ['开户银行信息', '开户银行', '开户行', '开户行名称', '银行名称', 'bank_name', 'bankName'];
 const BANK_ACCOUNT_ALIASES = ['银行借记卡帐号', '银行借记卡账号', '银行账号', '银行卡号', '银行卡账号', '工资卡号', 'bank_account', 'bankAccount'];
 const HANDLING_FEEDBACK_ALIASES: Record<string, string[]> = {
-  social_security_handling_result: ['social_security_handling_result', '社保办理结果', '社保结果', '社保状态'],
-  social_security_handling_remark: ['social_security_handling_remark', '社保办理备注', '社保备注'],
-  medical_insurance_handling_result: ['medical_insurance_handling_result', '医保办理结果', '医保结果', '医保状态'],
-  medical_insurance_handling_remark: ['medical_insurance_handling_remark', '医保办理备注', '医保备注'],
-  housing_fund_handling_result: ['housing_fund_handling_result', '公积金办理结果', '公积金结果', '公积金状态'],
-  housing_fund_handling_remark: ['housing_fund_handling_remark', '公积金办理备注', '公积金备注'],
+  social_insurance_result: ['social_insurance_result', 'social_security_result', '社保是否办结', '社保办理结果', '社保结果', '社保状态'],
+  social_insurance_remark: ['social_insurance_remark', 'social_security_remark', '社保公积金办理备注', '社保办理备注', '社保备注', '医保办理备注', '医保备注', '公积金办理备注', '公积金备注'],
+  medical_insurance_result: ['medical_insurance_result', '医保是否办结', '医保办理结果', '医保结果', '医保状态'],
+  housing_fund_result: ['housing_fund_result', '公积金是否办结', '公积金办理结果', '公积金结果', '公积金状态'],
 };
 
 function normalizeHeader(value: string): string {
@@ -116,9 +114,9 @@ function hasImportIdentity(row: DispatchedBatchImportRow): boolean {
 function previewMessage(row: DispatchedBatchImportRow, mode: DispatchedBatchImportMode, action: BatchStatusAction, socialFeedback = false): { ok: boolean; text: string } {
   if (!hasImportIdentity(row)) return { ok: false, text: '缺少工单号/证件号码，无法匹配' };
   if (mode === 'status' && socialFeedback) {
-    const missing = ['social_security_handling_result', 'medical_insurance_handling_result', 'housing_fund_handling_result']
+    const missing = ['social_insurance_result', 'medical_insurance_result', 'housing_fund_result']
       .filter((fieldCode) => !String(row.fields?.[fieldCode] ?? '').trim());
-    if (missing.length > 0) return { ok: false, text: '缺少社保/医保/公积金办理结果' };
+    if (missing.length > 0) return { ok: false, text: '缺少社保/医保/公积金是否办结' };
   }
   if (mode === 'status' && !socialFeedback && action === 'return' && !(row.returnReason || '').trim()) return { ok: false, text: '退回动作缺少退回原因，将使用默认原因' };
   if (mode === 'fields' && Object.keys(row.fields || {}).length === 0) return { ok: false, text: '缺少可修改银行卡字段' };
@@ -245,7 +243,7 @@ const DispatchedBatchImportModal: React.FC<Props> = ({ open, mode, moduleOptions
   };
 
   const previewRows = rows.map((row, index) => ({ ...row, previewRowNumber: index + 2, preview: previewMessage(row, mode, statusAction, isSocialFeedbackModule) }));
-  const selectedActionLabel = isSocialFeedbackModule ? '按表内办理结果反馈' : (statusAction === 'complete' ? '批办理完成' : '批办理退回');
+  const selectedActionLabel = isSocialFeedbackModule ? '按表内是否办结反馈' : (statusAction === 'complete' ? '批办理完成' : '批办理退回');
 
   return (
     <Modal
@@ -278,8 +276,8 @@ const DispatchedBatchImportModal: React.FC<Props> = ({ open, mode, moduleOptions
             <Alert
               type="info"
               showIcon
-              message="社保公积金导入将按 Excel 中的社保/医保/公积金办理结果反馈"
-              description="三项办理结果均为“已完成”时子工单自动完成；任一项为“未完成”时保持处理中，备注可不填。"
+              message="社保公积金导入将按 Excel 中的社保/医保/公积金是否办结反馈"
+              description="三项是否办结均填“是”时子工单自动完成；任一项为“否”时保持处理中，备注可不填。"
             />
           ) : (
             <Space direction="vertical" style={{ width: '100%' }} size="small">
@@ -334,7 +332,7 @@ const DispatchedBatchImportModal: React.FC<Props> = ({ open, mode, moduleOptions
                 { title: mode === 'status' ? '导入动作' : '银行卡字段', width: 190, render: (_, row) => {
                   if (mode !== 'status') return Object.keys(row.fields || {}).join('、') || <Tag color="orange">未填</Tag>;
                   if (isSocialFeedbackModule) {
-                    const summary = ['social_security_handling_result', 'medical_insurance_handling_result', 'housing_fund_handling_result']
+                    const summary = ['social_insurance_result', 'medical_insurance_result', 'housing_fund_result']
                       .map((fieldCode) => String(row.fields?.[fieldCode] ?? '').trim() || '未填')
                       .join('/');
                     return <Tag color="blue">{summary}</Tag>;

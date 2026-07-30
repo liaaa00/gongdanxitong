@@ -10,7 +10,7 @@ const updateWorkOrderMock = vi.fn();
 const resubmitWorkOrderMock = vi.fn();
 const voidWorkOrderMock = vi.fn();
 const getWorkOrderMock = vi.fn();
-const getImportTemplateConfigMock = vi.fn();
+const getCreateWorkOrderFieldsMock = vi.fn();
 const getFieldsMock = vi.fn();
 
 vi.mock('@/components/DynamicForm', () => ({
@@ -26,7 +26,7 @@ vi.mock('@/hooks/useFieldPermissions', () => ({
 }));
 
 vi.mock('@/services/importTemplates', () => ({
-  getImportTemplateConfig: (...args: unknown[]) => getImportTemplateConfigMock(...args),
+  getCreateWorkOrderFields: (...args: unknown[]) => getCreateWorkOrderFieldsMock(...args),
 }));
 
 vi.mock('@/services/fields', () => ({
@@ -77,7 +77,7 @@ describe('WorkOrdersDetail main order readonly mode', () => {
       modal: { confirm: vi.fn() } as any,
     });
     getWorkOrderMock.mockResolvedValue(baseOrder);
-    getImportTemplateConfigMock.mockResolvedValue([
+    getCreateWorkOrderFieldsMock.mockResolvedValue([
       { field_code: 'employee_name', field_name: '员工姓名', field_type: 'text', is_required: true, default_required: true, display_order: 1, is_active: true },
       { field_code: 'custom_import_only', field_name: '导入模板自定义字段', field_type: 'text', is_required: false, default_required: false, display_order: 2, is_active: true },
     ]);
@@ -95,7 +95,7 @@ describe('WorkOrdersDetail main order readonly mode', () => {
     renderDetail();
 
     expect(await screen.findByText('基本信息')).toBeInTheDocument();
-    expect(getImportTemplateConfigMock).toHaveBeenCalledWith('onboarding');
+    expect(getCreateWorkOrderFieldsMock).toHaveBeenCalledWith('onboarding');
     expect(getFieldsMock).toHaveBeenCalledWith('onboarding');
     expect(screen.getByText('员工姓名')).toBeInTheDocument();
     expect(screen.getByText('模板字段')).toBeInTheDocument();

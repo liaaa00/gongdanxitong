@@ -2,13 +2,15 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
 import { DataSource, In, Repository } from 'typeorm';
+import { canHandleModule } from 'src/common/auth/role-permissions';
 import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 import { toPageResult } from 'src/common/types/pagination.types';
-import { Department, DispatchedOrder, Role, User, UserRole } from 'src/entities';
+import { BusinessScope, Department, DispatchedOrder, DispatchedOrderStatus, ModuleHandler, Role, User, UserRole } from 'src/entities';
 
 interface UserRoleBindingInput {
   roleId?: string;
@@ -42,14 +44,18 @@ interface CreateUserInput {
   group_name?: string;
   departmentId?: string;
   department_id?: string;
+  businessScope?: BusinessScope;
+  business_scope?: BusinessScope;
   roles: UserRoleBindingInput[];
 }
 
 interface UpdateUserInput {
+  username?: string;
   realName?: string;
   real_name?: string;
   phone?: string;
   email?: string;
+  password?: string;
   avatarUrl?: string;
   avatar_url?: string;
   isActive?: boolean;
@@ -58,6 +64,8 @@ interface UpdateUserInput {
   group_name?: string;
   departmentId?: string;
   department_id?: string;
+  businessScope?: BusinessScope;
+  business_scope?: BusinessScope;
   roles?: UserRoleBindingInput[];
 }
 
@@ -116,6 +124,8 @@ export interface UserView {
   departmentId: string | null;
   department_id: string | null;
   position: string;
+  businessScope: BusinessScope;
+  business_scope: BusinessScope;
 }
 
 @Injectable()
@@ -132,6 +142,9 @@ export class UsersService {
     private readonly userRoleRepository: Repository<UserRole>,
     @InjectRepository(DispatchedOrder)
     private readonly dispatchedOrderRepository: Repository<DispatchedOrder>,
+    @Optional()
+    @InjectRepository(ModuleHandler)
+    private readonly moduleHandlerRepository?: Repository<ModuleHandler>,
   ) {}
 
   async list(
@@ -353,6 +366,7 @@ export class UsersService {
           email: input.email ?? null,
           avatarUrl: input.avatarUrl ?? input.avatar_url ?? null,
           isActive: input.isActive ?? input.is_active ?? true,
+          businessScope: input.businessScope ?? input.business_scope ?? BusinessScope.BEILUN,
           passwordHash: await bcrypt.hash(input.password, 10),
         }),
       );
@@ -378,7 +392,20 @@ export class UsersService {
   async update(id: string, input: UpdateUserInput): Promise<UserView> {
     const current = await this.loadEntity(id);
 
-    if (typeof (input.isActive ?? input.is_active) === 'boolean' && (input.isActive ?? input.is_active) === false) {
+    const nextUsername = input.username?.trim();
+    const usernameChanged = Boolean(nextUsername && nextUsername !== current.username);
+    if (usernameChanged) {
+      const usernameExists = await this.userRepository.findOne({
+        where: { username: nextUsername },
+      });
+      if (usernameExists && usernameExists.id !== id) {
+        throw new BadRequestException('用户名已存在');
+      }
+    }
+
+    const nextIsActive = input.isActive ?? input.is_active;
+    const isDeactivating = current.isActive && nextIsActive === false;
+    if (isDeactivating) {
       await this.assertNoProcessingDispatchedOrders(id);
     }
 
@@ -392,18 +419,32 @@ export class UsersService {
     }
 
     Object.assign(current, {
+      username: nextUsername || current.username,
       realName: input.realName ?? input.real_name ?? current.realName,
       phone: input.phone ?? current.phone,
       email: input.email ?? current.email,
       avatarUrl: input.avatarUrl ?? input.avatar_url ?? current.avatarUrl,
       isActive: input.isActive ?? input.is_active ?? current.isActive,
+      businessScope: input.businessScope ?? input.business_scope ?? current.businessScope ?? BusinessScope.BEILUN,
     });
+
+    if (usernameChanged || isDeactivating) {
+      current.authVersion = (current.authVersion ?? 0) + 1;
+    }
+
+    if (input.password?.trim()) {
+      current.passwordHash = await bcrypt.hash(input.password.trim(), 10);
+      current.mustChangePassword = true;
+      current.passwordUpdatedAt = null;
+      current.authVersion = (current.authVersion ?? 0) + 1;
+    }
 
     await this.userRepository.save(current);
 
     if (input.roles) {
       const roles = await this.normalizeRoleBindings(input.roles, input);
       this.validateRoleBindings(roles);
+      await this.assertHandlerRoleCompatibility(id, roles.map((role) => role.roleId));
 
       await this.dataSource.transaction(async (manager) => {
         await manager.delete(UserRole, { userId: id });
@@ -430,6 +471,7 @@ export class UsersService {
     await this.assertNoProcessingDispatchedOrders(id);
 
     user.isActive = false;
+    user.authVersion = (user.authVersion ?? 0) + 1;
     await this.userRepository.save(user);
     return { success: true };
   }
@@ -443,8 +485,16 @@ export class UsersService {
     user.passwordHash = await bcrypt.hash(newPassword, 10);
     user.mustChangePassword = true;
     user.passwordUpdatedAt = null;
+    user.authVersion = (user.authVersion ?? 0) + 1;
     await this.userRepository.save(user);
 
+    return { success: true };
+  }
+
+  async forceLogout(id: string): Promise<{ success: boolean }> {
+    const user = await this.loadEntity(id);
+    user.authVersion = (user.authVersion ?? 0) + 1;
+    await this.userRepository.save(user);
     return { success: true };
   }
 
@@ -489,6 +539,11 @@ export class UsersService {
 
   async unbindRole(userId: string, roleId: string): Promise<{ success: boolean }> {
     await this.loadEntity(userId);
+    const bindings = await this.userRoleRepository.find({ where: { userId } });
+    const remainingRoleIds = Array.from(new Set(
+      bindings.filter((binding) => binding.roleId !== roleId).map((binding) => binding.roleId),
+    ));
+    await this.assertHandlerRoleCompatibility(userId, remainingRoleIds);
     await this.userRoleRepository.delete({ userId, roleId });
     return { success: true };
   }
@@ -568,6 +623,8 @@ export class UsersService {
       departmentId: primary?.department_id ?? null,
       department_id: primary?.department_id ?? null,
       position: roleNames[0] ?? '',
+      businessScope: user.businessScope ?? BusinessScope.BEILUN,
+      business_scope: user.businessScope ?? BusinessScope.BEILUN,
     };
   }
 
@@ -646,13 +703,44 @@ export class UsersService {
     }
   }
 
+  private async assertHandlerRoleCompatibility(userId: string, roleIds: string[]): Promise<void> {
+    if (!this.moduleHandlerRepository) return;
+    const handlers = await this.moduleHandlerRepository.find({
+      where: { handlerId: userId, isActive: true },
+    });
+    if (handlers.length === 0) return;
+
+    const roles = roleIds.length > 0
+      ? await this.roleRepository.findBy({ id: In(roleIds), isActive: true })
+      : [];
+    const roleCodes = roles.map((role) => role.code);
+    const incompatibleModules = Array.from(new Set(
+      handlers
+        .map((handler) => handler.moduleCode)
+        .filter((moduleCode) => !canHandleModule(moduleCode, roleCodes)),
+    ));
+    if (incompatibleModules.length > 0) {
+      throw new BadRequestException(`该用户仍是以下模块负责人，请先完成交接再移除角色：${incompatibleModules.join('、')}`);
+    }
+  }
+
   private async assertNoProcessingDispatchedOrders(userId: string): Promise<void> {
     const count = await this.dispatchedOrderRepository.count({
-      where: { handlerId: userId },
+      where: {
+        handlerId: userId,
+        status: In([
+          DispatchedOrderStatus.PENDING,
+          DispatchedOrderStatus.PROCESSING,
+          DispatchedOrderStatus.MODIFY_PENDING,
+          DispatchedOrderStatus.RETURNED,
+          DispatchedOrderStatus.WITHDRAW_PENDING,
+          DispatchedOrderStatus.VOID_PENDING,
+        ]),
+      },
     });
 
     if (count > 0) {
-      throw new BadRequestException('该用户仍有关联子工单，无法停用');
+      throw new BadRequestException('该用户仍有未完成子工单，请先完成离职交接');
     }
   }
 }

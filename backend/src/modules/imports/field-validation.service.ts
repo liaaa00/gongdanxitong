@@ -27,15 +27,31 @@ interface ValueNormalizeResult {
 
 const SOFT_REQUIRED_SAFE_DEFAULTS: Record<string, string> = {};
 // contract_template（劳动合同模板）是业务员发起阶段字段，保留在入职导入校验中，不再排除。
+const OUT_OF_PROVINCE_OPTIONAL_FIELDS = new Set([
+  'customer_code',
+  'household_type',
+  'ethnicity',
+  'education',
+  'household_address',
+]);
+
 const ONBOARDING_IMPORT_EXCLUDED_FIELDS = new Set([
+  'gender',
+  'birth_date',
+  'age',
   'contract_feedback',
   'onboarding_feedback',
   'data_entry_feedback',
+  'social_insurance_result',
+  'social_insurance_remark',
+  'medical_insurance_result',
+  'housing_fund_result',
 ]);
 
 const HEADER_ALIASES: Record<string, string[]> = {
   customer_name: ['客户', '客户名称', '客户全称', '公司名称', '用工客户', '客户单位', '商社名称'],
   customer_code: ['客户代码', '客户编码', '客户编号', '客户ID', '客户id', '商社代码', '商社编码'],
+  province: ['省份', '省', '所属省份', '办理省份', '参保省份'],
   outsource_type: ['外包类型', '服务类型', '业务类型', '外包模式'],
   position: ['岗位', '职位', '职务', '岗位名称', '任职岗位'],
   employee_name: ['姓名', '员工姓名', '雇员姓名', '人员姓名', '入职人员', '候选人姓名'],
@@ -92,6 +108,9 @@ const HEADER_ALIASES: Record<string, string[]> = {
   position_type: ['岗位类型', '岗位性质', '职位类型'],
   id_card_type: ['证件类型', '证件种类', '身份证件类型'],
   education: ['学历', '最高学历', '文化程度'],
+  graduation_school: ['毕业院校', '毕业学校', '院校名称'],
+  major: ['专业', '所学专业', '毕业专业'],
+  graduation_date: ['毕业时间', '毕业日期', '毕业年月'],
   marital_status: ['婚姻状况', '婚姻情况', '婚否'],
   probation_other_salary: ['试用期其他工资', '试用期其它工资', '试用期补贴', '试用期津贴'],
   need_esign: ['是否电子签', '是否电子签署', '是否需要电子签', '电子签'],
@@ -149,6 +168,19 @@ export class ImportFieldValidationService {
   }
 
   private filterImportFields(orderType: OrderType, fields: FieldConfig[]): FieldConfig[] {
+    if (
+      orderType === OrderType.OUT_OF_PROVINCE_INCREASE
+      || orderType === OrderType.OUT_OF_PROVINCE_DECREASE
+    ) {
+      return fields.map((field) => OUT_OF_PROVINCE_OPTIONAL_FIELDS.has(field.fieldCode)
+        ? {
+          ...field,
+          isRequired: false,
+          defaultRequired: false,
+          conditionalRequired: null,
+        } as FieldConfig
+        : field);
+    }
     if (orderType !== OrderType.ONBOARDING) {
       return fields;
     }
@@ -423,7 +455,10 @@ export class ImportFieldValidationService {
     if (value === null || value === undefined) return null;
     if (value instanceof Date) return value.toISOString().slice(0, 10);
     if (typeof value === 'string') {
-      const text = value.trim();
+      const trimmed = value.trim();
+      if (trimmed.length === 0) return null;
+      const wrapped = trimmed.match(/^=\s*"([\s\S]*)"$/) ?? trimmed.match(/^"([\s\S]*)"$/);
+      const text = (wrapped?.[1] ?? trimmed).replace(/""/g, '"').trim();
       if (text.length === 0) return null;
       if (fieldType === FieldType.NUMBER) {
         const num = Number(text.replace(/,/g, ''));

@@ -3,6 +3,7 @@ import {
   DispatchedOrder,
   DispatchedOrderStatus,
   FieldConfig,
+  FieldPermissionMode,
   ModuleHandler,
   Notification,
   OperationLog,
@@ -26,6 +27,7 @@ function repoMock<T extends object>(overrides: Partial<Record<string, unknown>> 
     save: jest.fn(async (input: T) => input),
     findOne: jest.fn(async () => null),
     find: jest.fn(async () => []),
+    findAndCount: jest.fn(async () => [[], 0]),
     count: jest.fn(async () => 0),
     delete: jest.fn(async () => ({ affected: 1 })),
     update: jest.fn(async () => ({ affected: 1 })),
@@ -86,10 +88,16 @@ function buildService(order: DispatchedOrder, handlerRows: Array<Partial<ModuleH
   const userRoleRepo = repoMock<UserRole>({
     find: jest.fn(async () => [{ role: { level: RoleLevel.EXECUTION } } as unknown as UserRole]),
   });
-  const fieldConfigRepo = repoMock<FieldConfig>();
+  const fieldConfigRepo = repoMock<FieldConfig>({
+    find: jest.fn(async () => [{ fieldCode: 'employee_name', fieldName: '员工姓名' } as FieldConfig]),
+  });
   const notificationRepo = repoMock<Notification>();
   const operationLogRepo = repoMock<OperationLog>();
-  const fieldPermissionService = {} as FieldPermissionService;
+  const fieldPermissionService = {
+    getPermissionsForUser: jest.fn(async () => new Map([
+      ['employee_name', FieldPermissionMode.VISIBLE],
+    ])),
+  } as unknown as FieldPermissionService;
   const fieldSupplementService = { getLogs: jest.fn() } as unknown as FieldSupplementService;
   const exportTemplatesService = { exportSingleDispatchedOrder: jest.fn() };
   const service = new DispatchedOrderService(
@@ -111,6 +119,7 @@ function buildService(order: DispatchedOrder, handlerRows: Array<Partial<ModuleH
 }
 
 const creator: JwtUserPayload = { sub: CREATOR_ID, username: 'sales', roles: ['business_group_member'] } as JwtUserPayload;
+const handler: JwtUserPayload = { sub: 'handler-old', username: 'handler', roles: ['labor_contract_member'] } as JwtUserPayload;
 
 describe('sub-order level resubmit (0602 E)', () => {
   it('E-1: 已退回子单可重新提交，回到 pending 并通知后道', async () => {
@@ -130,6 +139,33 @@ describe('sub-order level resubmit (0602 E)', () => {
     // 父工单从 RETURNED 回到 PROCESSING
     expect(workOrderRepo.save).toHaveBeenCalledWith(expect.objectContaining({ status: WorkOrderStatus.PROCESSING }));
     expect(notificationRepo.save).toHaveBeenCalled();
+  });
+
+  it('保存去除首尾空格后的重新提交原因，并同步到操作日志和后道通知', async () => {
+    const order = makeOrder(DispatchedOrderStatus.RETURNED, WorkOrderStatus.RETURNED);
+    const { service, operationLogRepo, notificationRepo } = buildService(order);
+
+    await service.resubmitDispatched(ORDER_ID, { reason: '  以员工辞职报告真实日期为准  ' }, creator);
+
+    expect(operationLogRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+      actionType: 'creator_resubmit',
+      afterData: expect.objectContaining({ reason: '以员工辞职报告真实日期为准' }),
+    }));
+    expect(notificationRepo.save).toHaveBeenCalledWith(expect.arrayContaining([
+      expect.objectContaining({ content: '以员工辞职报告真实日期为准' }),
+    ]));
+  });
+
+  it('重新提交原因留空时仍允许提交，并记录为空原因', async () => {
+    const order = makeOrder(DispatchedOrderStatus.WITHDRAWN, WorkOrderStatus.WITHDRAWN);
+    const { service, operationLogRepo } = buildService(order);
+
+    await service.resubmitDispatched(ORDER_ID, { reason: '   ' }, creator);
+
+    expect(operationLogRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+      actionType: 'creator_resubmit',
+      afterData: expect.objectContaining({ reason: null }),
+    }));
   });
 
   it('E-1b: 已退回子单先保存字段仍保持 returned，再重新提交后 pending 且后道看到新字段', async () => {
@@ -225,6 +261,72 @@ describe('sub-order level resubmit (0602 E)', () => {
   });
 });
 
+describe('completed child controlled actions', () => {
+  const completedAt = new Date('2026-06-02T01:00:00.000Z');
+
+  it('sends a completed child withdrawal through approval and preserves its completion time', async () => {
+    const order = makeOrder(DispatchedOrderStatus.COMPLETED, WorkOrderStatus.COMPLETED, {
+      acceptedAt: new Date('2026-06-02T00:30:00.000Z'),
+      completedAt,
+    });
+    order.parentOrder.completedAt = completedAt;
+    const { service, operationLogRepo } = buildService(order);
+
+    await service.withdraw(ORDER_ID, { reason: '完成后需要撤回' }, creator);
+
+    expect(order.status).toBe(DispatchedOrderStatus.WITHDRAW_PENDING);
+    expect(order.completedAt).toEqual(completedAt);
+    (operationLogRepo.findOne as jest.Mock).mockResolvedValue({
+      afterData: { previousStatus: DispatchedOrderStatus.COMPLETED },
+    } as unknown as OperationLog);
+
+    await service.approveWithdraw(ORDER_ID, { approved: true, comment: '同意' }, handler);
+
+    expect(order.status).toBe(DispatchedOrderStatus.WITHDRAWN);
+    expect(order.completedAt).toEqual(completedAt);
+    expect(order.parentOrder.status).toBe(WorkOrderStatus.WITHDRAWN);
+  });
+
+  it('sends a completed child void request through approval and preserves its completion time', async () => {
+    const order = makeOrder(DispatchedOrderStatus.COMPLETED, WorkOrderStatus.COMPLETED, {
+      acceptedAt: new Date('2026-06-02T00:30:00.000Z'),
+      completedAt,
+    });
+    order.parentOrder.completedAt = completedAt;
+    const { service, operationLogRepo } = buildService(order);
+
+    await service.voidByCreator(ORDER_ID, { reason: '完成后确认作废' }, creator);
+
+    expect(order.status).toBe(DispatchedOrderStatus.VOID_PENDING);
+    expect(order.completedAt).toEqual(completedAt);
+    (operationLogRepo.findOne as jest.Mock).mockResolvedValue({
+      afterData: { previousStatus: DispatchedOrderStatus.COMPLETED },
+    } as unknown as OperationLog);
+
+    await service.approveVoid(ORDER_ID, { approved: true, comment: '同意' }, handler);
+
+    expect(order.status).toBe(DispatchedOrderStatus.VOID);
+    expect(order.completedAt).toEqual(completedAt);
+    expect(order.voidAt).toEqual(expect.any(Date));
+  });
+
+  it('allows the assigned handler to return a completed child', async () => {
+    const order = makeOrder(DispatchedOrderStatus.COMPLETED, WorkOrderStatus.COMPLETED, {
+      acceptedAt: new Date('2026-06-02T00:30:00.000Z'),
+      completedAt,
+    });
+    order.parentOrder.completedAt = completedAt;
+    const { service, workOrderRepo } = buildService(order);
+
+    await service.returnOrder(ORDER_ID, { returnReason: '需要重新办理' }, handler);
+
+    expect(order.status).toBe(DispatchedOrderStatus.RETURNED);
+    expect(order.completedAt).toBeNull();
+    expect(order.parentOrder.status).toBe(WorkOrderStatus.RETURNED);
+    expect(workOrderRepo.save).toHaveBeenCalledWith(expect.objectContaining({ status: WorkOrderStatus.RETURNED }));
+  });
+});
+
 describe('withdrawn-then-void goes directly to terminal (0602 E-5)', () => {
   it('E-5: 已撤回子单作废 → 直接 VOID 终态，无需后道审批', async () => {
     const order = makeOrder(DispatchedOrderStatus.WITHDRAWN, WorkOrderStatus.WITHDRAWN);
@@ -299,5 +401,74 @@ describe('creator modify does not auto-resubmit (0602 E-4)', () => {
       actionType: 'creator_update_fields',
       afterData: expect.objectContaining({ resubmitted: false }),
     }));
+  });
+});
+
+describe('dispatched order processing timeline', () => {
+  it('returns only the current child logs in chronological order and hides invisible field changes', async () => {
+    const order = makeOrder(DispatchedOrderStatus.RETURNED, WorkOrderStatus.RETURNED);
+    const { service, operationLogRepo } = buildService(order);
+    (operationLogRepo.findAndCount as jest.Mock).mockResolvedValue([
+      [
+        {
+          id: 'log-1',
+          entityType: 'dispatched_order',
+          entityId: ORDER_ID,
+          actionType: 'creator_update_fields',
+          userId: CREATOR_ID,
+          user: { realName: '业务员甲', username: 'sales' },
+          beforeData: null,
+          ipAddress: null,
+          afterData: {
+            reason: '修正离职日期',
+            diff: [
+              { field: 'employee_name', before: '张三', after: '李四' },
+              { field: 'id_card_no', before: '3301', after: '3302' },
+            ],
+          },
+          createdAt: new Date('2026-07-18T01:00:00.000Z'),
+        },
+        {
+          id: 'log-2',
+          entityType: 'dispatched_order',
+          entityId: ORDER_ID,
+          actionType: 'creator_resubmit',
+          userId: CREATOR_ID,
+          user: { realName: '业务员甲', username: 'sales' },
+          beforeData: null,
+          ipAddress: null,
+          afterData: { reason: '以员工辞职报告真实日期为准' },
+          createdAt: new Date('2026-07-18T01:05:00.000Z'),
+        },
+      ] as unknown as OperationLog[],
+      2,
+    ]);
+
+    const result = await service.getTimeline(ORDER_ID, { page: 1, pageSize: 50 }, creator);
+
+    expect(operationLogRepo.findAndCount).toHaveBeenCalledWith(expect.objectContaining({
+      where: { entityType: 'dispatched_order', entityId: ORDER_ID },
+      order: { createdAt: 'ASC' },
+      skip: 0,
+      take: 50,
+    }));
+    expect(result).toMatchObject({ total: 2, page: 1, pageSize: 50 });
+    expect(result.items.map((item) => item.actionType)).toEqual(['creator_update_fields', 'creator_resubmit']);
+    expect(result.items[0]).toMatchObject({
+      operatorName: '业务员甲',
+      reason: '修正离职日期',
+      changes: [{ fieldCode: 'employee_name', fieldLabel: '员工姓名', oldValue: '张三', newValue: '李四' }],
+    });
+    expect(result.items[0]).not.toHaveProperty('afterData');
+    expect(JSON.stringify(result.items)).not.toContain('id_card_no');
+  });
+
+  it('rejects users who cannot read the current child order timeline', async () => {
+    const order = makeOrder(DispatchedOrderStatus.RETURNED, WorkOrderStatus.RETURNED);
+    const { service, operationLogRepo } = buildService(order);
+    const other: JwtUserPayload = { sub: 'other-user', username: 'other', roles: ['business_group_member'] } as JwtUserPayload;
+
+    await expect(service.getTimeline(ORDER_ID, { page: 1, pageSize: 50 }, other)).rejects.toMatchObject({ status: 403 });
+    expect(operationLogRepo.findAndCount).not.toHaveBeenCalled();
   });
 });

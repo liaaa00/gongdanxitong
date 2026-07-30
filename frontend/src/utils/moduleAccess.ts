@@ -165,3 +165,5 @@ export function canAccessModuleCode(code: string | undefined | null, userRoles: 
   if (!accessible) return false;
   return accessible.has(normalized);
 }
+
+export const isModuleAccessible = canAccessModuleCode;

@@ -116,14 +116,30 @@ export class FieldPermissionInterceptor implements NestInterceptor {
       return cloned;
     }
 
-    if (cloned.extraData && typeof cloned.extraData === 'object' && !Array.isArray(cloned.extraData)) {
+    const extraData = cloned.extraData ?? cloned.extra_data;
+    if (extraData && typeof extraData === 'object' && !Array.isArray(extraData)) {
       const result = this.fieldPermissionService.applyExtraData(
-        cloned.extraData as Record<string, unknown>,
+        extraData as Record<string, unknown>,
         permissions,
       );
-      cloned.extraData = result.data;
+      if (Object.prototype.hasOwnProperty.call(cloned, 'extraData')) cloned.extraData = result.data;
+      if (Object.prototype.hasOwnProperty.call(cloned, 'extra_data')) cloned.extra_data = result.data;
       cloned.readonlyFields = result.readonlyFields;
       cloned._fieldPermissions = this.toPermissionRecord(permissions);
+    }
+
+    const pendingModify = cloned.pendingModify ?? cloned.pending_modify;
+    if (pendingModify && typeof pendingModify === 'object' && !Array.isArray(pendingModify)) {
+      const pendingRecord = pendingModify as Record<string, unknown>;
+      if (pendingRecord.fields && typeof pendingRecord.fields === 'object' && !Array.isArray(pendingRecord.fields)) {
+        const result = this.fieldPermissionService.applyExtraData(
+          pendingRecord.fields as Record<string, unknown>,
+          permissions,
+        );
+        const sanitized = { ...pendingRecord, fields: result.data };
+        if (Object.prototype.hasOwnProperty.call(cloned, 'pendingModify')) cloned.pendingModify = sanitized;
+        if (Object.prototype.hasOwnProperty.call(cloned, 'pending_modify')) cloned.pending_modify = sanitized;
+      }
     }
 
     if (cloned.feedbackData && typeof cloned.feedbackData === 'object' && !Array.isArray(cloned.feedbackData)) {

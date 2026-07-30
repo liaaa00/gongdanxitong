@@ -7,9 +7,11 @@ import { seedExportTemplates } from './seed-export-templates';
 import { seedFields } from './seed-fields';
 import { seedModuleConfigs } from './seed-module-configs';
 import { seedModuleHandlers } from './seed-module-handlers';
+import { seedInServiceCategories } from './in-service-category.seed';
 import { seedNotificationTemplates } from './seed-notification-templates';
 import { seedRoles } from './seed-roles';
 import { seedUsers } from './seed-users';
+import { seedProvinceHandlers } from './province-handler.seed';
 
 async function runSeeds(): Promise<void> {
   await AppDataSource.initialize();
@@ -23,7 +25,9 @@ async function runSeeds(): Promise<void> {
     await seedDispatchRules(AppDataSource);
     await seedFieldPermissions(AppDataSource);
     await seedModuleHandlers(AppDataSource);
+    await seedProvinceHandlers(AppDataSource);
     await seedModuleConfigs(AppDataSource);
+    await seedInServiceCategories(AppDataSource);
     await seedExportTemplates(AppDataSource);
     await seedNotificationTemplates(AppDataSource);
     // eslint-disable-next-line no-console

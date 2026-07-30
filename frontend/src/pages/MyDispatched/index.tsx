@@ -1,4 +1,4 @@
-import { forwardRef, useRef, useMemo, useState } from 'react';
+import { forwardRef, useEffect, useRef, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { type Dayjs } from 'dayjs';
 import { PageContainer } from '@ant-design/pro-components';
@@ -13,6 +13,7 @@ import {
   getDispatchedOrdersSafe,
   acceptDispatchedOrder,
   batchAcceptDispatchedOrders,
+  batchApproveModifyDispatchedOrders,
   batchExportDispatchedOrders,
   batchCompleteDispatchedOrders,
   batchReturnDispatchedOrders,
@@ -34,12 +35,14 @@ import { ROLE } from '@/constants/roles';
 import { isPhase1VisibleOrderType } from '@/utils/moduleAccess';
 import { mergeProTableFiltersIntoParams, selectHeaderFilter, textHeaderFilter } from '@/utils/proTableFilters';
 import {
+  KEEP_ALIVE_ROUTE_ACTIVATED_EVENT,
   applyCachedColumnFilters,
   getCachedListPageState,
   getCachedMonthOrNull,
   normalizeCachedFilters,
   toMonthKey,
   updateCachedListPageState,
+  type KeepAliveRouteActivatedDetail,
 } from '@/utils/listPageState';
 import {
   DISPATCHED_NINE_STATUS_OPTIONS,
@@ -111,6 +114,16 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
   const { message } = App.useApp();
   const { hasAnyRole } = useAuth();
   const actionRef = useRef<ActionType>();
+
+  useEffect(() => {
+    const handleRouteActivated = (event: Event) => {
+      const detail = (event as CustomEvent<KeepAliveRouteActivatedDetail>).detail;
+      if (detail?.pathname === location.pathname) void actionRef.current?.reload();
+    };
+    window.addEventListener(KEEP_ALIVE_ROUTE_ACTIVATED_EVENT, handleRouteActivated);
+    return () => window.removeEventListener(KEEP_ALIVE_ROUTE_ACTIVATED_EVENT, handleRouteActivated);
+  }, [location.pathname]);
+
   const routeMode: MyDispatchedMode = location.pathname.includes('/my-work/done')
     ? 'done'
     : location.pathname.includes('/my-work/initiated')
@@ -140,6 +153,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
   const [teamUsers, setTeamUsers] = useState<UserItem[]>([]);
   const [reassignLoading, setReassignLoading] = useState(false);
   const [batchAcceptLoading, setBatchAcceptLoading] = useState(false);
+  const [batchApproveModifyLoading, setBatchApproveModifyLoading] = useState(false);
   const [batchCompleteVisible, setBatchCompleteVisible] = useState(false);
   const [batchCompleteIds, setBatchCompleteIds] = useState<string[]>([]);
   const [batchCompleteRemark, setBatchCompleteRemark] = useState('');
@@ -155,6 +169,8 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
   const [batchCleanFn, setBatchCleanFn] = useState<(() => void) | null>(null);
   const [selectedRows, setSelectedRows] = useState<DispatchedOrderItem[]>([]);
   const selectedIds = selectedRows.map((row) => row.id);
+  const selectedPendingIds = selectedRows.filter((row) => row.status === 'pending').map((row) => row.id);
+  const selectedModifyPendingIds = selectedRows.filter((row) => row.status === 'modify_pending').map((row) => row.id);
   const selectedActiveIds = selectedRows.filter((row) => ACTIVE_DISPATCHED_STATUSES.has(row.status)).map((row) => row.id);
   const canBatchOperate = !isDoneMode && !isInitiatedMode && !isReturnedMode;
   const [visibleImportModuleCodes, setVisibleImportModuleCodes] = useState<string[]>([]);
@@ -186,6 +202,27 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
       message.error('批量接单失败');
     } finally {
       setBatchAcceptLoading(false);
+    }
+  };
+
+  const handleBatchApproveModify = async (ids: string[], clear?: () => void) => {
+    if (ids.length === 0) {
+      message.warning('请先选择修改审批中的子工单');
+      return;
+    }
+    setBatchApproveModifyLoading(true);
+    try {
+      const res = await batchApproveModifyDispatchedOrders(ids);
+      const skipped = res.skipped?.length ?? 0;
+      if (skipped > 0) message.warning(`已通过 ${res.processed} 条修改，${skipped} 条跳过`);
+      else message.success(`已通过 ${res.processed} 条修改申请`);
+      setSelectedRows([]);
+      clear?.();
+      await actionRef.current?.reload();
+    } catch {
+      message.error('批量通过修改失败');
+    } finally {
+      setBatchApproveModifyLoading(false);
     }
   };
 
@@ -371,6 +408,21 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
     { title: '客户名称', dataIndex: 'customer_name', key: 'customerName', width: 150, ellipsis: true, ...textHeaderFilter('输入客户名称') },
     { title: '员工姓名', dataIndex: 'employee_name', key: 'employeeName', width: 100, ...textHeaderFilter('输入员工姓名') },
     { title: '证件号', dataIndex: 'employee_id_card', key: 'idCardNo', width: 170, ellipsis: true, ...textHeaderFilter('输入证件号') },
+    {
+      title: '手机号',
+      key: 'mobile',
+      width: 125,
+      hideInSearch: true,
+      render: (_, record) => String(record.extra_data?.mobile || '-'),
+    },
+    {
+      title: '邮箱',
+      key: 'email',
+      width: 190,
+      ellipsis: true,
+      hideInSearch: true,
+      render: (_, record) => String(record.extra_data?.email || '-'),
+    },
     {
       title: '状态', dataIndex: 'status', key: 'status', width: 100, valueType: 'select',
       fieldProps: {
@@ -599,8 +651,15 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
             <Space wrap>
               <RefButton size="small" onClick={cleanSelection}>取消</RefButton>
               {canBatchOperate && (
-                <RefButton size="small" type="primary" loading={batchAcceptLoading} disabled={selectedIds.length === 0}
-                  onClick={() => handleBatchAccept(selectedIds, cleanSelection)}>批量接单{selectedIds.length > 0 ? `（${selectedIds.length}）` : ''}</RefButton>
+                <RefButton size="small" type="primary" loading={batchAcceptLoading} disabled={selectedPendingIds.length === 0}
+                  onClick={() => handleBatchAccept(selectedPendingIds, cleanSelection)}>批量接单{selectedPendingIds.length > 0 ? `（${selectedPendingIds.length}）` : ''}</RefButton>
+              )}
+              {canBatchOperate && (
+                <RefButton size="small" icon={<CheckCircleOutlined />} loading={batchApproveModifyLoading}
+                  disabled={selectedModifyPendingIds.length === 0}
+                  onClick={() => handleBatchApproveModify(selectedModifyPendingIds, cleanSelection)}>
+                  批量通过修改{selectedModifyPendingIds.length > 0 ? `（${selectedModifyPendingIds.length}）` : ''}
+                </RefButton>
               )}
               {canBatchOperate && (
                 <RefButton size="small" icon={<CheckCircleOutlined />} disabled={selectedActiveIds.length === 0}

@@ -1,5 +1,6 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { promises as fs } from 'fs';
 import { Repository } from 'typeorm';
 import { businessException } from 'src/common/exceptions/business-exception';
 import { DUPLICATE_ID_CARD_IN_MONTH } from 'src/modules/work-orders/duplicate-id-card.util';
@@ -13,7 +14,9 @@ import { AiMappingService } from 'src/modules/ai/ai-mapping.service';
 import { ImportFieldValidationService } from './field-validation.service';
 import { ImportErrorExcelService } from './error-excel.service';
 import { WorkOrderImportService } from './work-order-import.service';
-import { assertCanImportWorkOrder } from './import-permissions';
+import { assertCanImportWorkOrder, WORK_ORDER_IMPORT_ORDER_TYPES } from './import-permissions';
+import { AttachmentsService } from 'src/modules/attachments/attachments.service';
+import { extractXlsxEmbeddedAttachments } from './xlsx-attachment-extractor';
 
 interface PreviewSession {
   fileId: string;
@@ -38,6 +41,7 @@ interface ImportFailedRow {
 @Injectable()
 export class ImportJobService {
   private readonly previewSessions = new Map<string, PreviewSession>();
+  private readonly logger = new Logger(ImportJobService.name);
 
   constructor(
     @InjectRepository(ImportJob)
@@ -52,6 +56,7 @@ export class ImportJobService {
     private readonly fieldValidationService: ImportFieldValidationService,
     private readonly importErrorExcelService: ImportErrorExcelService,
     private readonly workOrderImportService: WorkOrderImportService,
+    private readonly attachmentsService: AttachmentsService,
   ) {}
 
   async preview(input: {
@@ -206,9 +211,26 @@ export class ImportJobService {
     const autoSubmit = this.readAutoSubmit(job.aiMappingRaw);
     const mapping = this.normalizeMapping(job.fieldMapping ?? {});
     const fields = await this.fieldValidationService.getActiveFields(orderType);
+    const fieldNameMap = new Map(fields.map((field) => [field.fieldCode, field.fieldName]));
     const failRows: ImportFailedRow[] = [];
     const warnings: ImportWarningItem[] = [];
     const createdWorkOrderIds: string[] = [];
+
+    // Resignation import attachments: embedded files plus hyperlinks in attachment columns.
+    let embeddedAttachments = new Map<number, Array<{ buffer: Buffer; originalName: string; mimeType: string }>>();
+    const hyperlinkAttachments = this.groupAttachmentLinksByRow(parsed);
+    if (orderType === OrderType.RESIGNATION) {
+      try {
+        const xlsxBuffer = await fs.readFile(job.filePath);
+        embeddedAttachments = await extractXlsxEmbeddedAttachments(xlsxBuffer);
+        this.logger.log(`[导入附件] 从 ${job.filePath} 提取到 ${embeddedAttachments.size} 行的嵌入附件`);
+        for (const [rowIdx, files] of embeddedAttachments) {
+          this.logger.log(`[导入附件] 行 ${rowIdx}: ${files.length} 个文件 - ${files.map(f => f.originalName).join(', ')}`);
+        }
+      } catch (error) {
+        this.logger.warn(`Failed to extract embedded attachments from ${job.filePath}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
 
     for (const [index, raw] of parsed.rows.entries()) {
       const rowNo = index + 1;
@@ -241,15 +263,41 @@ export class ImportJobService {
         const created = await this.writeOneRow(orderType, validation.normalized, autoSubmit, user, defaults);
         createdWorkOrderIds.push(created.workOrderId);
         await this.importJobRepository.update({ id: job.id }, { successRows: () => 'success_rows + 1' });
+        // 关联嵌入附件：附件按 Excel 物理行号(0-based)提取，需用 parsed.rows 对应的物理行号取，
+        // 不能直接用数组下标 index（离职模板数据从第 5 行起，下标 0 ≠ 物理行 4）
+        const physicalRow = parsed.meta?.rowNumbers?.[index] ?? index;
+        const attachFiles = embeddedAttachments.get(physicalRow);
+        const attachLinks = hyperlinkAttachments.get(physicalRow);
+        if (attachFiles?.length || attachLinks?.length) {
+          this.logger.log(`[import attachment] workOrder=${created.workOrderId} row=${rowNo} physicalRow=${physicalRow} count=${(attachFiles?.length ?? 0) + (attachLinks?.length ?? 0)}`);
+          for (const file of attachFiles ?? []) {
+            try {
+              const attachment = await this.attachmentsService.createFromBuffer(created.workOrderId, file, user.sub);
+              this.logger.log(`[import attachment] file saved: ${file.originalName} (${file.mimeType}) attachmentId=${attachment.id}`);
+            } catch (attachError) {
+              this.logger.warn(`[import attachment] file failed: row=${rowNo} file=${file.originalName}: ${attachError instanceof Error ? attachError.message : String(attachError)}`);
+            }
+          }
+          for (const link of attachLinks ?? []) {
+            try {
+              const attachment = await this.attachmentsService.createFromExternalLink(created.workOrderId, link, user.sub);
+              this.logger.log(`[import attachment] external link saved: ${link.originalName} (${link.url}) attachmentId=${attachment.id}`);
+            } catch (attachError) {
+              this.logger.warn(`[import attachment] external link failed: row=${rowNo} url=${link.url}: ${attachError instanceof Error ? attachError.message : String(attachError)}`);
+            }
+          }
+        } else if (embeddedAttachments.size > 0 || hyperlinkAttachments.size > 0) {
+          this.logger.debug(`[import attachment] no attachment: workOrder=${created.workOrderId} row=${rowNo} physicalRow=${physicalRow}`);
+        }
       } catch (error) {
-        const rowError = this.toRowError(error);
-        failRows.push({ rowNo, raw, message: rowError.message, code: rowError.code, existedOrderNo: rowError.existedOrderNo });
+        const rowError = this.toRowError(error, fieldNameMap);
+        failRows.push({ rowNo, raw, fieldCode: rowError.fieldCode, message: rowError.message, code: rowError.code, existedOrderNo: rowError.existedOrderNo });
         await this.importJobRepository.update({ id: job.id }, { failRows: () => 'fail_rows + 1' });
       }
     }
 
     const errorReportUrl = failRows.length > 0
-      ? await this.buildErrorReport(job.id, parsed.headers, failRows)
+      ? await this.buildErrorReport(job.id, parsed.headers, failRows, user.sub)
       : null;
 
     const latest = await this.findVisibleJob(jobId, user);
@@ -287,6 +335,20 @@ export class ImportJobService {
     );
   }
 
+  private groupAttachmentLinksByRow(parsed: ParsedSheet): Map<number, Array<{ url: string; originalName: string }>> {
+    const grouped = new Map<number, Array<{ url: string; originalName: string }>>();
+    for (const link of parsed.meta?.attachmentLinks ?? []) {
+      const url = link.hyperlink.trim();
+      if (!/^https?:\/\//i.test(url)) {
+        continue;
+      }
+      const list = grouped.get(link.rowIndex) ?? [];
+      list.push({ url, originalName: link.text || url });
+      grouped.set(link.rowIndex, list);
+    }
+    return grouped;
+  }
+
   private ensureSuggestion(
     suggestion: MappingSuggestion,
     headers: string[],
@@ -309,7 +371,7 @@ export class ImportJobService {
   }
 
   private isPlaceholderHeader(header: string): boolean {
-    return /^[?锛焅s]+$/.test(header.trim());
+    return /^__col_\d+__$/.test(header.trim());
   }
 
   private buildSequentialSuggestion(headers: string[], availableFields: CandidateField[]): MappingSuggestion {
@@ -350,9 +412,9 @@ export class ImportJobService {
     return this.workOrderImportService.writeOne({ orderType, normalized, autoSubmit, user, defaults });
   }
 
-  private async buildErrorReport(jobId: string, headers: string[], errors: Array<{ rowNo: number; raw: Record<string, unknown>; fieldCode?: string; message: string; code?: string; existedOrderNo?: string | null }>): Promise<string | null> {
+  private async buildErrorReport(jobId: string, headers: string[], errors: Array<{ rowNo: number; raw: Record<string, unknown>; fieldCode?: string; message: string; code?: string; existedOrderNo?: string | null }>, ownerId?: string): Promise<string | null> {
     const rows = errors.map((item) => ({ rowNo: item.rowNo, raw: item.raw, fieldCode: item.fieldCode, message: item.message, code: item.code, existedOrderNo: item.existedOrderNo }));
-    const meta = await this.importErrorExcelService.generate({ jobId, headers, errors: rows });
+    const meta = await this.importErrorExcelService.generate({ jobId, headers, errors: rows, ownerId });
     return meta;
   }
 
@@ -493,7 +555,10 @@ export class ImportJobService {
     };
   }
 
-  private toRowError(error: unknown): { message: string; code?: string; existedOrderNo?: string | null } {
+  private toRowError(
+    error: unknown,
+    fieldNameMap?: Map<string, string>,
+  ): { message: string; code?: string; existedOrderNo?: string | null; fieldCode?: string } {
     const response = error && typeof error === 'object' && 'getResponse' in error
       ? (error as { getResponse: () => unknown }).getResponse()
       : null;
@@ -507,9 +572,33 @@ export class ImportJobService {
           existedOrderNo: typeof body.details?.existedOrderNo === 'string' ? body.details.existedOrderNo : null,
         };
       }
-      return { message: typeof body.message === 'string' ? body.message : 'import row failed', code: detailsCode };
+      const baseMessage = typeof body.message === 'string' ? body.message : 'import row failed';
+      const missingCodes = this.extractMissingFieldCodes(body.details);
+      if (missingCodes.length > 0) {
+        const labels = missingCodes.map((code) => fieldNameMap?.get(code) ?? code);
+        return {
+          message: `${baseMessage}：${labels.join('、')}`,
+          code: detailsCode,
+          fieldCode: missingCodes[0],
+        };
+      }
+      return { message: baseMessage, code: detailsCode };
     }
     return { message: error instanceof Error ? error.message : 'import row failed' };
+  }
+
+  private extractMissingFieldCodes(details?: Record<string, unknown>): string[] {
+    if (!details) {
+      return [];
+    }
+    const missing = details.missing;
+    if (Array.isArray(missing)) {
+      return missing.filter((item): item is string => typeof item === 'string');
+    }
+    if (typeof details.fieldCode === 'string') {
+      return [details.fieldCode];
+    }
+    return [];
   }
 
   private progress(job: ImportJob): number {
@@ -527,6 +616,10 @@ export class ImportJobService {
     suggestion: MappingSuggestion,
     availableFields: CandidateField[],
   ): ImportPreviewResult {
+    // 占位符列(空列 + 模板结构列「字段名」「附件」)不是数据字段，
+    // 不进入映射表也不计入未匹配，避免误报「表头未自动匹配」黄条。
+    const mappableHeaders = parsed.headers.filter((header) => !this.isPlaceholderHeader(header));
+    const unmatched = suggestion.unmatched.filter((header) => !this.isPlaceholderHeader(header));
     return {
       fileId,
       orderType,
@@ -535,14 +628,14 @@ export class ImportJobService {
       preview: previewRows,
       suggestion: suggestion.suggestion,
       confidence: suggestion.confidence,
-      unmatched: suggestion.unmatched,
+      unmatched,
       missingRequired: suggestion.missingRequired,
       availableFields,
       modelUsed: suggestion.modelUsed,
       localMatchedCount: suggestion.localMatchedCount,
       llmMatchedCount: suggestion.llmMatchedCount,
       fallbackReason: suggestion.fallbackReason,
-      mapping: parsed.headers.map((header) => ({ 
+      mapping: mappableHeaders.map((header) => ({
         excelColumn: header,
         systemFieldCode: suggestion.suggestion[header] ?? '',
         systemFieldName: availableFields.find((field) => field.fieldCode === suggestion.suggestion[header])?.fieldName ?? '',
@@ -551,7 +644,7 @@ export class ImportJobService {
       suggestedMapping: suggestion.suggestion,
       previewRows,
       totalRows: parsed.rows.length,
-      unmatchedHeaders: suggestion.unmatched,
+      unmatchedHeaders: unmatched,
     } as ImportPreviewResult;
   }
 
@@ -566,7 +659,9 @@ export class ImportJobService {
       return null;
     }
     const value = (raw as Record<string, unknown>).orderType;
-    return value === OrderType.ONBOARDING || value === OrderType.RESIGNATION ? value : null;
+    return WORK_ORDER_IMPORT_ORDER_TYPES.includes(value as OrderType)
+      ? value as OrderType
+      : null;
   }
 
   private readDefaults(raw: unknown): Record<string, unknown> {

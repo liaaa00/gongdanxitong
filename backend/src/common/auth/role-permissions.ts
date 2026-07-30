@@ -32,6 +32,32 @@ export const ONBOARDING_RESIGNATION_MODULE_ROLES = ['onboarding_specialist', 'on
 export const DATA_ENTRY_MODULE_ROLES = ['data_entry_leader', 'data_entry_team', 'data_entry_supervisor', 'data_entry_specialist'] as const;
 export const SOCIAL_INSURANCE_MODULE_ROLES = ['social_insurance_specialist', 'social_insurance_team', 'social_insurance_supervisor', 'social_security_supervisor'] as const;
 
+const MODULE_HANDLER_ROLES: Record<string, readonly string[]> = {
+  contract: CONTRACT_MODULE_ROLES,
+  contract_signing: CONTRACT_MODULE_ROLES,
+  renewal_contract: CONTRACT_MODULE_ROLES,
+  onboarding_contact: ONBOARDING_RESIGNATION_MODULE_ROLES,
+  resignation_contact: ONBOARDING_RESIGNATION_MODULE_ROLES,
+  resignation_cert: ONBOARDING_RESIGNATION_MODULE_ROLES,
+  data_entry: DATA_ENTRY_MODULE_ROLES,
+  data_entry_resign: DATA_ENTRY_MODULE_ROLES,
+  social_insurance: SOCIAL_INSURANCE_MODULE_ROLES,
+  social_insurance_change: SOCIAL_INSURANCE_MODULE_ROLES,
+  social_insurance_resign: SOCIAL_INSURANCE_MODULE_ROLES,
+  resignation_social_insurance: SOCIAL_INSURANCE_MODULE_ROLES,
+  benefit: ['shared_leader', 'shared_team_owner'],
+  benefit_apply: ['shared_leader', 'shared_team_owner'],
+};
+
+export function getRequiredModuleHandlerRoles(moduleCode: string): readonly string[] {
+  return MODULE_HANDLER_ROLES[moduleCode] ?? [];
+}
+
+export function canHandleModule(moduleCode: string, roles: readonly string[]): boolean {
+  const requiredRoles = getRequiredModuleHandlerRoles(moduleCode);
+  return requiredRoles.length === 0 || roles.includes(ADMIN_ROLE) || hasAnyRole(roles, requiredRoles);
+}
+
 export function hasAnyRole(roles: readonly string[], expectedRoles: readonly string[]): boolean {
   return expectedRoles.some((role) => roles.includes(role));
 }

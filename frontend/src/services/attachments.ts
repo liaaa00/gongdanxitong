@@ -2,7 +2,7 @@ import request from './request';
 import { isMockMode, mockDelay } from './mock';
 import { uploadOrderAttachment } from './upload';
 
-export type AttachmentStatus = 'uploaded' | 'rejected' | 'approved' | 'stamped' | 'received';
+export type AttachmentStatus = 'uploaded' | 'rejected' | 'approved' | 'received';
 
 export interface OrderAttachmentItem {
   id: string;
@@ -17,8 +17,6 @@ export interface OrderAttachmentItem {
   file_size: number;
   status: AttachmentStatus;
   reject_reason?: string | null;
-  stamp_no?: string | null;
-  stamped_at?: string | null;
   received_at?: string | null;
   reviewed_by?: string | null;
   reviewed_at?: string | null;
@@ -53,8 +51,6 @@ function normalizeAttachment(raw: Partial<OrderAttachmentItem> & Record<string, 
     file_size: Number(raw.file_size || 0),
     status: (raw.status as AttachmentStatus) || 'uploaded',
     reject_reason: (raw.reject_reason as string | null | undefined) ?? null,
-    stamp_no: (raw.stamp_no as string | null | undefined) ?? null,
-    stamped_at: raw.stamped_at ? String(raw.stamped_at) : null,
     received_at: raw.received_at ? String(raw.received_at) : null,
     reviewed_by: raw.reviewed_by ? String(raw.reviewed_by) : null,
     reviewed_at: raw.reviewed_at ? String(raw.reviewed_at) : null,
@@ -86,8 +82,9 @@ export async function uploadMaterialAttachment(file: File, params: UploadOrderAt
       file_name: file.name,
       original_name: file.name,
       file_size: file.size,
-      status: params.status || 'uploaded',
+      status: params.status || 'received',
       metadata: { material_type: params.material_type || '其他材料' },
+      received_at: new Date().toISOString(),
       created_at: new Date().toISOString(),
     });
     mockAttachments.unshift(row);
@@ -97,7 +94,7 @@ export async function uploadMaterialAttachment(file: File, params: UploadOrderAt
     work_order_id: params.work_order_id,
     dispatched_order_id: params.dispatched_order_id,
     biz_purpose: params.biz_purpose,
-    status: params.status || 'uploaded',
+    status: params.status || 'received',
     metadata: { material_type: params.material_type || '其他材料' },
   });
   return normalizeAttachment(result as unknown as Partial<OrderAttachmentItem> & Record<string, unknown>);
@@ -116,19 +113,6 @@ export async function reviewOrderAttachment(id: string, status: 'approved' | 're
   return normalizeAttachment(result as Partial<OrderAttachmentItem> & Record<string, unknown>);
 }
 
-export async function stampOrderAttachment(id: string, stampNo: string): Promise<OrderAttachmentItem> {
-  if (isMockMode) {
-    const idx = mockAttachments.findIndex((item) => item.id === id);
-    if (idx >= 0) {
-      mockAttachments[idx] = { ...mockAttachments[idx], status: 'stamped', stamp_no: stampNo, stamped_at: new Date().toISOString() };
-      return mockDelay(mockAttachments[idx]);
-    }
-    throw new Error('附件不存在');
-  }
-  const result = await request.post(`/attachments/${id}/stamp`, { stamp_no: stampNo }) as unknown;
-  return normalizeAttachment(result as Partial<OrderAttachmentItem> & Record<string, unknown>);
-}
-
 export async function receiveOrderAttachment(id: string): Promise<OrderAttachmentItem> {
   if (isMockMode) {
     const idx = mockAttachments.findIndex((item) => item.id === id);
@@ -140,6 +124,53 @@ export async function receiveOrderAttachment(id: string): Promise<OrderAttachmen
   }
   const result = await request.post(`/attachments/${id}/receive`) as unknown;
   return normalizeAttachment(result as Partial<OrderAttachmentItem> & Record<string, unknown>);
+}
+
+export async function downloadOrderAttachment(item: OrderAttachmentItem): Promise<void> {
+  const fileName = item.original_name || item.file_name || '附件';
+  if (isMockMode) {
+    const blobUrl = window.URL.createObjectURL(new Blob(['mock attachment data']));
+    try {
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = fileName;
+      a.click();
+    } finally {
+      window.URL.revokeObjectURL(blobUrl);
+    }
+    return;
+  }
+  const url = item.download_url || (item.file_id ? `/api/files/${item.file_id}` : '');
+  if (!url) {
+    throw new Error('附件下载地址缺失');
+  }
+  if (/^https?:\/\//i.test(url)) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.click();
+    return;
+  }
+  const token = typeof window !== 'undefined' && window.localStorage ? window.localStorage.getItem('token') : null;
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  if (!response.ok) {
+    const msg = await response.text().catch(() => '');
+    throw new Error(msg || `附件下载失败 (${response.status})`);
+  }
+  const blob = await response.blob();
+  const blobUrl = window.URL.createObjectURL(blob);
+  try {
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = fileName;
+    a.click();
+  } finally {
+    window.URL.revokeObjectURL(blobUrl);
+  }
 }
 
 export async function deleteOrderAttachment(id: string): Promise<void> {

@@ -1,3 +1,5 @@
+import type { BusinessScope } from '@/utils/businessScope';
+
 export interface ApiResponse<T = unknown> {
   code: number;
   data: T;
@@ -8,6 +10,7 @@ export interface ApiResponse<T = unknown> {
 export interface LoginRequest {
   username: string;
   password: string;
+  businessScope?: BusinessScope;
 }
 
 export interface LoginResponse {
@@ -31,6 +34,8 @@ export interface UserInfo {
   is_active: boolean;
   roles: RoleInfo[];
   permissions: string[];
+  business_scope?: BusinessScope;
+  businessScope?: BusinessScope;
   must_change_password?: boolean;  // ★ 首次登录标记
   mustChangePassword?: boolean;
   password_updated_at?: string | null;

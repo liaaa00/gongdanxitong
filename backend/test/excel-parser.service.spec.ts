@@ -89,4 +89,75 @@ describe('Imports ExcelParserService', () => {
     expect(parsed.rows[0]['姓名']).toBe('张三');
     expect(parsed.rows[0]['入职材料是否需要集约收集']).toBe('是');
   });
+
+  it('records 0-based physical row numbers aligned with data rows (attachment anchor alignment)', async () => {
+    const workbook = new Workbook();
+    const sheet = workbook.addWorksheet('减员信息表');
+    // 模拟离职模板：第1行字段名，2-4行 meta（是否必填/填写要求/填写示例），数据从第5行起
+    sheet.getRow(1).values = ['客户名称', '客户代码', '姓名', '身份证号码', '离职日期'];
+    sheet.getRow(2).values = ['是否必填', '必填', '必填', '必填', '必填'];
+    sheet.getRow(3).values = ['填写要求', '客户简称', '客户代码', '员工姓名', '证件号'];
+    sheet.getRow(4).values = ['填写示例', '阿里巴巴', 'CH2688', '李田', '430921198702020118'];
+    sheet.getRow(5).values = ['真实客户A', 'CUST001', '张三', '330106199001010011', '2026-06-01'];
+    sheet.getRow(6).values = ['真实客户B', 'CUST002', '李四', '330106199002020022', '2026-06-02'];
+    const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+
+    const service = new ExcelParserService();
+    const parsed = await service.parseBuffer(buffer);
+
+    expect(parsed.rows).toHaveLength(2);
+    // 数据在物理第 5、6 行 → 0-based 为 4、5，与嵌入附件 drawing/vml 锚点行号一致
+    expect(parsed.meta.rowNumbers).toEqual([4, 5]);
+    // 关键：数组下标(0,1) ≠ 物理行号(4,5)，附件必须按 rowNumbers 关联而非数组下标
+    expect(parsed.meta.rowNumbers[0]).not.toBe(0);
+  });
+
+  it('demotes template label column but keeps attachment column for hyperlink detection', async () => {
+    const workbook = new Workbook();
+    const sheet = workbook.addWorksheet('减员信息表');
+    // 贴合系统生成的离职模板：A 列为标签列(首行「字段名」)，字段从 B 列起，末列为「附件」提示列
+    sheet.getRow(1).values = ['字段名', '客户名称', '姓名', '离职日期', '附件'];
+    sheet.getRow(2).values = ['是否必填', '必填', '必填', '必填', '非必填'];
+    sheet.getRow(3).values = ['填写要求', '客户简称', '员工姓名', '证件号', '在本行插入附件'];
+    sheet.getRow(4).values = ['填写示例', '阿里巴巴', '张三', '2026-06-01', ''];
+    sheet.getRow(5).values = ['', '真实客户A', '张三', '2026-06-01', ''];
+    const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+
+    const service = new ExcelParserService();
+    const parsed = await service.parseBuffer(buffer);
+
+    // The label column is structural; the attachment column stays visible so hyperlinks can be detected.
+    expect(parsed.headers).not.toContain('\u5b57\u6bb5\u540d');
+    expect(parsed.headers[0]).toMatch(/^__col_\d+__$/);
+    expect(parsed.headers).toContain('\u9644\u4ef6');
+    // 真实字段表头保留
+    expect(parsed.headers).toContain('客户名称');
+    expect(parsed.headers).toContain('姓名');
+    expect(parsed.headers).toContain('离职日期');
+  });
+
+  it('captures hyperlinks from attachment columns with physical row numbers', async () => {
+    const workbook = new Workbook();
+    const sheet = workbook.addWorksheet('sheet1');
+    sheet.getRow(1).values = ['\u5b57\u6bb5\u540d', 'Name', '\u9644\u4ef6'];
+    sheet.getRow(2).values = ['required', 'optional', 'optional'];
+    sheet.getRow(3).values = ['Alice', 'Alice', { text: 'proof.pdf', hyperlink: 'https://example.com/proof.pdf' }];
+    const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+
+    const service = new ExcelParserService();
+    const parsed = await service.parseBuffer(buffer, { headerRows: 1 });
+
+    expect(parsed.headers).toContain('\u9644\u4ef6');
+    expect(parsed.rows).toHaveLength(2);
+    expect(parsed.meta.attachmentLinks).toEqual([
+      {
+        rowIndex: 2,
+        columnIndex: 2,
+        header: '\u9644\u4ef6',
+        text: 'proof.pdf',
+        hyperlink: 'https://example.com/proof.pdf',
+      },
+    ]);
+  });
+
 });

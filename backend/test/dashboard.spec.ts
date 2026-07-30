@@ -41,6 +41,7 @@ describe('DashboardService', () => {
     expect(dataSource.query.mock.calls[1][0]).toContain("- COUNT(*) FILTER (WHERE status::text IN ('void','voided') OR void_at IS NOT NULL)");
     expect(dataSource.query.mock.calls[1][0]).not.toContain("- COUNT(*) FILTER (WHERE status::text IN ('withdraw_pending','withdrawn') AND void_at IS NULL)");
     expect(dataSource.query.mock.calls[1][0]).toContain('AS voided');
+    expect(dataSource.query.mock.calls[1][0]).toContain('FROM in_service_orders io');
   });
 
   it('returns dashboard cards for salesperson with owner work order scope', async () => {
@@ -287,6 +288,7 @@ describe('DashboardService', () => {
 
     expect(dataSource.query).toHaveBeenCalledWith(expect.stringContaining('FROM dispatched_orders d'), [false, [], null, expect.any(String), phase1Modules]);
     expect(result).toEqual({ rows: [expect.objectContaining({ moduleCode: 'onboarding_contact', label: '入职联系' })] });
+    expect(((dataSource.query as jest.Mock).mock.calls[0][0] as string)).toContain('FROM in_service_orders io');
   });
 
   it('defaults business leader order matrix to personal scope and uses department only for team scope', async () => {

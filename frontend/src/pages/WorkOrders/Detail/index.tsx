@@ -8,10 +8,11 @@ import {
 import type { FieldConfig } from '@/components/DynamicForm';
 import { getWorkOrder } from '@/services/workOrders';
 import type { WorkOrderItem } from '@/services/workOrders';
-import { getImportTemplateConfig } from '@/services/importTemplates';
+import { getCreateWorkOrderFields } from '@/services/importTemplates';
 import { getFields } from '@/services/fields';
 import { getStatusColor, getStatusText } from '@/constants/dictionaries';
 import { getModuleLabel } from '@/constants/modules';
+import MaterialsUpload from '@/components/MaterialsUpload';
 
 // 主工单详情仅展示数据和子工单进度；字段范围严格跟随后台导入模板配置。
 function mergeImportFieldsWithSystemMeta(importFields: FieldConfig[], systemFields: FieldConfig[]): FieldConfig[] {
@@ -51,7 +52,7 @@ const WorkOrdersDetail: React.FC = () => {
         const orderData = await getWorkOrder(id);
         const orderType = orderData.order_type || 'onboarding';
         const [importFields, systemFields] = await Promise.all([
-          getImportTemplateConfig(orderType).catch((err) => {
+          getCreateWorkOrderFields(orderType).catch((err) => {
             console.warn('[工单详情] 导入模板字段配置加载失败，降级为空字段列表：', err);
             return [] as FieldConfig[];
           }),
@@ -192,6 +193,11 @@ const WorkOrdersDetail: React.FC = () => {
             );
           })}
         </Space>
+
+        {/* 离职材料附件（附件挂在主工单 id 上，bizPurpose=resignation_material） */}
+        {isResignationOrder && id && (
+          <MaterialsUpload workOrderId={id} bizPurpose="resignation_material" />
+        )}
       </Space>
     </PageContainer>
   );

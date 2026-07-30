@@ -7,7 +7,6 @@ import { AttachmentsService } from './attachments.service';
 import {
   ListOrderAttachmentsDto,
   ReviewOrderAttachmentDto,
-  StampOrderAttachmentDto,
   UploadOrderAttachmentDto,
 } from './dto';
 
@@ -44,11 +43,6 @@ export class AttachmentsController {
     @CurrentUser() user: JwtUserPayload,
   ) {
     return this.service.review(id, payload, user);
-  }
-
-  @Post(':id/stamp')
-  stamp(@Param('id') id: string, @Body() payload: StampOrderAttachmentDto) {
-    return this.service.stamp(id, payload);
   }
 
   @Post(':id/receive')

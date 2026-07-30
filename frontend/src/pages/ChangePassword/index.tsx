@@ -87,7 +87,7 @@ const ChangePasswordPage: React.FC = () => {
       message.success('密码修改成功，请重新登录');
       navigate('/login', { replace: true });
     } catch (e: any) {
-      message.error(e?.message || '修改失败，请检查旧密码是否正确');
+      message.error(e?._friendlyMsg || e?.response?.data?.message || e?.message || '修改失败，请检查旧密码是否正确');
     } finally {
       setLoading(false);
     }

@@ -5,7 +5,35 @@ import { businessException } from 'src/common/exceptions/business-exception';
 import { FieldConfig, WorkOrder } from 'src/entities';
 import { AstEvaluator } from 'src/modules/dispatch-engine/ast-evaluator';
 
-const STRICT_REQUIRED_FIELD_CODES = new Set(['employee_name', 'id_card_no', 'customer_name', 'customer_code']);
+const STRICT_REQUIRED_FIELD_CODES = new Set([
+  'employee_name',
+  'id_card_no',
+  'customer_name',
+  'customer_code',
+  'province',
+  'current_address',
+  'probation_months',
+  'probation_end_date',
+  'probation_salary',
+  'social_insurance_result',
+  'medical_insurance_result',
+  'housing_fund_result',
+]);
+
+const STRICT_REQUIRED_FIELD_NAMES: Record<string, string> = {
+  employee_name: '姓名',
+  id_card_no: '身份证号',
+  customer_name: '客户名称',
+  customer_code: '客户代码',
+  province: '省份',
+  current_address: '现住地址',
+  probation_months: '试用期（月）',
+  probation_end_date: '试用期结束日期',
+  probation_salary: '试用期工资',
+  social_insurance_result: '社保是否办结',
+  medical_insurance_result: '医保是否办结',
+  housing_fund_result: '公积金是否办结',
+};
 
 @Injectable()
 export class WorkOrderValidationService {
@@ -25,10 +53,14 @@ export class WorkOrderValidationService {
     });
 
     const missing: string[] = [];
+    const missingNames: string[] = [];
     const invalid: Array<{ fieldCode: string; reason: string }> = [];
 
     for (const field of fields) {
-      if (field.orderType && field.orderType !== workOrder.orderType) {
+      const appliesToOrder = field.orderType === null
+        || field.orderType === workOrder.orderType
+        || field.businessContext?.includes(workOrder.orderType) === true;
+      if (!appliesToOrder) {
         continue;
       }
 
@@ -37,6 +69,7 @@ export class WorkOrderValidationService {
       if (required && !this.hasValue(value)) {
         if (STRICT_REQUIRED_FIELD_CODES.has(field.fieldCode)) {
           missing.push(field.fieldCode);
+          missingNames.push(field.fieldName || field.fieldCode);
         }
         continue;
       }
@@ -54,7 +87,8 @@ export class WorkOrderValidationService {
     }
 
     if (missing.length > 0) {
-      throw businessException(4110, HttpStatus.BAD_REQUEST, '必填字段缺失', { missing });
+      const label = missingNames.length > 0 ? `：${missingNames.join('、')}` : '';
+      throw businessException(4110, HttpStatus.BAD_REQUEST, `必填字段缺失${label}`, { missing });
     }
 
     if (invalid.length > 0) {
@@ -188,7 +222,9 @@ export class WorkOrderValidationService {
   requireText(value: unknown, fieldCode: string): string {
     const text = this.readText(value);
     if (!text) {
-      throw businessException(4110, HttpStatus.BAD_REQUEST, '必填字段缺失', { fieldCode });
+      const label = STRICT_REQUIRED_FIELD_NAMES[fieldCode];
+      const message = label ? `必填字段缺失：${label}` : '必填字段缺失';
+      throw businessException(4110, HttpStatus.BAD_REQUEST, message, { fieldCode });
     }
     return text;
   }

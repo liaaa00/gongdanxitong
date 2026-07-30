@@ -82,6 +82,9 @@ function buildService(fields: FieldConfig[], rows: ImportTemplateField[] = []) {
 describe('ImportTemplateConfigService', () => {
   const onboardingFields = [
     field({ fieldCode: 'employee_name', fieldName: '姓名', isRequired: true, displayOrder: 1 }),
+    field({ fieldCode: 'gender', fieldName: '性别', displayOrder: 2 }),
+    field({ fieldCode: 'birth_date', fieldName: '出生日期', displayOrder: 3 }),
+    field({ fieldCode: 'age', fieldName: '年龄', displayOrder: 4 }),
     field({ fieldCode: 'contract_template', fieldName: '劳动合同模板', conditionalRequired: { field: 'need_company_contract', op: 'EQ', value: '1.是' }, displayOrder: 2 }),
     field({ fieldCode: 'contract_feedback', fieldName: '劳动合同新签反馈', displayOrder: 3 }),
     field({ fieldCode: 'feedback_deadline', fieldName: '反馈截止日期', displayOrder: 4 }),
@@ -110,7 +113,10 @@ describe('ImportTemplateConfigService', () => {
   it('uses configured rows, aliases and required override before fallback', async () => {
     const { service } = buildService(onboardingFields, [
       templateField({ fieldCode: 'template_name', displayOrder: 1, headerAlias: '通用模板名称', isRequiredOverride: true }),
-      templateField({ fieldCode: 'employee_name', displayOrder: 2 }),
+      templateField({ fieldCode: 'gender', displayOrder: 2 }),
+      templateField({ fieldCode: 'birth_date', displayOrder: 3 }),
+      templateField({ fieldCode: 'age', displayOrder: 4 }),
+      templateField({ fieldCode: 'employee_name', displayOrder: 5 }),
     ]);
 
     const list = await service.list(OrderType.ONBOARDING);

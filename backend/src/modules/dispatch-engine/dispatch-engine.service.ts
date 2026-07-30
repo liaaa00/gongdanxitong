@@ -2,12 +2,15 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
 import {
+  DispatchModuleCode,
   DispatchRule,
   DispatchStrategy,
   ModuleHandler,
+  ModuleType,
   DispatchedOrder,
   DispatchedOrderStatus,
   OrderType,
+  TeamRole,
   WorkOrder,
   WorkOrderModuleConfig,
 } from 'src/entities';
@@ -17,6 +20,7 @@ import {
   AstNode,
   ChildToCreate,
   DispatchEvaluationResult,
+  ProvinceDispatchContext,
   RuleHit,
 } from './dispatch-engine.types';
 import { HandlerPickerService } from './handler-picker.service';
@@ -92,7 +96,20 @@ export class DispatchEngineService {
     for (const [moduleCode, winner] of moduleWinner.entries()) {
       const rule = winner.rule;
 
-      const handlerId = await this.resolveModuleHandler(rule, moduleCode, manager);
+      const province = this.extractTriggerValue(rule.triggerConditions, 'province')
+        ?? this.readProvince(workOrder.extraData ?? {})
+        ?? '';
+      const provinceDispatchContext = this.resolveProvinceDispatchContext(
+        moduleCode,
+        workOrder.orderType,
+        province,
+      );
+      const handlerId = await this.resolveModuleTeamHandler(
+        moduleCode,
+        rule.dispatchStrategy,
+        manager,
+        provinceDispatchContext,
+      );
       const visibleFields = await this.fieldPermissionService.getVisibleFieldsForScenario(
         `dispatched:${moduleCode}`,
       );
@@ -104,6 +121,7 @@ export class DispatchEngineService {
         ruleId: rule.id,
         ruleName: rule.ruleName,
         dispatchStrategy: rule.dispatchStrategy,
+        provinceDispatchContext,
       });
     }
 
@@ -140,7 +158,12 @@ export class DispatchEngineService {
       const reminderBeforeHours = config?.slaReminderBeforeHours ?? null;
       child.slaHours = slaHours;
       child.slaReminderBeforeHours = reminderBeforeHours;
-      child.handlerId = await this.resolveModuleTeamHandler(child.moduleCode, config?.dispatchStrategy ?? DispatchStrategy.TEAM_CLAIM, manager);
+      child.handlerId = await this.resolveModuleTeamHandler(
+        child.moduleCode,
+        config?.dispatchStrategy ?? DispatchStrategy.TEAM_CLAIM,
+        manager,
+        child.provinceDispatchContext,
+      );
       child.dispatchStrategy = config?.dispatchStrategy ?? DispatchStrategy.TEAM_CLAIM;
 
       if (child.moduleCode === 'contract' && extraData.contract_start_date) {
@@ -175,19 +198,84 @@ export class DispatchEngineService {
     return 1;
   }
 
-  private async resolveModuleHandler(rule: DispatchRule, moduleCode: string, manager?: EntityManager): Promise<string | null> {
-    return this.resolveModuleTeamHandler(moduleCode, rule.dispatchStrategy, manager);
-  }
+  private async resolveModuleTeamHandler(
+    moduleCode: string,
+    strategy: DispatchStrategy,
+    manager?: EntityManager,
+    context?: ProvinceDispatchContext,
+  ): Promise<string | null> {
+    if (context) {
+      return this.handlerPicker.pick(strategy, moduleCode, manager, {
+        province: context.province,
+        mappingSource: context.mappingSource,
+      });
+    }
 
-  private async resolveModuleTeamHandler(moduleCode: string, strategy: DispatchStrategy, manager?: EntityManager): Promise<string | null> {
     const repository = manager?.getRepository(ModuleHandler) ?? this.moduleHandlerRepository;
-    const activeHandlers = await repository.find({
+    const activeHandlers = (await repository.find({
       where: { moduleCode, isActive: true, isBackup: false },
+      relations: { handler: true },
       order: { weight: 'DESC', handlerId: 'ASC' },
-    });
+    })).filter((candidate) => candidate.handler?.isActive !== false);
     if (activeHandlers.length === 0) return null;
     if (activeHandlers.length === 1) return activeHandlers[0].handlerId;
     return this.handlerPicker.pick(strategy, moduleCode, manager);
+  }
+
+  private resolveProvinceDispatchContext(
+    moduleCode: string,
+    orderType: OrderType,
+    province: string,
+  ): ProvinceDispatchContext | undefined {
+    if (moduleCode === DispatchModuleCode.IN_SERVICE_SINGLE_BUSINESS && orderType === OrderType.IN_SERVICE) {
+      return {
+        moduleType: ModuleType.IN_SERVICE,
+        province,
+        mappingSource: 'sheet4',
+        teamRole: TeamRole.IN_SERVICE,
+      };
+    }
+    if (
+      moduleCode === DispatchModuleCode.OUT_OF_PROVINCE_DISPATCH
+      && [OrderType.OUT_OF_PROVINCE_INCREASE, OrderType.OUT_OF_PROVINCE_DECREASE].includes(orderType)
+    ) {
+      return {
+        moduleType: ModuleType.OUT_OF_PROVINCE,
+        province,
+        mappingSource: 'sheet5',
+        teamRole: TeamRole.OUT_OF_PROVINCE,
+      };
+    }
+    return undefined;
+  }
+
+  private readProvince(extraData: Record<string, unknown>): string | null {
+    const value = extraData.province ?? extraData.provinceName ?? extraData['省份'];
+    return typeof value === 'string' && value.trim() ? value.trim() : null;
+  }
+
+  private extractTriggerValue(conditions: Record<string, unknown> | null, field: string): string | null {
+    if (!conditions) return null;
+
+    const visit = (node: unknown): string | null => {
+      if (!node || typeof node !== 'object') return null;
+      const object = node as Record<string, unknown>;
+      if (object.field === field && object.op === 'EQ' && typeof object.value === 'string') {
+        return object.value;
+      }
+      for (const key of ['children', 'and', 'or']) {
+        const nested = object[key];
+        if (!Array.isArray(nested)) continue;
+        for (const child of nested) {
+          const found = visit(child);
+          if (found !== null) return found;
+        }
+      }
+      const direct = object[field];
+      return typeof direct === 'string' ? direct : null;
+    };
+
+    return visit(conditions);
   }
 
   private normalizeOnboardingDispatchFlags(extraData: Record<string, unknown>): Record<string, unknown> {

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Card, Timeline, Tag, App, Empty } from 'antd';
 import {
-  AuditOutlined, RollbackOutlined, FileProtectOutlined,
+  AuditOutlined, RollbackOutlined,
   FileDoneOutlined, InboxOutlined, SendOutlined, CheckCircleOutlined,
   SyncOutlined,
 } from '@ant-design/icons';
@@ -19,8 +19,6 @@ interface StageItem {
 const STAGE_ICONS: Record<string, React.ReactNode> = {
   material_review: <AuditOutlined />,
   returned_for_supplement: <RollbackOutlined />,
-  stamp_requested: <FileProtectOutlined />,
-  stamp_confirmed: <FileDoneOutlined />,
   materials_received: <InboxOutlined />,
   offline_submitted: <SendOutlined />,
   completed: <CheckCircleOutlined />,
@@ -30,8 +28,6 @@ const STAGE_ICONS: Record<string, React.ReactNode> = {
 const STAGE_COLORS: Record<string, string> = {
   material_review: 'blue',
   returned_for_supplement: 'orange',
-  stamp_requested: 'purple',
-  stamp_confirmed: 'green',
   materials_received: 'cyan',
   offline_submitted: 'geekblue',
   completed: 'green',
@@ -42,8 +38,6 @@ const DEFAULT_STAGES: StageItem[] = [
   { id: 's-1', stage_code: 'material_review', stage_label: '材料审核中', remark: '后道接单，开始审核材料', payload: null, operator_name: '合同乙', happened_at: new Date(Date.now() - 86400000 * 2).toISOString() },
   { id: 's-2', stage_code: 'returned_for_supplement', stage_label: '退回业务员补充', remark: '身份证复印件不清晰，需重新上传', payload: { returned_material_ids: ['att-1'] }, operator_name: '合同乙', happened_at: new Date(Date.now() - 86400000).toISOString() },
   { id: 's-3', stage_code: 'material_review', stage_label: '材料审核中', remark: '补充材料已收到，审核中', payload: null, operator_name: '合同乙', happened_at: new Date(Date.now() - 43200000).toISOString() },
-  { id: 's-4', stage_code: 'stamp_requested', stage_label: '用印申请已提交', remark: '业务员提交用印申请', payload: { material_ids: ['att-2'] }, operator_name: '业务员甲', happened_at: new Date(Date.now() - 21600000).toISOString() },
-  { id: 's-5', stage_code: 'stamp_confirmed', stage_label: '用印完成', remark: '用印单号 ST20260512001', payload: { stamp_no: 'ST20260512001' }, operator_name: '业务员甲', happened_at: new Date(Date.now() - 7200000).toISOString() },
 ];
 
 interface StagesTimelineProps {

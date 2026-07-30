@@ -1,7 +1,7 @@
 import { Type } from 'class-transformer';
 import { ArrayMaxSize, ArrayNotEmpty, IsArray, IsBoolean, IsEnum, IsIn, IsObject, IsOptional, IsString, Length, ValidateNested } from 'class-validator';
 import { FieldType, OrderType } from 'src/entities';
-import { FIRST_PHASE_IMPORT_ORDER_TYPES } from '../import-permissions';
+import { WORK_ORDER_IMPORT_ORDER_TYPES } from '../import-permissions';
 
 export class ConfirmMappingItemDto {
   @IsString()
@@ -41,7 +41,7 @@ export class ConfirmImportDto {
   fileId?: string;
 
   @IsOptional()
-  @IsIn(FIRST_PHASE_IMPORT_ORDER_TYPES)
+  @IsIn(WORK_ORDER_IMPORT_ORDER_TYPES)
   orderType: OrderType = OrderType.ONBOARDING;
 
   @IsOptional()

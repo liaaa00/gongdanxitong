@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   storeLogout: vi.fn(),
   fetchUser: vi.fn(),
+  messageError: vi.fn(),
 }));
 
 vi.mock('@/services/auth', () => ({
@@ -44,7 +45,7 @@ vi.mock('antd', async () => {
     App: {
       ...((actual as Record<string, unknown>).App as object),
       useApp: () => ({
-        message: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() },
+        message: { success: vi.fn(), error: mocks.messageError, info: vi.fn(), warning: vi.fn() },
       }),
     },
   };
@@ -84,5 +85,26 @@ describe('ChangePasswordPage', () => {
     expect(mocks.logoutApi).toHaveBeenCalled();
     expect(mocks.storeLogout).toHaveBeenCalled();
     expect(mocks.navigate).toHaveBeenCalledWith('/login', { replace: true });
+  });
+
+  it('shows the backend friendly error and keeps the session when password change fails', async () => {
+    const user = userEvent.setup();
+    mocks.changePassword.mockRejectedValueOnce({ _friendlyMsg: '旧密码不正确' });
+    render(
+      <MemoryRouter>
+        <ChangePasswordPage />
+      </MemoryRouter>,
+    );
+
+    const passwordInputs = document.querySelectorAll('input[type="password"]');
+    await user.type(passwordInputs[0], 'wrong-password');
+    await user.type(passwordInputs[1], 'Newpass123');
+    await user.type(passwordInputs[2], 'Newpass123');
+    await user.click(screen.getByRole('button', { name: /确认修改/ }));
+
+    await waitFor(() => expect(mocks.messageError).toHaveBeenCalledWith('旧密码不正确'));
+    expect(mocks.logoutApi).not.toHaveBeenCalled();
+    expect(mocks.storeLogout).not.toHaveBeenCalled();
+    expect(mocks.navigate).not.toHaveBeenCalled();
   });
 });

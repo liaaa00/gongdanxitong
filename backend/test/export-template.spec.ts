@@ -26,7 +26,7 @@ describe('ExportTemplatesService', () => {
     ]) };
     const upload = { saveBuffer: jest.fn(async () => ({ fileId: 'file-1', originalName: 'export.xlsx' })) };
     return {
-      service: new ExportTemplatesService(templateRepo as never, dispatchedRepo as never, logRepo as never, fieldRepo as never, upload as never),
+      service: new ExportTemplatesService(templateRepo as never, dispatchedRepo as never, logRepo as never, fieldRepo as never, { find: jest.fn(async () => []) } as never, upload as never),
       upload,
       logRepo,
       templateRepo,

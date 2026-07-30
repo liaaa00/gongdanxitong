@@ -11,7 +11,7 @@ import {
 import { Branch } from './branch.entity';
 import { Customer } from './customer.entity';
 import { Department } from './department.entity';
-import { OrderType, WorkOrderStatus } from './enums';
+import { BusinessScope, OrderType, WorkOrderStatus } from './enums';
 import { User } from './user.entity';
 import { DispatchedOrder } from './dispatched-order.entity';
 import { FieldSupplementLog } from './field-supplement-log.entity';
@@ -30,6 +30,14 @@ export class WorkOrder {
     enum: OrderType,
   })
   orderType!: OrderType;
+
+  @Column({
+    name: 'business_scope',
+    type: 'varchar',
+    length: 32,
+    default: BusinessScope.BEILUN,
+  })
+  businessScope!: BusinessScope;
 
   @Column({
     type: 'enum',

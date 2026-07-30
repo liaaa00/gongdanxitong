@@ -6,6 +6,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import configuration, { AppConfig } from './config/configuration';
 import { validateEnv } from './config/env.validation';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
+import { PasswordChangeGuard } from './common/guards/password-change.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import {
   ActionConfig,
@@ -25,11 +26,14 @@ import {
   FieldSupplementRule,
   ImportJob,
   ImportTemplateField,
+  InServiceOrder,
   ModuleField,
   ModuleHandler,
+  ModuleHandlerDelegation,
   ModuleSupervisor,
   Notification,
   OperationLog,
+  OutOfProvinceOrder,
   OrderAttachment,
   OrderStage,
   Role,
@@ -54,6 +58,8 @@ import { HealthModule } from './health/health.module';
 import { AiModule } from './modules/ai/ai.module';
 import { AttachmentsModule } from './modules/attachments/attachments.module';
 import { ImportsModule } from './modules/imports/imports.module';
+import { InServiceOrdersModule } from './modules/in-service-orders/in-service-orders.module';
+import { OutOfProvinceOrdersModule } from './modules/out-of-province-orders/out-of-province-orders.module';
 import { StagesModule } from './modules/stages/stages.module';
 import { NotificationModule } from './modules/notifications/notification.module';
 import { RoleActionPermissionModule } from './modules/role-action-permissions/role-action-permission.module';
@@ -101,11 +107,14 @@ import { OperationLogCleanupService } from './modules/operation-logs/operation-l
           FieldSupplementRule,
           ImportJob,
           ImportTemplateField,
+          InServiceOrder,
           ModuleField,
           ModuleHandler,
+          ModuleHandlerDelegation,
           ModuleSupervisor,
           Notification,
           OperationLog,
+          OutOfProvinceOrder,
           OrderAttachment,
           OrderStage,
           Role,
@@ -132,6 +141,8 @@ import { OperationLogCleanupService } from './modules/operation-logs/operation-l
     DashboardModule,
     AiModule,
     ImportsModule,
+    InServiceOrdersModule,
+    OutOfProvinceOrdersModule,
     AttachmentsModule,
     StagesModule,
     UploadsModule,
@@ -145,6 +156,10 @@ import { OperationLogCleanupService } from './modules/operation-logs/operation-l
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: PasswordChangeGuard,
     },
     {
       provide: APP_GUARD,

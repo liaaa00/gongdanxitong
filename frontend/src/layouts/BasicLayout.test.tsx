@@ -1,9 +1,10 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useNavigate as useRouterNavigate } from 'react-router-dom';
 import BasicLayout from './BasicLayout';
 import { markNotificationRead } from '@/services/notifications';
+import { KEEP_ALIVE_ROUTE_ACTIVATED_EVENT } from '@/utils/listPageState';
 // Role codes are kept as literals in hoisted mocks.
 
 type TestMenuItem = { name?: string; path?: string; key?: string; children?: TestMenuItem[] };
@@ -26,22 +27,25 @@ vi.mock('@ant-design/pro-components', () => {
   );
 
   return {
-    ProLayout: ({ children, actionsRender, route, menuProps, menuItemRender }: { children?: React.ReactNode; actionsRender?: () => React.ReactNode[]; route?: { children?: TestMenuItem[] }; menuProps?: TestMenuProps; menuItemRender?: TestMenuRender }) => (
+    ProLayout: ({ children, actionsRender, menuExtraRender, route, menuProps, menuItemRender }: { children?: React.ReactNode; actionsRender?: (props: { collapsed?: boolean }) => React.ReactNode[]; menuExtraRender?: (props: { collapsed?: boolean }) => React.ReactNode; route?: { children?: TestMenuItem[] }; menuProps?: TestMenuProps; menuItemRender?: TestMenuRender }) => (
       <div>
+        <div data-testid="layout-extra">{menuExtraRender?.({ collapsed: false })}</div>
         <nav data-testid="layout-menu">{renderItems(route?.children || [], menuItemRender)}</nav>
         <div data-testid="selected-keys">{JSON.stringify(menuProps?.selectedKeys || [])}</div>
-        <div data-testid="layout-actions">{actionsRender?.()}</div>
+        <div data-testid="layout-actions">{actionsRender?.({ collapsed: false })}</div>
         <main>{children}</main>
       </div>
     ),
   };
 });
 
-const { notification, mockUserState, mockNavigate } = vi.hoisted(() => {
-  const makeUser = (roleCodes: string[]) => ({
+const { notification, mockUserState, mockNavigate, mockRouterState } = vi.hoisted(() => {
+  const makeUser = (roleCodes: string[], businessScope: 'beilun' | 'out_of_province' = 'beilun') => ({
     id: 'u-1',
     username: 'tester',
     real_name: '测试用户',
+    business_scope: businessScope,
+    businessScope,
     email: '',
     phone: '',
     avatar_url: null,
@@ -52,6 +56,7 @@ const { notification, mockUserState, mockNavigate } = vi.hoisted(() => {
 
   return {
     mockNavigate: vi.fn(),
+    mockRouterState: { useRealNavigate: false },
     mockUserState: {
       makeUser,
       user: makeUser(['labor_contract_member']),
@@ -81,7 +86,10 @@ vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
   return {
     ...actual,
-    useNavigate: () => mockNavigate,
+    useNavigate: () => {
+      const navigate = actual.useNavigate();
+      return mockRouterState.useRealNavigate ? navigate : mockNavigate;
+    },
   };
 });
 
@@ -136,6 +144,22 @@ const renderLayout = (initialEntries: string[] = ['/']) => render(
   </MemoryRouter>,
 );
 
+const CacheNavigationProbe: React.FC<{ label: string; target: string }> = ({ label, target }) => {
+  const navigate = useRouterNavigate();
+  return <button onClick={() => navigate(target)}>{label}</button>;
+};
+
+const renderLayoutWithNavigation = () => render(
+  <MemoryRouter initialEntries={['/onboarding/contract']}>
+    <Routes>
+      <Route element={<BasicLayout />}>
+        <Route path="/onboarding/contract" element={<CacheNavigationProbe label="打开测试详情" target="/my-dispatched/d-1" />} />
+        <Route path="/my-dispatched/:id" element={<CacheNavigationProbe label="返回测试列表" target="/onboarding/contract" />} />
+      </Route>
+    </Routes>
+  </MemoryRouter>,
+);
+
 const menuText = () => screen.getByTestId('layout-menu').textContent || '';
 const menuPaths = () => Array.from(screen.getByTestId('layout-menu').querySelectorAll('[data-path]'))
   .map((node) => node.getAttribute('data-path'))
@@ -147,6 +171,7 @@ describe('BasicLayout menu visibility', () => {
     vi.clearAllMocks();
     window.localStorage.clear();
     mockUserState.user = mockUserState.makeUser(['labor_contract_member']);
+    mockRouterState.useRealNavigate = false;
   });
 
   afterEach(() => {
@@ -173,6 +198,40 @@ describe('BasicLayout menu visibility', () => {
     mockUserState.user = mockUserState.makeUser(['business_group_member']);
     renderLayout(['/dashboard']);
     expect(menuPaths()).not.toContain('/admin/import-templates');
+  });
+
+  it('locks business-front accounts to their assigned scope and lets admins switch', () => {
+    window.localStorage.setItem('business_scope_v1', 'beilun');
+    mockUserState.user = mockUserState.makeUser(['business_group_member'], 'out_of_province');
+
+    const businessView = renderLayout(['/out-of-province']);
+    expect(menuText()).toContain('浙江自签业务');
+    expect(menuText()).toContain('省外增员');
+    expect(menuText()).toContain('省外减员');
+    expect(menuText()).toContain('单项业务办理');
+    expect(menuText()).not.toContain('入职管理');
+    expect(screen.getByText('浙江自签')).toBeInTheDocument();
+    expect(screen.queryByText('北仑')).not.toBeInTheDocument();
+    expect(screen.queryByText('省外')).not.toBeInTheDocument();
+    expect(window.localStorage.getItem('business_scope_v1')).toBe('out_of_province');
+    businessView.unmount();
+
+    window.localStorage.setItem('business_scope_v1', 'beilun');
+    mockUserState.user = mockUserState.makeUser(['admin']);
+    renderLayout(['/dashboard']);
+
+    const scopeAreaText = screen.getByTestId('layout-extra').textContent || '';
+    expect(scopeAreaText).toContain('业务范围');
+    expect(scopeAreaText).toContain('北仑');
+    expect(scopeAreaText).toContain('省外');
+    expect(screen.getByTestId('layout-actions').textContent).not.toContain('北仑');
+    expect(screen.getByTestId('layout-actions').textContent).not.toContain('省外');
+
+    fireEvent.click(screen.getByText('省外'));
+
+    expect(window.localStorage.getItem('business_scope_v1')).toBe('out_of_province');
+    expect(mockNavigate).toHaveBeenLastCalledWith('/out-of-province');
+    expect(menuText()).toContain('浙江自签业务');
   });
 
   it('selects onboarding and offboarding main work-order menu entries by orderType query', () => {
@@ -226,6 +285,30 @@ describe('BasicLayout menu visibility', () => {
     expect(mockNavigate).toHaveBeenLastCalledWith('/work-orders?orderType=onboarding');
   });
 
+  it('notifies once when a cached list route is reactivated', async () => {
+    mockRouterState.useRealNavigate = true;
+    const activations = vi.fn();
+    const listener = (event: Event) => activations((event as CustomEvent).detail);
+    window.addEventListener(KEEP_ALIVE_ROUTE_ACTIVATED_EVENT, listener);
+
+    try {
+      renderLayoutWithNavigation();
+      expect(activations).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole('button', { name: '打开测试详情' }));
+      await screen.findByRole('button', { name: '返回测试列表' });
+      expect(activations).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole('button', { name: '返回测试列表' }));
+      await screen.findByRole('button', { name: '打开测试详情' });
+
+      await waitFor(() => expect(activations).toHaveBeenCalledTimes(1));
+      expect(activations).toHaveBeenCalledWith({ pathname: '/onboarding/contract', search: '' });
+    } finally {
+      window.removeEventListener(KEEP_ALIVE_ROUTE_ACTIVATED_EVENT, listener);
+    }
+  });
+
   it('falls back to menu default path when last path is illegal or forbidden for current role', () => {
     mockUserState.user = mockUserState.makeUser(['admin']);
     window.localStorage.setItem('menu_recent_paths_v1', JSON.stringify({ 'my-work-team': '/work-orders/wo-1' }));
@@ -264,8 +347,10 @@ describe('BasicLayout menu visibility', () => {
     expect(text).not.toContain('我的待办');
     expect(text).not.toContain('我的已办');
     expect(text).not.toContain('入职管理');
-    expect(text).not.toContain('在职管理');
-    expect(text).not.toContain('离职管理');
+    expect(text).toContain('在职管理');
+    expect(text).toContain('单项业务办理');
+    expect(text).toContain('离职管理');
+    expect(text).toContain('离职证明');
     expect(text).not.toContain('消息通知');
   });
 
@@ -286,6 +371,7 @@ describe('BasicLayout menu visibility', () => {
     expect(text).toContain('离职材料收集子工单');
     expect(text).toContain('减员报岗录入子工单');
     expect(text).toContain('社保公积金减员子工单');
+    expect(text).toContain('离职证明');
     expect(text).not.toContain('入职导入');
     expect(text).not.toContain('离职导入');
     expect(text).not.toContain('我的工单');
@@ -295,7 +381,8 @@ describe('BasicLayout menu visibility', () => {
     expect(text).not.toContain('我的待办');
     expect(text).not.toContain('我的已办');
     expect(text).not.toContain('团队工单');
-    expect(text).not.toContain('在职管理');
+    expect(text).toContain('在职管理');
+    expect(text).toContain('单项业务办理');
     expect(text).not.toContain('劳动合同续签子工单');
     expect(text).not.toContain('待遇申报子工单');
   });
@@ -327,7 +414,8 @@ describe('BasicLayout menu visibility', () => {
     expect(text).not.toContain('团队工单');
     expect(text).not.toContain('我的待办');
     expect(text).not.toContain('我的已办');
-    expect(text).not.toContain('在职管理');
+    expect(text).toContain('在职管理');
+    expect(text).toContain('单项业务办理');
   });
 
   it('keeps shared team owner on Yang Chun plus Mao Yani phase-1 modules only', () => {
@@ -346,6 +434,8 @@ describe('BasicLayout menu visibility', () => {
     expect(text).not.toContain('待遇申报子工单');
     expect(text).not.toContain('社保公积金增员子工单');
     expect(text).not.toContain('社保公积金减员子工单');
+    expect(text).toContain('在职管理');
+    expect(text).toContain('单项业务办理');
   });
 
   it('keeps social insurance specialist menu to social insurance increase/decrease only', () => {
@@ -360,7 +450,8 @@ describe('BasicLayout menu visibility', () => {
     expect(text).not.toContain('劳动合同新签子工单');
     expect(text).not.toContain('增员报岗录入子工单');
     expect(text).not.toContain('减员报岗录入子工单');
-    expect(text).not.toContain('在职管理');
+    expect(text).toContain('在职管理');
+    expect(text).toContain('单项业务办理');
   });
 });
 

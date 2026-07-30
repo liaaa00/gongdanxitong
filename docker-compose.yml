@@ -29,6 +29,7 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: ${NODE_ENV:-production}
+      AUTO_SEED: ${AUTO_SEED:-false}
       PORT: 3000
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-ticket_system}
       DB_HOST: postgres

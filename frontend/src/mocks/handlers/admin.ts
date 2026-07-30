@@ -76,7 +76,7 @@ const BASE_FIELDS = [
   { id: 'f6', field_code: 'gender', field_name: '性别', field_type: 'dropdown', is_required: true, dropdown_options: [{ label: '男', value: '男' }, { label: '女', value: '女' }], order_type: 'onboarding', display_order: 6, is_active: true },
   { id: 'f7', field_code: 'mobile', field_name: '移动电话', field_type: 'text', is_required: true, default_required: true, order_type: 'onboarding', display_order: 7, is_active: true },
   { id: 'f8', field_code: 'email', field_name: '电子邮件', field_type: 'text', is_required: true, order_type: 'onboarding', display_order: 8, is_active: true },
-  { id: 'f9', field_code: 'base_salary', field_name: '基本工资', field_type: 'number', is_required: true, order_type: 'onboarding', display_order: 9, is_active: true },
+  { id: 'f9', field_code: 'base_salary', field_name: '基本工资', field_type: 'text', is_required: true, order_type: 'onboarding', display_order: 9, is_active: true },
   { id: 'f10', field_code: 'contract_start_date', field_name: '合同开始日期', field_type: 'date', is_required: true, order_type: 'onboarding', display_order: 10, is_active: true },
 ];
 

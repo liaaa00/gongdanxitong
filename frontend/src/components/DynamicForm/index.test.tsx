@@ -48,6 +48,27 @@ describe('DynamicForm', () => {
     });
   });
 
+  it('requires a dependent field when an exists condition is met', async () => {
+    const onFinish = vi.fn().mockResolvedValue(undefined);
+    const cond: ConditionalRequired[] = [
+      { field: 'name', operator: 'exists', requireFields: ['note'] },
+    ];
+    render(
+      <DynamicForm
+        fields={mockFields.filter((field) => ['name', 'note'].includes(field.field_code))}
+        conditionalRequired={cond}
+        onFinish={onFinish}
+        submitText="提交"
+      />,
+    );
+
+    await userEvent.type(screen.getByLabelText('姓名'), '张三');
+    await userEvent.click(screen.getByRole('button', { name: /提\s*交/ }));
+
+    expect(await screen.findByText('当「姓名」有值时此项为必填')).toBeInTheDocument();
+    expect(onFinish).not.toHaveBeenCalled();
+  });
+
   it('calls onFinish when submit button is clicked', async () => {
     const onFinish = vi.fn().mockResolvedValue(undefined);
     render(<DynamicForm fields={mockFields} onFinish={onFinish} submitText="提交" />);

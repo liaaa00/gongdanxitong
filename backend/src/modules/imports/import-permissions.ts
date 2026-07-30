@@ -14,9 +14,15 @@ export const FIRST_PHASE_IMPORT_ORDER_TYPES: readonly OrderType[] = [
   OrderType.RESIGNATION,
 ];
 
+export const WORK_ORDER_IMPORT_ORDER_TYPES: readonly OrderType[] = [
+  ...FIRST_PHASE_IMPORT_ORDER_TYPES,
+  OrderType.OUT_OF_PROVINCE_INCREASE,
+  OrderType.OUT_OF_PROVINCE_DECREASE,
+];
+
 export function assertCanImportWorkOrder(user: JwtUserPayload, orderType: OrderType): void {
-  if (!FIRST_PHASE_IMPORT_ORDER_TYPES.includes(orderType)) {
-    throw businessException(4224, HttpStatus.BAD_REQUEST, '当前阶段仅开放入职、离职导入');
+  if (!WORK_ORDER_IMPORT_ORDER_TYPES.includes(orderType)) {
+    throw businessException(4224, HttpStatus.BAD_REQUEST, '当前仅开放入职、离职及省外增减员导入');
   }
 
   if (isAdminRole(user.roles) || hasAnyRole(user.roles, [...BUSINESS_MEMBER_ROLES, ...BUSINESS_LEADER_ROLES])) {

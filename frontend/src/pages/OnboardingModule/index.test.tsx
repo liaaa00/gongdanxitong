@@ -1,11 +1,14 @@
-import { act, render, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import OnboardingModule from './index';
+import OnboardingModule, { getOnboardingModulePermissionState } from './index';
+import { DEFAULT_MATRIX } from '@/services/roleActionPermissions';
+import { KEEP_ALIVE_ROUTE_ACTIVATED_EVENT } from '@/utils/listPageState';
 
 const mocks = vi.hoisted(() => ({
   latestProTableProps: undefined as any,
   getDispatchedOrders: vi.fn(),
   batchExportDispatchedOrders: vi.fn(),
+  batchReturnDispatchedOrders: vi.fn(),
   downloadDispatchedExport: vi.fn(),
   reload: vi.fn(),
   navigate: vi.fn(),
@@ -58,6 +61,7 @@ vi.mock('@/services/dispatchedOrders', () => ({
   getDispatchedOrders: (...args: unknown[]) => mocks.getDispatchedOrders(...args),
   batchCompleteDispatchedOrders: vi.fn(),
   batchExportDispatchedOrders: (...args: unknown[]) => mocks.batchExportDispatchedOrders(...args),
+  batchReturnDispatchedOrders: (...args: unknown[]) => mocks.batchReturnDispatchedOrders(...args),
   batchUrgeDispatchedOrders: vi.fn(),
   downloadDispatchedExport: (...args: unknown[]) => mocks.downloadDispatchedExport(...args),
 }));
@@ -106,6 +110,34 @@ describe('OnboardingModule header table filters', () => {
     })));
   });
 
+  it('shows social increase location and start month on the module list', () => {
+    mocks.moduleCode = 'social_insurance';
+
+    render(<OnboardingModule />);
+
+    const columns = mocks.latestProTableProps.columns as Array<Record<string, any>>;
+    const location = columns.find((column) => column.key === 'social_location');
+    const startMonth = columns.find((column) => column.key === 'start_month');
+    expect(location?.title).toBe('参保地');
+    expect(startMonth?.title).toBe('起始月');
+    expect(location?.renderText(undefined, { extra_data: { social_location: '厦门' } })).toBe('厦门');
+    expect(columns.some((column) => column.key === 'social_pay_region')).toBe(false);
+  });
+
+  it('shows social decrease region and stop month on the module list', () => {
+    mocks.moduleCode = 'social_insurance_resign';
+
+    render(<OnboardingModule />);
+
+    const columns = mocks.latestProTableProps.columns as Array<Record<string, any>>;
+    const region = columns.find((column) => column.key === 'social_pay_region');
+    const stopMonth = columns.find((column) => column.key === 'social_stop_month');
+    expect(region?.title).toBe('缴纳地区');
+    expect(stopMonth?.title).toBe('停保月');
+    expect(stopMonth?.renderText(undefined, { extra_data: { social_stop_month: '8月' } })).toBe('8月');
+    expect(columns.some((column) => column.key === 'social_location')).toBe(false);
+  });
+
   it('maps social_insurance_resign route to backend resignation_social_insurance module code', async () => {
     mocks.moduleCode = 'social_insurance_resign';
 
@@ -143,6 +175,61 @@ describe('OnboardingModule header table filters', () => {
     expect(params.module_code).toBe('data_entry');
     expect(params.orderMonth).toBeUndefined();
     expect(params.statuses).toBeUndefined();
+  });
+
+  it('reloads only when its cached module route is reactivated', async () => {
+    render(<OnboardingModule />);
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent(KEEP_ALIVE_ROUTE_ACTIVATED_EVENT, {
+        detail: { pathname: '/onboarding/contract', search: '' },
+      }));
+    });
+    expect(mocks.reload).not.toHaveBeenCalled();
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent(KEEP_ALIVE_ROUTE_ACTIVATED_EVENT, {
+        detail: { pathname: '/onboarding/data_entry', search: '' },
+      }));
+    });
+
+    await waitFor(() => expect(mocks.reload).toHaveBeenCalledTimes(1));
+  });
+});
+
+describe('OnboardingModule batch return', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.latestProTableProps = undefined;
+    mocks.moduleCode = 'contract';
+    mocks.getDispatchedOrders.mockResolvedValue({ list: [], total: 0 });
+    mocks.batchReturnDispatchedOrders.mockResolvedValue({ success: true, returned: 1, skipped: [] });
+  });
+
+  it('submits only active rows from a mixed-status selection', async () => {
+    render(<OnboardingModule />);
+
+    const tableAlert = mocks.latestProTableProps.tableAlertRender as (props: Record<string, unknown>) => React.ReactNode;
+    render(tableAlert({
+      selectedRowKeys: ['returned-order', 'processing-order'],
+      selectedRows: [
+        { id: 'returned-order', module_code: 'contract', status: 'returned' },
+        { id: 'processing-order', module_code: 'contract', status: 'processing' },
+      ],
+      onCleanSelected: vi.fn(),
+    }));
+
+    fireEvent.click(screen.getByRole('button', { name: /批量退回（1）/ }));
+    fireEvent.change(await screen.findByPlaceholderText('请输入退回原因'), {
+      target: { value: '材料信息不一致' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '确认退回' }));
+
+    await waitFor(() => expect(mocks.batchReturnDispatchedOrders).toHaveBeenCalledWith(
+      ['processing-order'],
+      '材料信息不一致',
+    ));
+    await waitFor(() => expect(mocks.reload).toHaveBeenCalledTimes(1));
   });
 });
 
@@ -224,5 +311,71 @@ describe('OnboardingModule contract export grouping by esign platform', () => {
     await waitFor(() => expect(mocks.batchExportDispatchedOrders).toHaveBeenCalledTimes(1));
     expect(mocks.batchExportDispatchedOrders.mock.calls[0][0]).toEqual(['c1', 'c2']);
     await waitFor(() => expect(mocks.downloadDispatchedExport).toHaveBeenCalledTimes(1));
+  });
+});
+
+
+describe('OnboardingModule action permission baseline', () => {
+  const hasRoleFactory = (roles: string[]) => (roleCode: string) => roles.includes(roleCode);
+
+  it('keeps business roles as urge-only on sub-work-order modules when structured permissions are present', () => {
+    for (const roleCode of ['biz_leader', 'biz_member']) {
+      const state = getOnboardingModulePermissionState({
+        currentModule: 'contract',
+        userPermissions: DEFAULT_MATRIX[roleCode],
+        hasRole: hasRoleFactory(roleCode === 'biz_leader' ? ['business_group_leader'] : ['business_group_member']),
+      });
+
+      expect(state.canBatchUrge).toBe(true);
+      expect(state.canBatchImport).toBe(false);
+      expect(state.canBatchExport).toBe(false);
+      expect(state.canBatchAccept).toBe(false);
+      expect(state.canBatchComplete).toBe(false);
+      expect(state.canBatchReturn).toBe(false);
+    }
+  });
+
+  it('keeps contract and shared roles able to operate contract module', () => {
+    for (const roleCode of ['contract_specialist', 'shared_leader']) {
+      const state = getOnboardingModulePermissionState({
+        currentModule: 'contract',
+        userPermissions: DEFAULT_MATRIX[roleCode],
+        hasRole: hasRoleFactory(roleCode === 'contract_specialist' ? ['labor_contract_member'] : ['shared_team_owner']),
+      });
+
+      expect(state.canBatchImport).toBe(true);
+      expect(state.canBatchExport).toBe(true);
+      expect(state.canBatchAccept).toBe(true);
+      expect(state.canBatchComplete).toBe(true);
+      expect(state.canBatchReturn).toBe(true);
+      expect(state.canBatchUrge).toBe(false);
+    }
+  });
+
+  it('keeps onboarding contact role field-import permission only on onboarding contact module', () => {
+    const state = getOnboardingModulePermissionState({
+      currentModule: 'onboarding_contact',
+      userPermissions: DEFAULT_MATRIX.onboarding_specialist,
+      hasRole: hasRoleFactory(['onboarding_resignation_member']),
+    });
+
+    expect(state.canBatchImportFields).toBe(true);
+    expect(state.canBatchImport).toBe(true);
+    expect(state.canBatchComplete).toBe(true);
+  });
+
+  it('keeps social insurance module using feedback instead of complete permission', () => {
+    const state = getOnboardingModulePermissionState({
+      currentModule: 'social_insurance',
+      userPermissions: DEFAULT_MATRIX.social_insurance_specialist,
+      hasRole: hasRoleFactory(['social_insurance_specialist']),
+    });
+
+    expect(state.canBatchImport).toBe(true);
+    expect(state.canBatchExport).toBe(true);
+    expect(state.canBatchAccept).toBe(true);
+    expect(state.canBatchComplete).toBe(true);
+    expect(DEFAULT_MATRIX.social_insurance_specialist).toContain('dispatched_order.batch_feedback');
+    expect(DEFAULT_MATRIX.social_insurance_specialist).not.toContain('dispatched_order.batch_complete');
   });
 });

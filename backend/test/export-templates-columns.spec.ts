@@ -1,6 +1,6 @@
 import { Repository } from 'typeorm';
 import { ExportTemplatesService } from 'src/modules/admin/export-templates/export-templates.service';
-import { DispatchedOrder, ExportTemplate, FieldConfig, OperationLog } from 'src/entities';
+import { DispatchedOrder, ExportTemplate, FieldConfig, OperationLog, OrderAttachment } from 'src/entities';
 import { UploadService } from 'src/modules/upload/upload.service';
 
 describe('ExportTemplatesService column titles', () => {
@@ -30,6 +30,7 @@ describe('ExportTemplatesService column titles', () => {
           { fieldCode: 'id_card_no', fieldName: '证件号码' },
         ] as FieldConfig[]),
       }),
+      repoMock<OrderAttachment>(),
       { saveBuffer: jest.fn() } as unknown as UploadService,
     );
     return service;

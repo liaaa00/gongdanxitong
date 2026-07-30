@@ -138,13 +138,14 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
   const { message } = App.useApp();
   const { hasRole } = useAuth();
   const [allowedActions, setAllowedActions] = useState<RoleActionCode[]>([]);
+  const [actionsLoaded, setActionsLoaded] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     getMyRoleActions()
-      .then((actions) => { if (!cancelled) setAllowedActions(actions); })
-      .catch(() => { if (!cancelled) setAllowedActions([]); });
+      .then((actions) => { if (!cancelled) { setAllowedActions(actions); setActionsLoaded(true); } })
+      .catch(() => { if (!cancelled) { setAllowedActions([]); setActionsLoaded(false); } });
     return () => { cancelled = true; };
   }, []);
 
@@ -168,8 +169,8 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
   const currentOrderTypeLabel = currentOrderType === 'resignation' ? '离职' : currentOrderType === 'onboarding' ? '入职' : '';
   const modulePrefix = currentOrderTypeLabel || '';
   const canBusinessUserCreateOrImport = isGroupMember || isGroupLeader;
-  const canCreateWorkOrder = !isInitiatedPage && (isAdmin || canBusinessUserCreateOrImport || allowedActions.includes('work_order.create'));
-  const canImportWorkOrder = !isInitiatedPage && (isAdmin || canBusinessUserCreateOrImport || allowedActions.includes('work_order.import'));
+  const canCreateWorkOrder = !isInitiatedPage && (actionsLoaded ? allowedActions.includes('work_order.create') : (isAdmin || canBusinessUserCreateOrImport));
+  const canImportWorkOrder = !isInitiatedPage && (actionsLoaded ? allowedActions.includes('work_order.import') : (isAdmin || canBusinessUserCreateOrImport));
   const pageTitle = isInitiatedPage ? '我发起的工单' : modulePrefix ? `${modulePrefix}主工单列表` : '主工单列表';
 
 
@@ -193,7 +194,7 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
     }
   }, [isBackendOnly, navigate]);
 
-  const canDelete = !isInitiatedPage && isAdmin;
+  const canDelete = !isInitiatedPage && (actionsLoaded ? allowedActions.includes('work_order.delete') : isAdmin);
 
   const handleDelete = async (id: string) => {
     try {

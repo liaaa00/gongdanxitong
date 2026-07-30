@@ -1,0 +1,831 @@
+{
+  "database": "ticket_system",
+  "schemaVersion": 1,
+  "scope": "permission-and-dispatch-config",
+  "sections": {
+    "customerAssignees": {
+      "count": 0,
+      "groupCount": 0,
+      "groups": [],
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "departments": {
+      "count": 17,
+      "groupCount": 17,
+      "groups": [
+        {
+          "count": 1,
+          "key": "BIZ",
+          "sha256": "70a7ab6a7834144a9f91018ee105f3a936679b768d9b2d851e33e77254a3adf3"
+        },
+        {
+          "count": 1,
+          "key": "BUSINESS",
+          "sha256": "a01e3a8d806365473ea4f5d1cb2119c5af9956399697ff08c660e6b7db687ffd"
+        },
+        {
+          "count": 1,
+          "key": "BUSINESS_GROUP_1",
+          "sha256": "55220216a305bfaa1c72aaf1a6653b8380d7559dc8485769eea5b8dbbc4287c7"
+        },
+        {
+          "count": 1,
+          "key": "BUSINESS_GROUP_2",
+          "sha256": "006e6b4889a7c7d2d3301b5bf61b7c051866331196a481224d40d305cba9fbd8"
+        },
+        {
+          "count": 1,
+          "key": "BUSINESS_GROUP_3",
+          "sha256": "6af09bf98bd3168e86270e77a172985dcada69ccfb8502ca8506e75c8ac0958a"
+        },
+        {
+          "count": 1,
+          "key": "BUSINESS_GROUP_4",
+          "sha256": "3b78e85df00b1fe1da095594ac0ef44a92767787f113239159c9516404d81c9e"
+        },
+        {
+          "count": 1,
+          "key": "BUSINESS_GROUP_5",
+          "sha256": "428e9286c85dc74d209cb2d25abf2e9065f4e5a5c4e792c3229517e9536ca885"
+        },
+        {
+          "count": 1,
+          "key": "CONTRACT_CENTER",
+          "sha256": "56c46a4aa2079f905a61f300f5405774d7b94e8f8c216a18b7bf680c2379f722"
+        },
+        {
+          "count": 1,
+          "key": "DATA_ENTRY_CENTER",
+          "sha256": "b4e12ce19b49727fe85ced84c3dd2cef005cfa691f758d4dbd1a5a470d8dac9a"
+        },
+        {
+          "count": 1,
+          "key": "DATA_ENTRY_GROUP",
+          "sha256": "18e731d9adf3d7173cfcb90a760da05a25aa4e6b4eb55403394f6d151e1dfbd5"
+        },
+        {
+          "count": 1,
+          "key": "SHARED_CONTRACT",
+          "sha256": "f835dfad5408c89883bcfc63811e1b6f7c8efcf5066ee56f5f5191d7b63e779b"
+        },
+        {
+          "count": 1,
+          "key": "SHARED_ONBOARDING_RESIGNATION",
+          "sha256": "74adaa28446939f60b4dee9f7b529352b2e39a8b19e17a3ad60a08df5481bb37"
+        },
+        {
+          "count": 1,
+          "key": "SHARED_SERVICE",
+          "sha256": "8439627f4c21134153341b4ee07ecee6a2e15492d88ae71dcc6694227797c775"
+        },
+        {
+          "count": 1,
+          "key": "SHARED_TEAM",
+          "sha256": "25c823891785a453e263b618987d8b85ce2814b0cbeef12eda920f248318a3e5"
+        },
+        {
+          "count": 1,
+          "key": "SOCIAL_TEAM",
+          "sha256": "de18a4f10618d4ed84684602b38dc29edcef1c9838b5beafb0a1e8dfe77c528f"
+        },
+        {
+          "count": 1,
+          "key": "SYSTEM_ADMIN",
+          "sha256": "c3d4bbb206cf790447398e3d4724d8934db3c4b7540aed4027a2cfc12f40a168"
+        },
+        {
+          "count": 1,
+          "key": "WELFARE_SECURITY",
+          "sha256": "85c4d108ff71152d379119fad036f439fee85cf597222827304474e82d11ae49"
+        }
+      ],
+      "sha256": "00ee3effcf40ad080faa65206ede4642538e16c8439a06ba9a28bad95eb972d6"
+    },
+    "dispatchRules": {
+      "count": 9,
+      "groupCount": 9,
+      "groups": [
+        {
+          "count": 1,
+          "key": "10:benefit-default-apply:benefit_apply",
+          "sha256": "27d9fdc61d89b17e5256515ea0d9a5c7d42fa1625120a90d82e5ebe005e4ac9d"
+        },
+        {
+          "count": 1,
+          "key": "10:onboarding-default-data-entry:data_entry",
+          "sha256": "e5bf1022fb3c5241a7202d5797843a9ac0a36459cbfc1b0971b4da96c6d624df"
+        },
+        {
+          "count": 1,
+          "key": "10:renewal-default-contract:renewal_contract",
+          "sha256": "27b968bb01698e5f1a53b2af99832812e27f0988ba6d5316397ca52cf7f4baa5"
+        },
+        {
+          "count": 1,
+          "key": "10:resignation-default-contact:resignation_contact",
+          "sha256": "fa8bbb4c2d39910ef40b986a01103ce2d937eddccbc9169828215d9d62577cd3"
+        },
+        {
+          "count": 1,
+          "key": "20:onboarding-default-social-insurance:social_insurance",
+          "sha256": "9c546673ae3039a369a76b3e947740f667b060255355a48a397a6839527100b6"
+        },
+        {
+          "count": 1,
+          "key": "20:resignation-default-data-entry:data_entry_resign",
+          "sha256": "700c84be81c1317936764f9dc82a920ef3a099a1d79d0cc4816504c978cfeb49"
+        },
+        {
+          "count": 1,
+          "key": "30:onboarding-contact-when-needed:onboarding_contact",
+          "sha256": "2033104ec61e23f2e4fe5b0453c526ce3f5390fad45913037d9e03850fb546f8"
+        },
+        {
+          "count": 1,
+          "key": "30:resignation-default-social-insurance:resignation_social_insurance",
+          "sha256": "78d51539ba4681b44dad0a530de6b324c730b23dd8b783f04eaa656ff8c3a046"
+        },
+        {
+          "count": 1,
+          "key": "40:onboarding-contract-when-needed:contract",
+          "sha256": "c0c6bd62dea77d00d68b05f0ae6675b636b2cb64fe88ca51ed02501e0ee060d1"
+        }
+      ],
+      "sha256": "c5053dd01db9dcd7ddc57b02c8e0c0de7a1078406e9265131252d9025d5c70bf"
+    },
+    "exceptionModuleHandlers": {
+      "count": 0,
+      "groupCount": 0,
+      "groups": [],
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "fieldPermissions": {
+      "count": 16029,
+      "groupCount": 9,
+      "groups": [
+        {
+          "count": 1781,
+          "key": "admin",
+          "sha256": "013c06ad4c7080dcb2568291226bda3b4b3785abbfbde3fd4e33cf4bf6bba44d"
+        },
+        {
+          "count": 1781,
+          "key": "biz_leader",
+          "sha256": "ef3559bda671b69faa25ee9e44afdda30a3d2b7b8e9bb8a756a088bf65a2a39a"
+        },
+        {
+          "count": 1781,
+          "key": "biz_manager",
+          "sha256": "62ab4f0983ec23cee38aff16f43c32fb37d1d1d2a5a149a9c4fad18d612484f7"
+        },
+        {
+          "count": 1781,
+          "key": "biz_member",
+          "sha256": "107f379c19aa8199ef334367256fa845fcf4c2639ec762b390977e8544dea39e"
+        },
+        {
+          "count": 1781,
+          "key": "contract_specialist",
+          "sha256": "cf57b550ae7be6f946d1277e5f8ec62d24c86b7d6c16b3951a5c3fd702453ffe"
+        },
+        {
+          "count": 1781,
+          "key": "data_entry_leader",
+          "sha256": "2ac57a224ac8747fd62f8e3ce8b60016bc0909cd1f8d5ee5b63a3dedddf1e04c"
+        },
+        {
+          "count": 1781,
+          "key": "onboarding_specialist",
+          "sha256": "ecf94bf39206640b28fcd1eead495ba75bbf0399a15c6e56deb02a6d2134cbbf"
+        },
+        {
+          "count": 1781,
+          "key": "shared_leader",
+          "sha256": "a6116e81294d1159258fd5da2d852a3e610dcc7fa0839d58e9a602fa354ecbff"
+        },
+        {
+          "count": 1781,
+          "key": "social_insurance_specialist",
+          "sha256": "d47272850c9a8ccfd20b770ba86069a7e9a165e488277fe35aabf68335d7b199"
+        }
+      ],
+      "sha256": "509b2c38744119bc6d7e722f791c71f88649c03a845a916b2297806fd7fda0ab"
+    },
+    "moduleFields": {
+      "count": 171,
+      "groupCount": 10,
+      "groups": [
+        {
+          "count": 33,
+          "key": "contract",
+          "sha256": "5bd67c14439e7d4d113d45b443183dc5d0c60353a787fe9aa5817bace1986dc8"
+        },
+        {
+          "count": 28,
+          "key": "data_entry",
+          "sha256": "8a64de4dab708c0d93fb341ff08c209446ffb15d5bd38809aed8f0c700b00c42"
+        },
+        {
+          "count": 11,
+          "key": "data_entry_resign",
+          "sha256": "0fe3a058a2d05fd583e1c883a75fb481da0cce8d9c997c977a9ab3587295b340"
+        },
+        {
+          "count": 10,
+          "key": "onboarding_contact",
+          "sha256": "bc0620d4e5d18702d53c76d5a3779184dd39d10c85379027f414fbb51d37e125"
+        },
+        {
+          "count": 33,
+          "key": "renewal_contract",
+          "sha256": "23c4fc816958efe1d69bf5de7aadd2b9ccab2f4c8e979f8bb24bda41e9172b27"
+        },
+        {
+          "count": 14,
+          "key": "resignation_cert",
+          "sha256": "71565ee076fdb3b668db3cc6814b3bd8eebbc743e888f18e15d5a1cdd7949cde"
+        },
+        {
+          "count": 14,
+          "key": "resignation_contact",
+          "sha256": "cc880fa9ab025179bd87b3977d84aa8ae5984ac1b248ef851a89bd8303b624f1"
+        },
+        {
+          "count": 10,
+          "key": "resignation_social_insurance",
+          "sha256": "b7670e795fa056c84469d5400444a65b31d1548be44914c74ff5d9d12a719cdc"
+        },
+        {
+          "count": 9,
+          "key": "social_insurance",
+          "sha256": "f28efd976e9a3ca6ce73ac15d3cd90afccfa12c0c78562f0b00b4df5fd930de0"
+        },
+        {
+          "count": 9,
+          "key": "social_insurance_change",
+          "sha256": "cba489c5dedf14a3059b6c7f29388f8214b93ef76548c7d1a1a7c81b24e3a9ca"
+        }
+      ],
+      "sha256": "c2413405aa27c319cf7f62179574301ef072c934a28c17a195431c6f92dd0508"
+    },
+    "moduleHandlers": {
+      "count": 12,
+      "groupCount": 8,
+      "groups": [
+        {
+          "count": 2,
+          "key": "contract",
+          "sha256": "044a0895eec6d429354fa1a9364aeb65f414ca0ac9682fd7c63e592b685d34ab"
+        },
+        {
+          "count": 1,
+          "key": "data_entry",
+          "sha256": "d8815291387a296bf3aeca2dc8d23b47b1556a2695d5a0bc9e00f7defdf1df4e"
+        },
+        {
+          "count": 1,
+          "key": "data_entry_resign",
+          "sha256": "67c3a983e390c79bd2f1c44584b1aaa635d1a126c410c223031d4576e0100aab"
+        },
+        {
+          "count": 2,
+          "key": "onboarding_contact",
+          "sha256": "1641c5539f4e0ef60e07e68cc9ad710e5b332fd914d15486c325e1e5a452a043"
+        },
+        {
+          "count": 2,
+          "key": "renewal_contract",
+          "sha256": "11b7f4171206c9cdfa128e6dd939186de4af644ac52b24619234c61748732ae5"
+        },
+        {
+          "count": 2,
+          "key": "resignation_contact",
+          "sha256": "39b666cc8622f8d3977049b44ea5b5f3e8ea4254083b640b2192d7024d1ef431"
+        },
+        {
+          "count": 1,
+          "key": "resignation_social_insurance",
+          "sha256": "8cda6b4d436f72d84f3200267abfb61aa94023383fdfcaeb42051e22e8caf070"
+        },
+        {
+          "count": 1,
+          "key": "social_insurance",
+          "sha256": "4d208eda602176bb9f8c2e4898577ea387e654180d04b5617ffb9ca1eec48695"
+        }
+      ],
+      "sha256": "f95cc339b7ef7f78634455610860ba60b0ed3a9cdc9e5ac841c17e1f5d56462f"
+    },
+    "moduleSupervisors": {
+      "count": 14,
+      "groupCount": 8,
+      "groups": [
+        {
+          "count": 2,
+          "key": "contract",
+          "sha256": "f4554f6813ede8d966460c78359ac80968440d8dec831edeb46470c425674b7d"
+        },
+        {
+          "count": 2,
+          "key": "data_entry",
+          "sha256": "96222a517ef51e7e6d8ecfff717536c52af34f6bd4685effb5660fd396d487d7"
+        },
+        {
+          "count": 2,
+          "key": "data_entry_resign",
+          "sha256": "1ac3179b40c52282a8145d038e228406bbae88d712e269968a13cd9721c89724"
+        },
+        {
+          "count": 2,
+          "key": "onboarding_contact",
+          "sha256": "28f2702bcb7926a7652bb08a23a3ded9ef2a1e491cba91e94a48b6f783813f00"
+        },
+        {
+          "count": 2,
+          "key": "renewal_contract",
+          "sha256": "ea0027994b0bd67d002cc477fa9a7a5424a55f1e1c9b9ec186b44cb400a8b18f"
+        },
+        {
+          "count": 2,
+          "key": "resignation_contact",
+          "sha256": "c22662c24e07511ff67426092217abd4cf0da011bdedaaddbcff2818ccf8d0fb"
+        },
+        {
+          "count": 1,
+          "key": "resignation_social_insurance",
+          "sha256": "dee5ed1c341ad6aaffe397a402d005695ed41b2b343678cdb2155409d612a81a"
+        },
+        {
+          "count": 1,
+          "key": "social_insurance",
+          "sha256": "4234b3ce9a4b809f44d1a819f44990161f7785c1fc3a56958d63f1ea395fe4f0"
+        }
+      ],
+      "sha256": "45651f5fe192366d71267d0cab9ebe4e8f2d1c5d0944577338ca80949ff082f2"
+    },
+    "roleActionOverrides": {
+      "count": 1,
+      "groupCount": 1,
+      "groups": [
+        {
+          "count": 1,
+          "key": "__storage__",
+          "sha256": "16de7c14883c560ddfeeeab59cb84936aea2ec3ed7e90e780f8b44bcd8958313"
+        }
+      ],
+      "sha256": "16de7c14883c560ddfeeeab59cb84936aea2ec3ed7e90e780f8b44bcd8958313"
+    },
+    "roles": {
+      "count": 9,
+      "groupCount": 9,
+      "groups": [
+        {
+          "count": 1,
+          "key": "admin",
+          "sha256": "e48a0c41ddfe6b2d46d5da863808e80ad1d430c252b8b24adbcd8a2f6676b433"
+        },
+        {
+          "count": 1,
+          "key": "biz_leader",
+          "sha256": "f3f46f0c5806dab2979f0bacadf24ad381eaf402f602368061fe4af8c8f488b9"
+        },
+        {
+          "count": 1,
+          "key": "biz_manager",
+          "sha256": "8f35fe826e3bfbb9afcda4ef76ee642723f972d11be62a00965847310590ef0c"
+        },
+        {
+          "count": 1,
+          "key": "biz_member",
+          "sha256": "95b6d405a5767bded190f540d4f0f08b4781cf5c6c66b4c610804f6d9da76860"
+        },
+        {
+          "count": 1,
+          "key": "contract_specialist",
+          "sha256": "ef3fdeb4fc35985ea5beb49ac640e369be00506ed68075fee054eb1c7d5d97ae"
+        },
+        {
+          "count": 1,
+          "key": "data_entry_leader",
+          "sha256": "3d1552d52a2781baefe87fb97cc255d07e043e8c4ba0e57efd6fa8b80f3ec9dd"
+        },
+        {
+          "count": 1,
+          "key": "onboarding_specialist",
+          "sha256": "3d316a2c202fa169e0eb1fa6f2f546f0f151bf4e61e6b8f86d3775144db2445f"
+        },
+        {
+          "count": 1,
+          "key": "shared_leader",
+          "sha256": "9388d52c46d9d2482471569be72a2182e8c65a5539f115d30d80329ddd80ac09"
+        },
+        {
+          "count": 1,
+          "key": "social_insurance_specialist",
+          "sha256": "0954c8f326ae24442d8965302fb8516826282c806ceb27cda8f2f0636cb7577d"
+        }
+      ],
+      "sha256": "1fb0d3e654a9edd4bec7654e1a4466408d00c86142d22f96b01d50b24e2ef438"
+    },
+    "userRoles": {
+      "count": 35,
+      "groupCount": 31,
+      "groups": [
+        {
+          "count": 1,
+          "key": "admin",
+          "sha256": "e09250c8e17f78a615ecca9c795a63ab2f3b12ec3472a2cbf6643311129af3dd"
+        },
+        {
+          "count": 1,
+          "key": "annazhen",
+          "sha256": "fea178acbdbca8da793a3c49cac4b17ab41d80eb5bb52a7f4b82800fae4a75c3"
+        },
+        {
+          "count": 1,
+          "key": "aolei",
+          "sha256": "17314b72e359e9593dca7099a0580f4e43cdb290b00848c5d5aff1d957be42f0"
+        },
+        {
+          "count": 1,
+          "key": "chengyu",
+          "sha256": "4066969cba3d95e55678f3fc26f8e2dc1a38317e782510d2c4ddc5f9614bb0ca"
+        },
+        {
+          "count": 1,
+          "key": "chenyuchen",
+          "sha256": "d7b8450319fd9e48718ae71c6b96c2fe45141b0540f10f388e05553dc1b0a1d6"
+        },
+        {
+          "count": 2,
+          "key": "contractsup01",
+          "sha256": "38375f86da1223f853de256bc4c9149087b720bbe31169b1da4cdb64950982b5"
+        },
+        {
+          "count": 1,
+          "key": "dataentrysup01",
+          "sha256": "2d851cc40905ee6db4b5862cfed01259eb1c6e17bfaadc2e3bc37d5e434f162f"
+        },
+        {
+          "count": 1,
+          "key": "fuqianwen",
+          "sha256": "12c7ac3a5d11803fbc786d2bda9fee9e715e6448da46dcd1154c4a21704ca253"
+        },
+        {
+          "count": 1,
+          "key": "gaolulu",
+          "sha256": "055bddda181a1b9458ce2c2be4ae776ac7450590f6ead23a13f742be08978d85"
+        },
+        {
+          "count": 3,
+          "key": "jianglu",
+          "sha256": "e4be0a8a097d4470508ff7edb3e0d9b00491f389a9c062fa271af314b15a200e"
+        },
+        {
+          "count": 1,
+          "key": "liucheng",
+          "sha256": "36603bfaab865d970201821e373945cc991df85a36a3774d216e138888fabac5"
+        },
+        {
+          "count": 1,
+          "key": "lizhanbo",
+          "sha256": "65bfcfe96b2d3c2aab39247502ab13a8485cfcacdb5f593c47b083b53b8c5d04"
+        },
+        {
+          "count": 1,
+          "key": "maoyani",
+          "sha256": "b8370ed68178f5024d1afc8027410e7399b10cb08e17ef95af6a7d55acc0e946"
+        },
+        {
+          "count": 2,
+          "key": "onboardsup01",
+          "sha256": "037dc179d9445fa28d191f28abae7ad91bcbe6d6b5a7c74bfba06ec0316615ae"
+        },
+        {
+          "count": 1,
+          "key": "shenwenjun",
+          "sha256": "8ea2a51eb714ab4d98f5b32c0fb9f14f4359144af476af4045197053a7e014fb"
+        },
+        {
+          "count": 1,
+          "key": "social01",
+          "sha256": "21efa943328ab66fa413a36e6e110d31ef1930215825aaee5768ef8b60bf1256"
+        },
+        {
+          "count": 1,
+          "key": "socialsup01",
+          "sha256": "c663743051eda03b37c7e712029169535d49458df756d6515502abb3ac676f97"
+        },
+        {
+          "count": 1,
+          "key": "taomingyue",
+          "sha256": "aa19f1aaa9adbde7e4d40afabb347935011a7023a861feca16f6b64183304a8e"
+        },
+        {
+          "count": 1,
+          "key": "wangzixi",
+          "sha256": "5080b7e297fef7c4dd726f939f95d1fd9461b6188cc1a6945bee7e65758c35d8"
+        },
+        {
+          "count": 1,
+          "key": "wuyufei",
+          "sha256": "60f30eb0d9204e9fe061672c463a9762e322e5f40723d529f9335e833cd37579"
+        },
+        {
+          "count": 1,
+          "key": "xuekun",
+          "sha256": "0389b172cb4ada085d09d33da5dc6ecc8b299a91acd7d6f4376eb46520a17233"
+        },
+        {
+          "count": 1,
+          "key": "xujiayin",
+          "sha256": "8d515d6856a2f7266903f2f9b6c3b091ec2ff577eef4cd52fc344175dc3d5158"
+        },
+        {
+          "count": 1,
+          "key": "xujing",
+          "sha256": "2f4e237e0ade6ad1101cea3d515bdedaa22cad8b3c3a84894e93fce57d52b674"
+        },
+        {
+          "count": 1,
+          "key": "yangchun",
+          "sha256": "bfd168d715e7bdb582420094f49abb375290d9555631aa545c4ac5987cf1ddd5"
+        },
+        {
+          "count": 1,
+          "key": "yanqiuyue",
+          "sha256": "8ddd3126dd317d18ceae090ec1ba540e65c6abdbdfcf224f44337468ad803902"
+        },
+        {
+          "count": 1,
+          "key": "yaoyiping",
+          "sha256": "e7bab77146122195dba161d2079c77d49717028112da56640d2c12f0695f7b97"
+        },
+        {
+          "count": 1,
+          "key": "yuqinxia",
+          "sha256": "c11beb2ae419272ffa2ef3d7da843da8d79ab89b8f51709acd88ddc88c5978d9"
+        },
+        {
+          "count": 1,
+          "key": "yuweiwei",
+          "sha256": "c520df229afdce66c3cf87804de0982b1df0b9e253067fc264f000209bbebcd2"
+        },
+        {
+          "count": 1,
+          "key": "zhangpuwei",
+          "sha256": "f822d7a308efc0b1436b6268b6de155d195af59a5b8e819b387f3ccd0746ac29"
+        },
+        {
+          "count": 1,
+          "key": "zhaotianqi",
+          "sha256": "f164bd7773855c0dd3c2820623981680158c7f1b95699efe3a9aac51430b2c3d"
+        },
+        {
+          "count": 1,
+          "key": "zhouqiqing",
+          "sha256": "87466918a3ccbbc51540a07c62d43caab34a55cd8d6115a0869bf442930a412c"
+        }
+      ],
+      "sha256": "14333b73892c303a9e1caa0530b67473ff90252914658c4fe887849f02e86549"
+    },
+    "users": {
+      "count": 31,
+      "groupCount": 31,
+      "groups": [
+        {
+          "count": 1,
+          "key": "admin",
+          "sha256": "84a7e29cd15313ffb354e01ad8ce5b2f25e40f90c6d74240deec3d778ce25feb"
+        },
+        {
+          "count": 1,
+          "key": "annazhen",
+          "sha256": "7460a901295c4a5bda9d2f239cb8f537150be57aacfa5ecb621d10c3fbeec275"
+        },
+        {
+          "count": 1,
+          "key": "aolei",
+          "sha256": "9909d0044315872cce22bb5790c8b48cea338a5fbd8913d089acf55fe748f420"
+        },
+        {
+          "count": 1,
+          "key": "chengyu",
+          "sha256": "073cd22a1195038a65d8e1467fc3518a3db25a55daad2b47fd197fdfc2165cb3"
+        },
+        {
+          "count": 1,
+          "key": "chenyuchen",
+          "sha256": "edfb95db3ec655c05d26b165f406628f3fca832a9cb8d036314f1fbbbb2fe0d2"
+        },
+        {
+          "count": 1,
+          "key": "contractsup01",
+          "sha256": "0a26557a6c168e4bd9bf538ac956c4c01f14f3dca74bccda5b3f7ef88942694b"
+        },
+        {
+          "count": 1,
+          "key": "dataentrysup01",
+          "sha256": "aff1c71f4003dfee77712fba6e6d8f811e7e85c36000ef371944ed5a78040357"
+        },
+        {
+          "count": 1,
+          "key": "fuqianwen",
+          "sha256": "6c6b8e07cdbb22cff3e6f0efa3dfb100d9cc9457542f9d889fb9137c592fdf7d"
+        },
+        {
+          "count": 1,
+          "key": "gaolulu",
+          "sha256": "0e99063d78c71f16c5dd287b64a277495b4dbfff891803bd96afa65ba5ded1ce"
+        },
+        {
+          "count": 1,
+          "key": "jianglu",
+          "sha256": "542bcaf74e5646f5a65a063dab9224a08b9c3e242726ace0228b6cd2e6062e97"
+        },
+        {
+          "count": 1,
+          "key": "liucheng",
+          "sha256": "5d552cde2eae0afed663238788725bd790108449e474ee19197ad3875c8c312d"
+        },
+        {
+          "count": 1,
+          "key": "lizhanbo",
+          "sha256": "9674705e615406d48ff8ba54ab4f5e6c09fed0b2161ea1accfc49b59c04de27c"
+        },
+        {
+          "count": 1,
+          "key": "maoyani",
+          "sha256": "4ff5e815862c0803ca2eb4a693540df7dd3aa1ca7928ebac153b3aae80f6c1f7"
+        },
+        {
+          "count": 1,
+          "key": "onboardsup01",
+          "sha256": "a7a1d30f4ea5190605e4c1491eb7e1b8dbe0b6a97e304128ffcf9fdf8256741e"
+        },
+        {
+          "count": 1,
+          "key": "shenwenjun",
+          "sha256": "f25c7b61d3835198f0a672a949ab021e5a122b3108ba1f1cd149cefbf1c853cb"
+        },
+        {
+          "count": 1,
+          "key": "social01",
+          "sha256": "7085f7820e66ca92aec6d4916adfffd14de5a4703951eaa9d9fb16f97b40ede0"
+        },
+        {
+          "count": 1,
+          "key": "socialsup01",
+          "sha256": "b7742c3bc7cf3f7228ca6077e330691ca4a1649a1c74521edd7c024c627536ff"
+        },
+        {
+          "count": 1,
+          "key": "taomingyue",
+          "sha256": "3dad67bebce1256501a71a3b842777016d5a5b84684b9f4877e54c09533b5446"
+        },
+        {
+          "count": 1,
+          "key": "wangzixi",
+          "sha256": "5aadc9f0b4193977b7116f7c91415bc5b9ac2df1b3827feeeba3cd9ede973489"
+        },
+        {
+          "count": 1,
+          "key": "wuyufei",
+          "sha256": "dac208318657c630537b05b492ac55c1e8e8badc82bafea2fb6b1ad5eb01a591"
+        },
+        {
+          "count": 1,
+          "key": "xuekun",
+          "sha256": "a9476fdbbeeb29706b653255f778368bb64ce023191e10042270685f9acdef08"
+        },
+        {
+          "count": 1,
+          "key": "xujiayin",
+          "sha256": "12531e6e4a437ceb567972d648567a1345fdeda0e1a02c6aa401b17dbb3269f4"
+        },
+        {
+          "count": 1,
+          "key": "xujing",
+          "sha256": "f44a40c9f1374453f9f467c46cdc1262b952e9b5daf4bb6ed969ffca40b32abc"
+        },
+        {
+          "count": 1,
+          "key": "yangchun",
+          "sha256": "d982bc02e2c4572b8cb2bc201a7f279730c8ecd8d7c222bd8e4341c1685a3385"
+        },
+        {
+          "count": 1,
+          "key": "yanqiuyue",
+          "sha256": "555bcd2ffa8c35c61289251624fcb0eaf8beb81d7090605c0a4ba3146929ca2e"
+        },
+        {
+          "count": 1,
+          "key": "yaoyiping",
+          "sha256": "328de8bc5c6d94ca9cb9eb1570b6cde9315668ed87e25f5f1c3f75f90b643d77"
+        },
+        {
+          "count": 1,
+          "key": "yuqinxia",
+          "sha256": "9a9a5222c7023c9cce8f7a7b199c640a132756d5d0d850a6a27a00e6122c138b"
+        },
+        {
+          "count": 1,
+          "key": "yuweiwei",
+          "sha256": "2af98f4ea2d5003d4cc696b30b9630c0b1321047a100468b9925001814bb0f40"
+        },
+        {
+          "count": 1,
+          "key": "zhangpuwei",
+          "sha256": "640de0e712861b298111020dd5c3020a60c47803b02e00cc5aef5961d6cbffe9"
+        },
+        {
+          "count": 1,
+          "key": "zhaotianqi",
+          "sha256": "961a560f85adfdbd7ae035551d13c4be097afb934db8a32e2a8d4dd89847c645"
+        },
+        {
+          "count": 1,
+          "key": "zhouqiqing",
+          "sha256": "3b35ae54c9d1eb5a0f5448310329eaee0fd94885e0253cbc951e194f8165eacb"
+        }
+      ],
+      "sha256": "460fa6ef5fe69d419ce1350661a5ef7119d3efd2a604aedb26c567773459163b"
+    },
+    "workOrderModules": {
+      "count": 14,
+      "groupCount": 14,
+      "groups": [
+        {
+          "count": 1,
+          "key": "benefit_apply",
+          "sha256": "05ca6b54cee15d40e4334a52ed4f84e610ad7f60f2a99174f828180c426cc887"
+        },
+        {
+          "count": 1,
+          "key": "contract",
+          "sha256": "d264ea0511f80afd6bed91b9d754776eb610ac84bb2cbc1ab76e1d0bd9514953"
+        },
+        {
+          "count": 1,
+          "key": "data_entry",
+          "sha256": "b4d507fe0f0a3205178b03b898e7b20386817688246bb1d15ff9f4155b02529b"
+        },
+        {
+          "count": 1,
+          "key": "data_entry_resign",
+          "sha256": "28933051731c38f2653830771c1d5ab7cb489c1e36c77d0933cbd310a23421ac"
+        },
+        {
+          "count": 1,
+          "key": "employment_management",
+          "sha256": "fe6bc1e2d2e256008b40cf622d218a7ad2ecc35cc1830b0e49041d521be2861a"
+        },
+        {
+          "count": 1,
+          "key": "onboarding_contact",
+          "sha256": "e544490126a79c7bbf317595ea8cddaf5c3984909c36973beb7ee626151fbe84"
+        },
+        {
+          "count": 1,
+          "key": "onboarding_management",
+          "sha256": "ecf3a2d86ecce7efafe738744a2e7aaf62f7bed5b8558d6191cb0a2e28e5fe3f"
+        },
+        {
+          "count": 1,
+          "key": "renewal_contract",
+          "sha256": "03d35e558614cdd266dbe1da650f61b2780ed1335504b7f73842f9ce5e287f69"
+        },
+        {
+          "count": 1,
+          "key": "resignation_cert",
+          "sha256": "133031732a37aec0c8b3fd5ec84ca9fdffdabf94e2d7cbb555a2e7daccdde68a"
+        },
+        {
+          "count": 1,
+          "key": "resignation_contact",
+          "sha256": "0e0b56b73ec9e251173e8c475cad6a40d6ca2c3d7082c03ea43157ab73f16d41"
+        },
+        {
+          "count": 1,
+          "key": "resignation_management",
+          "sha256": "f51db7a94dee05b80353b78cd84235164b3fb0a604421ae1ab86d159067854d2"
+        },
+        {
+          "count": 1,
+          "key": "resignation_social_insurance",
+          "sha256": "0ef33da39ea433e3e3d666c7415250018e4a1b4bbeccb7270ce4c1f1d94ed5bf"
+        },
+        {
+          "count": 1,
+          "key": "social_insurance",
+          "sha256": "360cf3baf37a08f017ed99a8eb9756d5cc51f64fecb39b5713d82e0ccb4ad727"
+        },
+        {
+          "count": 1,
+          "key": "social_insurance_change",
+          "sha256": "a6ada67bf4fbd2a15a2b589e236003afc187dd68a119c703b7b164e1cc01043c"
+        }
+      ],
+      "sha256": "dc973d937181d9d022215f54b5aa125086a076d631c1500f7e7e106e489e6463"
+    }
+  }
+}

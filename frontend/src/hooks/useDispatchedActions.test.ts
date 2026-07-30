@@ -124,9 +124,21 @@ describe('useDispatchedActions', () => {
       useDispatchedActions({ orderId: 'd1', order: { ...baseOrder, status: 'returned' }, onOrderUpdated: onUpdated }),
     );
 
-    await act(async () => { await result.current.handleResubmit(); });
+    await act(async () => { await result.current.handleResubmit('  以员工辞职报告真实日期为准  '); });
 
-    expect(mockResubmit).toHaveBeenCalledWith('d1', { moduleCode: 'contract', reason: '发起人重新提交子工单' });
+    expect(mockResubmit).toHaveBeenCalledWith('d1', { moduleCode: 'contract', reason: '以员工辞职报告真实日期为准' });
     await waitFor(() => expect(onUpdated).toHaveBeenCalledWith(expect.objectContaining({ status: 'pending' })));
+  });
+
+  it('keeps the resubmit reason optional', async () => {
+    mockResubmit.mockResolvedValue({ ...baseOrder, status: 'pending' });
+    const onUpdated = vi.fn();
+    const { result } = renderHook(() =>
+      useDispatchedActions({ orderId: 'd1', order: { ...baseOrder, status: 'withdrawn' }, onOrderUpdated: onUpdated }),
+    );
+
+    await act(async () => { await result.current.handleResubmit('   '); });
+
+    expect(mockResubmit).toHaveBeenCalledWith('d1', { moduleCode: 'contract', reason: undefined });
   });
 });

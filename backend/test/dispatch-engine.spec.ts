@@ -159,6 +159,18 @@ describe('HandlerPickerService.pickFromCandidates unit tests', () => {
     expect(picker.pickFromCandidates(DispatchStrategy.FIXED, 'mod', [])).toBeNull();
   });
 
+  it('skips handlers whose user account is inactive', async () => {
+    const moduleHandlerRepository = {
+      find: jest.fn(async () => [
+        { id: 'id-1', moduleCode: 'mod', handlerId: 'former', weight: 10, isBackup: false, isActive: true, handler: { isActive: false } },
+        { id: 'id-2', moduleCode: 'mod', handlerId: 'active', weight: 1, isBackup: false, isActive: true, handler: { isActive: true } },
+      ]),
+    };
+    const repositoryPicker = new HandlerPickerService(moduleHandlerRepository as never, {} as never);
+
+    await expect(repositoryPicker.pick(DispatchStrategy.FIXED, 'mod')).resolves.toBe('active');
+  });
+
   it('pool always returns null', () => {
     const candidates = [makeCandidate({ handlerId: 'h1' })];
     expect(picker.pickFromCandidates(DispatchStrategy.POOL, 'mod', candidates)).toBeNull();

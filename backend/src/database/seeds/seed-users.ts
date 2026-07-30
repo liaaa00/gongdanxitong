@@ -173,6 +173,9 @@ export async function seedUsers(dataSource: DataSource): Promise<void> {
   for (const seed of userSeeds) {
     let user = await userRepository.findOne({ where: { username: seed.username } });
     if (!user) {
+      user = await userRepository.findOne({ where: { email: seed.email } });
+    }
+    if (!user) {
       user = await userRepository.save(userRepository.create({
         username: seed.username,
         realName: seed.realName,

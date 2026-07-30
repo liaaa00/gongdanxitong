@@ -11,6 +11,9 @@ export interface DispatchConfigPerson {
   real_name?: string;
   realName?: string;
   username?: string;
+  isActive?: boolean;
+  roleCodes?: string[];
+  openOrderCount?: number;
 }
 
 export interface DispatchConfigItem {
@@ -122,8 +125,24 @@ function normalizeDispatchConfigItem(item: any): DispatchConfigItem {
   } as DispatchConfigItem;
 }
 
+export interface SaveModuleDispatchConfigInput {
+  handlerIds: string[];
+  dispatchStrategy: string;
+  slaHours?: number | null;
+  slaReminderBeforeHours?: number | null;
+  isActive: boolean;
+  changeReason?: string;
+}
+
+export async function saveModuleDispatchConfig(
+  moduleCode: string,
+  input: SaveModuleDispatchConfigInput,
+): Promise<void> {
+  await request.put(`/admin/dispatch-config/${moduleCode}`, input);
+}
+
 export async function getDispatchConfig(): Promise<DispatchConfigItem[]> {
-  const result = await request.get('/admin/dispatch-config') as any;
+  const result = await request.get('/admin/dispatch-config', { silentError: true } as any) as any;
   const rawList = Array.isArray(result) ? result : (result?.rows || result?.list || result?.items || result?.data || []);
   return (Array.isArray(rawList) ? rawList : []).map((item) => normalizeDispatchConfigItem(item));
 }

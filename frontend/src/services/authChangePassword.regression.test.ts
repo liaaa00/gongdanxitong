@@ -29,7 +29,7 @@ describe('QA regression: auth changePassword payload', () => {
     expect(postMock).toHaveBeenCalledWith('/auth/change-password', {
       oldPassword: 'old-pass-123',
       newPassword: 'new-pass-456',
-    });
+    }, { silentError: true });
     const [, payload] = postMock.mock.calls[0];
     expect(payload).not.toHaveProperty('old_password');
     expect(payload).not.toHaveProperty('new_password');

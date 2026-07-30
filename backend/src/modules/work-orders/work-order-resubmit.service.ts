@@ -228,7 +228,8 @@ export class WorkOrderResubmitService {
     if (!workOrder) throw businessException(4100, HttpStatus.NOT_FOUND, '工单不存在');
     const subOrders = toWorkOrderSubOrderItems(workOrder.dispatchedOrders);
     return {
-      id: workOrder.id, orderNo: workOrder.orderNo, orderType: workOrder.orderType, status: workOrder.status,
+      id: workOrder.id, orderNo: workOrder.orderNo, orderType: workOrder.orderType,
+      businessScope: workOrder.businessScope, business_scope: workOrder.businessScope, status: workOrder.status,
       createdBy: { id: workOrder.creator.id, username: workOrder.creator.username, realName: workOrder.creator.realName },
       department: { id: workOrder.department.id, name: workOrder.department.name },
       customer: { id: workOrder.customer.id, customerCode: workOrder.customer.customerCode, customerName: workOrder.customer.customerName },

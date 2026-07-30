@@ -17,10 +17,11 @@ describe('onboarding module_fields baseline', () => {
     return Array.from(definitionMatch![1].matchAll(/'([^']+)'/g)).map((item) => item[1]);
   }
 
-  it('matches onboarding split-4 module field lists from the 20260515 baseline', () => {
+  it('matches the approved onboarding module field lists including Xiamen education fields', () => {
     expect(extractFields('onboarding_contact')).toEqual([
       'customer_name', 'customer_code', 'employee_name', 'id_card_no',
       'mobile', 'email',
+      'education', 'graduation_school', 'major', 'graduation_date',
       'bank_name', 'bank_account',
       'need_onboarding_contact', 'onboarding_feedback',
     ]);
@@ -43,6 +44,7 @@ describe('onboarding module_fields baseline', () => {
       'customer_name', 'customer_code', 'outsource_type', 'position',
       'employee_name', 'id_card_no', 'gender',
       'birth_date', 'age', 'household_type', 'ethnicity',
+      'education', 'graduation_school', 'major', 'graduation_date',
       'mobile', 'email', 'current_address', 'household_address', 'postal_code',
       'social_location', 'start_month', 'social_base', 'fund_base', 'fund_ratio',
       'bank_name', 'bank_account', 'remark',
@@ -52,17 +54,24 @@ describe('onboarding module_fields baseline', () => {
     ]);
 
     expect(extractFields('social_insurance')).toEqual([
-      'customer_name', 'customer_code', 'employee_name', 'id_card_no',
+      'customer_name', 'customer_code', 'employee_name', 'id_card_no', 'mobile', 'email',
+      'education', 'graduation_school', 'major', 'graduation_date',
       'social_location', 'start_month', 'social_base', 'fund_base', 'fund_ratio',
     ]);
   });
 
-  it('keeps suspended fields out of child module_fields until product confirmation', () => {
+  it('keeps unconfirmed fields out while retaining confirmed Xiamen education fields', () => {
     expect(extractFields('social_insurance')).toEqual([
-      'customer_name', 'customer_code', 'employee_name', 'id_card_no',
+      'customer_name', 'customer_code', 'employee_name', 'id_card_no', 'mobile', 'email',
+      'education', 'graduation_school', 'major', 'graduation_date',
       'social_location', 'start_month', 'social_base', 'fund_base', 'fund_ratio',
     ]);
+    expect(extractFields('social_insurance')).toEqual(expect.arrayContaining([
+      'education', 'graduation_school', 'major', 'graduation_date',
+    ]));
     expect(extractFields('social_insurance')).not.toContain('remark');
     expect(extractFields('data_entry')).not.toContain('base_salary');
+    expect(extractFields('data_entry_resign')).toEqual(expect.arrayContaining(['mobile', 'email']));
+    expect(extractFields('resignation_social_insurance')).toEqual(expect.arrayContaining(['mobile', 'email']));
   });
 });

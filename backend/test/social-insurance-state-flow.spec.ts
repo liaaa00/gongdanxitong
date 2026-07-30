@@ -115,7 +115,7 @@ function makeService(order: DispatchedOrder) {
     repoMock<FieldConfig>(),
     repoMock<Notification>(),
     operationLogRepo,
-    { getPermissionsForUser: jest.fn(), applyExtraData: jest.fn(), applyFieldViews: jest.fn() } as unknown as FieldPermissionService,
+    { getPermissionsForUser: jest.fn(async () => new Map()), applyExtraData: jest.fn(), applyFieldViews: jest.fn() } as unknown as FieldPermissionService,
     { supplement: jest.fn(), getLogs: jest.fn() } as unknown as FieldSupplementService,
     { exportSingleDispatchedOrder: jest.fn() } as never,
     { resolveUserDepartmentIds: jest.fn(async () => []) } as never,

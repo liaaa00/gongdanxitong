@@ -6,6 +6,7 @@ import {
   App,
   Button,
   Collapse,
+  DatePicker,
   Form,
   Input,
   InputNumber,
@@ -20,16 +21,15 @@ import {
   Typography,
 } from 'antd';
 import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
-import { getDispatchConfig } from '@/services/dispatchConfig';
-import { getModuleConfigs, updateModuleConfig } from '@/services/moduleConfigs';
+import { getDispatchConfig, saveModuleDispatchConfig } from '@/services/dispatchConfig';
 import type { DispatchConfigItem, DispatchConfigPerson } from '@/services/dispatchConfig';
 import {
-  createModuleHandler,
   deleteModuleHandler,
   getModuleHandlers,
-  updateModuleHandler,
 } from '@/services/moduleHandlers';
 import type { ModuleHandlerItem } from '@/services/moduleHandlers';
+import { cancelModuleDelegation, createModuleDelegation, getModuleDelegations } from '@/services/moduleDelegations';
+import type { ModuleDelegationItem } from '@/services/moduleDelegations';
 import { deleteDispatchRule, updateDispatchRule } from '@/services/dispatchRules';
 import type { DispatchRuleItem } from '@/services/dispatchRules';
 import {
@@ -48,9 +48,8 @@ import { useAuth } from '@/hooks/useAuth';
 const { Text, Paragraph } = Typography;
 
 type ConfigType = 'default' | 'exception';
-type ActiveTab = 'default' | 'customerException';
+type ActiveTab = 'default' | 'customerException' | 'delegations';
 type Option = { value: string; label: string };
-type DefaultSlot = 'primary' | 'backup1' | 'backup2';
 
 const ORDER_TYPES: Option[] = [
   { label: '入职', value: 'onboarding' },
@@ -164,6 +163,17 @@ const rowPrimaryId = (row: DispatchConfigItem): string | undefined =>
 const rowFallbackId = (row: DispatchConfigItem): string | undefined =>
   firstValidText(row.fallback_user_id, row.fallbackUserId, personSelectId(row.backup1));
 
+const rowHandlerIds = (row: DispatchConfigItem): string[] => {
+  const explicit = row.handler_ids ?? row.handlerIds;
+  const ids = Array.isArray(explicit)
+    ? explicit
+    : (row.handlers ?? []).map((person) => personSelectId(person));
+  const normalized = ids.map((id) => validText(id)).filter((id): id is string => Boolean(id));
+  if (normalized.length > 0) return Array.from(new Set(normalized));
+  const primaryId = rowPrimaryId(row);
+  return primaryId ? [primaryId] : [];
+};
+
 const isRowActive = (row: DispatchConfigItem): boolean => row.is_active ?? row.isActive ?? true;
 
 const rowSlaHours = (row: DispatchConfigItem): number | null => {
@@ -207,34 +217,35 @@ const stringifyCondition = (value: unknown): string => {
 const sortModuleHandlers = (list: ModuleHandlerItem[]) =>
   [...list].sort((a, b) => String(a.id).localeCompare(String(b.id)));
 
-const pickDefaultSlots = (list: ModuleHandlerItem[]) => {
-  const primaryList = sortModuleHandlers(list.filter((item) => !item.is_backup));
-  const backupList = sortModuleHandlers(list.filter((item) => item.is_backup));
-  return {
-    primary: primaryList[0],
-    backup1: backupList[0],
-    backup2: backupList[1],
-    extras: [...primaryList.slice(1), ...backupList.slice(2)],
-  };
-};
 
 const AdminDispatchConfig: React.FC = () => {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const { hasRole } = useAuth();
   const isAdmin = hasRole('admin');
   const defaultActionRef = useRef<ActionType>();
   const customerExceptionActionRef = useRef<ActionType>();
+  const delegationActionRef = useRef<ActionType>();
   const [users, setUsers] = useState<Option[]>([]);
   const [customers, setCustomers] = useState<Option[]>([]);
   const [customerCodeOptions, setCustomerCodeOptions] = useState<Option[]>([]);
   const [activeTab, setActiveTab] = useState<ActiveTab>('default');
+  const [configLoadFailed, setConfigLoadFailed] = useState(false);
   const [open, setOpen] = useState(false);
+  const [defaultFormDirty, setDefaultFormDirty] = useState(false);
   const [editing, setEditing] = useState<DispatchConfigItem | null>(null);
   const [customerExceptionOpen, setCustomerExceptionOpen] = useState(false);
   const [editingCustomerException, setEditingCustomerException] = useState<ExceptionModuleHandlerItem | null>(null);
+  const [delegationOpen, setDelegationOpen] = useState(false);
+  const [sourceHandlerOptions, setSourceHandlerOptions] = useState<Option[]>([]);
   const [form] = Form.useForm();
   const [customerExceptionForm] = Form.useForm();
+  const [delegationForm] = Form.useForm();
   const orderType = Form.useWatch('order_type', form) as string | undefined;
+  const watchedModule = Form.useWatch('sub_module', form) as string | undefined;
+  const watchedHandlers = Form.useWatch('handler_ids', form) as string[] | undefined;
+  const watchedStrategy = Form.useWatch('dispatch_strategy', form) as string | undefined;
+  const watchedSla = Form.useWatch('sla_hours', form) as number | undefined;
+  const watchedReminder = Form.useWatch('sla_reminder_before_hours', form) as number | undefined;
 
   const subModuleOptions = useMemo(
     () => orderType ? SUB_MODULES.filter((item) => item.orderType === orderType) : SUB_MODULES,
@@ -242,18 +253,30 @@ const AdminDispatchConfig: React.FC = () => {
   );
 
   useEffect(() => {
+    if (!open || !defaultFormDirty) return undefined;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [open, defaultFormDirty]);
+
+  useEffect(() => {
     (async () => {
       try {
         const [u, c] = await Promise.all([
-          getUsers({ page: 1, pageSize: 100 }),
+          getUsers({ page: 1, pageSize: 50, isActive: true }),
           getCustomers({ page: 1, pageSize: 100 }),
         ]);
         const userList = Array.isArray(u) ? u : u?.list || [];
         const customerList = Array.isArray(c) ? c : c?.list || [];
-        setUsers(userList.map((x: UserItem) => ({
-          value: x.id,
-          label: `${userDisplay(x)} (${x.username || (x as any).userName || x.id})`,
-        })));
+        setUsers(userList
+          .filter((x: UserItem) => x.is_active ?? x.isActive ?? true)
+          .map((x: UserItem) => ({
+            value: x.id,
+            label: `${userDisplay(x)} (${x.username || (x as any).userName || x.id}) · ${(x.roles || []).map((role) => role.role_name).filter(Boolean).join('、') || '未配置角色'}`,
+          })));
         setCustomers(customerList.map((x: CustomerItem) => ({ value: x.id, label: customerDisplay(x) })));
         setCustomerCodeOptions(customerList
           .map((x: CustomerItem) => {
@@ -265,12 +288,118 @@ const AdminDispatchConfig: React.FC = () => {
     })();
   }, []);
 
+  const searchUserOptions = async (keyword: string) => {
+    try {
+      const result = await getUsers({ page: 1, pageSize: 50, keyword, isActive: true });
+      const list = Array.isArray(result) ? result : result?.list || [];
+      setUsers(list.map((user: UserItem) => ({
+        value: user.id,
+        label: `${userDisplay(user)} (${user.username || user.id}) · ${(user.roles || []).map((role) => role.role_name).filter(Boolean).join('、') || '未配置角色'}`,
+      })));
+    } catch {
+      message.error('搜索在职用户失败');
+    }
+  };
+
   const reload = () => {
     defaultActionRef.current?.reload();
     customerExceptionActionRef.current?.reload();
+    delegationActionRef.current?.reload();
   };
 
   const userLabel = (userId?: string) => userId ? users.find((item) => item.value === userId)?.label : undefined;
+  const remoteUserSelectProps = {
+    showSearch: true,
+    filterOption: false as const,
+    options: users,
+    onSearch: (keyword: string) => void searchUserOptions(keyword),
+  };
+
+  const loadSourceHandlers = async (moduleCode: string) => {
+    const handlers = await getModuleHandlers(moduleCode, true);
+    setSourceHandlerOptions(handlers.map((handler) => ({
+      value: handler.handler_id,
+      label: userLabel(handler.handler_id) || handler.handler_name || handler.handler_id,
+    })));
+  };
+
+  const openCreateDelegation = () => {
+    delegationForm.resetFields();
+    delegationForm.setFieldsValue({ moduleCode: 'data_entry' });
+    setDelegationOpen(true);
+    void loadSourceHandlers('data_entry');
+  };
+
+  const submitDelegation = async () => {
+    const values = await delegationForm.validateFields();
+    const [startsAt, endsAt] = values.timeRange || [];
+    try {
+      await createModuleDelegation({
+        moduleCode: values.moduleCode,
+        sourceHandlerId: values.sourceHandlerId,
+        delegateHandlerId: values.delegateHandlerId || null,
+        startsAt: startsAt.toISOString(),
+        endsAt: endsAt.toISOString(),
+        reason: values.reason.trim(),
+      });
+      message.success(values.delegateHandlerId ? '临时代理已生效' : '暂停派单已生效');
+      setDelegationOpen(false);
+      delegationForm.resetFields();
+      delegationActionRef.current?.reload();
+    } catch (error: any) {
+      message.error(error?._friendlyMsg || error?.message || '保存代理失败');
+    }
+  };
+
+  const cancelDelegation = async (id: string) => {
+    try {
+      await cancelModuleDelegation(id);
+      message.success('代理安排已取消，原负责人恢复派单');
+      delegationActionRef.current?.reload();
+    } catch (error: any) {
+      message.error(error?._friendlyMsg || error?.message || '取消代理失败');
+    }
+  };
+
+  const loadDelegations = async () => {
+    try {
+      const data = await getModuleDelegations(undefined, true);
+      return { data, success: true, total: data.length };
+    } catch {
+      message.error('加载临时代理失败');
+      return { data: [], success: false, total: 0 };
+    }
+  };
+
+  const delegationColumns: ProColumns<ModuleDelegationItem>[] = [
+    { title: '模块', dataIndex: 'moduleCode', width: 180, renderText: (value) => labelOf(SUB_MODULES, String(value)) },
+    { title: '原负责人', dataIndex: 'sourceHandlerName', width: 180, renderText: (value, row) => value || userLabel(row.sourceHandlerId) || row.sourceHandlerId },
+    { title: '代理人', dataIndex: 'delegateHandlerName', width: 180, render: (_, row) => row.delegateHandlerId ? <Tag color="blue">{row.delegateHandlerName || userLabel(row.delegateHandlerId) || row.delegateHandlerId}</Tag> : <Tag color="warning">仅暂停派单</Tag> },
+    { title: '开始时间', dataIndex: 'startsAt', width: 170, valueType: 'dateTime' },
+    { title: '结束时间', dataIndex: 'endsAt', width: 170, valueType: 'dateTime' },
+    { title: '原因', dataIndex: 'reason', ellipsis: true, width: 220 },
+    {
+      title: '状态',
+      width: 110,
+      render: (_, row) => {
+        const now = Date.now();
+        if (!row.isActive) return <Tag>已取消</Tag>;
+        if (new Date(row.endsAt).getTime() <= now) return <Tag>已结束</Tag>;
+        if (new Date(row.startsAt).getTime() > now) return <Tag color="processing">待生效</Tag>;
+        return <Tag color="success">生效中</Tag>;
+      },
+    },
+    {
+      title: '操作',
+      width: 110,
+      fixed: 'right',
+      render: (_, row) => row.isActive && new Date(row.endsAt).getTime() > Date.now() ? (
+        <Popconfirm title="确定取消该代理安排？" onConfirm={() => cancelDelegation(row.id)}>
+          <Button size="small" danger>取消</Button>
+        </Popconfirm>
+      ) : null,
+    },
+  ];
 
   const openCreateCustomerException = () => {
     setEditingCustomerException(null);
@@ -359,20 +488,47 @@ const AdminDispatchConfig: React.FC = () => {
     return <Tag color="blue">{name}</Tag>;
   };
 
+  const renderHandlers = (row: DispatchConfigItem) => {
+    const handlerIds = rowHandlerIds(row);
+    if (handlerIds.length === 0) {
+      return (
+        <Tooltip title={EMPTY_PERSON_TIP}>
+          <Tag color="warning">未配置</Tag>
+        </Tooltip>
+      );
+    }
+    return (
+      <Space size={[0, 4]} wrap>
+        {handlerIds.map((handlerId) => {
+          const person = (row.handlers ?? []).find((item) => personSelectId(item) === handlerId);
+          const name = userLabel(handlerId) || personName(person) || handlerId;
+          const active = person?.isActive !== false;
+          const roleText = person?.roleCodes?.length ? person.roleCodes.join('、') : '未返回角色信息';
+          return (
+            <Tooltip key={handlerId} title={`账号：${active ? '启用' : '停用'}；角色：${roleText}`}>
+              <Tag color={active ? 'blue' : 'error'}>{name} · 待办 {person?.openOrderCount ?? 0}</Tag>
+            </Tooltip>
+          );
+        })}
+      </Space>
+    );
+  };
+
   const renderActive = (row: DispatchConfigItem) => (
     isRowActive(row) ? <Tag color="success">启用</Tag> : <Tag>停用</Tag>
   );
 
   const openCreate = (_type: ConfigType = 'default') => {
     setEditing(null);
+    setDefaultFormDirty(false);
     form.resetFields();
     form.setFieldsValue({
       type: 'default',
       order_type: 'onboarding',
       sub_module: 'data_entry',
-      weight: 1,
+      handler_ids: [],
       priority: 10,
-      dispatch_strategy: 'pool',
+      dispatch_strategy: 'round_robin',
       allow_manual_override: true,
       sla_hours: 24,
       sla_reminder_before_hours: 4,
@@ -383,6 +539,7 @@ const AdminDispatchConfig: React.FC = () => {
 
   const openEdit = (row: DispatchConfigItem) => {
     setEditing(row);
+    setDefaultFormDirty(false);
     form.resetFields();
     if (row.source === 'rules') {
       form.setFieldsValue({
@@ -404,10 +561,9 @@ const AdminDispatchConfig: React.FC = () => {
         type: 'default',
         order_type: rowOrderType(row) || 'onboarding',
         sub_module: rowSubModule(row),
-        primary_user_id: rowPrimaryId(row),
-        backup1_user_id: personSelectId(row.backup1),
-        backup2_user_id: personSelectId(row.backup2),
-        weight: row.weight ?? 1,
+        handler_ids: rowHandlerIds(row),
+        dispatch_strategy: row.dispatch_strategy || row.dispatchStrategy || 'round_robin',
+        change_reason: '',
         sla_hours: rowSlaHours(row) ?? 24,
         sla_reminder_before_hours: rowSlaReminderBeforeHours(row) ?? 4,
         is_active: isRowActive(row),
@@ -416,75 +572,6 @@ const AdminDispatchConfig: React.FC = () => {
     setOpen(true);
   };
 
-  const syncDefaultHandlers = async (options: {
-    previousModuleCode?: string;
-    moduleCode: string;
-    primaryUserId?: string;
-    backup1UserId?: string;
-    backup2UserId?: string;
-    weight: number;
-    isActive: boolean;
-  }) => {
-    const currentList = options.moduleCode ? await getModuleHandlers(options.moduleCode) : [];
-    const currentSlots = pickDefaultSlots(currentList);
-    const touchedIds = new Set<string>();
-    const slotOrder: Array<{ key: DefaultSlot; userId?: string; current?: ModuleHandlerItem; isBackup: boolean }> = [
-      { key: 'primary', userId: options.primaryUserId, current: currentSlots.primary, isBackup: false },
-      { key: 'backup1', userId: options.backup1UserId, current: currentSlots.backup1, isBackup: true },
-      { key: 'backup2', userId: options.backup2UserId, current: currentSlots.backup2, isBackup: true },
-    ];
-
-    for (const slot of slotOrder) {
-      if (slot.userId) {
-        if (slot.current) {
-          touchedIds.add(slot.current.id);
-          await updateModuleHandler(slot.current.id, {
-            module_code: options.moduleCode,
-            handler_id: slot.userId,
-            weight: options.weight,
-            is_backup: slot.isBackup,
-            is_active: options.isActive,
-          });
-        } else {
-          const created = await createModuleHandler({
-            module_code: options.moduleCode,
-            handler_id: slot.userId,
-            weight: options.weight,
-            is_backup: slot.isBackup,
-            is_active: options.isActive,
-          });
-          touchedIds.add(created.id);
-        }
-      } else if (slot.current) {
-        touchedIds.add(slot.current.id);
-        await deleteModuleHandler(slot.current.id);
-      }
-    }
-
-    for (const record of currentList) {
-      if (!touchedIds.has(record.id)) {
-        await deleteModuleHandler(record.id);
-      }
-    }
-
-    if (options.previousModuleCode && options.previousModuleCode !== options.moduleCode) {
-      const previousList = await getModuleHandlers(options.previousModuleCode);
-      for (const record of previousList) {
-        await deleteModuleHandler(record.id);
-      }
-    }
-  };
-
-  const saveModuleSla = async (moduleCode?: string, slaHours?: number | null, reminderBeforeHours?: number | null) => {
-    if (!moduleCode) return;
-    const modules = await getModuleConfigs();
-    const target = modules.find((item) => (item.module_code || item.moduleCode) === moduleCode);
-    if (!target) return;
-    await updateModuleConfig(target.id, {
-      sla_hours: slaHours ?? null,
-      sla_reminder_before_hours: reminderBeforeHours ?? null,
-    });
-  };
 
   const removeDefaultHandlers = async (moduleCode?: string) => {
     if (!moduleCode) throw new Error('缺少模块信息，无法删除默认负责人');
@@ -492,6 +579,27 @@ const AdminDispatchConfig: React.FC = () => {
     for (const record of sortModuleHandlers(list)) {
       await deleteModuleHandler(record.id);
     }
+  };
+
+  const closeDefaultEditor = () => {
+    const close = () => {
+      setDefaultFormDirty(false);
+      setOpen(false);
+      setEditing(null);
+      form.resetFields();
+    };
+    if (!defaultFormDirty) {
+      close();
+      return;
+    }
+    modal.confirm({
+      title: '放弃未保存的派发配置修改？',
+      content: '关闭后本次填写内容不会保存。',
+      okText: '放弃修改',
+      cancelText: '继续编辑',
+      okButtonProps: { danger: true },
+      onOk: close,
+    });
   };
 
   const submit = async () => {
@@ -517,31 +625,40 @@ const AdminDispatchConfig: React.FC = () => {
           const previousModuleCode = rowModuleCode(editing);
           const nextModuleCode = values.sub_module;
           if (!nextModuleCode) throw new Error('请选择办理模块');
-          await syncDefaultHandlers({
-            previousModuleCode,
-            moduleCode: nextModuleCode,
-            primaryUserId: values.primary_user_id,
-            backup1UserId: values.backup1_user_id,
-            backup2UserId: values.backup2_user_id,
-            weight: values.weight ?? 1,
+          if (previousModuleCode && previousModuleCode !== nextModuleCode) {
+            throw new Error('编辑配置时不能更换办理模块，请新建对应模块配置');
+          }
+          const handlerIds = Array.isArray(values.handler_ids) ? values.handler_ids : [];
+          if (handlerIds.length > 1 && values.dispatch_strategy === 'fixed') {
+            throw new Error('多人共同负责时请选择轮流分配或按待办量分配');
+          }
+          await saveModuleDispatchConfig(nextModuleCode, {
+            handlerIds,
+            dispatchStrategy: values.dispatch_strategy,
+            slaHours: values.sla_hours ?? null,
+            slaReminderBeforeHours: values.sla_reminder_before_hours ?? null,
             isActive: values.is_active ?? true,
+            changeReason: values.change_reason,
           });
-          await saveModuleSla(nextModuleCode, values.sla_hours, values.sla_reminder_before_hours);
         }
       } else {
         const moduleCode = values.sub_module;
         if (!moduleCode) throw new Error('请选择办理模块');
-        await syncDefaultHandlers({
-          moduleCode,
-          primaryUserId: values.primary_user_id,
-          backup1UserId: values.backup1_user_id,
-          backup2UserId: values.backup2_user_id,
-          weight: values.weight ?? 1,
+        const handlerIds = Array.isArray(values.handler_ids) ? values.handler_ids : [];
+        if (handlerIds.length > 1 && values.dispatch_strategy === 'fixed') {
+          throw new Error('多人共同负责时请选择轮流分配或按待办量分配');
+        }
+        await saveModuleDispatchConfig(moduleCode, {
+          handlerIds,
+          dispatchStrategy: values.dispatch_strategy,
+          slaHours: values.sla_hours ?? null,
+          slaReminderBeforeHours: values.sla_reminder_before_hours ?? null,
           isActive: values.is_active ?? true,
+          changeReason: values.change_reason,
         });
-        await saveModuleSla(moduleCode, values.sla_hours, values.sla_reminder_before_hours);
       }
       message.success(editing ? '保存成功' : '新增成功');
+      setDefaultFormDirty(false);
       setOpen(false);
       setEditing(null);
       form.resetFields();
@@ -568,9 +685,11 @@ const AdminDispatchConfig: React.FC = () => {
   const loadConfig = async (type: ConfigType) => {
     try {
       const list = await getDispatchConfig();
+      setConfigLoadFailed(false);
       const data = list.filter((row) => type === 'exception' ? row.source === 'rules' : row.source !== 'rules');
       return { data, success: true, total: data.length };
     } catch {
+      setConfigLoadFailed(true);
       message.error('加载派发配置失败');
       return { data: [], success: false, total: 0 };
     }
@@ -594,9 +713,16 @@ const AdminDispatchConfig: React.FC = () => {
 
   const defaultColumns: ProColumns<DispatchConfigItem>[] = [
     { title: '模块', width: 220, render: (_, row) => <Text strong>{rowModuleLabel(row)}</Text> },
-    { title: '主负责人', width: 170, render: (_, row) => renderPerson(row.primary, rowPrimaryId(row)) },
-    { title: 'AB角 1', width: 170, render: (_, row) => renderPerson(row.backup1) },
-    { title: 'AB角 2', width: 170, render: (_, row) => renderPerson(row.backup2) },
+    { title: '共同负责人', width: 360, render: (_, row) => renderHandlers(row) },
+    {
+      title: '派发策略',
+      width: 140,
+      render: (_, row) => {
+        const strategy = row.dispatch_strategy || row.dispatchStrategy;
+        const label = strategy === 'load_balance' ? '按待办量' : strategy === 'round_robin' ? '轮流分配' : strategy === 'fixed' ? '固定首位' : '团队认领';
+        return <Tag color={strategy === 'load_balance' ? 'cyan' : 'geekblue'}>{label}</Tag>;
+      },
+    },
     { title: '启用', width: 100, render: (_, row) => renderActive(row) },
     {
       title: '办理时限',
@@ -675,7 +801,7 @@ const AdminDispatchConfig: React.FC = () => {
         type="info"
         showIcon
         message="派发顺序说明"
-        description="系统导入或提交工单后，会先查看客户指定派发；如果没有命中指定客户，再按默认固定负责人 + AB角配置派给对应模块负责人。"
+        description="系统导入或提交工单后，会先查看客户指定派发；如果没有命中指定客户，再按默认共同负责人和所选策略自动分配。"
       />
       <Alert
         style={{ marginBottom: 16 }}
@@ -683,6 +809,16 @@ const AdminDispatchConfig: React.FC = () => {
         showIcon
         message="看到“未配置”请及时补充负责人，避免工单无人处理。"
       />
+
+      {configLoadFailed && (
+        <Alert
+          style={{ marginBottom: 16 }}
+          type="error"
+          showIcon
+          message="派发配置加载失败，不代表当前没有配置"
+          action={<Button size="small" onClick={() => defaultActionRef.current?.reload()}>重试</Button>}
+        />
+      )}
 
       <Tabs
         activeKey={activeTab}
@@ -737,23 +873,110 @@ const AdminDispatchConfig: React.FC = () => {
               </>
             ),
           },
+          {
+            key: 'delegations',
+            label: '临时代理 / 休假',
+            children: (
+              <>
+                <Alert
+                  style={{ marginBottom: 12 }}
+                  type="info"
+                  showIcon
+                  message="代理按时间自动生效和恢复"
+                  description="可指定代理人，也可只暂停原负责人派单；不会修改默认负责人配置。"
+                />
+                <ProTable<ModuleDelegationItem>
+                  actionRef={delegationActionRef}
+                  columns={delegationColumns}
+                  request={loadDelegations}
+                  rowKey="id"
+                  search={false}
+                  scroll={{ x: 1250 }}
+                  headerTitle="临时代理和暂停派单安排"
+                  toolBarRender={() => [
+                    <Button key="add" type="primary" icon={<PlusOutlined />} onClick={openCreateDelegation}>新增代理安排</Button>,
+                  ]}
+                  pagination={{ defaultPageSize: 20 }}
+                  dateFormatter="string"
+                />
+              </>
+            ),
+          },
         ]}
       />
+
+      <Modal
+        title="新增临时代理 / 暂停派单"
+        open={delegationOpen}
+        width={640}
+        okText="保存安排"
+        cancelText="取消"
+        onOk={submitDelegation}
+        onCancel={() => { setDelegationOpen(false); delegationForm.resetFields(); }}
+        destroyOnHidden
+      >
+        <Form form={delegationForm} layout="vertical">
+          <Form.Item name="moduleCode" label="办理模块" rules={[{ required: true, message: '请选择模块' }]}>
+            <Select
+              options={SUB_MODULES}
+              showSearch
+              optionFilterProp="label"
+              onChange={(moduleCode) => {
+                delegationForm.setFieldValue('sourceHandlerId', undefined);
+                void loadSourceHandlers(moduleCode);
+              }}
+            />
+          </Form.Item>
+          <Form.Item name="sourceHandlerId" label="原负责人" rules={[{ required: true, message: '请选择原负责人' }]}>
+            <Select options={sourceHandlerOptions} showSearch optionFilterProp="label" placeholder="仅显示该模块当前负责人" />
+          </Form.Item>
+          <Form.Item name="delegateHandlerId" label="代理人（可选）" extra="不选择代理人时，仅暂停原负责人派单。">
+            <Select allowClear {...remoteUserSelectProps} placeholder="搜索临时代理人" />
+          </Form.Item>
+          <Form.Item name="timeRange" label="代理时间" rules={[{ required: true, message: '请选择开始和结束时间' }]}>
+            <DatePicker.RangePicker showTime style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item
+            name="reason"
+            label="原因"
+            rules={[
+              { required: true, message: '请填写原因' },
+              { validator: (_, value) => String(value || '').trim() ? Promise.resolve() : Promise.reject(new Error('原因不能只填空格')) },
+            ]}
+          >
+            <Input.TextArea rows={3} maxLength={512} showCount placeholder="例如：年假，期间由李四代理" />
+          </Form.Item>
+        </Form>
+      </Modal>
 
       <Modal
         title={modalTitle}
         open={open}
         width={720}
         onOk={submit}
-        onCancel={() => { setOpen(false); setEditing(null); form.resetFields(); }}
+        onCancel={closeDefaultEditor}
         destroyOnHidden
       >
-        <Form form={form} layout="vertical">
+        <Form form={form} layout="vertical" onValuesChange={() => setDefaultFormDirty(true)}>
             <Paragraph type="secondary" style={{ marginBottom: 12 }}>
               {showExceptionFields
                 ? '历史规则配置会优先匹配指定客户或条件，命中后按这里的负责人派发。'
                 : '默认负责人会在没有命中例外配置时生效。'}
             </Paragraph>
+          {!showExceptionFields && (
+            <Alert
+              type="info"
+              showIcon
+              style={{ marginBottom: 16 }}
+              message="保存前变更摘要"
+              description={[
+                `模块：${labelOf(SUB_MODULES, watchedModule)}`,
+                `负责人：${(watchedHandlers || []).map((id) => userLabel(id) || id).join('、') || '未选择'}`,
+                `策略：${watchedStrategy || '未选择'}`,
+                `SLA：${watchedSla ?? '-'} 小时，提前 ${watchedReminder ?? 0} 小时提醒`,
+              ].join('；')}
+            />
+          )}
 
           <Form.Item name="order_type" label="业务类型" rules={[{ required: true }]}> 
             <Select options={ORDER_TYPES} onChange={() => form.setFieldValue('sub_module', undefined)} />
@@ -773,16 +996,29 @@ const AdminDispatchConfig: React.FC = () => {
             </>
           )}
 
-          <Form.Item name="primary_user_id" label="主负责人" rules={[{ required: true, message: '请选择主负责人' }]}> 
-            <Select showSearch optionFilterProp="label" options={users} placeholder="选择主负责人" />
-          </Form.Item>
-          <Form.Item name="backup1_user_id" label={showExceptionFields ? 'AB角/兜底人' : 'AB角 1'}>
-            <Select allowClear showSearch optionFilterProp="label" options={users} placeholder="可选" />
-          </Form.Item>
-          {!showExceptionFields && (
-            <Form.Item name="backup2_user_id" label="AB角 2">
-              <Select allowClear showSearch optionFilterProp="label" options={users} placeholder="可选" />
-            </Form.Item>
+          {showExceptionFields ? (
+            <>
+              <Form.Item name="primary_user_id" label="主负责人" rules={[{ required: true, message: '请选择主负责人' }]}>
+                <Select {...remoteUserSelectProps} placeholder="搜索主负责人" />
+              </Form.Item>
+              <Form.Item name="backup1_user_id" label="AB角/兜底人">
+                <Select allowClear {...remoteUserSelectProps} placeholder="搜索 AB 角/兜底人" />
+              </Form.Item>
+            </>
+          ) : (
+            <>
+              <Form.Item name="handler_ids" label="共同负责人" rules={[{ required: true, message: '请选择至少一名共同负责人' }]}>
+                <Select mode="multiple" {...remoteUserSelectProps} placeholder="输入姓名、账号或角色搜索共同负责人" maxTagCount="responsive" />
+              </Form.Item>
+              <Form.Item name="dispatch_strategy" label="派发策略" rules={[{ required: true, message: '请选择派发策略' }]}>
+                <Select options={[
+                  { label: '轮流分配', value: 'round_robin' },
+                  { label: '按当前待办量分配', value: 'load_balance' },
+                  { label: '固定派给首位（仅限单人）', value: 'fixed' },
+                  { label: '团队认领（不自动派人）', value: 'team_claim' },
+                ]} />
+              </Form.Item>
+            </>
           )}
 
           {!showExceptionFields && (
@@ -829,8 +1065,8 @@ const AdminDispatchConfig: React.FC = () => {
                     </Form.Item>
                   </>
                 ) : (
-                  <Form.Item name="weight" label="分配权重">
-                    <InputNumber min={1} style={{ width: '100%' }} />
+                  <Form.Item name="change_reason" label="变更原因">
+                    <Input.TextArea rows={2} maxLength={512} placeholder="例如：人员交接、休假代理或负载调整" />
                   </Form.Item>
                 ),
               },
@@ -890,7 +1126,7 @@ const AdminDispatchConfig: React.FC = () => {
             label="指定处理人"
             rules={[{ required: true, message: '请选择指定处理人' }]}
           >
-            <Select showSearch optionFilterProp="label" options={users} placeholder="选择命中客户指定派发后优先派发的处理人" />
+            <Select {...remoteUserSelectProps} placeholder="搜索客户指定派发处理人" />
           </Form.Item>
         </Form>
       </Modal>

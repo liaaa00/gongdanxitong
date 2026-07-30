@@ -95,3 +95,14 @@ export class ExportTemplatesController {
     return this.service.remove(id);
   }
 }
+
+@Controller('work-order-export-templates')
+@Roles('admin', 'biz_member')
+export class WorkOrderExportTemplatesController {
+  constructor(private readonly service: ExportTemplatesService) {}
+
+  @Get('contract')
+  listContractTemplates() {
+    return this.service.listSharedContractTemplates();
+  }
+}

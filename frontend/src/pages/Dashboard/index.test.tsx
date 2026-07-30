@@ -22,7 +22,7 @@ type MatrixTestRow = {
 };
 
 vi.mock('@ant-design/pro-components', () => ({
-  PageContainer: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  PageContainer: ({ children, header }: { children: React.ReactNode; header?: { title?: React.ReactNode } }) => <div>{header?.title}{children}</div>,
   ProTable: ({ dataSource = [] }: { dataSource?: MatrixTestRow[] }) => (
     <div data-testid="dashboard-matrix">
       {dataSource.flatMap((row) => [row, ...(row.children || [])]).map((row) => (
@@ -92,6 +92,39 @@ describe('Dashboard display behavior', () => {
 
     expect(container.textContent).not.toContain('工单总表暂时不可用，已展示 0 值或空态，请稍后刷新重试。');
     expect(container.textContent).not.toContain('负责人月办结完成率趋势暂时不可用，已展示空态数据，请稍后刷新重试。');
+  });
+
+  it('renders Tao Mingyue biz_member as business dashboard with personal metrics', async () => {
+    useUserStore.setState({
+      user: {
+        id: 'taomingyue-1',
+        username: 'taomingyue',
+        real_name: '陶明月',
+        email: '',
+        phone: '',
+        avatar_url: null,
+        is_active: true,
+        permissions: [],
+        roles: [{ id: 'r-biz-member', code: 'biz_member', name: '业务员', level: 'execution' }],
+      },
+    });
+    mockedGetDashboardCards.mockResolvedValue({ totalPending: 0, monthPending: 0, totalThisMonth: 1, processing: 0, completed: 1, voided: 0, myMessages: 0 });
+
+    const { container, getByText } = render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(mockedGetDashboardCards).toHaveBeenCalledWith('business', 'mine', expect.stringMatching(/^\d{4}-\d{2}$/));
+      expect(mockedGetOrderTypeMatrix).toHaveBeenCalledWith({ dimension: 'node', audience: 'business', scope: 'mine', month: expect.stringMatching(/^\d{4}-\d{2}$/) });
+      expect(getByText('业务员看板')).toBeTruthy();
+      expect(getByText('本人本月工单')).toBeTruthy();
+    });
+
+    expect(container.textContent).not.toContain('后道办理看板');
+    expect(container.textContent).toContain('1');
   });
 
   it('remembers a previously selected month from cache instead of defaulting to current month', async () => {

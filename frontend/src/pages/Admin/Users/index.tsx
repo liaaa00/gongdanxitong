@@ -2,16 +2,17 @@ import { useRef, useState } from 'react';
 import { PageContainer } from '@ant-design/pro-components';
 import type { ProColumns, ActionType } from '@ant-design/pro-components';
 import { ProTable } from '@ant-design/pro-components';
-import { Button, Tag, Space, App, Popconfirm, Modal, Form, Input, Switch, Select, Alert, Drawer, Descriptions, Typography } from 'antd';
-import { LockOutlined, StopOutlined, CheckCircleOutlined, PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, QuestionCircleOutlined } from '@ant-design/icons';
-import { getUsers, resetUserPassword, toggleUserActive, createUser, updateUser, deleteUser, getUserPasswordStatus } from '@/services/users';
-import type { UserItem } from '@/services/users';
+import { Button, Tag, Space, App, Popconfirm, Modal, Form, Input, Switch, Select, Segmented, Alert, Drawer, Descriptions, Typography } from 'antd';
+import { LockOutlined, LogoutOutlined, UserSwitchOutlined, StopOutlined, CheckCircleOutlined, PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, QuestionCircleOutlined } from '@ant-design/icons';
+import { executeUserHandover, getUserHandoverPreview, getUsers, resetUserPassword, forceLogoutUser, toggleUserActive, createUser, updateUser, deleteUser, getUserPasswordStatus } from '@/services/users';
+import type { UserHandoverPreview, UserItem } from '@/services/users';
 import { getRoles, flattenRoles } from '@/services/roles';
 import type { RoleItem } from '@/services/roles';
 import type { PageParams } from '@/services/mock';
 import { useAuth } from '@/hooks/useAuth';
 import { canonicalRoleCode, ROLE } from '@/constants/roles';
 import { ROUTE_VISIBILITY } from '@/config/routeVisibility';
+import { getModuleHandlers } from '@/services/moduleHandlers';
 
 const { Text, Paragraph } = Typography;
 
@@ -116,6 +117,30 @@ function getAbilitySummary(user: UserItem): string[] {
   return Array.from(new Set(abilities));
 }
 
+const HANDLER_MODULE_LABELS: Record<string, string> = {
+  onboarding_contact: '入职联系',
+  contract: '劳动合同新签',
+  data_entry: '增员报岗录入',
+  social_insurance: '社保公积金增员',
+  renewal_contract: '劳动合同续签',
+  resignation_contact: '离职材料收集',
+  data_entry_resign: '减员报岗录入',
+  social_insurance_resign: '社保公积金减员',
+  resignation_social_insurance: '社保公积金减员',
+};
+
+function getRoleContributions(user: UserItem) {
+  return (user.roles || []).map((role, index) => {
+    const singleRoleUser = { ...user, roles: [role] };
+    return {
+      key: role.role_id || role.role_code || `${role.role_name}-${index}`,
+      name: role.role_name || role.role_code || '未知角色',
+      routes: getVisibleRouteLabels(singleRoleUser),
+      abilities: getAbilitySummary(singleRoleUser),
+    };
+  });
+}
+
 const AdminUsers: React.FC = () => {
   const { message } = App.useApp();
   const { hasRole } = useAuth();
@@ -124,15 +149,106 @@ const AdminUsers: React.FC = () => {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<UserItem | null>(null);
   const [previewUser, setPreviewUser] = useState<UserItem | null>(null);
+  const [previewHandlerModules, setPreviewHandlerModules] = useState<string[]>([]);
+  const [previewHandlerLoading, setPreviewHandlerLoading] = useState(false);
+  const [previewHandlerLoadFailed, setPreviewHandlerLoadFailed] = useState(false);
   const [permissionGuideOpen, setPermissionGuideOpen] = useState(false);
   const [form] = Form.useForm();
   const [roleOptions, setRoleOptions] = useState<{ value: string; label: string }[]>([]);
+  const [handoverOpen, setHandoverOpen] = useState(false);
+  const [handoverUser, setHandoverUser] = useState<UserItem | null>(null);
+  const [handoverPreview, setHandoverPreview] = useState<UserHandoverPreview | null>(null);
+  const [handoverOptions, setHandoverOptions] = useState<Array<{ value: string; label: string }>>([]);
+  const [handoverLoading, setHandoverLoading] = useState(false);
+  const [handoverForm] = Form.useForm<{
+    replacementUserIds: string[];
+    strategy: 'single' | 'round_robin' | 'load_balance';
+    reason: string;
+  }>();
 
   const handleResetPassword = async (user: UserItem) => {
     try {
       await resetUserPassword(user.id);
-      message.success('密码已重置为默认密码');
+      message.success('密码已重置为默认密码，用户下次登录必须修改密码');
     } catch { message.error('重置失败'); }
+  };
+
+  const handleForceLogout = async (user: UserItem) => {
+    try {
+      await forceLogoutUser(user.id);
+      message.success('该用户现有登录会话已撤销');
+    } catch { message.error('强制下线失败'); }
+  };
+
+  const openPermissionPreview = async (user: UserItem) => {
+    setPreviewUser(user);
+    setPreviewHandlerModules([]);
+    setPreviewHandlerLoadFailed(false);
+    setPreviewHandlerLoading(true);
+    try {
+      const handlers = await getModuleHandlers(undefined, true);
+      const modules = handlers
+        .filter((handler) => (handler.handler_id || handler.handlerId) === user.id)
+        .map((handler) => handler.module_code || handler.moduleCode || '')
+        .filter((moduleCode, index, list) => Boolean(moduleCode) && list.indexOf(moduleCode) === index);
+      setPreviewHandlerModules(modules);
+    } catch {
+      setPreviewHandlerLoadFailed(true);
+    } finally {
+      setPreviewHandlerLoading(false);
+    }
+  };
+
+  const loadHandoverOptions = async (targetUserId: string, keyword = '') => {
+    const result = await getUsers({ page: 1, pageSize: 50, keyword, isActive: true });
+    const list = Array.isArray(result) ? result : result.list || [];
+    setHandoverOptions(list
+      .filter((item: UserItem) => item.id !== targetUserId)
+      .map((item: UserItem) => ({
+        value: item.id,
+        label: `${item.real_name || item.username} (${item.username}) · ${(item.roles || []).map((role) => role.role_name).filter(Boolean).join('、') || '未配置角色'}`,
+      })));
+  };
+
+  const openHandover = async (user: UserItem) => {
+    setHandoverUser(user);
+    setHandoverPreview(null);
+    setHandoverOpen(true);
+    handoverForm.resetFields();
+    handoverForm.setFieldsValue({ strategy: 'single', replacementUserIds: [] });
+    setHandoverLoading(true);
+    try {
+      const [preview] = await Promise.all([
+        getUserHandoverPreview(user.id),
+        loadHandoverOptions(user.id),
+      ]);
+      setHandoverPreview(preview);
+    } catch (error: any) {
+      message.error(error?._friendlyMsg || error?.message || '加载交接信息失败');
+    } finally {
+      setHandoverLoading(false);
+    }
+  };
+
+  const submitHandover = async () => {
+    if (!handoverUser) return;
+    const values = await handoverForm.validateFields();
+    setHandoverLoading(true);
+    try {
+      const result = await executeUserHandover(handoverUser.id, {
+        ...values,
+        reason: values.reason.trim(),
+      });
+      message.success(`交接完成：转移 ${result.transferredOrders} 条工单，替换 ${result.replacedModules.length} 个模块负责人`);
+      setHandoverOpen(false);
+      setHandoverUser(null);
+      setHandoverPreview(null);
+      actionRef.current?.reload();
+    } catch (error: any) {
+      message.error(error?._friendlyMsg || error?.message || '离职交接失败');
+    } finally {
+      setHandoverLoading(false);
+    }
   };
 
   const handleToggleActive = async (user: UserItem) => {
@@ -170,11 +286,27 @@ const AdminUsers: React.FC = () => {
     const result = await getRoles();
     const allRoles: RoleItem[] = Array.isArray(result) ? result : (result as any).list || [];
     const rolesMap = new Map(allRoles.map((r: RoleItem) => [r.id, r]));
-    const roles = (role_ids || []).map((rid: string) => ({
+    const roles = (role_ids || []).map((rid: string, index: number) => ({
       role_id: rid,
       role_name: rolesMap.get(rid)?.name || '',
+      // 后端要求必须且仅有一个主角色；用户管理当前没有单独主角色选择，默认第一个选中角色为主角色。
+      is_primary: index === 0,
+      isPrimary: index === 0,
     }));
-    const data = { ...rest, roles };
+    const { username, position, password, ...updatableFields } = rest;
+    const data = editing
+      ? {
+          ...updatableFields,
+          username,
+          ...(password ? { password } : {}),
+          roles,
+        }
+      : {
+          ...updatableFields,
+          username,
+          password,
+          roles,
+        };
     try {
       if (editing) await updateUser(editing.id, data);
       else await createUser(data);
@@ -206,6 +338,13 @@ const AdminUsers: React.FC = () => {
         const pos = r.position || (r as any).jobTitle || (r as any).job_title || '';
         return pos || '—';
       },
+    },
+    { title: '业务线', dataIndex: 'business_scope', key: 'business_scope', width: 110, hideInSearch: true,
+      render: (_: unknown, r: UserItem) => (
+        <Tag color={r.business_scope === 'out_of_province' ? 'cyan' : 'blue'}>
+          {r.business_scope === 'out_of_province' ? '浙江自签' : '北仑本地'}
+        </Tag>
+      ),
     },
     { title: '邮箱', dataIndex: 'email', key: 'email', width: 160, ellipsis: true },
     { title: '手机', dataIndex: 'phone', key: 'phone', width: 120 },
@@ -259,9 +398,32 @@ const AdminUsers: React.FC = () => {
       title: '操作', key: 'actions', width: 260, fixed: 'right', hideInSearch: true,
       render: (_, r) => (
         <Space size={0} wrap style={{ maxWidth: 250, rowGap: 2 }}>
-          <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => setPreviewUser(r)}>权限预览</Button>
+          <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => void openPermissionPreview(r)}>权限预览</Button>
           <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(r)}>编辑</Button>
-          <Button type="link" size="small" icon={<LockOutlined />} onClick={() => handleResetPassword(r)}>重置密码</Button>
+          <Popconfirm
+            getPopupContainer={() => document.body}
+            title={`确定重置 ${r.real_name || r.username} 的密码？`}
+            description="密码将重置为默认密码 123456，用户下次登录必须先修改密码。"
+            okText="确认重置"
+            cancelText="取消"
+            onConfirm={() => handleResetPassword(r)}
+          >
+            <Button type="link" size="small" icon={<LockOutlined />}>重置密码</Button>
+          </Popconfirm>
+          <Popconfirm
+            title={`确定强制下线 ${r.real_name || r.username}？`}
+            description="仅撤销该用户现有登录会话，不会停用账号或修改密码。"
+            okText="确认下线"
+            cancelText="取消"
+            onConfirm={() => handleForceLogout(r)}
+          >
+            <Button type="link" size="small" icon={<LogoutOutlined />}>强制下线</Button>
+          </Popconfirm>
+          {r.is_active && (
+            <Button type="link" size="small" icon={<UserSwitchOutlined />} onClick={() => void openHandover(r)}>
+              离职交接
+            </Button>
+          )}
           <Popconfirm title={r.is_active ? '确定禁用该用户？' : '确定启用该用户？'} onConfirm={() => handleToggleActive(r)}>
             <Button type="link" size="small" danger={r.is_active} icon={r.is_active ? <StopOutlined /> : <CheckCircleOutlined />}>
               {r.is_active ? '禁用' : '启用'}
@@ -304,7 +466,7 @@ const AdminUsers: React.FC = () => {
         toolBarRender={() => [
           <Button key="add" type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建用户</Button>,
         ]}
-        scroll={{ x: 1160 }}
+        scroll={{ x: 1270 }}
         size="small"
         tableLayout="fixed"
         pagination={{ defaultPageSize: 10, showSizeChanger: true }}
@@ -334,9 +496,14 @@ const AdminUsers: React.FC = () => {
 
       <Drawer
         title="权限预览"
+        getContainer={() => document.body}
         open={Boolean(previewUser)}
         width={720}
-        onClose={() => setPreviewUser(null)}
+        onClose={() => {
+          setPreviewUser(null);
+          setPreviewHandlerModules([]);
+          setPreviewHandlerLoadFailed(false);
+        }}
       >
         {previewUser && (
           <Space direction="vertical" size="large" style={{ width: '100%' }}>
@@ -371,13 +538,140 @@ const AdminUsers: React.FC = () => {
                 </Space>
               </div>
             </div>
+
+            <div>
+              <Text strong>角色逐项贡献</Text>
+              <Descriptions column={1} size="small" bordered style={{ marginTop: 8 }}>
+                {getRoleContributions(previewUser).map((contribution) => (
+                  <Descriptions.Item key={contribution.key} label={<Tag>{contribution.name}</Tag>}>
+                    <Space direction="vertical" size={4}>
+                      <Text>页面：{contribution.routes.join('、') || '无额外页面'}</Text>
+                      <Text>操作：{contribution.abilities.join('；') || '无额外操作'}</Text>
+                    </Space>
+                  </Descriptions.Item>
+                ))}
+              </Descriptions>
+            </div>
+
+            <div>
+              <Text strong>负责人配置影响</Text>
+              <div style={{ marginTop: 8 }}>
+                {previewHandlerLoading ? (
+                  <Text type="secondary">正在读取负责人配置...</Text>
+                ) : previewHandlerLoadFailed ? (
+                  <Alert type="error" showIcon message="负责人配置加载失败，当前结果不完整" />
+                ) : previewHandlerModules.length > 0 ? (
+                  <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                    <Alert
+                      type="warning"
+                      showIcon
+                      message={`该用户是 ${previewHandlerModules.length} 个模块的负责人`}
+                      description="角色权限与负责人配置相互独立。移除办理角色前，请先在派发配置中更换负责人，避免工单派给无法进入办理页面的账号。"
+                    />
+                    <Space wrap>
+                      {previewHandlerModules.map((moduleCode) => (
+                        <Tag key={moduleCode} color="orange">{HANDLER_MODULE_LABELS[moduleCode] || moduleCode} ({moduleCode})</Tag>
+                      ))}
+                    </Space>
+                  </Space>
+                ) : (
+                  <Text type="secondary">该用户当前未配置为任何办理模块的负责人。</Text>
+                )}
+              </div>
+            </div>
           </Space>
         )}
       </Drawer>
 
+      <Modal
+        title={`离职交接${handoverUser ? `：${handoverUser.real_name || handoverUser.username}` : ''}`}
+        open={handoverOpen}
+        width={680}
+        confirmLoading={handoverLoading}
+        okText="确认交接并停用账号"
+        cancelText="取消"
+        onOk={submitHandover}
+        onCancel={() => {
+          setHandoverOpen(false);
+          setHandoverUser(null);
+          setHandoverPreview(null);
+          handoverForm.resetFields();
+        }}
+        destroyOnHidden
+      >
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="交接将转移未完成工单、替换负责人池、停用账号并撤销现有会话"
+          description="原角色绑定会保留用于历史追溯，不会删除或修改现有角色权限配置。"
+        />
+        <Descriptions size="small" bordered column={1} style={{ marginBottom: 16 }}>
+          <Descriptions.Item label="未完成工单">
+            {handoverPreview ? `${handoverPreview.totalOpenOrders} 条` : '加载中'}
+          </Descriptions.Item>
+          <Descriptions.Item label="涉及模块">
+            <Space wrap>
+              {(handoverPreview?.modules || []).map((module) => (
+                <Tag key={module.moduleCode} color="blue">
+                  {module.moduleCode} · {module.openOrderCount} 条
+                </Tag>
+              ))}
+              {handoverPreview && handoverPreview.modules.length === 0 && <Text type="secondary">无负责人模块或未完成工单</Text>}
+            </Space>
+          </Descriptions.Item>
+        </Descriptions>
+        <Form form={handoverForm} layout="vertical">
+          <Form.Item name="strategy" label="工单分配策略" rules={[{ required: true }]}>
+            <Segmented
+              block
+              options={[
+                { label: '全部给一人', value: 'single' },
+                { label: '轮流平均', value: 'round_robin' },
+                { label: '按待办量', value: 'load_balance' },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item
+            name="replacementUserIds"
+            label="接替负责人"
+            dependencies={['strategy']}
+            rules={[
+              { required: true, message: '请选择至少一名接替负责人' },
+              ({ getFieldValue }) => ({
+                validator: (_, value: string[]) => getFieldValue('strategy') !== 'single' || value?.length === 1
+                  ? Promise.resolve()
+                  : Promise.reject(new Error('全部给一人策略只能选择一名接替负责人')),
+              }),
+            ]}
+          >
+            <Select
+              mode="multiple"
+              showSearch
+              filterOption={false}
+              options={handoverOptions}
+              loading={handoverLoading}
+              onSearch={(keyword) => handoverUser && void loadHandoverOptions(handoverUser.id, keyword)}
+              placeholder="输入姓名、账号或角色搜索在职用户"
+              maxTagCount="responsive"
+            />
+          </Form.Item>
+          <Form.Item
+            name="reason"
+            label="交接原因"
+            rules={[
+              { required: true, message: '请填写交接原因' },
+              { validator: (_, value) => String(value || '').trim() ? Promise.resolve() : Promise.reject(new Error('交接原因不能只填空格')) },
+            ]}
+          >
+            <Input.TextArea rows={3} maxLength={512} showCount placeholder="例如：员工离职，工作由张三、李四共同接替" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
       <Modal title={editing ? '编辑用户' : '新建用户'} open={open} onOk={onSave}
         onCancel={() => { setOpen(false); setEditing(null); form.resetFields(); }} destroyOnHidden>
-        <Form form={form} layout="vertical" initialValues={{ is_active: true }}>
+        <Form form={form} layout="vertical" initialValues={{ is_active: true, business_scope: 'beilun' }}>
           <Form.Item name="username" label="用户名" rules={[{ required: true }]}><Input /></Form.Item>
           {!editing && (
             <Form.Item
@@ -403,6 +697,15 @@ const AdminUsers: React.FC = () => {
           )}
           <Form.Item name="real_name" label="姓名" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="group_name" label="部门/小组"><Input placeholder="如：业务1组、共享团队、系统管理" /></Form.Item>
+          <Form.Item name="business_scope" label="所属业务线" rules={[{ required: true, message: '请选择所属业务线' }]}>
+            <Segmented
+              block
+              options={[
+                { label: '北仑本地业务', value: 'beilun' },
+                { label: '浙江自签（省外业务）', value: 'out_of_province' },
+              ]}
+            />
+          </Form.Item>
           <Form.Item name="position" label="岗位"><Input placeholder="如：业务主管、客服专员" /></Form.Item>
           <Form.Item name="email" label="邮箱"><Input type="email" /></Form.Item>
           <Form.Item name="phone" label="手机"><Input /></Form.Item>

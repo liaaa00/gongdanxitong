@@ -48,8 +48,3 @@ export class ReviewOrderAttachmentDto {
   @IsString()
   reject_reason?: string;
 }
-
-export class StampOrderAttachmentDto {
-  @IsString()
-  stamp_no!: string;
-}

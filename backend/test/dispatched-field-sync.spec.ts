@@ -142,6 +142,10 @@ function buildService(order: DispatchedOrder) {
     find: jest.fn(async () => []),
   });
 
+  const validationService = {
+    resolveUserDepartmentIds: jest.fn(async () => ['dep-1']),
+    validateWorkOrder: jest.fn(async () => undefined),
+  };
   const service = new DispatchedOrderService(
     dispatchedOrderRepo,
     workOrderRepo,
@@ -153,7 +157,7 @@ function buildService(order: DispatchedOrder) {
     {} as FieldPermissionService,
     { getLogs: jest.fn() } as unknown as FieldSupplementService,
     {} as never,
-    { resolveUserDepartmentIds: jest.fn(async () => ['dep-1']) } as never,
+    validationService as never,
     undefined,
     undefined,
     undefined,
@@ -164,7 +168,7 @@ function buildService(order: DispatchedOrder) {
     fieldSyncItemRepo,
   );
   jest.spyOn(service, 'findOne').mockResolvedValue({ id: ORDER_ID } as DispatchedOrderDetailItem);
-  return { service, dispatchedOrderRepo, workOrderRepo, operationLogRepo, fieldSyncBatchRepo, fieldSyncItemRepo };
+  return { service, dispatchedOrderRepo, workOrderRepo, operationLogRepo, fieldSyncBatchRepo, fieldSyncItemRepo, validationService };
 }
 
 const creator: JwtUserPayload = { sub: CREATOR_ID, username: 'sales', roles: ['business_group_member'] } as JwtUserPayload;
@@ -281,7 +285,61 @@ describe('dispatched order field sync records', () => {
     ]));
   });
 
-  it('blocks online field changes when an affected child order is completed', async () => {
+  it('allows a completed child modification through approval and preserves its completion time', async () => {
+    const order = makeOrder(DispatchedOrderStatus.COMPLETED, { completedAt: fixedDate });
+    order.parentOrder.status = WorkOrderStatus.COMPLETED;
+    order.parentOrder.completedAt = fixedDate;
+    const { service, operationLogRepo, validationService } = buildService(order);
+
+    await service.creatorUpdateFields(ORDER_ID, { fields: { mobile: 'new' }, reason: 'completed correction' }, creator);
+
+    expect(order.status).toBe(DispatchedOrderStatus.MODIFY_PENDING);
+    expect(order.completedAt).toEqual(fixedDate);
+    expect(order.parentOrder.extraData.mobile).toBe('old');
+    expect(validationService.validateWorkOrder).toHaveBeenCalledWith(expect.objectContaining({
+      extraData: expect.objectContaining({ mobile: 'new' }),
+    }));
+
+    operationLogRepo.findOne.mockResolvedValue({
+      userId: CREATOR_ID,
+      createdAt: fixedDate,
+      afterData: {
+        pendingFields: { mobile: 'new' },
+        previousStatus: DispatchedOrderStatus.COMPLETED,
+      },
+    } as unknown as OperationLog);
+
+    await service.approveModify(ORDER_ID, { approved: true, comment: 'agree' }, handler);
+
+    expect(order.status).toBe(DispatchedOrderStatus.COMPLETED);
+    expect(order.completedAt).toEqual(fixedDate);
+    expect(order.parentOrder.extraData.mobile).toBe('new');
+  });
+
+  it('redispatches a returned child after its modification is approved', async () => {
+    const order = makeOrder(DispatchedOrderStatus.MODIFY_PENDING);
+    order.parentOrder.status = WorkOrderStatus.RETURNED;
+    const { service, operationLogRepo, workOrderRepo } = buildService(order);
+    operationLogRepo.findOne.mockResolvedValue({
+      userId: CREATOR_ID,
+      createdAt: fixedDate,
+      afterData: {
+        pendingFields: { mobile: 'new' },
+        previousStatus: DispatchedOrderStatus.RETURNED,
+      },
+    } as unknown as OperationLog);
+
+    await service.approveModify(ORDER_ID, { approved: true, comment: 'agree' }, handler);
+
+    expect(order.status).toBe(DispatchedOrderStatus.PENDING);
+    expect(order.acceptedAt).toBeNull();
+    expect(order.completedAt).toBeNull();
+    expect(order.returnReason).toBeNull();
+    expect(order.parentOrder.status).toBe(WorkOrderStatus.PROCESSING);
+    expect(workOrderRepo.save).toHaveBeenCalledWith(expect.objectContaining({ status: WorkOrderStatus.PROCESSING }));
+  });
+
+  it('allows an accepted child modification request when another affected child is completed', async () => {
     const order = makeOrder(DispatchedOrderStatus.PROCESSING);
     const completed = makeOrder(DispatchedOrderStatus.COMPLETED, {
       id: '33333333-3333-4333-8333-333333333333',
@@ -292,10 +350,11 @@ describe('dispatched order field sync records', () => {
     const { service, dispatchedOrderRepo, workOrderRepo, fieldSyncBatchRepo, fieldSyncItemRepo } = buildService(order);
     dispatchedOrderRepo.find.mockResolvedValue([order, completed]);
 
-    await expect(service.creatorUpdateFields(ORDER_ID, { fields: { mobile: 'new' } }, creator)).rejects.toMatchObject({ status: 409 });
+    await service.creatorUpdateFields(ORDER_ID, { fields: { mobile: 'new' } }, creator);
 
+    expect(order.status).toBe(DispatchedOrderStatus.MODIFY_PENDING);
     expect(workOrderRepo.save).not.toHaveBeenCalled();
-    expect(fieldSyncBatchRepo.save).not.toHaveBeenCalled();
-    expect(fieldSyncItemRepo.save).not.toHaveBeenCalled();
+    expect(fieldSyncBatchRepo.save).toHaveBeenCalledWith(expect.objectContaining({ status: 'approval_pending' }));
+    expect(fieldSyncItemRepo.save).toHaveBeenCalled();
   });
 });

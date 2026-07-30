@@ -1,7 +1,7 @@
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsEnum, IsOptional, IsString } from 'class-validator';
 import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
-import { DispatchedOrderStatus } from 'src/entities';
+import { BusinessScope, DispatchedOrderStatus } from 'src/entities';
 
 type MultiQueryValue = string | string[];
 
@@ -43,6 +43,14 @@ export class ListDispatchedOrderQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsString()
   scope?: string;
+
+  @IsOptional()
+  @IsEnum(BusinessScope)
+  businessScope?: BusinessScope;
+
+  @IsOptional()
+  @IsEnum(BusinessScope)
+  business_scope?: BusinessScope;
 
   @IsOptional()
   handlerId?: MultiQueryValue;

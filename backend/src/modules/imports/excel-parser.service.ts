@@ -1,7 +1,7 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { Workbook, Worksheet } from 'exceljs';
 import { businessException } from 'src/common/exceptions/business-exception';
-import { ParsedSheet } from './types';
+import { ParsedAttachmentLink, ParsedSheet } from './types';
 
 interface ParseOptions {
   headerRows?: 1 | 2;
@@ -13,6 +13,11 @@ interface HeaderDetection {
 }
 
 const TEMPLATE_META_ROW_LABELS = new Set(['是否必填', '填写要求', '填写示例', '备注说明', '涉及工单']);
+
+// Structural template headers are not business data fields.
+// Keep only the template label column as a placeholder;
+// attachment columns stay visible so their cell hyperlinks can be detected.
+const TEMPLATE_STRUCTURAL_HEADERS = new Set(['\u5b57\u6bb5\u540d']);
 
 const KNOWN_FIELD_LABELS = [
   '客户名称', '客户代码', '外包类型', '岗位', '姓名', '身份证号码', '身份证号', '性别', '出生日期', '年龄',
@@ -26,7 +31,7 @@ const KNOWN_FIELD_LABELS = [
   '岗位类型', '证件类型', '学历', '婚姻状况', '试用期其他工资', '是否电子签', '电子签平台',
   '甲方住所', '项目名称', '安排或调整工作的情况', '参保起始月', '反馈截止日期', '需要反馈截止日期',
   '是否为通用模板', '模板名称',
-  '缴纳地区', '社保公积金停保月', '离职日期', '离职材料是否需要共享收集',
+  '缴纳地区', '社保公积金停保月', '离职日期', '离职材料是否需要共享收集', '附件',
 ];
 
 @Injectable()
@@ -61,6 +66,12 @@ export class ExcelParserService {
     }
 
     const rows: Array<Record<string, unknown>> = [];
+    const rowNumbers: number[] = [];
+    const attachmentLinks: ParsedAttachmentLink[] = [];
+    const attachmentColumnIndexes = headers
+      .map((header, index) => (this.isAttachmentHeader(header) ? index + 1 : null))
+      .filter((index): index is number => index !== null);
+
     for (let rowNo = detected.startRow + headerRows; rowNo <= worksheet.rowCount; rowNo += 1) {
       const row = worksheet.getRow(rowNo);
       if (this.isTemplateMetaRow(row, headers.length)) {
@@ -77,6 +88,20 @@ export class ExcelParserService {
       }
       if (hasValue) {
         rows.push(record);
+        const physicalRowIndex = rowNo - 1;
+        rowNumbers.push(physicalRowIndex);
+        for (const col of attachmentColumnIndexes) {
+          const link = this.readCellHyperlink(row.getCell(col).value);
+          if (link) {
+            attachmentLinks.push({
+              rowIndex: physicalRowIndex,
+              columnIndex: col - 1,
+              header: headers[col - 1],
+              text: link.text,
+              hyperlink: link.hyperlink,
+            });
+          }
+        }
       }
     }
 
@@ -87,6 +112,8 @@ export class ExcelParserService {
         sheetName: worksheet.name,
         totalRows: rows.length,
         headerRows: detected.startRow + headerRows - 1,
+        rowNumbers,
+        attachmentLinks,
       },
     };
   }
@@ -176,7 +203,11 @@ export class ExcelParserService {
       } else {
         header = a;
       }
-      headers.push(this.normalizeHeader(header) || `__col_${index + 1}__`);
+      const normalized = this.normalizeHeader(header);
+      const finalHeader = normalized && !TEMPLATE_STRUCTURAL_HEADERS.has(normalized)
+        ? normalized
+        : `__col_${index + 1}__`;
+      headers.push(finalHeader);
     }
     return this.ensureUniqueHeaders(headers);
   }
@@ -300,6 +331,24 @@ export class ExcelParserService {
       .replace(/[\s\-_()/【】\[\]{}:：，,。\.；;、*"'“”‘’]/g, '')
       .replace(/的|之|是否/g, '')
       .trim();
+  }
+
+  private isAttachmentHeader(header: string): boolean {
+    return /attachment|\u9644\u4ef6/i.test(this.normalizeHeader(header));
+  }
+
+  private readCellHyperlink(value: unknown): { text: string; hyperlink: string } | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return null;
+    }
+    const record = value as Record<string, unknown>;
+    const hyperlink = typeof record.hyperlink === 'string' ? record.hyperlink.trim() : '';
+    if (!hyperlink) {
+      return null;
+    }
+    const textValue = this.normalizeCellValue(record.text) ?? hyperlink;
+    const text = String(textValue).trim();
+    return { text: text || hyperlink, hyperlink };
   }
 
   private normalizeCellValue(value: unknown): string | number | boolean | null {

@@ -32,6 +32,8 @@ const WORK_ORDER_CREATE_ROLES = [
   ROLE.BUSINESS_GROUP_MEMBER,
 ] as const satisfies readonly CanonicalRole[];
 
+const OUT_OF_PROVINCE_ROLES = BUSINESS_ORDER_ROLES;
+
 const ONBOARDING_ROLES = [
   ROLE.ADMIN,
   ROLE.DATA_ENTRY_LEADER,
@@ -41,8 +43,19 @@ const ONBOARDING_ROLES = [
   ROLE.SOCIAL_INSURANCE_SPECIALIST,
 ] as const satisfies readonly CanonicalRole[];
 
-// 第一阶段只开放入职、离职；在职模块保留后台配置但前端路由和菜单不可见。
-const IN_SERVICE_ROLES = [] as const satisfies readonly CanonicalRole[];
+// 阶段2开放在职单项业务：业务侧可发起/审批，实际接单人可能来自任一现有后道角色。
+// TeamRole.IN_SERVICE 只是派单语义标签，不新增数据库角色；数据范围仍由后端 createdBy/handlerId 兜底。
+const IN_SERVICE_ROLES = [
+  ROLE.ADMIN,
+  ROLE.BUSINESS_OWNER,
+  ROLE.BUSINESS_GROUP_LEADER,
+  ROLE.BUSINESS_GROUP_MEMBER,
+  ROLE.DATA_ENTRY_LEADER,
+  ROLE.SHARED_TEAM_OWNER,
+  ROLE.LABOR_CONTRACT_MEMBER,
+  ROLE.ONBOARDING_RESIGNATION_MEMBER,
+  ROLE.SOCIAL_INSURANCE_SPECIALIST,
+] as const satisfies readonly CanonicalRole[];
 
 const OFFBOARDING_ROLES = [
   ROLE.ADMIN,
@@ -97,6 +110,17 @@ export const ROUTE_VISIBILITY = {
   '/work-orders/import': WORK_ORDER_CREATE_ROLES,
   '/work-orders/:id': WORK_ORDER_CREATE_ROLES,
 
+  // 省外增减员主单：使用专用 API 路径隔离，不进入前端全局 store。
+  '/out-of-province': OUT_OF_PROVINCE_ROLES,
+  '/out-of-province/import': WORK_ORDER_CREATE_ROLES,
+  '/out-of-province/new': WORK_ORDER_CREATE_ROLES,
+  '/out-of-province/increase': OUT_OF_PROVINCE_ROLES,
+  '/out-of-province/increase/new': WORK_ORDER_CREATE_ROLES,
+  '/out-of-province/decrease': OUT_OF_PROVINCE_ROLES,
+  '/out-of-province/decrease/new': WORK_ORDER_CREATE_ROLES,
+  '/out-of-province/single-business': OUT_OF_PROVINCE_ROLES,
+  '/out-of-province/single-business/new': WORK_ORDER_CREATE_ROLES,
+
   '/my-field-permissions': [ROLE.ADMIN],
 
   // 我的工单 6 视图：业务侧保留发起/退回/已办/历史，后道保留待办/已办/历史，业务负责人保留团队/历史。
@@ -124,10 +148,25 @@ export const ROUTE_VISIBILITY = {
   '/onboarding/data_entry_resign': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.DATA_ENTRY_LEADER],
   '/onboarding/social_insurance_resign': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SOCIAL_INSURANCE_SPECIALIST],
 
-  // 在职管理：第一阶段暂不开放，后台配置可保留但界面不可见。
+  // 在职管理：开放续签、证明和单项业务直单页；仅历史占位路径继续冻结。
   '/in-service': IN_SERVICE_ROLES,
+  '/in-service/new': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER],
+  '/in-service/certificates': IN_SERVICE_ROLES,
+  '/in-service/certificates/new': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER],
+  '/renewal': IN_SERVICE_ROLES,
+  '/renewal/new': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER],
+  '/renewal/:id': IN_SERVICE_ROLES,
+  '/resignation-certificates': IN_SERVICE_ROLES,
+  '/resignation-certificates/new': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER],
   '/in-service/contract-renewal': IN_SERVICE_ROLES,
   '/in-service/benefit-claim': IN_SERVICE_ROLES,
+  '/in-service/:id/audit': [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER],
+  '/in-service/:id': IN_SERVICE_ROLES,
+
+  // 省外派单：阶段3开放增减员列表/创建/详情/导入。
+  '/out-of-province/orders': OUT_OF_PROVINCE_ROLES,
+  '/out-of-province/orders/new': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER],
+  '/out-of-province/orders/:id': OUT_OF_PROVINCE_ROLES,
 
   // 离职管理：离职材料收集由入离职岗负责，减员报岗录入由报岗录入岗负责。
   '/offboarding': OFFBOARDING_ROLES,
@@ -168,10 +207,63 @@ export const ROUTE_VISIBILITY = {
 
 export type VisibilityRoute = keyof typeof ROUTE_VISIBILITY;
 
+const ROUTE_ACTION_PERMISSIONS: Partial<Record<VisibilityRoute, readonly string[]>> = {
+  '/dashboard': ['route.dashboard'],
+  '/notifications': ['route.notifications'],
+  '/work-orders': ['route.work_orders'],
+  '/work-orders/create': ['route.work_order_create'],
+  '/work-orders/import': ['route.work_order_import'],
+  '/work-orders/:id': ['route.work_order_detail'],
+  '/out-of-province': ['route.work_orders'],
+  '/out-of-province/import': ['route.work_order_import'],
+  '/out-of-province/new': ['route.work_order_create'],
+  '/out-of-province/orders': ['route.work_orders'],
+  '/out-of-province/orders/new': ['route.work_order_create'],
+  '/out-of-province/orders/:id': ['route.work_order_detail'],
+  '/my-dispatched/:id': ['route.dispatched_detail'],
+  '/onboarding': ['route.onboarding'],
+  '/onboarding/contract': ['route.onboarding_contract', 'module.contract.manage'],
+  '/onboarding/onboarding_contact': ['route.onboarding_contact', 'module.onboarding_contact.manage'],
+  '/onboarding/data_entry': ['route.onboarding_data_entry', 'module.data_entry.manage'],
+  '/onboarding/social_insurance': ['route.onboarding_social_insurance', 'module.social_insurance.manage'],
+  '/onboarding/resignation_contact': ['route.resignation_contact', 'module.resignation_contact.manage'],
+  '/onboarding/data_entry_resign': ['route.data_entry_resign', 'module.data_entry_resign.manage'],
+  '/onboarding/social_insurance_resign': ['route.social_insurance_resign', 'module.social_insurance_resign.manage'],
+  '/offboarding': ['route.offboarding'],
+  '/offboarding/contact-pool': ['route.offboarding_contact_pool', 'module.resignation_contact.manage'],
+  '/offboarding/social-suspend-pool': ['route.offboarding_social_suspend_pool', 'module.data_entry_resign.manage'],
+  '/dashboards/leader': ['route.leader_dashboard'],
+  '/export-templates': ['system.admin'],
+  '/admin': ['system.admin'],
+  '/admin/users': ['system.admin'],
+  '/admin/roles': ['system.admin'],
+  '/admin/departments': ['system.admin'],
+  '/admin/branches': ['system.admin'],
+  '/admin/customers': ['system.admin'],
+  '/admin/customer-assignees': ['system.admin'],
+  '/admin/module-config': ['system.admin'],
+  '/admin/fields': ['system.admin'],
+  '/admin/import-templates': ['system.admin'],
+  '/admin/field-permissions': ['system.admin'],
+  '/admin/dispatch-config': ['system.admin'],
+  '/admin/flow-config': ['system.admin'],
+  '/admin/workflow-config': ['system.admin'],
+  '/admin/workflows': ['system.admin'],
+  '/admin/workflows/:id': ['system.admin'],
+  '/admin/export-templates': ['system.admin'],
+  '/admin/detail-view-templates': ['system.admin'],
+  '/admin/notifications': ['system.admin'],
+  '/admin/approval-flows': ['system.admin'],
+  '/admin/audit-log': ['system.admin'],
+  '/admin/logs': ['system.admin'],
+  '/admin/ai-settings': ['system.admin'],
+  '/admin/login-debug': ['system.admin'],
+  '/admin/system-settings': ['system.admin'],
+};
+
 const PHASE1_HIDDEN_ROUTES = new Set<VisibilityRoute>([
   '/onboarding/renewal_contract',
   '/onboarding/benefit_apply',
-  '/in-service',
   '/in-service/contract-renewal',
   '/in-service/benefit-claim',
 ]);
@@ -182,14 +274,14 @@ const LEGACY_ROUTE_ALIASES: Record<string, VisibilityRoute> = {
   '/team-dispatched': '/my-work/team',
   '/export-templates': '/export-templates',
   '/renewal': '/in-service',
-  '/renewal/new': '/in-service',
-  '/renewal/:id': '/in-service/contract-renewal',
+  '/renewal/new': '/in-service/new',
+  '/renewal/:id': '/in-service/:id',
   '/resignation': '/work-orders',
   '/resignation/new': '/work-orders/create',
   '/resignation/:id': '/work-orders/:id',
   '/resignation/:id/cert': '/work-orders/:id',
-  '/benefit': '/in-service',
-  '/benefit/new': '/in-service',
+  '/benefit': '/in-service/benefit-claim',
+  '/benefit/new': '/in-service/benefit-claim',
   '/benefit/:id': '/in-service/benefit-claim',
   '/onboarding/contact-pool': '/onboarding/onboarding_contact',
   '/onboarding/contract-pool': '/onboarding/contract',
@@ -239,7 +331,8 @@ const BACKEND_DYNAMIC_ROUTES: readonly VisibilityRoute[] = ['/my-dispatched/:id'
 const RESTRICTED_DYNAMIC_PERMISSION_ROUTES: Partial<Record<CanonicalRole, readonly VisibilityRoute[]>> = {
   [ROLE.BUSINESS_OWNER]: BUSINESS_OWNER_DYNAMIC_ROUTES,
   [ROLE.BUSINESS_GROUP_LEADER]: [
-    '/dashboard', '/work-orders', '/work-orders/create', '/work-orders/import', '/work-orders/:id', '/my-dispatched/:id',
+    '/dashboard', '/work-orders', '/work-orders/create', '/work-orders/import', '/work-orders/:id',
+    '/out-of-province', '/out-of-province/import', '/out-of-province/new', '/my-dispatched/:id',
     '/onboarding', '/onboarding/onboarding_contact', '/onboarding/contract', '/onboarding/data_entry', '/onboarding/social_insurance',
     '/offboarding', '/onboarding/resignation_contact', '/onboarding/data_entry_resign', '/onboarding/social_insurance_resign',
   ],
@@ -259,10 +352,21 @@ const RESTRICTED_DYNAMIC_PERMISSION_ROUTES: Partial<Record<CanonicalRole, readon
 function allowsDynamicPermissionWithinRoleScope(route: VisibilityRoute, userRoles: { code?: string }[] | undefined): boolean {
   const roleCodes = new Set(canonicalRoleCodes(userRoles));
   if (roleCodes.has(ROLE.ADMIN)) return true;
-  const restrictedRole = (Object.keys(RESTRICTED_DYNAMIC_PERMISSION_ROUTES) as CanonicalRole[])
-    .find((role) => roleCodes.has(role));
-  if (!restrictedRole) return true;
-  return (RESTRICTED_DYNAMIC_PERMISSION_ROUTES[restrictedRole] || []).includes(route);
+  const restrictedRoles = (Object.keys(RESTRICTED_DYNAMIC_PERMISSION_ROUTES) as CanonicalRole[])
+    .filter((role) => roleCodes.has(role));
+  if (restrictedRoles.length === 0) return true;
+  return restrictedRoles.some((role) => (
+    RESTRICTED_DYNAMIC_PERMISSION_ROUTES[role] || []
+  ).includes(route));
+}
+
+function hasStructuredActionPermissions(permissionSet: Set<string>): boolean {
+  return Array.from(permissionSet).some((permission) => (
+    permission.startsWith('route.')
+    || permission.startsWith('module.')
+    || permission.startsWith('dispatched_order.')
+    || permission === 'system.admin'
+  ));
 }
 
 function hasDynamicPermissionForPath(pathname: string, permissions?: string[], userRoles?: { code?: string }[]): boolean {
@@ -270,13 +374,21 @@ function hasDynamicPermissionForPath(pathname: string, permissions?: string[], u
   const permissionSet = normalizePermissions(permissions);
   if (!route || PHASE1_HIDDEN_ROUTES.has(route) || permissionSet.size === 0 || !allowsDynamicPermissionWithinRoleScope(route, userRoles)) return false;
   if (String(route).startsWith('/my-work/')) return false;
+  const routeActions = ROUTE_ACTION_PERMISSIONS[route] || [];
+  if (routeActions.some((action) => permissionSet.has(action))) return true;
   if (permissionSet.has('*') || permissionSet.has('all') || permissionSet.has('work_order.*')) return true;
   return false;
 }
 
 export function canAccessPath(pathname: string, userRoles: { code?: string }[] | undefined, permissions?: string[]): boolean {
+  const route = resolveVisibilityRoute(pathname);
   const requiredRoles = getRequiredRolesForPath(pathname);
-  if (!requiredRoles.length) return false;
+  if (!route || !requiredRoles.length || PHASE1_HIDDEN_ROUTES.has(route)) return false;
+  const permissionSet = normalizePermissions(permissions);
+  const routeActions = ROUTE_ACTION_PERMISSIONS[route] || [];
+  if (routeActions.length > 0 && hasStructuredActionPermissions(permissionSet) && allowsDynamicPermissionWithinRoleScope(route, userRoles)) {
+    return routeActions.some((action) => permissionSet.has(action)) || permissionSet.has('*') || permissionSet.has('all');
+  }
   return userHasAnyCanonicalRole(userRoles, [...requiredRoles]) || hasDynamicPermissionForPath(pathname, permissions, userRoles);
 }
 

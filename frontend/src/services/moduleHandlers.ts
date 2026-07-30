@@ -55,29 +55,23 @@ export async function getModuleHandlers(moduleCode?: string, isActive?: boolean)
     );
     return mockDelay(filtered);
   }
-  try {
-    const params: Record<string, unknown> = {};
-    if (moduleCode) {
-      params.moduleCode = moduleCode;
-      // 兼容旧 mock / 旧接口；真实后端读取 moduleCode。
-      params.module_code = moduleCode;
-    }
-    if (isActive !== undefined) params.isActive = isActive;
-    const result = await request.get('/admin/module-handlers', { params }) as any;
-    const rawList = Array.isArray(result) ? result : (result?.list || result?.items || result?.data || []);
-    return (Array.isArray(rawList) ? rawList : []).map((h: any) => ({
-      id: h.id ?? h.ID ?? '',
-      module_code: h.module_code ?? h.moduleCode ?? '',
-      handler_id: h.handler_id ?? h.handlerId ?? '',
-      handler_name: h.handler_name ?? h.handlerName ?? h.handler_name ?? '',
-      weight: h.weight ?? 1,
-      is_backup: h.is_backup ?? h.isBackup ?? false,
-      is_active: h.is_active ?? h.isActive ?? true,
-    } as ModuleHandlerItem));
-  } catch {
-    // ★ 后端不可用时返回空数组
-    return [];
+  const params: Record<string, unknown> = {};
+  if (moduleCode) {
+    params.moduleCode = moduleCode;
+    params.module_code = moduleCode;
   }
+  if (isActive !== undefined) params.isActive = isActive;
+  const result = await request.get('/admin/module-handlers', { params }) as any;
+  const rawList = Array.isArray(result) ? result : (result?.list || result?.items || result?.data || []);
+  return (Array.isArray(rawList) ? rawList : []).map((h: any) => ({
+    id: h.id ?? h.ID ?? '',
+    module_code: h.module_code ?? h.moduleCode ?? '',
+    handler_id: h.handler_id ?? h.handlerId ?? '',
+    handler_name: h.handler_name ?? h.handlerName ?? h.handler_name ?? '',
+    weight: h.weight ?? 1,
+    is_backup: h.is_backup ?? h.isBackup ?? false,
+    is_active: h.is_active ?? h.isActive ?? true,
+  } as ModuleHandlerItem));
 }
 
 export async function createModuleHandler(data: Partial<ModuleHandlerItem>): Promise<ModuleHandlerItem> {

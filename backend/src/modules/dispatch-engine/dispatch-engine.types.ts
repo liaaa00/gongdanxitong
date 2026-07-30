@@ -1,4 +1,4 @@
-import { DispatchStrategy } from 'src/entities';
+import { DispatchStrategy, ModuleType, TeamRole } from 'src/entities';
 
 export type AstScalar = string | number | boolean | null;
 export type AstValue = AstScalar | AstScalar[];
@@ -64,6 +64,13 @@ export interface RuleHit {
   deduped: boolean;
 }
 
+export interface ProvinceDispatchContext {
+  moduleType: ModuleType;
+  province: string;
+  mappingSource: 'sheet4' | 'sheet5';
+  teamRole: TeamRole;
+}
+
 export interface ChildToCreate {
   moduleCode: string;
   handlerId: string | null;
@@ -74,6 +81,7 @@ export interface ChildToCreate {
   dueAt?: Date | null;
   slaHours?: number | null;
   slaReminderBeforeHours?: number | null;
+  provinceDispatchContext?: ProvinceDispatchContext;
 }
 
 export interface DispatchEvaluationResult {

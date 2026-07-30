@@ -13,11 +13,13 @@ import {
 } from 'src/common/auth/role-permissions';
 import {
   filterPhase1VisibleDispatchModules,
+  isDispatchModuleVisibleForOrderType,
   isPhase1VisibleDispatchModule,
   isPhase1VisibleOrderType,
 } from 'src/common/constants/dispatch-modules';
 import { businessException } from 'src/common/exceptions/business-exception';
 import {
+  BusinessScope,
   DispatchedOrder,
   DispatchedOrderStatus,
   FieldConfig,
@@ -27,6 +29,7 @@ import {
   ModuleSupervisor,
   Notification,
   OperationLog,
+  OrderType,
   RoleLevel,
   UserRole,
   WorkOrder,
@@ -113,7 +116,8 @@ export class WorkOrderService {
 
   async createDraft(payload: CreateWorkOrderDto, user: JwtUserPayload): Promise<WorkOrderDetailItem> {
     this.assertBusinessOwnerReadOnly(user);
-    const extraData = { ...payload.extraData };
+    const extraData = this.sanitizeExtraData(payload.extraData);
+    const businessScope = this.resolveBusinessScope(payload.orderType);
     const customerId = await this.validationService.resolveCustomerId(payload.customerId, extraData);
     const departmentId = await this.validationService.resolveDepartmentId(payload.departmentId, user.sub);
     const branchId = typeof this.validationService.resolveBranchId === 'function'
@@ -134,6 +138,7 @@ export class WorkOrderService {
         this.workOrderRepository.create({
           orderNo: await this.validationService.generateOrderNo(),
           orderType: payload.orderType,
+          businessScope,
           status: WorkOrderStatus.DRAFT,
           createdBy: user.sub,
           departmentId,
@@ -192,13 +197,14 @@ export class WorkOrderService {
       workOrder.departmentId = payload.departmentId;
     }
     if (payload.extraData) {
-      this.assertSalesEditableFields(payload.extraData);
-      workOrder.extraData = { ...workOrder.extraData, ...payload.extraData };
-      if (payload.extraData.employee_name) {
-        workOrder.employeeName = this.validationService.requireText(payload.extraData.employee_name, 'employee_name');
+      const extraDataPatch = this.sanitizeExtraData(payload.extraData);
+      this.assertSalesEditableFields(extraDataPatch);
+      workOrder.extraData = { ...workOrder.extraData, ...extraDataPatch };
+      if (extraDataPatch.employee_name) {
+        workOrder.employeeName = this.validationService.requireText(extraDataPatch.employee_name, 'employee_name');
       }
-      if (payload.extraData.id_card_no) {
-        workOrder.employeeIdCard = this.validationService.requireText(payload.extraData.id_card_no, 'id_card_no');
+      if (extraDataPatch.id_card_no) {
+        workOrder.employeeIdCard = this.validationService.requireText(extraDataPatch.id_card_no, 'id_card_no');
       }
       workOrder.customerCode = this.readText(workOrder.extraData.customer_code) ?? workOrder.customerCode;
       workOrder.branchCode = this.readText(workOrder.extraData.branch_code) ?? workOrder.branchCode;
@@ -283,12 +289,13 @@ export class WorkOrderService {
       }
 
       if (payload.extraData) {
-        workOrder.extraData = { ...workOrder.extraData, ...payload.extraData };
-        if (payload.extraData.employee_name) {
-          workOrder.employeeName = this.validationService.requireText(payload.extraData.employee_name, 'employee_name');
+        const extraDataPatch = this.sanitizeExtraData(payload.extraData);
+        workOrder.extraData = { ...workOrder.extraData, ...extraDataPatch };
+        if (extraDataPatch.employee_name) {
+          workOrder.employeeName = this.validationService.requireText(extraDataPatch.employee_name, 'employee_name');
         }
-        if (payload.extraData.id_card_no) {
-          workOrder.employeeIdCard = this.validationService.requireText(payload.extraData.id_card_no, 'id_card_no');
+        if (extraDataPatch.id_card_no) {
+          workOrder.employeeIdCard = this.validationService.requireText(extraDataPatch.id_card_no, 'id_card_no');
         }
         workOrder.customerCode = this.readText(workOrder.extraData.customer_code) ?? workOrder.customerCode;
         workOrder.branchCode = this.readText(workOrder.extraData.branch_code) ?? workOrder.branchCode;
@@ -332,7 +339,7 @@ export class WorkOrderService {
           ipAddress: null,
         }));
         const visibleChildren = (await dispatchedRepo.find({ where: { parentOrderId: workOrder.id }, relations: { handler: true } }))
-          .filter((child) => isPhase1VisibleDispatchModule(child.moduleCode));
+          .filter((child) => isDispatchModuleVisibleForOrderType(child.moduleCode, workOrder.orderType));
         return {
           workOrder: await this.loadDetail(workOrder.id),
           dispatchedOrders: toWorkOrderSubOrderItems(visibleChildren),
@@ -421,7 +428,7 @@ export class WorkOrderService {
 
       const childrenWithHandlers = await dispatchedRepo.find({ where: { parentOrderId: workOrder.id }, relations: { handler: true } });
       const visibleChildren = (childrenWithHandlers.length > 0 ? childrenWithHandlers : savedChildren)
-        .filter((child) => isPhase1VisibleDispatchModule(child.moduleCode));
+        .filter((child) => isDispatchModuleVisibleForOrderType(child.moduleCode, workOrder.orderType));
       return {
         workOrder: await this.loadDetail(workOrder.id),
         dispatchedOrders: toWorkOrderSubOrderItems(visibleChildren),
@@ -864,6 +871,7 @@ export class WorkOrderService {
     const pageSize = query.pageSize ?? 20;
     const qb = this.workOrderRepository.createQueryBuilder('w');
     qb.leftJoinAndSelect('w.creator', 'creator');
+    qb.andWhere('w.business_scope = :businessScope', { businessScope: BusinessScope.BEILUN });
     qb.andWhere("w.order_type::text IN ('onboarding','resignation')");
 
     if (!isAdminRole(user.roles)) {
@@ -1193,7 +1201,7 @@ export class WorkOrderService {
 
     const subOrders = toWorkOrderSubOrderItems(
       [...workOrder.dispatchedOrders]
-        .filter((child) => isPhase1VisibleDispatchModule(child.moduleCode))
+        .filter((child) => isDispatchModuleVisibleForOrderType(child.moduleCode, workOrder.orderType))
         .sort((a, b) => getModuleSortOrder(a.moduleCode) - getModuleSortOrder(b.moduleCode)),
     );
 
@@ -1203,6 +1211,8 @@ export class WorkOrderService {
       order_no: workOrder.orderNo,
       orderType: workOrder.orderType,
       order_type: workOrder.orderType,
+      businessScope: workOrder.businessScope,
+      business_scope: workOrder.businessScope,
       status: workOrder.status,
       createdBy: { id: workOrder.creator.id, username: workOrder.creator.username, realName: workOrder.creator.realName },
       department: { id: workOrder.department.id, name: workOrder.department.name },
@@ -1227,6 +1237,13 @@ export class WorkOrderService {
     };
   }
 
+
+  private sanitizeExtraData(extraData: Record<string, unknown>): Record<string, unknown> {
+    const sanitized = { ...extraData };
+    delete sanitized.businessScope;
+    delete sanitized.business_scope;
+    return sanitized;
+  }
 
   private readText(value: unknown): string | null {
     if (typeof value === 'string' && value.trim().length > 0) {
@@ -1691,7 +1708,8 @@ export class WorkOrderService {
       where: { parentOrderId: workOrder.id },
       select: { handlerId: true, moduleCode: true },
     });
-    const visibleChildren = children.filter((child) => isPhase1VisibleDispatchModule(child.moduleCode));
+    const visibleChildren = children.filter((child) =>
+      isDispatchModuleVisibleForOrderType(child.moduleCode, workOrder.orderType));
     if (visibleChildren.some((child) => child.handlerId === user.sub)) {
       return;
     }
@@ -1736,6 +1754,15 @@ export class WorkOrderService {
     if (hasAnyRole(roles, DATA_ENTRY_MODULE_ROLES)) modules.push('data_entry', 'data_entry_resign');
     if (hasAnyRole(roles, SOCIAL_INSURANCE_MODULE_ROLES)) modules.push('social_insurance', 'resignation_social_insurance');
     return filterPhase1VisibleDispatchModules(modules);
+  }
+
+  private resolveBusinessScope(orderType: OrderType): BusinessScope {
+    return [
+      OrderType.OUT_OF_PROVINCE_INCREASE,
+      OrderType.OUT_OF_PROVINCE_DECREASE,
+    ].includes(orderType)
+      ? BusinessScope.OUT_OF_PROVINCE
+      : BusinessScope.BEILUN;
   }
 
   private assertBusinessOwnerReadOnly(user: JwtUserPayload): void {

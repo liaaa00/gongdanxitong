@@ -349,7 +349,7 @@ interface LeaderTrendChartProps {
 const LeaderTrendChart: React.FC<LeaderTrendChartProps> = ({ visible, moduleOptions, scope, month }) => {
   const [moduleCode, setModuleCode] = useState<string>();
   const [loading, setLoading] = useState(false);
-  const [trendMap, setTrendMap] = useState<Record<DashboardOrderType, LeaderTrendBucket[]>>({
+  const [trendMap, setTrendMap] = useState<Partial<Record<DashboardOrderType, LeaderTrendBucket[]>>>({
     onboarding: [], renewal: [], resignation: [], benefit: [],
   });
 

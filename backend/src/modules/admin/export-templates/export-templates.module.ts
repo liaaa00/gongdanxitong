@@ -6,10 +6,11 @@ import {
   FieldConfig,
   FieldPermission,
   OperationLog,
+  OrderAttachment,
   Role,
 } from 'src/entities';
 import { UploadModule } from 'src/modules/upload/upload.module';
-import { ExportTemplatesController } from './export-templates.controller';
+import { ExportTemplatesController, WorkOrderExportTemplatesController } from './export-templates.controller';
 import { ExportTemplatesService } from './export-templates.service';
 
 @Module({
@@ -20,11 +21,12 @@ import { ExportTemplatesService } from './export-templates.service';
       FieldConfig,
       FieldPermission,
       OperationLog,
+      OrderAttachment,
       Role,
     ]),
     UploadModule,
   ],
-  controllers: [ExportTemplatesController],
+  controllers: [ExportTemplatesController, WorkOrderExportTemplatesController],
   providers: [ExportTemplatesService],
   exports: [ExportTemplatesService],
 })

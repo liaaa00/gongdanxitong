@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { canAccessPath } from './routeVisibility';
 import { ROLE } from '@/constants/roles';
+import { DEFAULT_MATRIX } from '@/services/roleActionPermissions';
 
 const roles = (codes: string[]) => codes.map((code) => ({ code }));
 
@@ -105,11 +106,44 @@ describe('routeVisibility admin-only configuration routes', () => {
     expect(canAccessPath('/onboarding/social_insurance_resign', leaderRoles)).toBe(true);
   });
 
-  it('hides all in-service routes in phase 1, including admin and backend accounts', () => {
+  it('opens out-of-province list/import/TODO form only to configured business roles', () => {
     const adminRoles = roles([ROLE.ADMIN]);
+    const leaderRoles = roles([ROLE.BUSINESS_GROUP_LEADER]);
+    const memberRoles = roles([ROLE.BUSINESS_GROUP_MEMBER]);
+    const backendRoles = roles([ROLE.SOCIAL_INSURANCE_SPECIALIST]);
+
+    for (const path of ['/out-of-province', '/out-of-province/import', '/out-of-province/new']) {
+      expect(canAccessPath(path, adminRoles), path).toBe(true);
+      expect(canAccessPath(path, leaderRoles), path).toBe(true);
+      expect(canAccessPath(path, memberRoles), path).toBe(true);
+      expect(canAccessPath(path, backendRoles), path).toBe(false);
+    }
+  });
+
+  it('opens independent in-service and resignation-certificate routes while keeping historical placeholders frozen', () => {
+    const adminRoles = roles([ROLE.ADMIN]);
+    const ownerRoles = roles([ROLE.BUSINESS_OWNER]);
+    const leaderRoles = roles([ROLE.BUSINESS_GROUP_LEADER]);
+    const memberRoles = roles([ROLE.BUSINESS_GROUP_MEMBER]);
     const contractRoles = roles([ROLE.LABOR_CONTRACT_MEMBER]);
-    expect(canAccessPath('/renewal', adminRoles)).toBe(false);
-    expect(canAccessPath('/renewal/new', adminRoles)).toBe(false);
+
+    expect(canAccessPath('/in-service', adminRoles)).toBe(true);
+    expect(canAccessPath('/in-service/new', memberRoles)).toBe(true);
+    expect(canAccessPath('/in-service/order-1', contractRoles)).toBe(true);
+    expect(canAccessPath('/in-service/order-1/audit', ownerRoles)).toBe(true);
+    expect(canAccessPath('/in-service/order-1/audit', leaderRoles)).toBe(true);
+    expect(canAccessPath('/in-service/order-1/audit', memberRoles)).toBe(false);
+
+    expect(canAccessPath('/renewal', adminRoles)).toBe(true);
+    expect(canAccessPath('/renewal/new', memberRoles)).toBe(true);
+    expect(canAccessPath('/renewal/order-1', contractRoles)).toBe(true);
+    expect(canAccessPath('/in-service/certificates', contractRoles)).toBe(true);
+    expect(canAccessPath('/in-service/certificates/new', memberRoles)).toBe(true);
+    expect(canAccessPath('/in-service/certificates/new', contractRoles)).toBe(false);
+    expect(canAccessPath('/resignation-certificates', contractRoles)).toBe(true);
+    expect(canAccessPath('/resignation-certificates/new', memberRoles)).toBe(true);
+    expect(canAccessPath('/resignation-certificates/new', contractRoles)).toBe(false);
+
     expect(canAccessPath('/benefit', adminRoles)).toBe(false);
     expect(canAccessPath('/benefit/new', adminRoles)).toBe(false);
     expect(canAccessPath('/onboarding/renewal_contract', adminRoles)).toBe(false);
@@ -200,5 +234,89 @@ describe('routeVisibility admin-only configuration routes', () => {
     expect(canAccessPath('/notifications', roles([ROLE.BUSINESS_OWNER]))).toBe(false);
     expect(canAccessPath('/notifications', roles([ROLE.BUSINESS_GROUP_MEMBER]))).toBe(true);
     expect(canAccessPath('/notifications', roles([ROLE.LABOR_CONTRACT_MEMBER]))).toBe(true);
+  });
+});
+
+
+describe('routeVisibility structured permission baseline', () => {
+  const structuredBaselineCases: Array<{ label: string; roleCode: string; canonicalRole: string; paths: string[] }> = [
+    {
+      label: '?????',
+      roleCode: 'biz_manager',
+      canonicalRole: ROLE.BUSINESS_OWNER,
+      paths: ['/dashboard', '/notifications', '/work-orders', '/work-orders/create', '/work-orders/import', '/work-orders/wo-1', '/my-dispatched/child-1', '/onboarding/contract', '/dashboards/leader'],
+    },
+    {
+      label: '????',
+      roleCode: 'biz_leader',
+      canonicalRole: ROLE.BUSINESS_GROUP_LEADER,
+      paths: ['/dashboard', '/notifications', '/work-orders', '/work-orders/create', '/work-orders/import', '/work-orders/wo-1', '/my-dispatched/child-1', '/onboarding/contract', '/onboarding/onboarding_contact', '/onboarding/data_entry', '/onboarding/social_insurance', '/onboarding/resignation_contact', '/onboarding/data_entry_resign', '/onboarding/social_insurance_resign', '/dashboards/leader'],
+    },
+    {
+      label: '???',
+      roleCode: 'biz_member',
+      canonicalRole: ROLE.BUSINESS_GROUP_MEMBER,
+      paths: ['/dashboard', '/notifications', '/work-orders', '/work-orders/create', '/work-orders/import', '/work-orders/wo-1', '/my-dispatched/child-1', '/onboarding/contract', '/onboarding/onboarding_contact', '/onboarding/data_entry', '/onboarding/social_insurance', '/onboarding/resignation_contact', '/onboarding/data_entry_resign', '/onboarding/social_insurance_resign', '/dashboards/leader'],
+    },
+    {
+      label: '???????',
+      roleCode: 'shared_leader',
+      canonicalRole: ROLE.SHARED_TEAM_OWNER,
+      paths: ['/dashboard', '/notifications', '/my-dispatched/child-1', '/onboarding', '/onboarding/contract', '/onboarding/onboarding_contact', '/onboarding/resignation_contact', '/offboarding', '/offboarding/contact-pool', '/onboarding/data_entry', '/onboarding/social_insurance', '/offboarding/social-suspend-pool', '/dashboards/leader'],
+    },
+    {
+      label: '????',
+      roleCode: 'contract_specialist',
+      canonicalRole: ROLE.LABOR_CONTRACT_MEMBER,
+      paths: ['/dashboard', '/notifications', '/my-dispatched/child-1', '/onboarding', '/onboarding/contract', '/onboarding/onboarding_contact', '/onboarding/data_entry', '/onboarding/social_insurance', '/dashboards/leader'],
+    },
+    {
+      label: '???????',
+      roleCode: 'onboarding_specialist',
+      canonicalRole: ROLE.ONBOARDING_RESIGNATION_MEMBER,
+      paths: ['/dashboard', '/notifications', '/my-dispatched/child-1', '/onboarding', '/onboarding/onboarding_contact', '/onboarding/resignation_contact', '/offboarding/contact-pool', '/onboarding/contract', '/onboarding/data_entry', '/dashboards/leader'],
+    },
+    {
+      label: '??????',
+      roleCode: 'data_entry_leader',
+      canonicalRole: ROLE.DATA_ENTRY_LEADER,
+      paths: ['/dashboard', '/notifications', '/my-dispatched/child-1', '/onboarding', '/onboarding/data_entry', '/onboarding/data_entry_resign', '/offboarding/social-suspend-pool', '/onboarding/contract', '/onboarding/social_insurance', '/dashboards/leader'],
+    },
+    {
+      label: '?????',
+      roleCode: 'social_insurance_specialist',
+      canonicalRole: ROLE.SOCIAL_INSURANCE_SPECIALIST,
+      paths: ['/dashboard', '/notifications', '/my-dispatched/child-1', '/onboarding', '/onboarding/social_insurance', '/onboarding/social_insurance_resign', '/offboarding/social-insurance-resign-pool', '/onboarding/contract', '/onboarding/data_entry', '/dashboards/leader'],
+    },
+  ];
+
+  it.each(structuredBaselineCases)('keeps %s route results unchanged when structured permissions are present', ({ roleCode, canonicalRole, paths }) => {
+    const userRoles = roles([canonicalRole]);
+    const permissions = DEFAULT_MATRIX[roleCode] || [];
+    for (const path of paths) {
+      expect(canAccessPath(path, userRoles, permissions), path).toBe(canAccessPath(path, userRoles));
+    }
+  });
+
+  it('keeps multi-role structured route permissions as role union', () => {
+    const multiRoles = roles([ROLE.SHARED_TEAM_OWNER, ROLE.LABOR_CONTRACT_MEMBER, ROLE.DATA_ENTRY_LEADER]);
+    const permissions = Array.from(new Set([
+      ...DEFAULT_MATRIX.shared_leader,
+      ...DEFAULT_MATRIX.contract_specialist,
+      ...DEFAULT_MATRIX.data_entry_leader,
+    ]));
+
+    expect(canAccessPath('/onboarding/contract', multiRoles, permissions)).toBe(true);
+    expect(canAccessPath('/onboarding/data_entry', multiRoles, permissions)).toBe(true);
+    expect(canAccessPath('/offboarding/social-suspend-pool', multiRoles, permissions)).toBe(true);
+    expect(canAccessPath('/onboarding/social_insurance', multiRoles, permissions)).toBe(false);
+  });
+
+  it('keeps phase-1 hidden routes blocked even if structured permissions are broad', () => {
+    const adminRoles = roles([ROLE.ADMIN]);
+    const adminPermissions = DEFAULT_MATRIX.admin;
+    expect(canAccessPath('/onboarding/renewal_contract', adminRoles, adminPermissions)).toBe(false);
+    expect(canAccessPath('/onboarding/benefit_apply', adminRoles, adminPermissions)).toBe(false);
+    expect(canAccessPath('/in-service/contract-renewal', adminRoles, adminPermissions)).toBe(false);
   });
 });

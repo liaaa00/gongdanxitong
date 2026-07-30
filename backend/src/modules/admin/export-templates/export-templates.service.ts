@@ -3,10 +3,18 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Workbook, Worksheet } from 'exceljs';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 import { toPageResult } from 'src/common/types/pagination.types';
-import { DispatchedOrder, ExportTemplate, FieldConfig, OperationLog } from 'src/entities';
+import {
+  DispatchedOrder,
+  ExportTemplate,
+  FieldConfig,
+  InServiceOrder,
+  InServiceOrderKind,
+  OperationLog,
+  OrderAttachment,
+} from 'src/entities';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { DispatchedOrderExportFile, DispatchedOrderExportResult } from 'src/modules/dispatched-orders/dispatched-order.types';
 import { fallbackBusinessLabel } from 'src/modules/notifications/notification-display.util';
@@ -16,6 +24,11 @@ interface ExportColumn {
   fieldCode: string;
   title: string;
   order: number;
+}
+
+interface AttachmentLink {
+  name: string;
+  url: string;
 }
 
 interface RichExportColumn {
@@ -52,6 +65,8 @@ export class ExportTemplatesService {
     private readonly operationLogRepository: Repository<OperationLog>,
     @InjectRepository(FieldConfig)
     private readonly fieldConfigRepository: Repository<FieldConfig>,
+    @InjectRepository(OrderAttachment)
+    private readonly attachmentRepository: Repository<OrderAttachment>,
     private readonly uploadService: UploadService,
   ) {}
 
@@ -67,6 +82,18 @@ export class ExportTemplatesService {
     const [rows, total] = await qb.skip((page - 1) * pageSize).take(pageSize).getManyAndCount();
     const fieldNameMap = await this.loadFieldNameMap();
     return toPageResult(page, pageSize, total, rows.map((row) => this.toTemplateView(row, fieldNameMap)));
+  }
+
+  async listSharedContractTemplates(): Promise<ExportTemplateView[]> {
+    const rows = await this.repository.find({
+      where: [
+        { moduleCode: 'contract', isShared: true, signPlatform: '速创' },
+        { moduleCode: 'contract', isShared: true, signPlatform: 'E签宝' },
+      ],
+      order: { createdAt: 'DESC' },
+    });
+    const fieldNameMap = await this.loadFieldNameMap();
+    return rows.map((row) => this.toTemplateView(row, fieldNameMap));
   }
 
   async get(id: string): Promise<ExportTemplateView> {
@@ -143,6 +170,74 @@ export class ExportTemplatesService {
     return this.applyTemplateToOrders(template, [order], [dispatchedOrderId], user, 'dispatched_order');
   }
 
+  async exportContractRenewal(
+    order: InServiceOrder,
+    user: JwtUserPayload,
+  ): Promise<DispatchedOrderExportResult> {
+    if (order.orderKind !== InServiceOrderKind.CONTRACT_RENEWAL) {
+      throw new BadRequestException('仅劳动合同续签工单可导出续签模板');
+    }
+    const sourceExtraData = order.extraData ?? {};
+    const signPlatform = this.normalizeSignPlatform(
+      this.readString(sourceExtraData.esign_platform ?? sourceExtraData.esignPlatform),
+    );
+    if (!signPlatform) {
+      throw new BadRequestException('续签工单缺少电子签平台，无法匹配速创/E签宝导出模板');
+    }
+
+    const template = await this.resolveDefaultTemplate(
+      'contract',
+      Object.keys(sourceExtraData),
+      signPlatform,
+    );
+    const renewalTemplate = {
+      ...template,
+      templateName: `${template.templateName}-续签`,
+      fieldList: (template.fieldList ?? []).map((item) => ({
+        ...item,
+        ...(this.readString(item.const) === '1.新签' ? { const: '续签' } : {}),
+      })),
+    } as ExportTemplate;
+    const renderExtraData = {
+      customer_code: order.customer?.customerCode ?? '',
+      customer_name: order.customer?.customerName ?? '',
+      employee_name: order.employeeName ?? '',
+      id_card_no: order.idCardNo ?? '',
+      ...sourceExtraData,
+      contractSigningMethod: 'renewal',
+      contract_signing_method: '续签',
+    };
+    const renderOrder = {
+      id: order.id,
+      moduleCode: 'contract',
+      visibleFields: Object.keys(renderExtraData),
+      handlerId: order.handlerId,
+      handler: order.handler,
+      status: order.status,
+      dispatchedAt: order.dispatchedAt,
+      acceptedAt: order.acceptedAt,
+      completedAt: order.completedAt,
+      parentOrder: {
+        id: order.id,
+        orderNo: order.orderNo,
+        employeeName: order.employeeName,
+        employeeIdCard: order.idCardNo,
+        extraData: renderExtraData,
+        createdBy: order.createdBy,
+        creator: order.creator,
+      },
+    } as unknown as DispatchedOrder;
+
+    return this.applyTemplateToOrders(
+      renewalTemplate,
+      [renderOrder],
+      [order.id],
+      user,
+      'in_service_order',
+      order.id,
+    );
+  }
+
   async exportDispatchedOrdersAuto(dispatchedOrderIds: string[], templateId: string | undefined, user: JwtUserPayload): Promise<DispatchedOrderExportResult> {
     const ids = Array.from(new Set(dispatchedOrderIds));
     if (ids.length === 0) throw new NotFoundException('未选择子工单');
@@ -172,15 +267,19 @@ export class ExportTemplatesService {
       const result = this.buildResult(template, moduleOrders, fieldNameMap);
       rowCount += result.rowCount ?? result.rows.length;
       const standardWorkbook = await this.tryBuildStandardTemplateWorkbook(template, moduleOrders);
+      const richCols = this.resolveRichColumns(template, fieldNameMap, fieldOptionsMap);
+      const needsAttachments = richCols.some((col) => col.valueCode === 'attachments_summary');
+      const attachmentSummaries = needsAttachments ? await this.loadAttachmentSummaries(moduleOrders) : undefined;
       if (standardWorkbook) {
         workbook = await this.appendWorkbookSheets(workbook, standardWorkbook, usedSheetNames, template.templateName || moduleCode);
       } else {
         this.writeWorksheet(
           workbook,
           this.uniqueSheetName(template.templateName || moduleCode, usedSheetNames),
-          this.resolveRichColumns(template, fieldNameMap, fieldOptionsMap),
+          richCols,
           moduleOrders,
           template.signPlatform ?? signPlatform ?? null,
+          attachmentSummaries,
         );
       }
       const buffer = await this.writeWorkbookBuffer(workbook);
@@ -232,15 +331,19 @@ export class ExportTemplatesService {
     orders: DispatchedOrder[],
     dispatchedOrderIds: string[],
     user: JwtUserPayload,
-    entityType: 'export_template' | 'dispatched_order',
+    entityType: 'export_template' | 'dispatched_order' | 'in_service_order',
+    entityId?: string,
   ): Promise<DispatchedOrderExportResult> {
     const fieldNameMap = await this.loadFieldNameMap();
     const fieldOptionsMap = await this.loadFieldOptionsMap();
     const exportTemplate = { ...template, fieldList: this.prepareExportFieldList(template.fieldList ?? []) } as ExportTemplate;
     const result = this.buildResult(exportTemplate, orders, fieldNameMap);
+    const richCols = this.resolveRichColumns(exportTemplate, fieldNameMap, fieldOptionsMap);
+    const needsAttachments = richCols.some((col) => col.valueCode === 'attachments_summary');
+    const attachmentSummaries = needsAttachments ? await this.loadAttachmentSummaries(orders) : undefined;
     const workbook = await this.tryBuildStandardTemplateWorkbook(exportTemplate, orders) ?? new Workbook();
     if (workbook.worksheets.length === 0) {
-      this.writeWorksheet(workbook, exportTemplate.templateName, this.resolveRichColumns(exportTemplate, fieldNameMap, fieldOptionsMap), orders, exportTemplate.signPlatform ?? null);
+      this.writeWorksheet(workbook, exportTemplate.templateName, richCols, orders, exportTemplate.signPlatform ?? null, attachmentSummaries);
     }
     const buffer = await this.writeWorkbookBuffer(workbook);
     const meta = await this.uploadService.saveBuffer({
@@ -251,11 +354,13 @@ export class ExportTemplatesService {
     });
     await this.operationLogRepository.save(this.operationLogRepository.create({
       entityType,
-      entityId: template.id || dispatchedOrderIds[0],
+      entityId: (entityId ?? template.id) || dispatchedOrderIds[0],
       userId: user.sub,
       actionType: 'apply_export_template',
       beforeData: null,
-      afterData: { templateId: template.id || null, dispatchedOrderIds, fileId: meta.fileId, rowCount: result.rowCount },
+      afterData: entityType === 'in_service_order'
+        ? { templateId: template.id || null, inServiceOrderId: entityId, fileId: meta.fileId, rowCount: result.rowCount }
+        : { templateId: template.id || null, dispatchedOrderIds, fileId: meta.fileId, rowCount: result.rowCount },
       ipAddress: null,
     }));
     return { ...result, fileId: meta.fileId, fileName: meta.originalName, downloadUrl: `/api/files/${meta.fileId}` };
@@ -426,7 +531,40 @@ export class ExportTemplatesService {
     return options.length > 0 ? options : null;
   }
 
-  private renderRichValue(column: RichExportColumn, order: DispatchedOrder): unknown {
+  // 附件下载基址：Excel 打开后点击需要绝对 URL；相对链接在部分 Excel 中不可点。
+  private attachmentFileBaseUrl(): string {
+    return (process.env.EXPORT_FILE_BASE_URL ?? 'http://localhost:3000').trim().replace(/\/+$/, '');
+  }
+
+  private async loadAttachmentSummaries(orders: DispatchedOrder[]): Promise<Map<string, AttachmentLink[]>> {
+    const workOrderIds = orders.map((o) => o.parentOrder?.id).filter((id): id is string => !!id);
+    if (workOrderIds.length === 0) return new Map();
+    const rows = await this.attachmentRepository.find({
+      where: { workOrderId: In(workOrderIds), bizPurpose: 'resignation_material' },
+      select: ['workOrderId', 'originalName', 'fileId'],
+    });
+    const base = this.attachmentFileBaseUrl();
+    const map = new Map<string, AttachmentLink[]>();
+    for (const row of rows) {
+      const list = map.get(row.workOrderId) ?? [];
+      // 附件含身份证等敏感 PII，下载端点受鉴权保护；Excel 超链接带不了 Authorization 头，
+      // 故使用带 HMAC 签名的临时下载 URL（默认 7 天有效），既可点击又不裸公开。
+      list.push({ name: row.originalName, url: this.uploadService.buildSignedDownloadUrl(base, row.fileId) });
+      map.set(row.workOrderId, list);
+    }
+    return map;
+  }
+
+  private renderRichValue(column: RichExportColumn, order: DispatchedOrder, attachmentSummaries?: Map<string, AttachmentLink[]>): unknown {
+    // 附件字段：兼容 attachments_summary、attachments、附件 等多种命名
+    const isAttachmentField = /attachment|附件/i.test(column.valueCode);
+    if (isAttachmentField && attachmentSummaries) {
+      const links = attachmentSummaries.get(order.parentOrder?.id ?? '') ?? [];
+      if (links.length === 0) return '';
+      // exceljs 一格仅支持一个超链接：首个附件设为可点击链接，其余以「等 N 个」文字标注。
+      const text = links.length > 1 ? `${links[0].name} 等${links.length}个` : links[0].name;
+      return { text, hyperlink: links[0].url };
+    }
     if (column.kind === 'const') return column.constValue;
     return this.renderExportValue(column.valueCode, order);
   }
@@ -646,6 +784,7 @@ export class ExportTemplatesService {
     columns: RichExportColumn[],
     orders: DispatchedOrder[],
     signPlatform: string | null = null,
+    attachmentSummaries?: Map<string, AttachmentLink[]>,
   ): void {
     const worksheet = workbook.addWorksheet(sheetName);
     const headerRowCount = columns.reduce((max, column) => Math.max(max, column.headers.length), 1);
@@ -662,15 +801,28 @@ export class ExportTemplatesService {
     for (const order of orders) {
       dataRowNo += 1;
       const row: Record<string, unknown> = {};
+      const cellValues: Array<{ colIndex: number; value: any }> = [];
       columns.forEach((column, index) => {
-        row[`c${index}`] = column.kind === 'formula'
+        const value = column.kind === 'formula'
           ? { formula: this.resolveFormula(column.formulaTemplate, fieldCellMap, dataRowNo, order) }
-          : this.renderRichValue(column, order);
+          : this.renderRichValue(column, order, attachmentSummaries);
+        row[`c${index}`] = value;
+        cellValues.push({ colIndex: index, value });
       });
       const added = worksheet.addRow(row);
       columns.forEach((column, index) => {
+        const cellValue = cellValues[index].value;
         if (column.kind === 'formula' && column.numFmt) {
           added.getCell(index + 1).numFmt = column.numFmt;
+        }
+        // 附件超链接需要在单元格级别设置
+        if (cellValue && typeof cellValue === 'object' && 'hyperlink' in cellValue && 'text' in cellValue) {
+          const cell = added.getCell(index + 1);
+          cell.value = {
+            text: cellValue.text,
+            hyperlink: cellValue.hyperlink,
+          };
+          cell.font = { color: { argb: 'FF0000FF' }, underline: true };
         }
       });
     }

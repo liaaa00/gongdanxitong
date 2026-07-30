@@ -68,7 +68,7 @@ function buildComplete54FieldOrder() {
     work_cycle: '周一至周五',
     salary_form: '月薪',
     base_salary: 15000,
-    other_salary: 0,
+    other_salary: '餐补500+交通补贴300',
     probation_salary: 12000,
     payroll_cycle: '次月',
     payroll_date: '15日',

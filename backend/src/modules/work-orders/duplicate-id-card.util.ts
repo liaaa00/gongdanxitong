@@ -16,7 +16,10 @@ export function isDuplicateIdCardIndexError(error: unknown): boolean {
     return false;
   }
   const driverError = error.driverError as { code?: string; constraint?: string; detail?: string } | undefined;
-  return driverError?.code === '23505' && (driverError.constraint === 'uq_work_orders_idcard_month' || String(driverError.detail ?? '').includes('uq_work_orders_idcard_month'));
+  const duplicateConstraints = ['uq_work_orders_idcard_month', 'uq_work_orders_idcard_guard'];
+  return driverError?.code === '23505' && duplicateConstraints.some((constraint) => (
+    driverError.constraint === constraint || String(driverError.detail ?? '').includes(constraint)
+  ));
 }
 
 export function throwDuplicateIdCardConflict(conflict?: DuplicateIdCardConflict): never {
@@ -33,7 +36,7 @@ export async function findDuplicateIdCardInMonth(
 ): Promise<WorkOrder | null> {
   // 业务要求调整为“全局查重”：同一身份证号在任意月份已有未撤回/未作废入职主工单时，禁止再次提交。
   // 保留函数名是为了兼容既有调用点和历史测试名称。
-  if (input.orderType !== OrderType.ONBOARDING || !input.employeeIdCard) {
+  if (![OrderType.ONBOARDING, OrderType.RESIGNATION].includes(input.orderType) || !input.employeeIdCard) {
     return null;
   }
   const qb = repository.createQueryBuilder('w');
@@ -41,10 +44,17 @@ export async function findDuplicateIdCardInMonth(
     return null;
   }
   qb
-    .where('w.orderType = :orderType', { orderType: OrderType.ONBOARDING })
+    .where('w.orderType = :orderType', { orderType: input.orderType })
     .andWhere('w.employeeIdCard = :employeeIdCard', { employeeIdCard: input.employeeIdCard })
     .andWhere('w.status NOT IN (:...terminalIgnoredStatuses)', { terminalIgnoredStatuses: [WorkOrderStatus.WITHDRAWN, WorkOrderStatus.VOID] })
     .orderBy('w.createdAt', 'DESC');
+  if (input.orderType === OrderType.RESIGNATION) {
+    const targetDate = input.createdAt ?? new Date();
+    const monthStart = new Date(Date.UTC(targetDate.getUTCFullYear(), targetDate.getUTCMonth(), 1));
+    const nextMonthStart = new Date(Date.UTC(targetDate.getUTCFullYear(), targetDate.getUTCMonth() + 1, 1));
+    qb.andWhere('w.createdAt >= :monthStart', { monthStart });
+    qb.andWhere('w.createdAt < :nextMonthStart', { nextMonthStart });
+  }
   if (input.excludeId) {
     qb.andWhere('w.id <> :excludeId', { excludeId: input.excludeId });
   }

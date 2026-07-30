@@ -6,7 +6,7 @@ import { DataSource } from 'typeorm';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { FieldPermissionController } from 'src/modules/admin/field-permissions/field-permission.controller';
 import { FieldPermissionService } from 'src/modules/admin/field-permissions/field-permission.service';
-import { FieldsController } from 'src/modules/admin/fields/fields.controller';
+import { FieldsController, WorkOrderFieldsController } from 'src/modules/admin/fields/fields.controller';
 import { FieldsService } from 'src/modules/admin/fields/fields.service';
 
 class TestUserGuard implements CanActivate {
@@ -24,7 +24,7 @@ class TestUserGuard implements CanActivate {
 
 async function createApp(roles: string[]): Promise<INestApplication> {
   const moduleRef = await Test.createTestingModule({
-    controllers: [FieldPermissionController, FieldsController],
+    controllers: [FieldPermissionController, FieldsController, WorkOrderFieldsController],
     providers: [
       Reflector,
       { provide: DataSource, useValue: { getRepository: jest.fn() } },
@@ -66,5 +66,21 @@ describe('admin field HTTP permissions', () => {
     app = await createApp(['admin']);
 
     await request(app.getHttpServer()).get(path).expect(200);
+  });
+
+  it('allows social insurance specialist to read work-order field definitions', async () => {
+    app = await createApp(['social_insurance_specialist']);
+
+    await request(app.getHttpServer())
+      .get('/api/work-order-fields?orderType=onboarding&page=1&pageSize=2')
+      .expect(200);
+  });
+
+  it('keeps admin field management forbidden for social insurance specialist', async () => {
+    app = await createApp(['social_insurance_specialist']);
+
+    await request(app.getHttpServer())
+      .get('/api/admin/fields?page=1&pageSize=2')
+      .expect(403);
   });
 });

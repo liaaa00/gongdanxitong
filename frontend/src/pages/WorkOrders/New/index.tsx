@@ -8,9 +8,10 @@ import DynamicForm from '@/components/DynamicForm';
 import type { FieldConfig, ConditionalRequired } from '@/components/DynamicForm';
 import { useFieldPermissions } from '@/hooks/useFieldPermissions';
 import { getCreateWorkOrderFields } from '@/services/importTemplates';
-import { createWorkOrder } from '@/services/workOrders';
+import { checkResignationInjuryWarning, createWorkOrder } from '@/services/workOrders';
 import { getCustomers, getFallbackCustomers, type CustomerItem } from '@/services/customers';
 import { useAuth } from '@/hooks/useAuth';
+import MaterialsUpload, { type MaterialsUploadHandle } from '@/components/MaterialsUpload';
 
 type SupportedOrderType = 'onboarding' | 'resignation';
 
@@ -19,14 +20,17 @@ const ORDER_TYPE_LABEL: Record<SupportedOrderType, string> = {
   resignation: '离职',
 };
 
-const CONDITIONAL_REQUIRED_BY_TYPE: Record<SupportedOrderType, ConditionalRequired[]> = {
+export const CONDITIONAL_REQUIRED_BY_TYPE: Record<SupportedOrderType, ConditionalRequired[]> = {
   onboarding: [
-    { field: 'need_company_contract', value: '是', requireFields: ['need_esign', 'esign_platform', 'contract_subject', 'company_address', 'project_name', 'work_arrangement', 'contract_template', 'need_contract_urge'] },
+    { field: 'need_company_contract', value: '是', requireFields: ['need_esign', 'esign_platform', 'contract_subject', 'project_name', 'work_arrangement', 'contract_template', 'need_contract_urge'] },
+    { field: 'esign_platform', value: 'E签宝', requireFields: ['company_address'] },
     { field: 'need_company_payroll', value: '是', requireFields: ['payroll_location'] },
-    { field: 'is_common_template', value: '是', requireFields: ['template_name'] },
+    { field: 'need_onboarding_contact', value: '否', requireFields: ['current_address'] },
+    { field: 'probation_start_date', operator: 'exists', requireFields: ['probation_months', 'probation_end_date', 'probation_salary'] },
+    { field: 'is_common_template', value: '否', requireFields: ['template_name'] },
   ],
   resignation: [
-    { field: 'is_common_template', value: '是', requireFields: ['template_name'] },
+    { field: 'is_common_template', value: '否', requireFields: ['template_name'] },
   ],
 };
 
@@ -63,6 +67,7 @@ const WorkOrdersNew: React.FC = () => {
   const { message, modal } = App.useApp();
   const { hasRole } = useAuth();
   const formRef = useRef<ProFormInstance>();
+  const materialsRef = useRef<MaterialsUploadHandle>(null);
   const orderType = useMemo(() => getOrderTypeFromSearch(location.search), [location.search]);
   const orderTypeLabel = ORDER_TYPE_LABEL[orderType];
   const listPath = `/work-orders?orderType=${orderType}`;
@@ -71,6 +76,7 @@ const WorkOrdersNew: React.FC = () => {
   const [allFields, setAllFields] = useState<FieldConfig[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [customers, setCustomers] = useState<CustomerItem[]>([]);
+  const [createdWorkOrderId, setCreatedWorkOrderId] = useState<string | null>(null);
 
   const isReadonlyViewer = isReadonlyBusinessViewer(hasRole);
 
@@ -134,11 +140,42 @@ const WorkOrdersNew: React.FC = () => {
     });
   };
 
+  const confirmInjuryReminder = (content: string): Promise<boolean> => new Promise((resolve) => {
+    modal.confirm({
+      title: '工伤减员提醒',
+      content,
+      okText: '继续发起离职',
+      cancelText: '返回检查',
+      onOk: () => resolve(true),
+      onCancel: () => resolve(false),
+    });
+  });
+
   const handleSubmit = async (values: Record<string, unknown>) => {
     console.log(`[新建${orderTypeLabel}工单] onFinish 触发，提交值：`, values);
     setSubmitting(true);
     try {
+      if (orderType === 'resignation') {
+        const idCardNo = String(values.id_card_no || values.employee_id_card || '').trim();
+        if (idCardNo) {
+          const warning = await checkResignationInjuryWarning(idCardNo);
+          if (warning.hasInjuryRecord) {
+            const confirmed = await confirmInjuryReminder(
+              warning.message || '该员工存在工伤申请记录，减员时需同步办理一次性医疗补助金申请',
+            );
+            if (!confirmed) return;
+          }
+        }
+      }
       const result = await createWorkOrder(buildPayload(values));
+      if (orderType === 'resignation') {
+        setCreatedWorkOrderId(result.id as string);
+        try {
+          await materialsRef.current?.uploadStaged(result.id as string);
+        } catch {
+          message.error('部分附件上传失败，请在工单详情页重试');
+        }
+      }
       showSplitResult(result);
     } catch (err) {
       console.error(`[新建${orderTypeLabel}工单] 提交失败：`, err);
@@ -189,6 +226,12 @@ const WorkOrdersNew: React.FC = () => {
           <Button onClick={() => navigate(listPath)}>返回{orderTypeLabel}主工单列表</Button>
         </Space>
       </Card>
+
+      {orderType === 'resignation' && (
+        <Card title="附件上传（可选，可在提交前选择，提交后自动上传）" style={{ marginTop: 16 }}>
+          <MaterialsUpload ref={materialsRef} workOrderId={createdWorkOrderId || ''} bizPurpose="resignation_material" />
+        </Card>
+      )}
     </PageContainer>
   );
 };

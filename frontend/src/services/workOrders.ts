@@ -379,8 +379,9 @@ const mockExtraData: Record<string, unknown> = {
   work_cycle: '',
   salary_form: '',
   base_salary: 15000,
-  other_salary: 0,
+  other_salary: '餐补500+交通补贴300',
   probation_salary: 12000,
+  probation_other_salary: '试用期补贴按公司制度',
   payroll_cycle: '次月',
   payroll_date: '15',
   social_location: '杭州',
@@ -519,9 +520,9 @@ const AVAILABLE_FIELDS_MOCK = [
   { field_code: 'contract_term', field_name: '合同期限', is_required: true },
   { field_code: 'contract_start_date', field_name: '合同开始日期', is_required: true },
   { field_code: 'contract_end_date', field_name: '合同终止日期', is_required: true },
-  { field_code: 'probation_start_date', field_name: '试用期开始日期', is_required: true },
-  { field_code: 'probation_months', field_name: '试用期（月）', is_required: true },
-  { field_code: 'probation_end_date', field_name: '试用期结束日期', is_required: true },
+  { field_code: 'probation_start_date', field_name: '试用期开始日期' },
+  { field_code: 'probation_months', field_name: '试用期（月）' },
+  { field_code: 'probation_end_date', field_name: '试用期结束日期' },
   { field_code: 'work_city', field_name: '工作城市', is_required: true },
   { field_code: 'work_hour_system', field_name: '工时制', is_required: true },
   { field_code: 'salary_form', field_name: '工资形式', is_required: true },
@@ -885,6 +886,49 @@ function normalizeWorkOrderTimelineItem(raw: unknown): WorkOrderTimelineItem {
   };
 }
 
+
+
+export interface ResignationInjuryWarning {
+  hasInjuryRecord: boolean;
+  message: string | null;
+}
+
+export async function checkResignationInjuryWarning(idCardNo: string): Promise<ResignationInjuryWarning> {
+  if (isMockMode) {
+    let orders: Array<Record<string, unknown>> = [];
+    try {
+      const raw = localStorage.getItem('mock_in_service_orders_v2');
+      orders = raw ? JSON.parse(raw) : [];
+    } catch {
+      orders = [];
+    }
+    const injuryTypes = new Set([
+      'work_injury_recognition',
+      'work_injury_remote_filing',
+      'labor_capacity_assessment',
+      'work_injury_benefit',
+    ]);
+    const hasInjuryRecord = orders.some((item) => {
+      const cardNo = String(item.idCardNo ?? item.id_card_no ?? '');
+      const processType = String(item.processType ?? item.process_type ?? '');
+      return cardNo === idCardNo.trim() && injuryTypes.has(processType);
+    });
+    return mockDelay({
+      hasInjuryRecord,
+      message: hasInjuryRecord
+        ? '该员工存在工伤申请记录，减员时需同步办理一次性医疗补助金申请'
+        : null,
+    });
+  }
+
+  const raw = await request.get('/in-service-orders/injury-warning', {
+    params: { idCardNo: idCardNo.trim() },
+  }) as Record<string, unknown>;
+  return {
+    hasInjuryRecord: Boolean(raw.hasInjuryRecord ?? raw.has_injury_record),
+    message: String(raw.message || '') || null,
+  };
+}
 
 export async function createWorkOrder(data: Record<string, unknown>): Promise<WorkOrderItem> {
   // ====== 统一载荷打包 ======
@@ -1492,11 +1536,49 @@ export async function downloadCurrentImportTemplate(orderType = 'onboarding'): P
   return downloadServerImportTemplate(orderType);
 }
 
-export function downloadImportErrorReport(jobId: string) {
+export async function downloadImportErrorReport(jobId: string): Promise<void> {
   const token = localStorage.getItem('token');
   const base = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || '';
-  const url = `${base}/api/work-orders/import/jobs/${jobId}/error-report${token ? `?token=${encodeURIComponent(token)}` : ''}`;
-  window.open(url, '_blank');
+  const url = `${base}/api/work-orders/import/jobs/${jobId}/error-report`;
+  const response = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(text || `下载错误报告失败 (${response.status})`);
+  }
+  const blob = await response.blob();
+  const fileName = parseContentDispositionFileName(response.headers.get('Content-Disposition')) || `import-error-report-${jobId}.xlsx`;
+  const blobUrl = window.URL.createObjectURL(blob);
+  try {
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = fileName;
+    a.click();
+  } finally {
+    window.URL.revokeObjectURL(blobUrl);
+  }
+}
+
+function parseContentDispositionFileName(header: string | null): string | null {
+  if (!header) {
+    return null;
+  }
+  const utf8Match = header.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      return utf8Match[1];
+    }
+  }
+  const asciiMatch = header.match(/filename="?([^";]+)"?/i);
+  if (asciiMatch) {
+    try {
+      return decodeURIComponent(asciiMatch[1]);
+    } catch {
+      return asciiMatch[1];
+    }
+  }
+  return null;
 }
 
 export async function getImportJob(jobId: string): Promise<ImportJob> {

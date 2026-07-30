@@ -4,7 +4,7 @@ import { createReadStream, mkdirSync } from 'fs';
 import { access, mkdir, readdir, stat, writeFile } from 'fs/promises';
 import { dirname, extname, join, resolve } from 'path';
 import { Readable } from 'stream';
-import { randomUUID } from 'crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
 
 export interface StoredFileMeta {
   fileId: string;
@@ -102,6 +102,35 @@ export class UploadService implements OnModuleInit {
 
   createReadStream(fileId: string): Promise<{ stream: Readable; meta: StoredFileMeta }> {
     return this.resolveFile(fileId).then((meta) => ({ stream: createReadStream(meta.filePath), meta }));
+  }
+
+  // 导出 Excel 内的附件超链接由浏览器直接 GET，无法携带 Authorization 头；
+  // 故对 fileId + 过期时间用 jwtSecret 做 HMAC 签名，生成带令牌的公开下载 URL。
+  private signSecret(): string {
+    return this.configService.get<string>('app.jwtSecret', { infer: true }) ?? 'change-me-jwt-secret';
+  }
+
+  private computeSignature(fileId: string, exp: number): string {
+    return createHmac('sha256', this.signSecret()).update(`${fileId}.${exp}`).digest('hex');
+  }
+
+  // 生成带签名的临时下载 URL（默认有效期 7 天，覆盖导出文件的常规下载时间窗）。
+  buildSignedDownloadUrl(baseUrl: string, fileId: string, ttlMs = 7 * 24 * 60 * 60 * 1000): string {
+    const exp = Date.now() + ttlMs;
+    const sig = this.computeSignature(fileId, exp);
+    const base = baseUrl.replace(/\/+$/, '');
+    return `${base}/api/files/download?fileId=${encodeURIComponent(fileId)}&exp=${exp}&sig=${sig}`;
+  }
+
+  // 校验临时下载令牌：过期或签名不符均判定无效。
+  verifyDownloadToken(fileId: string, exp: number, sig: string): boolean {
+    if (!fileId || !Number.isFinite(exp) || !sig) return false;
+    if (exp < Date.now()) return false;
+    const expected = this.computeSignature(fileId, exp);
+    const expectedBuf = Buffer.from(expected, 'hex');
+    const actualBuf = Buffer.from(sig, 'hex');
+    if (expectedBuf.length !== actualBuf.length) return false;
+    return timingSafeEqual(expectedBuf, actualBuf);
   }
 
   private defaultExtension(kind: StoredFileMeta['kind']): string {

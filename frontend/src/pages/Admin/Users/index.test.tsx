@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { ConfigProvider } from 'antd';
 import AdminUsers from './index';
 
 const mockUsers = [
@@ -12,6 +13,7 @@ const mockUsers = [
     phone: '13800001006',
     is_active: true,
     group_name: '业务1组',
+    position: '业务组长',
     created_at: '2026-05-12T00:00:00.000Z',
     roles: [
       { role_id: '3', role_name: '业务组长' },
@@ -31,7 +33,10 @@ const mockRoles = [
 const getUsers = vi.fn();
 const createUser = vi.fn();
 const updateUser = vi.fn();
+const resetUserPassword = vi.fn();
+const forceLogoutUser = vi.fn();
 const getRoles = vi.fn();
+const getModuleHandlers = vi.fn();
 const flattenRoles = vi.fn((roles) => roles.map((r: { id: string; name: string }) => ({ value: r.id, label: r.name })));
 const reloadSpy = vi.fn();
 
@@ -43,7 +48,8 @@ vi.mock('@/services/users', () => ({
   getUsers: (...args: unknown[]) => getUsers(...args),
   createUser: (...args: unknown[]) => createUser(...args),
   updateUser: (...args: unknown[]) => updateUser(...args),
-  resetUserPassword: vi.fn(),
+  resetUserPassword: (...args: unknown[]) => resetUserPassword(...args),
+  forceLogoutUser: (...args: unknown[]) => forceLogoutUser(...args),
   toggleUserActive: vi.fn(),
   deleteUser: vi.fn(),
   getUserPasswordStatus: vi.fn().mockReturnValue({ has_password: true, password: '123456' }),
@@ -52,6 +58,10 @@ vi.mock('@/services/users', () => ({
 vi.mock('@/services/roles', () => ({
   getRoles: (...args: unknown[]) => getRoles(...args),
   flattenRoles: (...args: unknown[]) => flattenRoles(...args),
+}));
+
+vi.mock('@/services/moduleHandlers', () => ({
+  getModuleHandlers: (...args: unknown[]) => getModuleHandlers(...args),
 }));
 
 vi.mock('antd', async () => {
@@ -127,7 +137,11 @@ vi.mock('@ant-design/pro-components', () => ({
 }));
 
 async function renderPage() {
-  render(<AdminUsers />);
+  render(
+    <ConfigProvider getPopupContainer={(triggerNode) => triggerNode?.parentElement || document.body}>
+      <AdminUsers />
+    </ConfigProvider>,
+  );
   await waitFor(() => expect(getUsers).toHaveBeenCalled());
 }
 
@@ -136,6 +150,9 @@ describe('AdminUsers user-role assignment', () => {
     vi.clearAllMocks();
     getUsers.mockResolvedValue({ list: mockUsers, page: 1, pageSize: 20, total: 1, totalPages: 1, success: true });
     getRoles.mockResolvedValue(mockRoles);
+    getModuleHandlers.mockResolvedValue([
+      { id: 'h-1', module_code: 'data_entry', handler_id: 'u-1', is_active: true },
+    ]);
     createUser.mockResolvedValue({ id: 'u-2' });
     updateUser.mockResolvedValue({ id: 'u-1' });
   });
@@ -145,7 +162,7 @@ describe('AdminUsers user-role assignment', () => {
 
     expect(screen.getByRole('columnheader', { name: '角色' })).toBeInTheDocument();
     const row = screen.getByText('shenwenjun').closest('tr')!;
-    expect(within(row).getByText('业务组长')).toBeInTheDocument();
+    expect(within(row).getByTitle('业务组长')).toBeInTheDocument();
   });
 
   it('given role seeds are loaded, when creating a user, then role multi-select lists all active role options', async () => {
@@ -171,6 +188,7 @@ describe('AdminUsers user-role assignment', () => {
     await user.type(screen.getByLabelText('用户名'), 'testuser');
     await user.type(screen.getByLabelText('密码'), 'password123');
     await user.type(screen.getByLabelText('姓名'), '测试');
+    await user.type(screen.getByLabelText('岗位'), '不应提交的岗位文本');
     await user.selectOptions(screen.getByLabelText('角色'), ['4', '7']);
     await user.click(screen.getByRole('button', { name: 'OK' }));
 
@@ -179,29 +197,86 @@ describe('AdminUsers user-role assignment', () => {
       username: 'testuser',
       real_name: '测试',
       roles: expect.arrayContaining([
-        { role_id: '4', role_name: '业务员' },
-        { role_id: '7', role_name: '合同专员' },
+        { role_id: '4', role_name: '业务员', is_primary: true, isPrimary: true },
+        { role_id: '7', role_name: '合同专员', is_primary: false, isPrimary: false },
       ]),
     }));
+    expect(createUser.mock.calls[0][0]).not.toHaveProperty('position');
   });
 
-  it('given roles are changed in edit form, when saving, then role data is sent to update API', async () => {
+  it('given account fields and roles are changed in edit form, when saving, then all supported fields are sent to update API', async () => {
     const user = userEvent.setup();
     await renderPage();
 
     const row = screen.getByText('shenwenjun').closest('tr')!;
     await user.click(within(row).getByRole('button', { name: /编辑/ }));
-    const roleSelect = await screen.findByLabelText('角色');
+    const usernameInput = await screen.findByLabelText('用户名');
+    const realNameInput = screen.getByLabelText('姓名');
+    const roleSelect = screen.getByLabelText('角色');
+    await user.clear(usernameInput);
+    await user.type(usernameInput, 'shenwenjun_new');
+    await user.clear(realNameInput);
+    await user.type(realNameInput, '沈文君新');
     await user.selectOptions(roleSelect, ['4', '7', '8']);
     await user.click(screen.getByRole('button', { name: 'OK' }));
 
     await waitFor(() => expect(updateUser).toHaveBeenCalled());
     expect(updateUser).toHaveBeenCalledWith('u-1', expect.objectContaining({
+      username: 'shenwenjun_new',
+      real_name: '沈文君新',
       roles: expect.arrayContaining([
-        { role_id: '4', role_name: '业务员' },
-        { role_id: '7', role_name: '合同专员' },
-        { role_id: '8', role_name: '入离职联系专员' },
+        expect.objectContaining({ role_id: '4', role_name: '业务员' }),
+        expect.objectContaining({ role_id: '7', role_name: '合同专员' }),
+        expect.objectContaining({ role_id: '8', role_name: '入离职联系专员' }),
       ]),
     }));
+    const updatePayload = updateUser.mock.calls[0][1];
+    expect(updatePayload).not.toHaveProperty('position');
+    expect(updatePayload.roles.filter((role: { is_primary?: boolean }) => role.is_primary)).toHaveLength(1);
+    expect(updatePayload.roles[0]).toMatchObject({ is_primary: true, isPrimary: true });
+    expect(updatePayload.roles.slice(1).every((role: { is_primary?: boolean; isPrimary?: boolean }) => role.is_primary === false && role.isPrimary === false)).toBe(true);
+  });
+
+  it('shows each role contribution and module-handler impact in permission preview', async () => {
+    const user = userEvent.setup();
+    await renderPage();
+
+    const row = screen.getByText('shenwenjun').closest('tr')!;
+    await user.click(within(row).getByRole('button', { name: /权限预览/ }));
+
+    expect(await screen.findByText('角色逐项贡献')).toBeInTheDocument();
+    await waitFor(() => expect(getModuleHandlers).toHaveBeenCalledWith(undefined, true));
+    expect(screen.getByText('增员报岗录入 (data_entry)')).toBeInTheDocument();
+    expect(screen.getByText('该用户是 1 个模块的负责人')).toBeInTheDocument();
+  });
+
+  it('requires confirmation before resetting a user password', async () => {
+    const user = userEvent.setup();
+    await renderPage();
+
+    const row = screen.getByText('shenwenjun').closest('tr')!;
+    await user.click(within(row).getByRole('button', { name: /重置密码/ }));
+
+    const description = await screen.findByText('密码将重置为默认密码 123456，用户下次登录必须先修改密码。');
+    expect(description).toBeInTheDocument();
+    expect(description.closest('.ant-popover')?.parentElement).toBe(document.body);
+    expect(resetUserPassword).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: '确认重置' }));
+    await waitFor(() => expect(resetUserPassword).toHaveBeenCalledWith('u-1'));
+  });
+
+  it('requires confirmation before forcing a user logout', async () => {
+    const user = userEvent.setup();
+    await renderPage();
+
+    const row = screen.getByText('shenwenjun').closest('tr')!;
+    await user.click(within(row).getByRole('button', { name: /强制下线/ }));
+
+    expect(await screen.findByText('仅撤销该用户现有登录会话，不会停用账号或修改密码。')).toBeInTheDocument();
+    expect(forceLogoutUser).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: '确认下线' }));
+    await waitFor(() => expect(forceLogoutUser).toHaveBeenCalledWith('u-1'));
   });
 });

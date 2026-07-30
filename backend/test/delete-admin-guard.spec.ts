@@ -15,7 +15,7 @@ function makeHttpContext(handler: (...args: never[]) => unknown, roles: string[]
   } as never;
 }
 
-describe('delete endpoint admin guards', () => {
+describe('admin-only mutation endpoint guards', () => {
   const reflector = new Reflector();
   const roleActionPermissionService = { hasAnyRoleAction: jest.fn(async () => false) };
   const guard = new RolesGuard(reflector, roleActionPermissionService as never);
@@ -25,6 +25,13 @@ describe('delete endpoint admin guards', () => {
     expect(roles).toEqual(['admin']);
 
     await expect(guard.canActivate(makeHttpContext(DispatchedOrderController.prototype.remove, ['social_insurance_team']))).rejects.toThrow(ForbiddenException);
+  });
+
+  it('marks dispatched-order batch reassignment as admin only and rejects non-admin users', async () => {
+    const roles = reflector.get<string[]>(ROLES_KEY, DispatchedOrderController.prototype.batchReassign);
+    expect(roles).toEqual(['admin']);
+
+    await expect(guard.canActivate(makeHttpContext(DispatchedOrderController.prototype.batchReassign, ['social_insurance_team']))).rejects.toThrow(ForbiddenException);
   });
 
   it('marks work order DELETE as admin only', () => {

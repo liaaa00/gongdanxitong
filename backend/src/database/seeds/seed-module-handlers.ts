@@ -13,6 +13,12 @@ const moduleHandlerSeeds: Array<{
   { moduleCode: 'renewal_contract', username: 'yangchun', weight: 10, isBackup: false },
   { moduleCode: 'renewal_contract', username: 'jianglu', weight: 1, isBackup: true },
 
+  // 标准证明：毛雅妮主办，江璐备份；负责人仍可在后台调整。
+  { moduleCode: 'in_service_certificate', username: 'maoyani', weight: 10, isBackup: false },
+  { moduleCode: 'in_service_certificate', username: 'jianglu', weight: 1, isBackup: true },
+  { moduleCode: 'resignation_cert', username: 'maoyani', weight: 10, isBackup: false },
+  { moduleCode: 'resignation_cert', username: 'jianglu', weight: 1, isBackup: true },
+
   // 入离职联系/材料收集：毛雅妮主办，江璐为共享负责人/备份；江璐可看到毛雅妮联系类合集。
   { moduleCode: 'onboarding_contact', username: 'maoyani', weight: 10, isBackup: false },
   { moduleCode: 'onboarding_contact', username: 'jianglu', weight: 1, isBackup: true },
@@ -32,7 +38,6 @@ const managedModules = Array.from(new Set(moduleHandlerSeeds.map((seed) => seed.
 const deprecatedModules = [
   'social_security',
   'onboarding_social_insurance',
-  'resignation_cert',
 ];
 
 export async function seedModuleHandlers(dataSource: DataSource): Promise<void> {

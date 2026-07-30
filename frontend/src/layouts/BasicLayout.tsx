@@ -7,7 +7,7 @@ import {
   useOutlet,
 } from 'react-router-dom';
 import { ProLayout } from '@ant-design/pro-components';
-import { App, Badge, Popover, List, Button, Empty, Tabs, Tag, Space, Dropdown } from 'antd';
+import { App, Badge, Popover, List, Button, Empty, Tabs, Tag, Space, Dropdown, Segmented } from 'antd';
 import {
   DashboardOutlined, FileTextOutlined, SettingOutlined, LogoutOutlined,
   TeamOutlined, SafetyOutlined, ApartmentOutlined, IdcardOutlined,
@@ -25,6 +25,14 @@ import { ROLE, userHasAnyCanonicalRole, type CanonicalRole } from '@/constants/r
 import { getNotifications, getUnreadCountByBucket, getNotificationBucket, markNotificationRead } from '@/services/notifications';
 import type { NotificationBucketKey, NotificationItem, UnreadCountByBucket } from '@/services/notifications';
 import { getNotificationDisplayContent, getNotificationDisplayTitle } from '@/utils/notificationDisplay';
+import { notifyKeepAliveRouteActivated } from '@/utils/listPageState';
+import {
+  BUSINESS_SCOPE,
+  getBusinessScopeLandingPath,
+  readBusinessScope,
+  writeBusinessScope,
+  type BusinessScope,
+} from '@/utils/businessScope';
 
 const MAX_KEEP_ALIVE_PAGES = 12;
 
@@ -34,6 +42,7 @@ function isKeepAlivePath(pathname: string): boolean {
   if (pathname === '/work-orders/import') return true;
   if (/^\/work-orders\/(new|import|[^/]+)$/.test(pathname)) return false;
   if (/^\/renewal\/(new|[^/]+)$/.test(pathname)) return false;
+  if (/^\/in-service\/(new|[^/]+)(\/audit)?$/.test(pathname)) return false;
   if (/^\/resignation\/(new|[^/]+)(\/cert)?$/.test(pathname)) return false;
   if (/^\/benefit\/(new|[^/]+)$/.test(pathname)) return false;
   if (/^\/my-dispatched\/[^/]+$/.test(pathname)) return false;
@@ -49,10 +58,24 @@ const KeepAliveOutlet: React.FC = () => {
   const shouldKeepAlive = isKeepAlivePath(location.pathname);
   const [cacheKeys, setCacheKeys] = useState<string[]>(() => (shouldKeepAlive ? [cacheKey] : []));
   const cacheRef = useRef<Record<string, { outlet: React.ReactElement; location: typeof location }>>({});
+  const visitedCacheKeysRef = useRef(new Set(shouldKeepAlive ? [cacheKey] : []));
+  const lastRouteKeyRef = useRef(cacheKey);
 
   if (shouldKeepAlive && outlet && !cacheRef.current[cacheKey]) {
     cacheRef.current[cacheKey] = { outlet, location };
   }
+
+  useEffect(() => {
+    const routeChanged = lastRouteKeyRef.current !== cacheKey;
+    if (routeChanged && shouldKeepAlive) {
+      if (visitedCacheKeysRef.current.has(cacheKey)) {
+        notifyKeepAliveRouteActivated({ pathname: location.pathname, search: location.search });
+      } else {
+        visitedCacheKeysRef.current.add(cacheKey);
+      }
+    }
+    lastRouteKeyRef.current = cacheKey;
+  }, [cacheKey, location.pathname, location.search, shouldKeepAlive]);
 
   useEffect(() => {
     if (!shouldKeepAlive) return;
@@ -60,7 +83,10 @@ const KeepAliveOutlet: React.FC = () => {
       const next = prev.includes(cacheKey) ? [...prev.filter((key) => key !== cacheKey), cacheKey] : [...prev, cacheKey];
       const overflow = next.length - MAX_KEEP_ALIVE_PAGES;
       if (overflow > 0) {
-        next.slice(0, overflow).forEach((key) => { delete cacheRef.current[key]; });
+        next.slice(0, overflow).forEach((key) => {
+          delete cacheRef.current[key];
+          visitedCacheKeysRef.current.delete(key);
+        });
         return next.slice(overflow);
       }
       return next;
@@ -95,6 +121,7 @@ type MenuItem = {
   icon?: React.ReactNode;
   key?: string;
   menuVisible?: boolean;
+  scope?: BusinessScope;
   children?: MenuItem[];
 };
 
@@ -115,6 +142,7 @@ const RAW_MENU: MenuItem[] = [
   { path: '/dashboard', name: '仪表盘', icon: <DashboardOutlined /> },
   {
     path: '/work-orders-group',
+    scope: BUSINESS_SCOPE.BEILUN,
     name: '入职管理',
     icon: <FileTextOutlined />,
     // 子菜单由 routeVisibility.ts 决定是否显示。
@@ -128,18 +156,18 @@ const RAW_MENU: MenuItem[] = [
   },
   {
     path: '/in-service-group',
-    menuVisible: false,
+    scope: BUSINESS_SCOPE.BEILUN,
     name: '在职管理',
     icon: <FileTextOutlined />,
     children: [
-      { path: '/renewal', name: '续签主工单列表', key: 'renewal-list' },
-      { path: '/onboarding/renewal_contract', name: '劳动合同续签子工单', key: 'renewal-contract-sub-list' },
-      { path: '/benefit', name: '待遇申报主工单列表', key: 'benefit-list' },
-      { path: '/onboarding/benefit_apply', name: '待遇申报子工单', key: 'benefit-apply-sub-list' },
+      { path: '/renewal', name: '劳动合同续签', key: 'renewal-list' },
+      { path: '/in-service/certificates', name: '证明开具', key: 'certificate-list' },
+      { path: '/in-service', name: '单项业务办理', key: 'in-service-list' },
     ],
   },
   {
     path: '/offboarding-group',
+    scope: BUSINESS_SCOPE.BEILUN,
     name: '离职管理',
     icon: <FileTextOutlined />,
     children: [
@@ -148,7 +176,20 @@ const RAW_MENU: MenuItem[] = [
       { path: '/onboarding/resignation_cert', name: '离职材料收集子工单', key: 'resignation-cert-sub-list', menuVisible: false },
       { path: '/onboarding/data_entry_resign', name: '减员报岗录入子工单', key: 'data-entry-resign-sub-list' },
       { path: '/onboarding/social_insurance_resign', name: '社保公积金减员子工单', key: 'social-insurance-resign-sub-list' },
+      { path: '/resignation-certificates', name: '离职证明', key: 'resignation-certificate-list' },
       { path: '/resignation/:id/cert', name: '离职材料收集', key: 'resignation-cert', menuVisible: false },
+    ],
+  },
+  {
+    path: '/out-of-province-group',
+    name: '浙江自签业务',
+    icon: <ApartmentOutlined />,
+    scope: BUSINESS_SCOPE.OUT_OF_PROVINCE,
+    children: [
+      { path: '/out-of-province/increase', name: '省外增员', key: 'out-of-province-increase' },
+      { path: '/out-of-province/decrease', name: '省外减员', key: 'out-of-province-decrease' },
+      { path: '/out-of-province/single-business', name: '单项业务办理', key: 'out-of-province-single-business' },
+      { path: '/out-of-province/import', name: '增减员批量导入', key: 'out-of-province-import' },
     ],
   },
   {
@@ -219,11 +260,18 @@ const RAW_MENU: MenuItem[] = [
   },
 ];
 
-function filterMenuByRoles(items: MenuItem[], userRoles: { code?: string }[] | undefined, permissions?: string[]): MenuItem[] {
+function filterMenuByRoles(
+  items: MenuItem[],
+  userRoles: { code?: string }[] | undefined,
+  permissions?: string[],
+  businessScope?: BusinessScope,
+): MenuItem[] {
   const next: MenuItem[] = [];
   for (const it of items) {
-    if (it.menuVisible === false) continue;
-    const filteredChildren = it.children?.length ? filterMenuByRoles(it.children, userRoles, permissions) : undefined;
+    if (it.menuVisible === false || (it.scope && businessScope && it.scope !== businessScope)) continue;
+    const filteredChildren = it.children?.length
+      ? filterMenuByRoles(it.children, userRoles, permissions, businessScope)
+      : undefined;
     // 菜单可见性的唯一入口是 routeVisibility.ts；RAW_MENU 中仅保留展示结构。
     const selfAllowed = canAccessPath(it.path, userRoles, permissions);
     if (!selfAllowed && (!filteredChildren || filteredChildren.length === 0)) continue;
@@ -310,7 +358,9 @@ function isTemporaryActionPath(pathname: string): boolean {
   const normalized = normalizeMenuUrl(pathname).pathname;
   if (['/', '/login', '/change-password', '/403', '/404'].includes(normalized)) return true;
   if (/^\/work-orders\/(new|create|import)$/.test(normalized)) return true;
+  if (/^\/out-of-province\/(new|import)$/.test(normalized)) return true;
   if (/^\/renewal\/new$/.test(normalized)) return true;
+  if (/^\/in-service\/new$/.test(normalized)) return true;
   if (/^\/resignation\/new$/.test(normalized)) return true;
   if (/^\/benefit\/new$/.test(normalized)) return true;
   if (/^\/admin\/workflows\/[^/]+$/.test(normalized)) return true;
@@ -329,6 +379,7 @@ function isDetailOrEditPath(pathname: string): boolean {
   const normalized = normalizeMenuUrl(pathname).pathname;
   if (/^\/work-orders\/[^/]+$/.test(normalized)) return true;
   if (/^\/my-dispatched\/[^/]+$/.test(normalized)) return true;
+  if (/^\/in-service\/[^/]+(\/audit)?$/.test(normalized)) return true;
   if (/^\/resignation\/[^/]+(\/cert)?$/.test(normalized)) return true;
   return false;
 }
@@ -447,6 +498,18 @@ const BasicLayout: React.FC = () => {
   const [allNotifications, setAllNotifications] = useState<NotificationItem[]>([]);
   const [notifOpen, setNotifOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<string>('all');
+  const [businessScope, setBusinessScope] = useState<BusinessScope>(() => readBusinessScope());
+  const isBusinessFrontAccount = useMemo(
+    () => userHasAnyCanonicalRole(user?.roles, [
+      ROLE.BUSINESS_OWNER,
+      ROLE.BUSINESS_GROUP_LEADER,
+      ROLE.BUSINESS_GROUP_MEMBER,
+    ]),
+    [user?.roles],
+  );
+  const accountBusinessScope = user?.business_scope ?? user?.businessScope ?? BUSINESS_SCOPE.BEILUN;
+  const canSwitchBusinessScope = !isBusinessFrontAccount;
+  const effectiveBusinessScope = canSwitchBusinessScope ? businessScope : accountBusinessScope;
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const lastAuthRefreshRef = useRef(0);
@@ -481,10 +544,16 @@ const BasicLayout: React.FC = () => {
     };
   }, [refreshCurrentUser]);
 
-  // 按最新 /auth/me 返回的角色 + permissions 过滤菜单（权限变更后路由跳转/刷新会即时生效）
+  useEffect(() => {
+    if (canSwitchBusinessScope) return;
+    setBusinessScope(accountBusinessScope);
+    writeBusinessScope(accountBusinessScope);
+  }, [accountBusinessScope, canSwitchBusinessScope]);
+
+  // 按最新 /auth/me 返回的角色、权限和账号业务线过滤菜单。
   const filteredMenu = useMemo(
-    () => filterMenuByRoles(RAW_MENU, user?.roles, user?.permissions),
-    [user?.permissions, user?.roles],
+    () => filterMenuByRoles(RAW_MENU, user?.roles, user?.permissions, effectiveBusinessScope),
+    [effectiveBusinessScope, user?.permissions, user?.roles],
   );
 
   const rootSubmenuKeys = useMemo(() => {
@@ -500,6 +569,11 @@ const BasicLayout: React.FC = () => {
 
     if (location.pathname === '/dashboard') title = '仪表盘 - 工单管理系统';
     if (location.pathname === '/notifications') title = '消息通知 - 工单管理系统';
+    if (location.pathname === '/in-service') title = '单项业务办理 - 工单管理系统';
+    else if (location.pathname === '/in-service/new') title = '新建单项业务 - 工单管理系统';
+    else if (/^\/in-service\/[^/]+$/.test(location.pathname)) title = '单项业务详情 - 工单管理系统';
+    if (location.pathname === '/out-of-province') title = '省外增减员列表 - 工单管理系统';
+    if (location.pathname === '/out-of-province/import') title = '省外增减员导入 - 工单管理系统';
     if (location.pathname === '/admin/users') title = '用户管理 - 工单管理系统';
     if (location.pathname === '/admin/module-config') title = '子工单字段配置 - 工单管理系统';
     if (location.pathname === '/admin/fields') title = '系统字段库 - 工单管理系统';
@@ -747,6 +821,17 @@ const BasicLayout: React.FC = () => {
     </div>
   );
 
+  const handleBusinessScopeChange = (value: string | number) => {
+    if (!canSwitchBusinessScope) return;
+    const nextScope = value === BUSINESS_SCOPE.OUT_OF_PROVINCE
+      ? BUSINESS_SCOPE.OUT_OF_PROVINCE
+      : BUSINESS_SCOPE.BEILUN;
+    if (nextScope === businessScope) return;
+    setBusinessScope(nextScope);
+    writeBusinessScope(nextScope);
+    navigate(getBusinessScopeLandingPath(nextScope));
+  };
+
   const handleLogout = async () => {
     try { await logoutApi(); } catch { /* ignore */ }
     storeLogout();
@@ -797,53 +882,141 @@ const BasicLayout: React.FC = () => {
           {dom}
         </button>
       )}
-      actionsRender={() => [
-        <Space key="top-actions" size={8} align="center" style={{ flexWrap: 'nowrap', marginRight: 0 }}>
-          <Dropdown
-            placement="bottomRight"
-            menu={{
-              items: [
-                {
-                  key: 'change-password',
-                  icon: <LockOutlined />,
-                  label: '修改密码',
-                  onClick: () => navigate('/change-password'),
-                },
-              ],
-            }}
-          >
-            <span
-              title={user?.real_name || user?.username || '当前用户'}
-              style={{
-                display: 'inline-block',
-                maxWidth: 96,
-                padding: '2px 8px',
-                borderRadius: 12,
-                background: '#f5f5f5',
-                color: 'rgba(0, 0, 0, 0.65)',
-                fontSize: 13,
+      menuExtraRender={(layoutProps) => {
+        const collapsed = Boolean(layoutProps.collapsed);
+        const isOutOfProvince = effectiveBusinessScope === BUSINESS_SCOPE.OUT_OF_PROVINCE;
+        const scopeLabel = isOutOfProvince ? '浙江自签' : '北仑本地';
+        if (collapsed) {
+          const nextScope = isOutOfProvince ? BUSINESS_SCOPE.BEILUN : BUSINESS_SCOPE.OUT_OF_PROVINCE;
+          return (
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '4px 0 8px' }}>
+              <Button
+                type="text"
+                size="small"
+                icon={<ApartmentOutlined />}
+                title={canSwitchBusinessScope ? `当前${scopeLabel}，点击切换业务范围` : `当前业务范围：${scopeLabel}`}
+                aria-label={canSwitchBusinessScope ? `当前${scopeLabel}，切换业务范围` : `当前业务范围：${scopeLabel}`}
+                onClick={canSwitchBusinessScope ? () => handleBusinessScopeChange(nextScope) : undefined}
+              />
+            </div>
+          );
+        }
+        return (
+          <div style={{ padding: '4px 16px 12px' }}>
+            <div style={{ marginBottom: 6, color: 'rgba(0, 0, 0, 0.45)', fontSize: 12 }}>业务范围</div>
+            {canSwitchBusinessScope ? (
+              <Segmented
+                block
+                aria-label="业务范围"
+                size="small"
+                value={effectiveBusinessScope}
+                options={[
+                  { label: '北仑', value: BUSINESS_SCOPE.BEILUN },
+                  { label: '省外', value: BUSINESS_SCOPE.OUT_OF_PROVINCE },
+                ]}
+                onChange={handleBusinessScopeChange}
+              />
+            ) : (
+              <Tag
+                color={isOutOfProvince ? 'cyan' : 'blue'}
+                style={{ display: 'block', margin: 0, textAlign: 'center' }}
+              >
+                {scopeLabel}
+              </Tag>
+            )}
+          </div>
+        );
+      }}
+      actionsRender={(layoutProps) => {
+        const collapsed = Boolean(layoutProps.collapsed);
+        return [
+          <Space
+            key="account-actions"
+            direction={collapsed ? 'vertical' : 'horizontal'}
+            size={collapsed ? 4 : 6}
+            align="center"
+            style={collapsed
+              ? { width: '100%' }
+              : {
+                width: '100%',
+                maxWidth: '100%',
+                boxSizing: 'border-box',
+                justifyContent: 'space-between',
                 overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                verticalAlign: 'middle',
-                cursor: 'pointer',
+                padding: '0 8px',
+              }}
+          >
+            <Dropdown
+              placement="bottomRight"
+              menu={{
+                items: [
+                  {
+                    key: 'change-password',
+                    icon: <LockOutlined />,
+                    label: '修改密码',
+                    onClick: () => navigate('/change-password'),
+                  },
+                ],
               }}
             >
-              {user?.real_name || user?.username || '用户'}
-            </span>
-          </Dropdown>
-          {canViewNotifications ? (
-            <Popover content={notifContent} title={null} trigger="click"
-              open={notifOpen} onOpenChange={setNotifOpen} placement="bottomRight">
-              <Badge count={unreadCount} size="small" offset={[-2, 4]}>
-                <BellOutlined style={{ fontSize: 18, cursor: 'pointer', padding: '4px 6px' }}
-                  onClick={() => { fetchAll(); setNotifOpen(!notifOpen); }} />
-              </Badge>
-            </Popover>
-          ) : null}
-          <Button size="small" icon={<LogoutOutlined />} onClick={handleLogout} style={{ marginLeft: 10 }}>退出</Button>
-        </Space>,
-      ]}
+              {collapsed ? (
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<IdcardOutlined />}
+                  title={user?.real_name || user?.username || '当前用户'}
+                  aria-label={user?.real_name || user?.username || '当前用户'}
+                />
+              ) : (
+                <span
+                  title={user?.real_name || user?.username || '当前用户'}
+                  style={{
+                    display: 'inline-block',
+                    maxWidth: 80,
+                    padding: '2px 6px',
+                    borderRadius: 4,
+                    background: '#f5f5f5',
+                    color: 'rgba(0, 0, 0, 0.65)',
+                    fontSize: 13,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    verticalAlign: 'middle',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {user?.real_name || user?.username || '用户'}
+                </span>
+              )}
+            </Dropdown>
+            {canViewNotifications ? (
+              <Popover content={notifContent} title={null} trigger="click"
+                open={notifOpen} onOpenChange={setNotifOpen} placement="bottomRight">
+                <Badge count={unreadCount} size="small" offset={[-2, 4]}>
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<BellOutlined />}
+                    title="消息通知"
+                    aria-label="消息通知"
+                    onClick={() => { fetchAll(); setNotifOpen(!notifOpen); }}
+                  />
+                </Badge>
+              </Popover>
+            ) : null}
+            <Button
+              type="text"
+              size="small"
+              icon={<LogoutOutlined />}
+              title="退出登录"
+              aria-label="退出登录"
+              onClick={handleLogout}
+            >
+              {collapsed ? null : '退出'}
+            </Button>
+          </Space>,
+        ];
+      }}
       menuHeaderRender={undefined}
     >
       <KeepAliveOutlet />

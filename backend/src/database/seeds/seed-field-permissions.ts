@@ -1,5 +1,6 @@
 import { DataSource, Repository } from 'typeorm';
-import { FieldConfig, FieldPermission, FieldPermissionMode, OrderType, Role } from 'src/entities';
+import { DetailViewTemplate, FieldConfig, FieldPermission, FieldPermissionMode, OrderType, Role } from 'src/entities';
+import { getDetailViewFieldCodes } from 'src/modules/admin/detail-view-templates/detail-view-template-fields';
 
 /**
  * 字段权限矩阵 seed。
@@ -58,6 +59,7 @@ const CONTRACT_ROLE_CODES = [
   'shared_leader',
   'admin',
   ...BUSINESS_MANAGER_ROLE_CODES,
+  ...BUSINESS_MEMBER_ROLE_CODES,
 ];
 const ONBOARDING_ROLE_CODES = [
   'onboarding_resignation_member',
@@ -85,6 +87,7 @@ const SOCIAL_INSURANCE_ROLE_CODES = [
   'data_entry_leader',
   'admin',
   ...BUSINESS_MANAGER_ROLE_CODES,
+  ...BUSINESS_MEMBER_ROLE_CODES,
 ];
 
 // 各子工单可见字段严格按《浙江企服服务外包增员信息表》「涉及工单」标注重建（杭州 sheet）。
@@ -95,21 +98,27 @@ const CONTRACT_VISIBLE = new Set([
 const CONTRACT_EDITABLE = new Set(['contract_feedback', 'special_remark']);
 
 const ONBOARDING_VISIBLE = new Set([
-  'customer_name','customer_code','employee_name','id_card_no','mobile','email','need_onboarding_contact','feedback_deadline','is_common_template','template_name','social_urge','special_remark',
+  'customer_name','customer_code','employee_name','id_card_no','mobile','email',
+  'education','graduation_school','major','graduation_date',
+  'need_onboarding_contact','feedback_deadline','is_common_template','template_name','social_urge','special_remark',
 ]);
-const ONBOARDING_EDITABLE = new Set(['bank_name', 'bank_account', 'onboarding_feedback', 'special_remark']);
+const ONBOARDING_EDITABLE = new Set([
+  'education', 'graduation_school', 'major', 'graduation_date',
+  'bank_name', 'bank_account', 'onboarding_feedback', 'special_remark',
+]);
 
 const DATA_ENTRY_VISIBLE = new Set([
-  'customer_name','customer_code','outsource_type','position','position_type','employee_name','id_card_type','id_card_no','gender','birth_date','age','household_type','ethnicity','education','marital_status','mobile','email','current_address','household_address','postal_code','social_location','start_month','social_base','fund_base','fund_ratio','bank_name','bank_account','remark','business_mode','need_company_payroll','payroll_location',
+  'customer_name','customer_code','outsource_type','position','position_type','employee_name','id_card_type','id_card_no','gender','birth_date','age','household_type','ethnicity','education','graduation_school','major','graduation_date','marital_status','mobile','email','current_address','household_address','postal_code','social_location','start_month','social_base','fund_base','fund_ratio','bank_name','bank_account','remark','business_mode','need_company_payroll','payroll_location',
 ]);
 const DATA_ENTRY_EDITABLE = new Set(['data_entry_feedback']);
 const HANDLING_FEEDBACK_FIELDS = [
-  'social_security_handling_result', 'social_security_handling_remark',
-  'medical_insurance_handling_result', 'medical_insurance_handling_remark',
-  'housing_fund_handling_result', 'housing_fund_handling_remark',
+  'social_insurance_result', 'social_insurance_remark',
+  'medical_insurance_result',
+  'housing_fund_result',
 ];
 const SOCIAL_INSURANCE_VISIBLE = new Set([
-  'customer_name','customer_code','position_type','employee_name','id_card_type','id_card_no','household_type','education','marital_status',
+  'customer_name','customer_code','position_type','employee_name','id_card_type','id_card_no','mobile','email','household_type',
+  'education','graduation_school','major','graduation_date','marital_status',
   'social_location','start_month','social_base','fund_base','fund_ratio','social_urge','special_remark',
   ...HANDLING_FEEDBACK_FIELDS,
 ]);
@@ -128,15 +137,22 @@ const RESIGNATION_CORE_VISIBLE = [
   'resignation_reason', 'resignation_date', 'need_resignation_share',
 ];
 const RESIGNATION_CONTACT_VISIBLE = new Set([
+  'customer_name', 'customer_code', 'mobile', 'email',
   ...RESIGNATION_CORE_VISIBLE, 'feedback_deadline', 'is_common_template', 'template_name',
 ]);
 const RESIGNATION_CERT_VISIBLE = RESIGNATION_CONTACT_VISIBLE;
 const RESIGNATION_CONTACT_EDITABLE = new Set<string>([]);
 const RESIGNATION_CERT_EDITABLE = new Set<string>([]);
-const DATA_ENTRY_RESIGN_VISIBLE = new Set(RESIGNATION_CORE_VISIBLE);
+const DATA_ENTRY_RESIGN_VISIBLE = new Set([
+  'customer_name', 'customer_code', 'mobile', 'email', ...RESIGNATION_CORE_VISIBLE,
+]);
 const DATA_ENTRY_RESIGN_EDITABLE = new Set<string>([]);
 // 社保公积金减员：核心字段可见，办理结果/备注由社保岗反馈。
-const RESIGNATION_SOCIAL_VISIBLE = new Set([...RESIGNATION_CORE_VISIBLE, ...HANDLING_FEEDBACK_FIELDS]);
+const RESIGNATION_SOCIAL_VISIBLE = new Set([
+  'customer_name', 'customer_code', 'mobile', 'email',
+  ...RESIGNATION_CORE_VISIBLE,
+  ...HANDLING_FEEDBACK_FIELDS,
+]);
 const RESIGNATION_SOCIAL_EDITABLE = new Set<string>(HANDLING_FEEDBACK_FIELDS);
 
 const BENEFIT_EDITABLE = new Set([
@@ -181,6 +197,10 @@ async function upsertPermission(
 ): Promise<void> {
   const existed = await repo.findOne({ where: { roleId, fieldCode, scenario } });
   if (existed) {
+    if (existed.permission !== permission) {
+      existed.permission = permission;
+      await repo.save(existed);
+    }
     return;
   }
   await repo.save(repo.create({ roleId, fieldCode, scenario, permission }));
@@ -200,12 +220,15 @@ function dispatchedPermission(
   handlerRoleCodes: string[],
   editableFields: Set<string>,
   visibleFields?: Set<string>,
+  businessCanEditVisibleFields = false,
 ): FieldPermissionMode {
   if (!belongsAny(field, targets)) return HIDDEN;
   if (visibleFields && !visibleFields.has(field.fieldCode)) return HIDDEN;
   if (roleCode === 'admin') return VISIBLE;
+  if (BUSINESS_ROLE_CODES.includes(roleCode)) {
+    return businessCanEditVisibleFields && BUSINESS_MEMBER_ROLE_CODES.includes(roleCode) ? VISIBLE : READONLY;
+  }
   if (!handlerRoleCodes.includes(roleCode)) return HIDDEN;
-  if (BUSINESS_MANAGER_ROLE_CODES.includes(roleCode)) return READONLY;
   return editableFields.has(field.fieldCode) ? VISIBLE : READONLY;
 }
 
@@ -213,9 +236,16 @@ export async function seedFieldPermissions(dataSource: DataSource): Promise<void
   const roleRepo = dataSource.getRepository(Role);
   const permRepo = dataSource.getRepository(FieldPermission);
   const fieldRepo = dataSource.getRepository(FieldConfig);
+  const detailViewTemplateRepo = dataSource.getRepository(DetailViewTemplate);
 
   const allRoles = await roleRepo.find();
   const allFields = await fieldRepo.find({ order: { displayOrder: 'ASC' } });
+  const activeContractTemplate = await detailViewTemplateRepo.findOne({
+    where: { moduleCode: 'contract', isActive: true },
+    order: { createdAt: 'DESC' },
+  });
+  const configuredContractFields = new Set(getDetailViewFieldCodes(activeContractTemplate?.fieldList));
+  const contractVisibleFields = configuredContractFields.size > 0 ? configuredContractFields : CONTRACT_VISIBLE;
 
   void LEGACY_SCENARIOS_TO_DELETE;
 
@@ -250,7 +280,7 @@ export async function seedFieldPermissions(dataSource: DataSource): Promise<void
         role.id,
         field.fieldCode,
         'dispatched:contract',
-        dispatchedPermission(role.code, field, [OrderType.ONBOARDING], CONTRACT_ROLE_CODES, CONTRACT_EDITABLE, CONTRACT_VISIBLE),
+        dispatchedPermission(role.code, field, [OrderType.ONBOARDING], CONTRACT_ROLE_CODES, CONTRACT_EDITABLE, contractVisibleFields, true),
       );
       await upsertPermission(
         permRepo,

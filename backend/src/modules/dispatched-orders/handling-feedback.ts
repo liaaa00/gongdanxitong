@@ -1,8 +1,8 @@
 import { DispatchedOrderStatus } from 'src/entities';
 import { isSocialInsuranceDispatchModule } from 'src/common/constants/dispatch-modules';
 
-export const HANDLING_RESULT_COMPLETED = '已完成';
-export const HANDLING_RESULT_UNCOMPLETED = '未完成';
+export const HANDLING_RESULT_COMPLETED = '是';
+export const HANDLING_RESULT_UNCOMPLETED = '否';
 export const HANDLING_RESULT_OPTIONS = [HANDLING_RESULT_COMPLETED, HANDLING_RESULT_UNCOMPLETED] as const;
 export type HandlingResult = typeof HANDLING_RESULT_OPTIONS[number];
 
@@ -29,9 +29,9 @@ export interface HandlingFeedbackEvaluation {
 }
 
 const SOCIAL_FUND_FEEDBACK_ITEMS: readonly HandlingFeedbackItemConfig[] = [
-  { key: 'social', resultField: 'social_security_handling_result', remarkField: 'social_security_handling_remark', resultLabel: '社保办理结果', remarkLabel: '社保办理备注' },
-  { key: 'medical', resultField: 'medical_insurance_handling_result', remarkField: 'medical_insurance_handling_remark', resultLabel: '医保办理结果', remarkLabel: '医保办理备注' },
-  { key: 'fund', resultField: 'housing_fund_handling_result', remarkField: 'housing_fund_handling_remark', resultLabel: '公积金办理结果', remarkLabel: '公积金办理备注' },
+  { key: 'social', resultField: 'social_insurance_result', remarkField: 'social_insurance_remark', resultLabel: '社保是否办结', remarkLabel: '社保公积金办理备注' },
+  { key: 'medical', resultField: 'medical_insurance_result', remarkField: 'social_insurance_remark', resultLabel: '医保是否办结', remarkLabel: '社保公积金办理备注' },
+  { key: 'fund', resultField: 'housing_fund_result', remarkField: 'social_insurance_remark', resultLabel: '公积金是否办结', remarkLabel: '社保公积金办理备注' },
 ];
 
 const HANDLING_FEEDBACK_RULES: readonly HandlingFeedbackRule[] = [
@@ -43,8 +43,8 @@ const HANDLING_FEEDBACK_RULES: readonly HandlingFeedbackRule[] = [
 ];
 
 const RESULT_ALIASES: Record<HandlingResult, readonly string[]> = {
-  [HANDLING_RESULT_COMPLETED]: ['已完成', '完成', '办结', '已办结', '成功', '办理成功', 'complete', 'completed', 'done', 'success'],
-  [HANDLING_RESULT_UNCOMPLETED]: ['未完成', '未办结', '未办', '未成功', '失败', '办理失败', '待处理', '处理中', '办理中', 'pending', 'processing', 'failed', 'fail', 'unfinished', 'incomplete'],
+  [HANDLING_RESULT_COMPLETED]: ['是', '已完成', '完成', '办结', '已办结', '成功', '办理成功', 'complete', 'completed', 'done', 'success', 'yes', 'true'],
+  [HANDLING_RESULT_UNCOMPLETED]: ['否', '未完成', '未办结', '未办', '未成功', '失败', '办理失败', '待处理', '处理中', '办理中', 'pending', 'processing', 'failed', 'fail', 'unfinished', 'incomplete', 'no', 'false'],
 };
 
 export function getHandlingFeedbackRule(moduleCode: string): HandlingFeedbackRule | null {

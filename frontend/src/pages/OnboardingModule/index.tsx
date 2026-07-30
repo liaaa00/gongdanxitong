@@ -4,12 +4,13 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { PageContainer, ProTable } from '@ant-design/pro-components';
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
 import { App, Alert, Badge, Button, Checkbox, DatePicker, Form, Input, Modal, Select, Space, Tag, Tooltip } from 'antd';
-import { BellOutlined, CheckCircleOutlined, ExportOutlined, EyeOutlined, SearchOutlined, UploadOutlined } from '@ant-design/icons';
+import { BellOutlined, CheckCircleOutlined, ExportOutlined, EyeOutlined, RollbackOutlined, SearchOutlined, UploadOutlined } from '@ant-design/icons';
 import {
   batchAcceptDispatchedOrders,
   batchCompleteDispatchedOrders,
   batchCompleteSocialInsurance,
   batchExportDispatchedOrders,
+  batchReturnDispatchedOrders,
   batchUrgeDispatchedOrders,
   downloadDispatchedExport,
   getDispatchedOrders,
@@ -22,7 +23,13 @@ import { getModuleLabel, getModuleTitle } from '@/constants/modules';
 import { getStatusColor, getStatusText } from '@/constants/dictionaries';
 import { useAuth } from '@/hooks/useAuth';
 import { DISPATCHED_NINE_STATUS_OPTIONS } from '@/utils/dispatchedStatusFilter';
-import { getCachedMonthOrNull, toMonthKey, updateCachedListPageState } from '@/utils/listPageState';
+import {
+  KEEP_ALIVE_ROUTE_ACTIVATED_EVENT,
+  getCachedMonthOrNull,
+  toMonthKey,
+  updateCachedListPageState,
+  type KeepAliveRouteActivatedDetail,
+} from '@/utils/listPageState';
 
 const RefButton = forwardRef<HTMLButtonElement, React.ComponentProps<typeof Button>>((props, ref) => (
   <Button ref={ref} {...props} />
@@ -31,16 +38,95 @@ RefButton.displayName = 'RefButton';
 
 const SOCIAL_REMARK_PLACEHOLDER = '请输入办理备注';
 const HANDLING_FEEDBACK_FIELDS = [
-  { result: 'social_security_handling_result', remark: 'social_security_handling_remark', label: '社保' },
-  { result: 'medical_insurance_handling_result', remark: 'medical_insurance_handling_remark', label: '医保' },
-  { result: 'housing_fund_handling_result', remark: 'housing_fund_handling_remark', label: '公积金' },
+  { result: 'social_insurance_result', label: '社保' },
+  { result: 'medical_insurance_result', label: '医保' },
+  { result: 'housing_fund_result', label: '公积金' },
 ];
+const HANDLING_SHARED_REMARK = 'social_insurance_remark';
 const HANDLING_RESULT_OPTIONS = [
-  { label: '已完成', value: '已完成' },
-  { label: '未完成', value: '未完成' },
+  { label: '是', value: '是' },
+  { label: '否', value: '否' },
 ];
 const ACTIVE_DISPATCHED_STATUSES = new Set(['pending', 'processing']);
 const DISPATCHED_PROCESSING_FILTER_STATUSES = ['pending', 'processing'] as const;
+
+
+export interface OnboardingModulePermissionState {
+  isSocialModule: boolean;
+  hasBackendActionPermissions: boolean;
+  canOperateCurrentModule: boolean;
+  canBatchImport: boolean;
+  canBatchImportFields: boolean;
+  canBatchExport: boolean;
+  canBatchAccept: boolean;
+  canBatchComplete: boolean;
+  canBatchReturn: boolean;
+  canBatchUrge: boolean;
+  canSelectRows: boolean;
+}
+
+export function getOnboardingModuleManageAction(currentModule: string): string {
+  if (['contract', 'renewal_contract'].includes(currentModule)) return 'module.contract.manage';
+  if (currentModule === 'onboarding_contact') return 'module.onboarding_contact.manage';
+  if (currentModule === 'resignation_contact') return 'module.resignation_contact.manage';
+  if (currentModule === 'data_entry') return 'module.data_entry.manage';
+  if (currentModule === 'data_entry_resign') return 'module.data_entry_resign.manage';
+  if (currentModule === 'social_insurance') return 'module.social_insurance.manage';
+  if (['social_insurance_resign', 'resignation_social_insurance'].includes(currentModule)) return 'module.social_insurance_resign.manage';
+  return '';
+}
+
+export function getOnboardingModulePermissionState({
+  currentModule,
+  userPermissions = [],
+  hasRole,
+}: {
+  currentModule: string;
+  userPermissions?: string[];
+  hasRole: (roleCode: string) => boolean;
+}): OnboardingModulePermissionState {
+  const isSocialModule = ['social_insurance', 'social_insurance_resign', 'resignation_social_insurance'].includes(currentModule);
+  const hasActionPermission = (action: string) => (
+    userPermissions.includes('*') || userPermissions.includes('all') || userPermissions.includes(action)
+  );
+  const hasBackendActionPermissions = userPermissions.some((permission) => (
+    permission.startsWith('module.') || permission.startsWith('dispatched_order.') || permission.startsWith('route.')
+  ));
+  const moduleManageAction = getOnboardingModuleManageAction(currentModule);
+  const legacyCanOperateCurrentModule = hasRole('admin')
+    || (['contract', 'renewal_contract'].includes(currentModule) && (hasRole('labor_contract_member') || hasRole('shared_team_owner')))
+    || (['onboarding_contact', 'resignation_contact'].includes(currentModule) && (hasRole('onboarding_resignation_member') || hasRole('shared_team_owner')))
+    || (['data_entry', 'data_entry_resign'].includes(currentModule) && hasRole('data_entry_leader'))
+    || (['social_insurance', 'social_insurance_resign', 'resignation_social_insurance'].includes(currentModule) && hasRole('social_insurance_specialist'));
+  const canOperateCurrentModule = hasBackendActionPermissions && moduleManageAction
+    ? hasActionPermission(moduleManageAction)
+    : legacyCanOperateCurrentModule;
+  const canBackendOperate = canOperateCurrentModule;
+  const canBatchImport = canBackendOperate && (!hasBackendActionPermissions || hasActionPermission('dispatched_order.batch_import'));
+  const canBatchImportFields = canBackendOperate && (!hasBackendActionPermissions || hasActionPermission('dispatched_order.batch_import_fields'));
+  const canBatchExport = canBackendOperate && (!hasBackendActionPermissions || hasActionPermission('dispatched_order.batch_export'));
+  const canBatchAccept = canBackendOperate && (!hasBackendActionPermissions || hasActionPermission('dispatched_order.batch_accept'));
+  const canBatchComplete = canBackendOperate && (!hasBackendActionPermissions || hasActionPermission(isSocialModule ? 'dispatched_order.batch_feedback' : 'dispatched_order.batch_complete'));
+  const canBatchReturn = canBackendOperate;
+  const canBatchUrge = hasBackendActionPermissions
+    ? hasActionPermission('dispatched_order.batch_urge')
+    : hasRole('admin') || hasRole('business_group_member') || hasRole('business_group_leader') || hasRole('business_owner');
+  const canSelectRows = canBatchImport || canBatchExport || canBatchAccept || canBatchComplete || canBatchReturn || canBatchUrge;
+
+  return {
+    isSocialModule,
+    hasBackendActionPermissions,
+    canOperateCurrentModule,
+    canBatchImport,
+    canBatchImportFields,
+    canBatchExport,
+    canBatchAccept,
+    canBatchComplete,
+    canBatchReturn,
+    canBatchUrge,
+    canSelectRows,
+  };
+}
 
 export const DISPATCHED_STATUS_FILTER_OPTIONS: Array<{ label: string; value: string }> = [
   ...DISPATCHED_NINE_STATUS_OPTIONS,
@@ -193,13 +279,17 @@ const OnboardingModule: React.FC = () => {
   const { moduleCode } = useParams<{ moduleCode: string }>();
   const navigate = useNavigate();
   const { message } = App.useApp();
-  const { hasRole } = useAuth();
+  const { hasRole, user } = useAuth();
   const actionRef = useRef<ActionType>();
   const didMountFilterReloadRef = useRef(false);
   const [selectedRows, setSelectedRows] = useState<DispatchedOrderItem[]>([]);
   const [tableFilters, setTableFilters] = useState<ControlledFilters>({});
   const [batchOpen, setBatchOpen] = useState(false);
   const [batchLoading, setBatchLoading] = useState(false);
+  const [batchReturnOpen, setBatchReturnOpen] = useState(false);
+  const [batchReturnIds, setBatchReturnIds] = useState<string[]>([]);
+  const [batchReturnReason, setBatchReturnReason] = useState('');
+  const [batchReturnLoading, setBatchReturnLoading] = useState(false);
   const [batchForm] = Form.useForm();
   const [batchImportMode, setBatchImportMode] = useState<DispatchedBatchImportMode | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -209,6 +299,15 @@ const OnboardingModule: React.FC = () => {
   const [month, setMonth] = useState<Dayjs | null>(() => getCachedMonthOrNull(pageStateKey));
   const backendModuleCode = currentModule === 'social_insurance_resign' ? 'resignation_social_insurance' : currentModule;
   const moduleLabel = getModuleLabel(currentModule);
+
+  useEffect(() => {
+    const handleRouteActivated = (event: Event) => {
+      const detail = (event as CustomEvent<KeepAliveRouteActivatedDetail>).detail;
+      if (detail?.pathname === `/onboarding/${currentModule}`) void actionRef.current?.reload();
+    };
+    window.addEventListener(KEEP_ALIVE_ROUTE_ACTIVATED_EVENT, handleRouteActivated);
+    return () => window.removeEventListener(KEEP_ALIVE_ROUTE_ACTIVATED_EVENT, handleRouteActivated);
+  }, [currentModule]);
 
   useEffect(() => {
     setMonth(getCachedMonthOrNull(pageStateKey));
@@ -233,16 +332,21 @@ const OnboardingModule: React.FC = () => {
     ));
   }, []);
 
-  const isSocialModule = ['social_insurance', 'social_insurance_resign', 'resignation_social_insurance'].includes(currentModule);
-  const canOperateCurrentModule = hasRole('admin')
-    || (['contract', 'renewal_contract'].includes(currentModule) && (hasRole('labor_contract_member') || hasRole('shared_team_owner')))
-    || (['onboarding_contact', 'resignation_contact'].includes(currentModule) && (hasRole('onboarding_resignation_member') || hasRole('shared_team_owner')))
-    || (['data_entry', 'data_entry_resign'].includes(currentModule) && hasRole('data_entry_leader'))
-    || (['social_insurance', 'social_insurance_resign', 'resignation_social_insurance'].includes(currentModule) && hasRole('social_insurance_specialist'));
-  const canBackendOperate = canOperateCurrentModule;
-  const canBatchComplete = canBackendOperate;
-  const canBatchUrge = hasRole('admin') || hasRole('business_group_member') || hasRole('business_group_leader') || hasRole('business_owner');
-  const canSelectRows = canBackendOperate || canBatchUrge;
+  const {
+    isSocialModule,
+    canBatchImport,
+    canBatchImportFields,
+    canBatchExport,
+    canBatchAccept,
+    canBatchComplete,
+    canBatchReturn,
+    canBatchUrge,
+    canSelectRows,
+  } = getOnboardingModulePermissionState({
+    currentModule,
+    userPermissions: user?.permissions || [],
+    hasRole,
+  });
 
   const columns: ProColumns<DispatchedOrderItem>[] = useMemo(() => [
     {
@@ -282,6 +386,14 @@ const OnboardingModule: React.FC = () => {
     { title: '客户名称', dataIndex: 'customer_name', key: 'customer_name', width: 190, search: { transform: (value) => ({ customerName: value }) }, filteredValue: tableFilters.customer_name || null, ...textHeaderFilter('输入客户名称') },
     { title: '员工姓名', dataIndex: 'employee_name', key: 'employee_name', width: 120, search: { transform: (value) => ({ employeeName: value }) }, filteredValue: tableFilters.employee_name || null, ...textHeaderFilter('输入员工姓名') },
     { title: '证件号', dataIndex: 'employee_id_card', key: 'employee_id_card', width: 190, search: { transform: (value) => ({ idCardNo: value }) }, filteredValue: tableFilters.employee_id_card || null, ...textHeaderFilter('输入证件号') },
+    ...(currentModule === 'social_insurance' ? [
+      { title: '参保地', key: 'social_location', width: 130, hideInSearch: true, renderText: (_: unknown, record: DispatchedOrderItem) => String(record.extra_data?.social_location || '-') },
+      { title: '起始月', key: 'start_month', width: 100, hideInSearch: true, renderText: (_: unknown, record: DispatchedOrderItem) => String(record.extra_data?.start_month || '-') },
+    ] : []),
+    ...(['social_insurance_resign', 'resignation_social_insurance'].includes(currentModule) ? [
+      { title: '缴纳地区', key: 'social_pay_region', width: 130, hideInSearch: true, renderText: (_: unknown, record: DispatchedOrderItem) => String(record.extra_data?.social_pay_region || '-') },
+      { title: '停保月', key: 'social_stop_month', width: 100, hideInSearch: true, renderText: (_: unknown, record: DispatchedOrderItem) => String(record.extra_data?.social_stop_month || '-') },
+    ] : []),
     { title: '发起人', dataIndex: 'created_by_name', key: 'created_by_name', width: 120, hideInSearch: true, filteredValue: tableFilters.created_by_name || null, ...textHeaderFilter('输入发起人'), renderText: (value, record) => value || record.created_by || '-' },
     {
       title: '状态',
@@ -313,7 +425,7 @@ const OnboardingModule: React.FC = () => {
       search: { transform: (value) => ({ completedFrom: value?.[0], completedTo: value?.[1] }) },
     },
     
-  ], [navigate, tableFilters]);
+  ], [currentModule, navigate, tableFilters]);
 
   const requestFn = useCallback(async (params: PageParams, _sort: Record<string, unknown>, filters: TableFilters = {}) => {
     const headerFilters = buildEffectiveHeaderFilterParams(filters, tableFilters);
@@ -363,6 +475,34 @@ const OnboardingModule: React.FC = () => {
       actionRef.current?.reload();
     } catch {
       message.error('批量催办失败');
+    }
+  };
+
+  const handleBatchReturn = async () => {
+    const reason = batchReturnReason.trim();
+    if (reason.length < 2) {
+      message.warning('批量退回原因至少填写 2 个字符');
+      return;
+    }
+    if (batchReturnIds.length === 0) {
+      message.warning('请选择当前模块可退回的子工单');
+      return;
+    }
+    setBatchReturnLoading(true);
+    try {
+      const result = await batchReturnDispatchedOrders(batchReturnIds, reason);
+      const skipped = result.skipped?.length ?? 0;
+      if (skipped > 0) message.warning(`已退回 ${result.returned} 条，${skipped} 条跳过或失败`);
+      else message.success(`已批量退回 ${result.returned} 条子工单`);
+      setBatchReturnOpen(false);
+      setBatchReturnReason('');
+      setBatchReturnIds([]);
+      setSelectedRows([]);
+      actionRef.current?.reload();
+    } catch {
+      message.error('批量退回失败');
+    } finally {
+      setBatchReturnLoading(false);
     }
   };
 
@@ -418,10 +558,10 @@ const OnboardingModule: React.FC = () => {
       if (isSocialModule) {
         const extraData = HANDLING_FEEDBACK_FIELDS.reduce<Record<string, unknown>>((acc, item) => {
           acc[item.result] = values[item.result];
-          const remark = String(values[item.remark] || '').trim();
-          if (remark) acc[item.remark] = remark;
           return acc;
-        }, {});
+        }, {} as Record<string, unknown>);
+        const remark = String(values[HANDLING_SHARED_REMARK] || '').trim();
+        if (remark) extraData[HANDLING_SHARED_REMARK] = remark;
         const result = await batchCompleteSocialInsurance(ids, '', extraData);
         const skipped = result.skipped?.length ?? result.failed?.length ?? 0;
         const processed = result.processed ?? result.completed;
@@ -482,19 +622,19 @@ const OnboardingModule: React.FC = () => {
         search={false}
         headerTitle={`${moduleLabel}列表`}
         options={false}
-        toolBarRender={() => canBackendOperate ? [
-          <Button key="import-status" icon={<UploadOutlined />} onClick={() => setBatchImportMode('status')}>
+        toolBarRender={() => [
+          canBatchImport && <Button key="import-status" icon={<UploadOutlined />} onClick={() => setBatchImportMode('status')}>
             导入办理结果
           </Button>,
-          ...(currentModule === 'onboarding_contact' ? [
+          ...(canBatchImportFields && currentModule === 'onboarding_contact' ? [
             <Button key="import-fields" icon={<UploadOutlined />} onClick={() => setBatchImportMode('fields')}>
               导入银行卡修改
             </Button>,
           ] : []),
-          <Button key="export" icon={<ExportOutlined />} loading={exporting} disabled={selectedRows.length === 0} onClick={() => handleBatchExport()}>
+          canBatchExport && <Button key="export" icon={<ExportOutlined />} loading={exporting} disabled={selectedRows.length === 0} onClick={() => handleBatchExport()}>
             按固定模板导出
           </Button>,
-          <Button
+          canBatchAccept && <Button
             key="batch-accept"
             icon={<CheckCircleOutlined />}
             disabled={selectedRows.filter((row) => row.module_code === backendModuleCode).length === 0}
@@ -502,7 +642,22 @@ const OnboardingModule: React.FC = () => {
           >
             批量接单
           </Button>,
-          <Button
+          canBatchReturn && <Button
+            key="batch-return"
+            danger
+            icon={<RollbackOutlined />}
+            disabled={selectedRows.filter((row) => row.module_code === backendModuleCode && ACTIVE_DISPATCHED_STATUSES.has(row.status)).length === 0}
+            onClick={() => {
+              setBatchReturnIds(selectedRows
+                .filter((row) => row.module_code === backendModuleCode && ACTIVE_DISPATCHED_STATUSES.has(row.status))
+                .map((row) => row.id));
+              setBatchReturnReason('');
+              setBatchReturnOpen(true);
+            }}
+          >
+            批量退回
+          </Button>,
+          canBatchComplete && <Button
             key="batch"
             type="primary"
             icon={<CheckCircleOutlined />}
@@ -511,14 +666,17 @@ const OnboardingModule: React.FC = () => {
           >
             {isSocialModule ? '批量反馈办理结果' : '批量完成'}
           </Button>,
-        ] : []}
+        ].filter(Boolean) as React.ReactNode[]}
         rowSelection={canSelectRows ? {
           selectedRowKeys: selectedRows.map((row) => row.id),
           onChange: (_keys, rows) => setSelectedRows(rows),
           preserveSelectedRowKeys: true,
           getCheckboxProps: (record) => ({
             disabled: !(
-              canBackendOperate
+              canBatchExport
+              || canBatchAccept
+              || canBatchComplete
+              || (canBatchReturn && ACTIVE_DISPATCHED_STATUSES.has(record.status))
               || (canBatchUrge && ACTIVE_DISPATCHED_STATUSES.has(record.status))
             ),
           }),
@@ -526,19 +684,20 @@ const OnboardingModule: React.FC = () => {
         tableAlertRender={canSelectRows ? ({ selectedRowKeys, selectedRows: alertSelectedRows, onCleanSelected }) => {
           const selected = alertSelectedRows as DispatchedOrderItem[];
           const activeRows = selected.filter((row) => ACTIVE_DISPATCHED_STATUSES.has(row.status));
-          const acceptable = canBackendOperate ? selected.filter((row) => row.module_code === backendModuleCode) : [];
+          const acceptable = canBatchAccept ? selected.filter((row) => row.module_code === backendModuleCode) : [];
           const completable = canBatchComplete ? activeRows : [];
+          const returnable = canBatchReturn ? activeRows.filter((row) => row.module_code === backendModuleCode) : [];
           const urgeable = canBatchUrge ? activeRows : [];
           return (
             <Space wrap>
               <span>已选 {selectedRowKeys.length} 项</span>
               <Button size="small" onClick={() => { onCleanSelected(); setSelectedRows([]); }}>取消</Button>
-              {canBackendOperate && (
+              {canBatchExport && (
                 <Button size="small" icon={<ExportOutlined />} loading={exporting} disabled={selected.length === 0} onClick={() => handleBatchExport(selected)}>
                   按固定模板导出{selected.length > 0 ? `（${selected.length}）` : ''}
                 </Button>
               )}
-              {canBackendOperate && (
+              {canBatchAccept && (
                 <Button
                   size="small"
                   icon={<CheckCircleOutlined />}
@@ -549,6 +708,21 @@ const OnboardingModule: React.FC = () => {
                   }}
                 >
                   批量接单{acceptable.length > 0 ? `（${acceptable.length}）` : ''}
+                </Button>
+              )}
+              {canBatchReturn && (
+                <Button
+                  size="small"
+                  danger
+                  icon={<RollbackOutlined />}
+                  disabled={returnable.length === 0}
+                  onClick={() => {
+                    setBatchReturnIds(returnable.map((row) => row.id));
+                    setBatchReturnReason('');
+                    setBatchReturnOpen(true);
+                  }}
+                >
+                  批量退回{returnable.length > 0 ? `（${returnable.length}）` : ''}
                 </Button>
               )}
               {canBatchComplete && (
@@ -588,6 +762,35 @@ const OnboardingModule: React.FC = () => {
       />
 
       <Modal
+        title={`批量退回${moduleLabel}子工单`}
+        open={batchReturnOpen}
+        confirmLoading={batchReturnLoading}
+        onOk={handleBatchReturn}
+        onCancel={() => {
+          setBatchReturnOpen(false);
+          setBatchReturnReason('');
+          setBatchReturnIds([]);
+        }}
+        okButtonProps={{ danger: true }}
+        okText="确认退回"
+        width={520}
+        destroyOnHidden
+      >
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <span>批量退回原因（必填）：</span>
+          <Input.TextArea
+            rows={4}
+            value={batchReturnReason}
+            onChange={(event) => setBatchReturnReason(event.target.value)}
+            placeholder="请输入退回原因"
+            minLength={2}
+            maxLength={512}
+            showCount
+          />
+        </Space>
+      </Modal>
+
+      <Modal
         title={isSocialModule ? `批量反馈${moduleLabel}办理结果` : `批量完成${moduleLabel}子工单`}
         open={batchOpen}
         onOk={handleBatchOk}
@@ -605,23 +808,22 @@ const OnboardingModule: React.FC = () => {
                 showIcon
                 style={{ marginBottom: 12 }}
                 message="请选择本次批量反馈的三项办理结果"
-                description="三项均为“已完成”时子工单自动完成；任一项为“未完成”时保持处理中，备注可不填。"
+                description="三项均为&quot;是&quot;时子工单自动完成；任一项为&quot;否&quot;时保持处理中，备注可不填。"
               />
               {HANDLING_FEEDBACK_FIELDS.map((item) => (
-                <Space key={item.result} direction="vertical" style={{ width: '100%', marginBottom: 12 }}>
-                  <Form.Item
-                    name={item.result}
-                    label={`${item.label}办理结果`}
-                    rules={[{ required: true, message: `请选择${item.label}办理结果` }]}
-                    style={{ marginBottom: 8 }}
-                  >
-                    <Select options={HANDLING_RESULT_OPTIONS} />
-                  </Form.Item>
-                  <Form.Item name={item.remark} label={`${item.label}办理备注（选填）`}>
-                    <Input.TextArea rows={2} maxLength={500} showCount placeholder={`可填写${item.label}未完成原因或补充说明`} />
-                  </Form.Item>
-                </Space>
+                <Form.Item
+                  key={item.result}
+                  name={item.result}
+                  label={`${item.label}是否办结`}
+                  rules={[{ required: true, message: `请选择${item.label}是否办结` }]}
+                  style={{ marginBottom: 8 }}
+                >
+                  <Select options={HANDLING_RESULT_OPTIONS} />
+                </Form.Item>
               ))}
+              <Form.Item name={HANDLING_SHARED_REMARK} label="社保公积金办理备注（选填）" style={{ marginTop: 8 }}>
+                <Input.TextArea rows={2} maxLength={500} showCount placeholder="可填写未完成原因或补充说明" />
+              </Form.Item>
             </>
           ) : (
             <Form.Item

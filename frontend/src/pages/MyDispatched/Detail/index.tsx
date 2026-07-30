@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { PageContainer } from '@ant-design/pro-components';
 import {
   Card, Descriptions, Tag, Button, Space, App, Modal, Input, Select,
-  Empty, Alert, Form, Checkbox, Timeline, Badge, Tooltip,
+  Empty, Alert, Form, Checkbox, Timeline, Badge, Tooltip, Collapse,
 } from 'antd';
 import {
   CheckCircleOutlined, RollbackOutlined, PlusCircleOutlined,
@@ -12,33 +12,36 @@ import {
 } from '@ant-design/icons';
 import DynamicForm from '@/components/DynamicForm';
 import type { FieldConfig } from '@/components/DynamicForm';
+import MaterialsUpload from '@/components/MaterialsUpload';
 import { useFieldPermissions } from '@/hooks/useFieldPermissions';
 import { useDispatchedActions } from '@/hooks/useDispatchedActions';
 import {
   getDispatchedOrder,
+  getDispatchedOrderTimeline,
   confirmDispatchedDirtyRead,
   returnCompletedDispatchedOrder,
 } from '@/services/dispatchedOrders';
-import type { DirtyFieldMark, DispatchedOrderItem } from '@/services/dispatchedOrders';
+import type { DirtyFieldMark, DispatchedOrderItem, DispatchedOrderTimelineItem } from '@/services/dispatchedOrders';
 import { getFallbackFields, getFields } from '@/services/fields';
 import { getSupplementLogs } from '@/services/supplementLogs';
 import type { SupplementLogItem } from '@/services/supplementLogs';
 import { getActiveDetailViewTemplate } from '@/services/detailViewTemplates';
-import { getExportTemplates } from '@/services/exportTemplates';
 import { getModuleColor, getModuleLabel, isSocialInsuranceModule } from '@/constants/modules';
+import { canAccessPath } from '@/config/routeVisibility';
 import { getStatusColor, getStatusText } from '@/constants/dictionaries';
 import { useAuth } from '@/hooks/useAuth';
 import { getUsersByTeam } from '@/services/users';
 import type { UserItem } from '@/services/users';
 
 const HANDLING_FEEDBACK_FIELDS = [
-  { result: 'social_security_handling_result', remark: 'social_security_handling_remark', label: '社保' },
-  { result: 'medical_insurance_handling_result', remark: 'medical_insurance_handling_remark', label: '医保' },
-  { result: 'housing_fund_handling_result', remark: 'housing_fund_handling_remark', label: '公积金' },
+  { result: 'social_insurance_result', label: '社保' },
+  { result: 'medical_insurance_result', label: '医保' },
+  { result: 'housing_fund_result', label: '公积金' },
 ];
+const HANDLING_SHARED_REMARK = 'social_insurance_remark';
 const HANDLING_RESULT_OPTIONS = [
-  { label: '已完成', value: '已完成' },
-  { label: '未完成', value: '未完成' },
+  { label: '是', value: '是' },
+  { label: '否', value: '否' },
 ];
 
 const FIELD_GROUPS: Array<{ title: string; codes: string[] }> = [
@@ -56,7 +59,7 @@ const FIELD_GROUPS: Array<{ title: string; codes: string[] }> = [
   },
   {
     title: '社保公积金',
-    codes: ['social_location', 'start_month', 'social_base', 'fund_base', 'fund_ratio', 'social_insurance_feedback', ...HANDLING_FEEDBACK_FIELDS.flatMap((item) => [item.result, item.remark])],
+    codes: ['social_location', 'start_month', 'social_base', 'fund_base', 'fund_ratio', 'social_insurance_feedback', ...HANDLING_FEEDBACK_FIELDS.map((item) => item.result), HANDLING_SHARED_REMARK],
   },
   {
     title: '银行与备注',
@@ -92,11 +95,32 @@ const isAllowedSupplementOperator = (currentUser?: { username?: string; real_nam
 };
 
 const hasText = (value: unknown) => String(value || '').trim().length > 0;
+const formatDetailValue = (value: unknown): string => {
+  if (value === null || value === undefined || value === '') return '-';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+};
 
 const getTeamCode = (order?: DispatchedOrderItem | null) => order?.team_code || order?.module_code || 'shared_team';
 
-function getDispatchedListPath(order?: DispatchedOrderItem | null) {
-  return order?.module_code ? `/onboarding/${order.module_code}` : '/my-dispatched';
+// 部分子工单 module_code 存在别名（如 resignation_social_insurance 与 social_insurance_resign
+// 同义），但 routeVisibility 只为其中一个登记了合法列表路由。返回列表前必须把别名归一到有
+// 权限条目的规范 code，并校验当前角色确实可访问，否则回退安全列表，避免落到无权限页(403)。
+const DISPATCHED_MODULE_ROUTE_ALIASES: Record<string, string> = {
+  resignation_social_insurance: 'social_insurance_resign',
+};
+
+function getDispatchedListPath(
+  order: DispatchedOrderItem | null | undefined,
+  userRoles?: { code?: string }[],
+  permissions?: string[],
+) {
+  const rawCode = String(order?.module_code || '');
+  const canonicalCode = DISPATCHED_MODULE_ROUTE_ALIASES[rawCode] || rawCode;
+  const candidate = canonicalCode ? `/onboarding/${canonicalCode}` : '';
+  if (candidate && canAccessPath(candidate, userRoles, permissions)) return candidate;
+  if (canAccessPath('/my-dispatched', userRoles, permissions)) return '/my-dispatched';
+  return '/dashboard';
 }
 
 function getOperatorDisplay(order: DispatchedOrderItem) {
@@ -108,77 +132,6 @@ function getOperatorDisplay(order: DispatchedOrderItem) {
 
 const withRequiredLabel = (field: FieldConfig): FieldConfig => field;
 const GROUPED_FIELD_CODES = new Set(FIELD_GROUPS.flatMap((group) => group.codes));
-
-const CONTRACT_EXPORT_TEMPLATE_PLATFORMS = new Set(['速创', 'E签宝']);
-const CONTRACT_DETAIL_REQUIRED_FIELD_CODES = ['gender', 'birth_date', 'age', 'probation_end_date', 'contract_template', 'contract_subject'];
-
-const mergeFieldCodes = (...groups: Array<string[] | undefined>) => Array.from(new Set(groups.flatMap((group) => group || []).filter(Boolean)));
-
-type ContractTemplateDetailField = FieldConfig & { template_const_value?: unknown };
-
-const readTemplateText = (value: unknown): string | undefined => {
-  if (Array.isArray(value)) return value.map((item) => String(item ?? '').trim()).find(Boolean);
-  const text = String(value ?? '').trim();
-  return text || undefined;
-};
-
-const getTemplateFieldCode = (field: any): string | undefined => readTemplateText(field?.fieldCode ?? field?.field_code ?? field?.code ?? field?.sameAs);
-
-const getTemplateFieldTitle = (field: any, code: string, index: number): string => (
-  readTemplateText(field?.alias)
-  ?? readTemplateText(field?.title)
-  ?? readTemplateText(field?.header)
-  ?? code
-  ?? `模板字段${index + 1}`
-);
-
-const buildContractTemplateFields = (templates: Array<{ field_list?: unknown; fieldList?: unknown }>, systemFields: FieldConfig[]): ContractTemplateDetailField[] => {
-  const systemFieldMap = new Map(systemFields.map((field) => [field.field_code, field]));
-  const usedKeys = new Set<string>();
-  const result: ContractTemplateDetailField[] = [];
-
-  templates.forEach((template) => {
-    const list = (template as any)?.fieldList ?? (template as any)?.field_list ?? [];
-    if (!Array.isArray(list)) return;
-    list.forEach((rawField: any, index: number) => {
-      const code = getTemplateFieldCode(rawField) || `__contract_template_column_${result.length + 1}`;
-      const title = getTemplateFieldTitle(rawField, code, index);
-      const key = getTemplateFieldCode(rawField) ? code : `${code}:${title}`;
-      if (usedKeys.has(key)) return;
-      usedKeys.add(key);
-
-      const systemField = systemFieldMap.get(code);
-      result.push({
-        ...(systemField || {
-          field_code: code,
-          field_name: title,
-          field_type: 'text',
-          is_required: false,
-          default_required: false,
-          display_order: result.length + 1,
-          is_active: true,
-          collection_group: '导出模板字段',
-        }),
-        field_name: systemField?.field_name || title,
-        display_order: result.length + 1,
-        template_const_value: Object.prototype.hasOwnProperty.call(rawField || {}, 'const') ? rawField.const : undefined,
-      });
-    });
-  });
-
-  CONTRACT_DETAIL_REQUIRED_FIELD_CODES.forEach((code) => {
-    if (usedKeys.has(code)) return;
-    const systemField = systemFieldMap.get(code);
-    if (!systemField) return;
-    usedKeys.add(code);
-    result.push({
-      ...systemField,
-      display_order: result.length + 1,
-    });
-  });
-
-  return result;
-};
 
 const filterByVisibleFields = (allFields: FieldConfig[], visibleFields?: string[]) => {
   const visibleSet = new Set((visibleFields || []).filter(Boolean));
@@ -225,6 +178,8 @@ const MyDispatchedDetail: React.FC = () => {
 
   const [creatorEditOpen, setCreatorEditOpen] = useState(false);
   const [creatorEditForm] = Form.useForm<Record<string, unknown>>();
+  const creatorEditNeedContact = Form.useWatch('need_onboarding_contact', creatorEditForm);
+  const creatorEditProbationStart = Form.useWatch('probation_start_date', creatorEditForm);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [withdrawForm] = Form.useForm<{ reason: string }>();
   const [voidOpen, setVoidOpen] = useState(false);
@@ -233,6 +188,13 @@ const MyDispatchedDetail: React.FC = () => {
   const [approvalType, setApprovalType] = useState<'modify' | 'withdraw' | 'void'>('withdraw');
   const [approvalApproved, setApprovalApproved] = useState(true);
   const [approvalForm] = Form.useForm<{ comment: string }>();
+  const [resubmitOpen, setResubmitOpen] = useState(false);
+  const [resubmitForm] = Form.useForm<{ reason?: string }>();
+  const [timelineItems, setTimelineItems] = useState<DispatchedOrderTimelineItem[]>([]);
+  const [timelineTotal, setTimelineTotal] = useState(0);
+  const [timelineLoading, setTimelineLoading] = useState(false);
+  const [timelineLoaded, setTimelineLoaded] = useState(false);
+  const [timelineError, setTimelineError] = useState(false);
 
   const effectiveOrderId = order?.id || id || '';
 
@@ -251,20 +213,19 @@ const MyDispatchedDetail: React.FC = () => {
       const moduleCode = orderData.module_code;
 
       // 加载字段配置
-      const fieldList = hasRole('admin') ? await getFields(orderType) : getFallbackFields(orderType);
+      const fallbackFields = getFallbackFields(orderType);
+      let backendFields: FieldConfig[] = [];
+      try {
+        backendFields = await getFields(orderType);
+      } catch {
+        backendFields = [];
+      }
+      const fieldList = backendFields.length > 0 ? backendFields : fallbackFields;
 
-      // 加载详情页模板（普通子工单有配置则用配置的字段列表）。劳动合同新签特殊：动态读取速创/E签宝两套导出模板字段合集。
       let visibleFieldCodes: string[] | undefined;
-      let contractTemplateFields: ContractTemplateDetailField[] | undefined;
-      if (moduleCode === 'contract') {
-        const templates = await getExportTemplates('contract');
-        const contractTemplates = templates.filter((template) => CONTRACT_EXPORT_TEMPLATE_PLATFORMS.has(String(template.sign_platform || '').trim()));
-        const fieldsFromTemplates = buildContractTemplateFields(contractTemplates, fieldList as FieldConfig[]);
-        contractTemplateFields = fieldsFromTemplates.length > 0 ? fieldsFromTemplates : undefined;
-      } else if (moduleCode) {
+      if (moduleCode) {
         try {
           const template = await getActiveDetailViewTemplate(moduleCode);
-          // template 已经是解包后的数据（通过 request 拦截器处理）
           if (template && typeof template === 'object') {
             const list = (template as any).fieldList ?? (template as any).field_list ?? [];
             visibleFieldCodes = list
@@ -272,7 +233,7 @@ const MyDispatchedDetail: React.FC = () => {
               .filter(Boolean) as string[];
           }
         } catch {
-          // 无配置或加载失败，回退到默认字段范围。
+          // 无配置或加载失败，回退到子工单字段范围。
         }
       }
 
@@ -280,11 +241,8 @@ const MyDispatchedDetail: React.FC = () => {
       setSupplementLogs(logs);
       setDirtyCleared(false);
 
-      // 如果有模板配置，按模板字段顺序过滤；劳动合同新签严格按速创/E签宝导出模板字段显示（含自定义列）。
-      if (contractTemplateFields && contractTemplateFields.length > 0) {
-        setFields(contractTemplateFields);
-        setDetailTemplateApplied(true);
-      } else if (visibleFieldCodes && visibleFieldCodes.length > 0) {
+      // 如果有模板配置，按模板字段顺序过滤。
+      if (visibleFieldCodes && visibleFieldCodes.length > 0) {
         const fieldMap = new Map(fieldList.map(f => [f.field_code, f]));
         const orderedFields: FieldConfig[] = [];
         visibleFieldCodes.forEach(code => {
@@ -302,7 +260,7 @@ const MyDispatchedDetail: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [hasRole, id, message]);
+  }, [id, message]);
 
   useEffect(() => { loadDetail(); }, [loadDetail]);
 
@@ -347,6 +305,20 @@ const MyDispatchedDetail: React.FC = () => {
       allowed.has(field.field_code) ? (permissions[field.field_code] || 'visible') : 'hidden',
     ])) as Record<string, 'visible' | 'hidden' | 'readonly' | 'masked'>;
   }, [fields, permissions, visibleFields]);
+
+  const pendingModify = order?.pending_modify || order?.pendingModify;
+  const pendingModifyRows = Object.entries(pendingModify?.fields || {}).flatMap(([fieldCode, newValue]) => {
+    const field = visibleDetailFields.find((item) => item.field_code === fieldCode);
+    const permission = visibleFieldPermissions[fieldCode] || 'visible';
+    if (!field || permission === 'hidden') return [];
+    const masked = permission === 'masked';
+    return [{
+      fieldCode,
+      fieldName: field.field_name,
+      oldValue: masked ? '******' : formatDetailValue(order?.extra_data?.[fieldCode]),
+      newValue: masked ? '******' : formatDetailValue(newValue),
+    }];
+  });
 
   const supplementableFields = useMemo(() => {
     if (!order?.supplementable_fields || !fields) return [];
@@ -398,23 +370,33 @@ const MyDispatchedDetail: React.FC = () => {
   const isApprovalStatus = Boolean(order && ['modify_pending', 'withdraw_pending', 'void_pending'].includes(order.status));
   const isTerminalStatus = Boolean(order && ['completed', 'modify_pending', 'withdraw_pending', 'void_pending', 'void'].includes(order.status));
   const isTerminal = isVoided || (isTerminalStatus && !isRepairableStatus);
-  const canCreatorOperate = Boolean(order && isCreator && !isReadOnlyView && (!isTerminalStatus || isRepairableStatus));
-  const canCreatorUpdate = canCreatorOperate && !isApprovalStatus && !isVoided && order?.status !== 'completed';
+  const canCreatorOperate = Boolean(order && isCreator && !isReadOnlyView && (!isTerminalStatus || isRepairableStatus || order.status === 'completed'));
+  const canCreatorUpdate = canCreatorOperate && !isApprovalStatus && !isVoided;
   const canCreatorResubmit = canCreatorOperate && isResubmittableStatus;
-  const canCreatorUrge = canCreatorOperate && !isResubmittableStatus && !isApprovalStatus;
-  const canShowCreatorWithdraw = canCreatorOperate && !isApprovalStatus && !isResubmittableStatus && !isVoided && order?.status !== 'completed';
-  const canShowCreatorVoid = canCreatorOperate && !isApprovalStatus && !isVoided && order?.status !== 'completed';
+  const canCreatorUrge = canCreatorOperate && !isResubmittableStatus && !isApprovalStatus && order?.status !== 'completed';
+  const canShowCreatorWithdraw = canCreatorOperate && !isApprovalStatus && !isResubmittableStatus && !isVoided;
+  const canShowCreatorVoid = canCreatorOperate && !isApprovalStatus && !isVoided;
   const canCreatorWithdraw = canShowCreatorWithdraw;
   const canCreatorVoid = canShowCreatorVoid;
   const canApproveModify = canBackendOperate && order?.status === 'modify_pending' && (isAdminUser || !isOrderCreator);
   const canApproveWithdraw = canBackendOperate && order?.status === 'withdraw_pending' && (isAdminUser || !isOrderCreator);
   const canApproveVoid = canBackendOperate && order?.status === 'void_pending' && (isAdminUser || !isOrderCreator);
   const canReturnCompleted = canBackendOperate && !isVoided && order?.status === 'completed' && (
+    order?.handler_id === user?.id ||
     order?.action_permissions?.return_completed === true ||
     order?.is_module_supervisor === true ||
     hasRole('admin')
   );
   const readOnlyBackPath = isTeamReadOnlyView ? '/my-work/team' : order?.status === 'completed' ? '/my-work/done' : '/my-work/pending';
+  const creatorEditSource = (order?.extra_data ?? {}) as Record<string, unknown>;
+  const effectiveNeedContact = creatorEditNeedContact ?? creatorEditSource.need_onboarding_contact;
+  const effectiveProbationStart = creatorEditProbationStart ?? creatorEditSource.probation_start_date;
+  const probationDependentFields = new Set(['probation_months', 'probation_end_date', 'probation_salary']);
+  const isCreatorEditFieldRequired = (fieldCode: string, staticRequired?: boolean) => (
+    Boolean(staticRequired)
+    || (fieldCode === 'current_address' && effectiveNeedContact === '否')
+    || (probationDependentFields.has(fieldCode) && hasText(effectiveProbationStart))
+  );
 
   const fillCreatorEditForm = () => {
     if (!order) return;
@@ -437,6 +419,29 @@ const MyDispatchedDetail: React.FC = () => {
   const refreshLogs = () => {
     if (id) getSupplementLogs(id).then(setSupplementLogs);
   };
+
+  const loadTimeline = useCallback(async (page = 1, append = false) => {
+    if (!id || timelineLoading) return;
+    setTimelineLoading(true);
+    setTimelineError(false);
+    try {
+      const result = await getDispatchedOrderTimeline(id, { page, pageSize: 50 });
+      setTimelineItems((previous) => append ? [...previous, ...result.items] : result.items);
+      setTimelineTotal(result.total);
+      setTimelineLoaded(true);
+    } catch {
+      setTimelineError(true);
+    } finally {
+      setTimelineLoading(false);
+    }
+  }, [id, timelineLoading]);
+
+  const handleTimelineChange = (keys: string[]) => {
+    const open = keys.includes('processing-log');
+    if (open && !timelineLoaded) void loadTimeline();
+  };
+
+  const formatTimelineValue = formatDetailValue;
 
   if (loading) return <PageContainer loading />;
   if (!order) return <PageContainer header={{ title: '子工单详情' }}><Empty description="子工单不存在" /></PageContainer>;
@@ -494,13 +499,19 @@ const MyDispatchedDetail: React.FC = () => {
   };
 
   const handleCreatorResubmitClick = () => {
-    modal.confirm({
-      title: '确认重新提交该子工单？',
+    resubmitForm.resetFields();
+    setResubmitOpen(true);
+  };
 
-      okText: '重新提交',
-      cancelText: '取消',
-      onOk: () => handleResubmit(),
-    });
+  const handleCreatorResubmitOk = async () => {
+    const values = await resubmitForm.validateFields();
+    const reason = String(values.reason || '').trim() || undefined;
+    const updated = await handleResubmit(reason);
+    if (updated) {
+      setResubmitOpen(false);
+      resubmitForm.resetFields();
+      if (timelineLoaded) void loadTimeline(1);
+    }
   };
 
   const openApproval = (type: 'modify' | 'withdraw' | 'void', approved: boolean) => {
@@ -552,10 +563,8 @@ const MyDispatchedDetail: React.FC = () => {
     const values = await completeForm.validateFields();
     const payload: Record<string, unknown> = { ...values };
     if (isSocialInsuranceOrder) {
-      for (const item of HANDLING_FEEDBACK_FIELDS) {
-        if (payload[item.remark] !== undefined && payload[item.remark] !== null) {
-          payload[item.remark] = String(payload[item.remark]).trim();
-        }
+      if (payload[HANDLING_SHARED_REMARK] !== undefined && payload[HANDLING_SHARED_REMARK] !== null) {
+        payload[HANDLING_SHARED_REMARK] = String(payload[HANDLING_SHARED_REMARK]).trim();
       }
       const remarkSummary = HANDLING_FEEDBACK_FIELDS
         .map((item) => `${item.label}:${String(payload[item.result] || '').trim() || '未填'}`)
@@ -609,7 +618,7 @@ const MyDispatchedDetail: React.FC = () => {
   return (
     <PageContainer header={{
       title: '子工单详情',
-      extra: [<Button key="back" onClick={() => navigate(isReadOnlyView ? readOnlyBackPath : getDispatchedListPath(order))}>返回列表</Button>],
+      extra: [<Button key="back" onClick={() => navigate(isReadOnlyView ? readOnlyBackPath : getDispatchedListPath(order, user?.roles, user?.permissions))}>返回列表</Button>],
       ghost: false,
     }}>
       <Space direction="vertical" size="large" style={{ width: '100%' }}>
@@ -667,12 +676,16 @@ const MyDispatchedDetail: React.FC = () => {
                 </Space>
               </Descriptions.Item>
             )}
-            {(order.pending_modify || order.pendingModify) && (
+            {pendingModify && (
               <Descriptions.Item label="待审批修改" span={3}>
-                <Space wrap>
-                  {Object.keys((order.pending_modify || order.pendingModify)?.fields || {}).map((fieldCode) => (
-                    <Tag color="gold" key={fieldCode}>{fields.find((ff) => ff.field_code === fieldCode)?.field_name || fieldCode}</Tag>
-                  ))}
+                <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                  {pendingModify.reason && <span>修改原因：{pendingModify.reason}</span>}
+                  {pendingModifyRows.length > 0 ? pendingModifyRows.map((item) => (
+                    <Space key={item.fieldCode} wrap>
+                      <Tag color="gold">{item.fieldName}</Tag>
+                      <span>{item.oldValue} → {item.newValue}</span>
+                    </Space>
+                  )) : <span style={{ color: '#999' }}>暂无可见修改字段</span>}
                 </Space>
               </Descriptions.Item>
             )}
@@ -739,6 +752,60 @@ const MyDispatchedDetail: React.FC = () => {
           </Space>
         </Card>
 
+        <Collapse
+          defaultActiveKey={[]}
+          onChange={handleTimelineChange}
+          items={[{
+            key: 'processing-log',
+            label: <Space><HistoryOutlined />工单处理日志{timelineTotal > 0 ? `（${timelineTotal}）` : ''}</Space>,
+            children: timelineError ? (
+              <Alert
+                type="error"
+                showIcon
+                message="处理日志加载失败"
+                action={<Button size="small" onClick={() => void loadTimeline(1)}>重试</Button>}
+              />
+            ) : timelineLoading && timelineItems.length === 0 ? (
+              <div style={{ color: '#999' }}>正在加载处理日志...</div>
+            ) : timelineItems.length === 0 ? (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无处理日志" />
+            ) : (
+              <>
+                <Timeline
+                  items={timelineItems.map((item) => ({
+                    color: item.actionType.includes('return') ? 'orange' : item.actionType.includes('resubmit') ? 'green' : 'blue',
+                    children: (
+                      <div>
+                        <div>
+                          <strong>{item.actionLabel}</strong>
+                          <span style={{ marginLeft: 8, color: '#666' }}>{item.operatorName}</span>
+                        </div>
+                        <div style={{ fontSize: 12, color: '#999', marginTop: 2 }}>{new Date(item.createdAt).toLocaleString('zh-CN')}</div>
+                        {item.reason && <div style={{ marginTop: 4, color: '#595959' }}>说明：{item.reason}</div>}
+                        {item.changes.length > 0 && (
+                          <Space direction="vertical" size={2} style={{ marginTop: 4 }}>
+                            {item.changes.map((change) => (
+                              <div key={change.fieldCode} style={{ fontSize: 12, color: '#595959' }}>
+                                {change.fieldLabel || fields.find((field) => field.field_code === change.fieldCode)?.field_name || change.fieldCode}：
+                                {formatTimelineValue(change.oldValue)} → {formatTimelineValue(change.newValue)}
+                              </div>
+                            ))}
+                          </Space>
+                        )}
+                      </div>
+                    ),
+                  }))}
+                />
+                {timelineItems.length < timelineTotal && (
+                  <Button size="small" loading={timelineLoading} onClick={() => void loadTimeline(Math.floor(timelineItems.length / 50) + 1, true)}>
+                    加载更多
+                  </Button>
+                )}
+              </>
+            ),
+          }]}
+        />
+
         {canSupplement && emptySupplementFields.length > 0 && (
           <Alert
             message="待补充字段（紫色标记项为空，请尽快补充）"
@@ -758,15 +825,17 @@ const MyDispatchedDetail: React.FC = () => {
         <Card title="工单信息">
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
             {[...FIELD_GROUPS, { title: '其他字段', codes: ungroupedVisibleDetailFields.map((field) => field.field_code) }].map((group) => {
-              const groupFields = visibleDetailFields.filter((f) => group.codes.includes(f.field_code));
+              const groupFields = visibleDetailFields.filter((f) => (
+                group.codes.includes(f.field_code) && visibleFieldPermissions[f.field_code] !== 'hidden'
+              ));
               if (groupFields.length === 0) return null;
               return (
                 <Card key={group.title} title={group.title} size="small" type="inner">
                   <Descriptions column={{ xs: 1, sm: 2, md: 3 }} size="small" bordered>
                     {groupFields.map((f) => {
-                      const templateConstValue = (f as ContractTemplateDetailField).template_const_value;
-                      const raw = templateConstValue !== undefined ? templateConstValue : (order.extra_data as Record<string, unknown> | undefined)?.[f.field_code];
-                      const value = raw === null || raw === undefined || raw === '' ? '-' : String(raw);
+                      const raw = (order.extra_data as Record<string, unknown> | undefined)?.[f.field_code];
+                      const masked = visibleFieldPermissions[f.field_code] === 'masked';
+                      const value = masked ? '******' : formatDetailValue(raw);
                       const dirty = hasUnreadDirty && dirtyFieldCodes.has(f.field_code);
                       const dirtyInfo = dirtyFields.find((mark) => mark.field_code === f.field_code);
                       return (
@@ -786,7 +855,7 @@ const MyDispatchedDetail: React.FC = () => {
                             {dirty && dirtyInfo && (
                               <Tooltip title={`修改人：${dirtyInfo.changed_by_name || '业务员'}；修改时间：${dirtyInfo.changed_at || '未知'}`}>
                                 <span style={{ color: '#cf1322', fontSize: 12 }}>
-                                  原值：{dirtyInfo.old_value_text || '-'} → 新值：{dirtyInfo.new_value_text || value}
+                                  原值：{masked ? '******' : (dirtyInfo.old_value_text || '-')} → 新值：{masked ? '******' : (dirtyInfo.new_value_text || value)}
                                 </span>
                               </Tooltip>
                             )}
@@ -812,6 +881,11 @@ const MyDispatchedDetail: React.FC = () => {
           </Space>
         </Card>
 
+        {/* 离职材料附件：三个离职子工单共享挂在主工单(parent_order_id)上的附件，bizPurpose=resignation_material */}
+        {['resignation_contact', 'resignation_cert'].includes(String(order.module_code || '')) && order.parent_order_id && (
+          <MaterialsUpload workOrderId={order.parent_order_id} bizPurpose="resignation_material" />
+        )}
+
         {supplementLogs.length > 0 && (
           <Card title={<><HistoryOutlined /> 补充历史</>}>
             <Timeline
@@ -835,6 +909,21 @@ const MyDispatchedDetail: React.FC = () => {
           </Card>
         )}
 
+        <Modal title="重新提交子工单" open={resubmitOpen} onOk={handleCreatorResubmitOk}
+          onCancel={() => setResubmitOpen(false)} okText="重新提交" cancelText="取消"
+          confirmLoading={actionLoading} destroyOnHidden>
+          <Form form={resubmitForm} layout="vertical">
+            <Form.Item name="reason" label="重新提交原因">
+              <Input.TextArea
+                rows={4}
+                maxLength={500}
+                showCount
+                placeholder="可说明本次修改或重新提交原因，例如：以员工辞职报告真实日期为准"
+              />
+            </Form.Item>
+          </Form>
+        </Modal>
+
         <Modal title="修改子工单字段" open={creatorEditOpen} onOk={handleCreatorEditOk}
           onCancel={() => setCreatorEditOpen(false)} confirmLoading={actionLoading}
           width={760} destroyOnHidden>
@@ -844,7 +933,10 @@ const MyDispatchedDetail: React.FC = () => {
                 key={field.field_code}
                 name={field.field_code}
                 label={field.field_name}
-                rules={field.is_required ? [{ required: true, message: `请填写${field.field_name}` }] : undefined}
+                required={isCreatorEditFieldRequired(field.field_code, field.is_required)}
+                rules={isCreatorEditFieldRequired(field.field_code, field.is_required)
+                  ? [{ required: true, message: `请填写${field.field_name}` }]
+                  : undefined}
               >
                 <Input placeholder={`请输入${field.field_name}`} />
               </Form.Item>
@@ -941,7 +1033,7 @@ const MyDispatchedDetail: React.FC = () => {
           okButtonProps={{ danger: true }} destroyOnHidden>
           <Alert style={{ marginBottom: 12 }} type="warning" showIcon
             message="退回后该节点需要重新办理"
-            description="仅模块主管或系统管理员可退回已完成节点。业务员需要等待相关已完成节点被退回后才能修改并重新提交。" />
+            description="当前办理人、模块主管或系统管理员可退回已完成节点。退回后由业务员修改并重新提交。" />
           <Form form={returnCompletedForm} layout="vertical">
             <Form.Item label="子单名称">
               <Tag color={getModuleColor(order.module_code)}>{getModuleLabel(order.module_code, order.order_type)}</Tag>
@@ -968,23 +1060,22 @@ const MyDispatchedDetail: React.FC = () => {
                   showIcon
                   style={{ marginBottom: 12 }}
                   message="请反馈社保、医保、公积金三项办理结果"
-                  description="三项均为“已完成”时子工单自动完成；任一项为“未完成”时保持处理中，备注可不填。"
+                  description="三项均为“是”时子工单自动完成；任一项为“否”时保持处理中，备注可不填。"
                 />
                 {HANDLING_FEEDBACK_FIELDS.map((item) => (
-                  <Space key={item.result} direction="vertical" style={{ width: '100%', marginBottom: 12 }}>
-                    <Form.Item
-                      name={item.result}
-                      label={`${item.label}办理结果`}
-                      rules={[{ required: true, message: `请选择${item.label}办理结果` }]}
-                      style={{ marginBottom: 8 }}
-                    >
-                      <Select getPopupContainer={(triggerNode) => triggerNode.parentElement || document.body} options={HANDLING_RESULT_OPTIONS} />
-                    </Form.Item>
-                    <Form.Item name={item.remark} label={`${item.label}办理备注（选填）`}>
-                      <Input.TextArea rows={2} maxLength={500} showCount placeholder={`可填写${item.label}未完成原因或补充说明`} />
-                    </Form.Item>
-                  </Space>
+                  <Form.Item
+                    key={item.result}
+                    name={item.result}
+                    label={`${item.label}是否办结`}
+                    rules={[{ required: true, message: `请选择${item.label}是否办结` }]}
+                    style={{ marginBottom: 8 }}
+                  >
+                    <Select getPopupContainer={(triggerNode) => triggerNode.parentElement || document.body} options={HANDLING_RESULT_OPTIONS} />
+                  </Form.Item>
                 ))}
+                <Form.Item name={HANDLING_SHARED_REMARK} label="社保公积金办理备注（选填）" style={{ marginTop: 8 }}>
+                  <Input.TextArea rows={2} maxLength={500} showCount placeholder="可填写未完成原因或补充说明" />
+                </Form.Item>
               </>
             ) : (
               <Form.Item name={FEEDBACK_FIELD_MAP[order.module_code] || 'feedback'}

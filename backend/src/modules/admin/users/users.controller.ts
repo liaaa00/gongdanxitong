@@ -14,6 +14,7 @@ import {
   IsArray,
   IsBoolean,
   IsEmail,
+  IsEnum,
   IsOptional,
   IsString,
   IsUUID,
@@ -22,9 +23,14 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Audit } from 'src/common/decorators/audit.decorator';
+import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 import { AuditInterceptor } from 'src/common/interceptors/audit.interceptor';
+import { BusinessScope } from 'src/entities';
+import { JwtUserPayload } from 'src/modules/auth/auth.types';
+import { ExecuteUserHandoverDto } from './handover.dto';
+import { UserHandoverService } from './user-handover.service';
 import { UsersService } from './users.service';
 
 class UserRoleBindingDto {
@@ -172,6 +178,14 @@ class CreateUserDto {
   @IsUUID()
   department_id?: string;
 
+  @IsOptional()
+  @IsEnum(BusinessScope)
+  businessScope?: BusinessScope;
+
+  @IsOptional()
+  @IsEnum(BusinessScope)
+  business_scope?: BusinessScope;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => UserRoleBindingDto)
@@ -179,6 +193,11 @@ class CreateUserDto {
 }
 
 class UpdateUserDto {
+  @IsOptional()
+  @IsString()
+  @Matches(/^[a-zA-Z][a-zA-Z0-9_]{2,31}$/)
+  username?: string;
+
   @IsOptional()
   @IsString()
   realName?: string;
@@ -195,6 +214,11 @@ class UpdateUserDto {
   @IsOptional()
   @IsEmail()
   email?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(6)
+  password?: string;
 
   @IsOptional()
   @IsString()
@@ -231,6 +255,14 @@ class UpdateUserDto {
   department_id?: string;
 
   @IsOptional()
+  @IsEnum(BusinessScope)
+  businessScope?: BusinessScope;
+
+  @IsOptional()
+  @IsEnum(BusinessScope)
+  business_scope?: BusinessScope;
+
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => UserRoleBindingDto)
@@ -264,7 +296,10 @@ export class TeamUsersController {
 @Controller('admin/users')
 @UseInterceptors(AuditInterceptor)
 export class UsersController {
-  constructor(private readonly service: UsersService) {}
+  constructor(
+    private readonly service: UsersService,
+    private readonly handoverService: UserHandoverService,
+  ) {}
 
   @Get()
   list(@Query() query: QueryUsersDto) {
@@ -275,6 +310,20 @@ export class UsersController {
   @Audit('users', 'create')
   create(@Body() payload: CreateUserDto) {
     return this.service.create(payload);
+  }
+
+  @Get(':id/handover-preview')
+  handoverPreview(@Param('id') id: string) {
+    return this.handoverService.preview(id);
+  }
+
+  @Post(':id/handover')
+  handover(
+    @Param('id') id: string,
+    @Body() payload: ExecuteUserHandoverDto,
+    @CurrentUser() user: JwtUserPayload,
+  ) {
+    return this.handoverService.execute(id, payload, user.sub);
   }
 
   @Get(':id')
@@ -298,6 +347,12 @@ export class UsersController {
   @Audit('users', 'reset-password')
   resetPassword(@Param('id') id: string, @Body() payload: ResetPasswordDto) {
     return this.service.resetPassword(id, payload.newPassword);
+  }
+
+  @Post(':id/force-logout')
+  @Audit('users', 'force-logout')
+  forceLogout(@Param('id') id: string) {
+    return this.service.forceLogout(id);
   }
 
   @Post(':id/roles')

@@ -47,9 +47,16 @@ export interface ImportTemplateFieldView {
 // 入职导入模板排除：办理岗在子单完成时填写的反馈字段，不进业务员发起的导入表。
 // 注意：contract_template（劳动合同模板）是业务员发起阶段字段，必须保留在导入模板与导入校验中。
 const ONBOARDING_IMPORT_EXCLUDED_FIELDS = new Set([
+  'gender',
+  'birth_date',
+  'age',
   'contract_feedback',
   'onboarding_feedback',
   'data_entry_feedback',
+  'social_insurance_result',
+  'social_insurance_remark',
+  'medical_insurance_result',
+  'housing_fund_result',
 ]);
 
 const RESIGNATION_IMPORT_TEMPLATE_FIELDS = [
@@ -130,14 +137,17 @@ export class ImportTemplateConfigService {
       order: { displayOrder: 'ASC', fieldCode: 'ASC' },
     });
     if (configured.length > 0) {
-      const byCode = await this.loadActiveFieldMap(orderType, configured.map((item) => item.fieldCode));
-      const fields = configured
+      const allowedConfigured = orderType === OrderType.ONBOARDING
+        ? configured.filter((item) => !ONBOARDING_IMPORT_EXCLUDED_FIELDS.has(item.fieldCode))
+        : configured;
+      const byCode = await this.loadActiveFieldMap(orderType, allowedConfigured.map((item) => item.fieldCode));
+      const fields = allowedConfigured
         .map((item) => {
           const field = byCode.get(item.fieldCode);
           return field ? this.applyConfiguredRules(orderType, field, item) : null;
         })
         .filter((field): field is FieldConfig => Boolean(field));
-      return { fields, configured };
+      return { fields, configured: allowedConfigured };
     }
     return { fields: await this.resolveFallbackFields(orderType), configured: [] };
   }

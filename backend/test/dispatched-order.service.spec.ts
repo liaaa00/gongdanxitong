@@ -1,11 +1,12 @@
 ﻿import { HttpStatus, ValidationPipe } from '@nestjs/common';
 import { validateSync } from 'class-validator';
 import { Repository } from 'typeorm';
-import { DispatchedOrder, DispatchedOrderStatus, FieldConfig, ModuleField, ModuleHandler, Notification, OperationLog, OrderType, RoleLevel, User, UserRole, WorkOrder, WorkOrderFieldDirtyMark, WorkOrderStatus } from 'src/entities';
+import { BusinessScope, DispatchedOrder, DispatchedOrderStatus, FieldConfig, FieldPermissionMode, ModuleField, ModuleHandler, Notification, OperationLog, OrderType, RoleLevel, User, UserRole, WorkOrder, WorkOrderFieldDirtyMark, WorkOrderStatus } from 'src/entities';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { FieldPermissionService } from 'src/modules/field-permissions/field-permission.service';
 import { FieldSupplementService } from 'src/modules/field-supplement/field-supplement.service';
 import { BatchCompleteDispatchedOrderDto } from 'src/modules/dispatched-orders/dto/batch-complete.dto';
+import { BatchReassignStrategy } from 'src/modules/dispatched-orders/dto/batch-reassign.dto';
 import { ListDispatchedOrderQueryDto } from 'src/modules/dispatched-orders/dto/list-query.dto';
 import { DispatchedOrderService } from 'src/modules/dispatched-orders/dispatched-order.service';
 
@@ -90,6 +91,97 @@ describe('DispatchedOrderService', () => {
     expect(result.items[0].handlerId).toBe('handler-1');
   });
 
+
+  it('restores current contract fields for a returned business creator despite a stale visible-fields snapshot', async () => {
+    const order = {
+      ...makeDispatchedOrder(DispatchedOrderStatus.RETURNED),
+      moduleCode: 'contract',
+      visibleFields: ['employee_name'],
+      parentOrder: {
+        ...makeDispatchedOrder().parentOrder,
+        createdBy: 'u1',
+        extraData: {
+          employee_name: '张三',
+          mobile: '"13800000000 "',
+          bank_name: '不应展示',
+        },
+      },
+      handler: null,
+    } as DispatchedOrder;
+    const fieldConfigRepo = repoMock<FieldConfig>({
+      find: jest.fn(async () => [
+        { fieldCode: 'employee_name', fieldName: '姓名', fieldType: 'text', orderType: OrderType.ONBOARDING, businessContext: [OrderType.ONBOARDING], isActive: true, displayOrder: 1 } as unknown as FieldConfig,
+        { fieldCode: 'mobile', fieldName: '手机号', fieldType: 'text', orderType: OrderType.ONBOARDING, businessContext: [OrderType.ONBOARDING], isActive: true, displayOrder: 2 } as unknown as FieldConfig,
+        { fieldCode: 'bank_name', fieldName: '银行', fieldType: 'text', orderType: OrderType.ONBOARDING, businessContext: [OrderType.ONBOARDING], isActive: true, displayOrder: 3 } as unknown as FieldConfig,
+      ]),
+    });
+    const fieldPermissionService = {
+      getPermissionsForUser: jest.fn(async () => new Map([
+        ['employee_name', FieldPermissionMode.VISIBLE],
+        ['mobile', FieldPermissionMode.VISIBLE],
+        ['bank_name', FieldPermissionMode.HIDDEN],
+      ])),
+    } as unknown as FieldPermissionService;
+    const service = new DispatchedOrderService(
+      repoMock<DispatchedOrder>({ findOne: jest.fn(async () => order) }),
+      repoMock<WorkOrder>(),
+      repoMock<ModuleHandler>(),
+      repoMock<UserRole>(),
+      fieldConfigRepo,
+      repoMock<Notification>(),
+      repoMock<OperationLog>(),
+      fieldPermissionService,
+      { getLogs: jest.fn() } as unknown as FieldSupplementService,
+      { exportSingleDispatchedOrder: jest.fn() } as never,
+      validationServiceMock as never,
+    );
+
+    const result = await service.findOne(order.id, {
+      sub: 'u1',
+      username: 'zhaotianqi',
+      roles: ['biz_member'],
+    } as JwtUserPayload);
+
+    expect(fieldPermissionService.getPermissionsForUser).toHaveBeenCalledWith('u1', 'dispatched:contract');
+    expect(result.fields.map((field) => field.fieldCode)).toEqual(['employee_name', 'mobile']);
+    expect(result.fields.find((field) => field.fieldCode === 'mobile')).toMatchObject({
+      value: '13800000000',
+      permission: FieldPermissionMode.VISIBLE,
+    });
+    expect(result.extra_data?.mobile).toBe('13800000000');
+  });
+
+  it('keeps an assigned province handler visible regardless of legacy module roles', async () => {
+    const { service, queryBuilder } = makeService({
+      find: jest.fn(async () => [
+        { moduleCode: 'data_entry', handlerId: 'user-1', isActive: true } as unknown as ModuleHandler,
+      ]),
+    }, []);
+    const user: JwtUserPayload = {
+      sub: 'user-1',
+      username: 'processor01',
+      roles: ['data_entry_team'],
+    } as JwtUserPayload;
+
+    await service.findAll({
+      page: 1,
+      pageSize: 20,
+      businessScope: BusinessScope.OUT_OF_PROVINCE,
+    }, user);
+
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+      'w.business_scope = :businessScope',
+      { businessScope: BusinessScope.OUT_OF_PROVINCE },
+    );
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+      'd.handler_id = :userId',
+      { userId: 'user-1' },
+    );
+    expect((queryBuilder.andWhere.mock.calls as Array<[unknown]>).some(
+      ([condition]) => typeof condition === 'object' && condition?.constructor?.name === 'Brackets',
+    )).toBe(false);
+  });
+
   it('scopes business owner/leader child-order history by department range', async () => {
     const { service, queryBuilder } = makeService({
       find: jest.fn(async () => []),
@@ -119,6 +211,7 @@ describe('DispatchedOrderService', () => {
     const user: JwtUserPayload = { sub: 'sales-1', username: 'sales', roles: ['business_group_member'] } as JwtUserPayload;
 
     await service.findAll({ page: 1, pageSize: 20 } as never, user);
+
 
     const scopeCallback = (queryBuilder.andWhere.mock.calls as Array<[unknown, unknown?]>)
       .map(([condition]) => condition)
@@ -731,6 +824,101 @@ describe('DispatchedOrderService', () => {
     // 已撤回子单的状态保持不变，不得被改写成 RETURNED。
     expect(order.status).toBe(DispatchedOrderStatus.WITHDRAWN);
     expect(parentOrder.status).toBe(WorkOrderStatus.PROCESSING);
+  });
+
+  it('batch reassigns eligible rows round-robin and reports missing rows', async () => {
+    const orders = [
+      {
+        ...makeDispatchedOrder(),
+        id: 'order-1',
+        handlerId: 'old-handler',
+        voidAt: null,
+      },
+      {
+        ...makeDispatchedOrder(),
+        id: 'order-2',
+        handlerId: 'old-handler',
+        voidAt: null,
+      },
+    ] as DispatchedOrder[];
+    const loadQueryBuilder = {
+      select: jest.fn(),
+      addSelect: jest.fn(),
+      where: jest.fn(),
+      andWhere: jest.fn(),
+      groupBy: jest.fn(),
+      getRawMany: jest.fn(async () => []),
+    };
+    loadQueryBuilder.select.mockReturnValue(loadQueryBuilder);
+    loadQueryBuilder.addSelect.mockReturnValue(loadQueryBuilder);
+    loadQueryBuilder.where.mockReturnValue(loadQueryBuilder);
+    loadQueryBuilder.andWhere.mockReturnValue(loadQueryBuilder);
+    loadQueryBuilder.groupBy.mockReturnValue(loadQueryBuilder);
+
+    const transactionOrderRepository = { update: jest.fn(async () => ({ affected: 1 })) };
+    const transactionLogRepository = {
+      create: jest.fn((input) => input),
+      save: jest.fn(async (input) => input),
+    };
+    const transactionNotificationRepository = {
+      create: jest.fn((input) => input),
+      save: jest.fn(async (input) => input),
+    };
+    const transactionManager = {
+      getRepository: jest.fn((entity) => {
+        if (entity === DispatchedOrder) return transactionOrderRepository;
+        if (entity === OperationLog) return transactionLogRepository;
+        if (entity === Notification) return transactionNotificationRepository;
+        throw new Error('unexpected repository');
+      }),
+    };
+    const transaction = jest.fn(async (work) => work(transactionManager));
+    const dispatchedOrderRepository = repoMock<DispatchedOrder>({
+      find: jest.fn(async () => orders),
+      createQueryBuilder: jest.fn(() => loadQueryBuilder),
+      manager: { transaction },
+    });
+    const moduleHandlerRepository = repoMock<ModuleHandler>({
+      find: jest.fn(async () => [
+        { moduleCode: 'data_entry', handlerId: 'replacement-1', isActive: true, handler: { isActive: true } },
+        { moduleCode: 'data_entry', handlerId: 'replacement-2', isActive: true, handler: { isActive: true } },
+      ]),
+    });
+    const service = new DispatchedOrderService(
+      dispatchedOrderRepository,
+      repoMock<WorkOrder>(),
+      moduleHandlerRepository,
+      repoMock<UserRole>(),
+      repoMock<FieldConfig>(),
+      repoMock<Notification>(),
+      repoMock<OperationLog>(),
+      {} as FieldPermissionService,
+      {} as FieldSupplementService,
+      { exportSingleDispatchedOrder: jest.fn() } as never,
+      validationServiceMock as never,
+    );
+    jest.spyOn(service as any, 'assertCanViewTeam').mockResolvedValue(undefined);
+
+    const result = await service.batchReassign({
+      ids: ['order-1', 'missing-order', 'order-2'],
+      handlerIds: ['replacement-1', 'replacement-2'],
+      strategy: BatchReassignStrategy.ROUND_ROBIN,
+      reason: '  rebalance coverage  ',
+    }, { sub: 'admin-user', username: 'admin', roles: ['admin'] } as JwtUserPayload);
+
+    expect(result.assignments).toEqual([
+      { id: 'order-1', previousHandlerId: 'old-handler', newHandlerId: 'replacement-1' },
+      { id: 'order-2', previousHandlerId: 'old-handler', newHandlerId: 'replacement-2' },
+    ]);
+    expect(result.skipped).toEqual([{ id: 'missing-order', reason: '子工单不存在' }]);
+    expect(transactionOrderRepository.update).toHaveBeenCalledTimes(2);
+    expect(transactionOrderRepository.update).toHaveBeenCalledWith('order-1', {
+      handlerId: 'replacement-1',
+      status: DispatchedOrderStatus.PENDING,
+      acceptedAt: null,
+    });
+    expect(transactionNotificationRepository.save).toHaveBeenCalledTimes(2);
+    expect(transaction).toHaveBeenCalledTimes(1);
   });
 });
 

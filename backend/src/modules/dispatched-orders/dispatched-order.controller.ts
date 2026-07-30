@@ -4,16 +4,19 @@ import { Audit } from 'src/common/decorators/audit.decorator';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { AuditInterceptor } from 'src/common/interceptors/audit.interceptor';
+import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 import { assertUuidParam } from 'src/common/utils/uuid-param';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { FieldPermissionScenario } from 'src/modules/field-permissions/field-permission.decorator';
 import { DispatchedOrderService } from './dispatched-order.service';
 import { AcceptDispatchedOrderDto } from './dto/accept.dto';
 import { BatchAcceptDispatchedOrderDto } from './dto/batch-accept.dto';
+import { BatchApproveModifyDispatchedOrderDto } from './dto/batch-approve-modify.dto';
 import { BatchCompleteDispatchedOrderDto } from './dto/batch-complete.dto';
 import { BatchDeleteDispatchedOrderDto } from './dto/batch-delete.dto';
 import { BatchExportDispatchedOrderDto } from './dto/batch-export.dto';
 import { BatchImportDispatchedOrdersDto } from './dto/batch-import.dto';
+import { BatchReassignDispatchedOrdersDto } from './dto/batch-reassign.dto';
 import { BatchReturnDispatchedOrderDto } from './dto/batch-return.dto';
 import { BenefitTransitionDto } from './dto/benefit-transition.dto';
 import { CompleteDispatchedOrderDto } from './dto/complete.dto';
@@ -21,6 +24,7 @@ import { ExportDispatchedOrderDto } from './dto/export.dto';
 import { ListDispatchedOrderQueryDto } from './dto/list-query.dto';
 import { ReassignDispatchedOrderDto } from './dto/reassign.dto';
 import { ReturnDispatchedOrderDto } from './dto/return.dto';
+import { ResubmitDispatchedOrderDto } from './dto/resubmit.dto';
 import { SupplementFieldDto } from './dto/supplement.dto';
 
 @Controller('dispatched-orders')
@@ -66,6 +70,18 @@ export class DispatchedOrderController {
     return this.dispatchedOrderService.getSupplementLogs(assertUuidParam(id, '子工单不存在'), user);
   }
 
+  @Get(':id/timeline')
+  @ApiResponse({ status: 404, description: '子工单不存在' })
+  @ApiResponse({ status: 403, description: '无权访问该子工单处理日志' })
+  @FieldPermissionScenario('dispatched:auto')
+  getTimeline(
+    @Param('id') id: string,
+    @Query() query: PaginationQueryDto,
+    @CurrentUser() user: JwtUserPayload,
+  ) {
+    return this.dispatchedOrderService.getTimeline(assertUuidParam(id, '子工单不存在'), query, user);
+  }
+
   @Get(':id')
   @ApiResponse({ status: 404, description: '子工单不存在' })
   @ApiResponse({ status: 403, description: '无权访问该子工单' })
@@ -90,6 +106,15 @@ export class DispatchedOrderController {
     return this.dispatchedOrderService.batchAccept(payload, user);
   }
 
+  @Post('batch-approve-modify')
+  @FieldPermissionScenario('dispatched:auto')
+  batchApproveModify(
+    @Body() payload: BatchApproveModifyDispatchedOrderDto,
+    @CurrentUser() user: JwtUserPayload,
+  ) {
+    return this.dispatchedOrderService.batchApproveModify(payload, user);
+  }
+
   @Post('batch-complete')
   @FieldPermissionScenario('dispatched:auto')
   batchComplete(
@@ -106,6 +131,16 @@ export class DispatchedOrderController {
     @CurrentUser() user: JwtUserPayload,
   ) {
     return this.dispatchedOrderService.batchReturn(payload, user);
+  }
+
+  @Post('batch-reassign')
+  @Roles('admin')
+  @FieldPermissionScenario('dispatched:auto')
+  batchReassign(
+    @Body() payload: BatchReassignDispatchedOrdersDto,
+    @CurrentUser() user: JwtUserPayload,
+  ) {
+    return this.dispatchedOrderService.batchReassign(payload, user);
   }
 
   @Post('batch-urge')
@@ -278,7 +313,7 @@ export class DispatchedOrderController {
   @FieldPermissionScenario('dispatched:auto')
   resubmitDispatched(
     @Param('id') id: string,
-    @Body() payload: { extraData?: Record<string, unknown>; reason?: string; moduleCode?: string; module_code?: string; workOrderUpdatedAt?: string },
+    @Body() payload: ResubmitDispatchedOrderDto,
     @CurrentUser() user: JwtUserPayload,
   ) {
     return this.dispatchedOrderService.resubmitDispatched(assertUuidParam(id, '子工单不存在'), payload, user);

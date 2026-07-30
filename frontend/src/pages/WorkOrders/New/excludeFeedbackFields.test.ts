@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   AGENT_INITIATED_EXCLUDED_FIELD_CODES,
+  CONDITIONAL_REQUIRED_BY_TYPE,
   canCreateMainWorkOrderByRole,
   excludeBackofficeFeedbackFields,
   isReadonlyBusinessViewer,
@@ -35,6 +36,24 @@ describe('single create form field and role rules', () => {
     expect(codes).toContain('payroll_location');
     expect(codes).toContain('special_remark');
     expect(codes).toContain('need_onboarding_contact');
+  });
+
+  it('keeps onboarding conditional required rules aligned with the latest business requirements', () => {
+    expect(CONDITIONAL_REQUIRED_BY_TYPE.onboarding).toEqual(expect.arrayContaining([
+      { field: 'need_onboarding_contact', value: '否', requireFields: ['current_address'] },
+      { field: 'probation_start_date', operator: 'exists', requireFields: ['probation_months', 'probation_end_date', 'probation_salary'] },
+    ]));
+
+    const byCode = new Map(getFallbackFields('onboarding').map((field) => [field.field_code, field]));
+    expect(byCode.get('current_address')?.conditional_required).toEqual({ op: 'EQ', field: 'need_onboarding_contact', value: '否' });
+    expect(byCode.get('probation_start_date')).toMatchObject({ is_required: false, default_required: false });
+    for (const fieldCode of ['probation_months', 'probation_end_date', 'probation_salary']) {
+      expect(byCode.get(fieldCode)).toMatchObject({
+        is_required: false,
+        default_required: false,
+        conditional_required: { op: 'EXISTS', field: 'probation_start_date' },
+      });
+    }
   });
 
   it('does not change resignation fields', () => {

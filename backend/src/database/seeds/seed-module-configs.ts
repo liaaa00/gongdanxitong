@@ -12,7 +12,8 @@ import {
 
 const modules: Array<Partial<WorkOrderModuleConfig>> = [
   { moduleCode: 'onboarding_management', moduleName: '入职管理', moduleType: 'business_module', parentModuleCode: null, displayOrder: 10, description: '第一阶段开放：入职主工单及子单配置' },
-  { moduleCode: 'employment_management', moduleName: '在职管理', moduleType: 'business_module', parentModuleCode: null, displayOrder: 20, description: '后台配置保留，第一阶段接口/界面隐藏' },
+  { moduleCode: 'employment_management', moduleName: '在职管理', moduleType: 'business_module', parentModuleCode: null, displayOrder: 20, description: '在职管理业务模块' },
+  { moduleCode: 'in_service_single_business', moduleName: '单项业务办理', moduleType: 'sub_module', parentModuleCode: 'employment_management', displayOrder: 20, description: 'Sheet2 分类与 Sheet4 省份派单' },
   { moduleCode: 'resignation_management', moduleName: '离职管理', moduleType: 'business_module', parentModuleCode: null, displayOrder: 30, description: '第一阶段开放：离职办理事项配置' },
   { moduleCode: 'onboarding_contact', moduleName: '入职联系', moduleType: 'sub_module', parentModuleCode: 'onboarding_management', displayOrder: 11, description: '按是否需要入职联系条件生成' },
   { moduleCode: 'contract', moduleName: '劳动合同新签', moduleType: 'sub_module', parentModuleCode: 'onboarding_management', displayOrder: 12, description: '按是否企服发起劳动合同条件生成' },
@@ -32,6 +33,7 @@ const defaultSlaByModule: Record<string, { slaHours: number; reminderBeforeHours
   onboarding_contact: { slaHours: 24, reminderBeforeHours: 4 },
   contract: { slaHours: 48, reminderBeforeHours: 8 },
   social_insurance: { slaHours: 48, reminderBeforeHours: 8 },
+  in_service_single_business: { slaHours: 48, reminderBeforeHours: 8 },
   renewal_contract: { slaHours: 48, reminderBeforeHours: 8 },
   benefit: { slaHours: 48, reminderBeforeHours: 8 },
   benefit_apply: { slaHours: 48, reminderBeforeHours: 8 },
@@ -45,6 +47,7 @@ const defaultSlaByModule: Record<string, { slaHours: number; reminderBeforeHours
 const onboardingContactFields = [
   'customer_name', 'customer_code', 'employee_name', 'id_card_no',
   'mobile', 'email',
+  'education', 'graduation_school', 'major', 'graduation_date',
   'bank_name', 'bank_account',
   'need_onboarding_contact', 'onboarding_feedback',
 ];
@@ -64,7 +67,8 @@ const contractFields = [
 ];
 
 const onboardingSocialFields = [
-  'customer_name', 'customer_code', 'employee_name', 'id_card_no',
+  'customer_name', 'customer_code', 'employee_name', 'id_card_no', 'mobile', 'email',
+  'education', 'graduation_school', 'major', 'graduation_date',
   'social_location', 'start_month', 'social_base', 'fund_base', 'fund_ratio',
 ];
 
@@ -75,18 +79,18 @@ const resignationCoreFields = [
 ];
 
 const resignationContactFields = [
-  'customer_name', 'customer_code', 'mobile', 'position',
+  'customer_name', 'customer_code', 'mobile', 'email', 'position',
   ...resignationCoreFields,
   'feedback_deadline', 'is_common_template', 'template_name',
 ];
 
 const dataEntryResignFields = [
-  'customer_name', 'customer_code', 'mobile', 'position',
+  'customer_name', 'customer_code', 'mobile', 'email', 'position',
   ...resignationCoreFields,
 ];
 
 const resignationSocialFields = [
-  'customer_name', 'customer_code', 'mobile',
+  'customer_name', 'customer_code', 'mobile', 'email',
   ...resignationCoreFields,
 ];
 
@@ -97,6 +101,7 @@ const moduleFields: Record<string, string[]> = {
     'customer_name', 'customer_code', 'outsource_type', 'position',
     'employee_name', 'id_card_no', 'gender',
     'birth_date', 'age', 'household_type', 'ethnicity',
+    'education', 'graduation_school', 'major', 'graduation_date',
     'mobile', 'email', 'current_address', 'household_address', 'postal_code',
     'social_location', 'start_month', 'social_base', 'fund_base', 'fund_ratio',
     'bank_name', 'bank_account', 'remark',
@@ -105,6 +110,7 @@ const moduleFields: Record<string, string[]> = {
     'data_entry_feedback',
   ],
   social_insurance: onboardingSocialFields,
+  in_service_single_business: [],
   renewal_contract: contractFields,
   benefit_apply: [],
   social_insurance_change: onboardingSocialFields,

@@ -4,8 +4,10 @@ import { Customer, CustomerAssignee, FieldConfig, ImportJob, ImportTemplateField
 import { AiModule } from 'src/modules/ai/ai.module';
 import { FieldsModule } from 'src/modules/admin/fields/fields.module';
 import { DispatchEngineModule } from 'src/modules/dispatch-engine/dispatch-engine.module';
+import { InServiceOrdersModule } from 'src/modules/in-service-orders/in-service-orders.module';
 import { UploadsModule } from 'src/modules/uploads/uploads.module';
 import { WorkOrderModule } from 'src/modules/work-orders/work-order.module';
+import { AttachmentsModule } from 'src/modules/attachments/attachments.module';
 import { ExcelParserService } from './excel-parser.service';
 import { ImportErrorExcelService } from './error-excel.service';
 import { ImportFieldValidationService } from './field-validation.service';
@@ -20,8 +22,10 @@ import { WorkOrderImportService } from './work-order-import.service';
     AiModule,
     UploadsModule,
     WorkOrderModule,
+    InServiceOrdersModule,
     DispatchEngineModule,
     FieldsModule,
+    AttachmentsModule,
     TypeOrmModule.forFeature([FieldConfig, ImportTemplateField, ImportJob, Customer, CustomerAssignee]),
   ],
   controllers: [ImportsController],

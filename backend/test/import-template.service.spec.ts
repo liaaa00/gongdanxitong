@@ -76,9 +76,37 @@ describe('Imports ImportTemplateService round-trip', () => {
     makeField({ fieldCode: 'customer_name', fieldName: '客户名称', fieldType: FieldType.TEXT, isRequired: true, displayOrder: 1 }),
     makeField({ fieldCode: 'gender', fieldName: '性别', fieldType: FieldType.DROPDOWN, dropdownOptions: ['男', '女'], isRequired: true, displayOrder: 2 }),
     makeField({ fieldCode: 'birth_date', fieldName: '出生日期', fieldType: FieldType.DATE, displayOrder: 3 }),
-    makeField({ fieldCode: 'base_salary', fieldName: '基本工资', fieldType: FieldType.NUMBER, displayOrder: 4 }),
+    makeField({ fieldCode: 'base_salary', fieldName: '基本工资', fieldType: FieldType.TEXT, displayOrder: 4 }),
     makeField({ fieldCode: 'probation', fieldName: '试用期', fieldType: FieldType.TEXT, conditionalRequired: { when: 'x' }, displayOrder: 5 }),
   ];
+
+  it('writes all work hour system options into Excel validation', async () => {
+    const service = buildService([
+      makeField({
+        fieldCode: 'work_hour_system',
+        fieldName: '工时制',
+        fieldType: FieldType.DROPDOWN,
+        dropdownOptions: ['标准工时制', '综合工时制', '不定时工时制'],
+        isRequired: true,
+        displayOrder: 1,
+      }),
+    ]);
+
+    const result = await service.generate(OrderType.ONBOARDING);
+    const workbook = new Workbook();
+    await workbook.xlsx.load(result.buffer as never);
+    const sheet = workbook.worksheets[0];
+    const optionsSheet = workbook.getWorksheet('__options')!;
+
+    expect(['A1', 'A2', 'A3'].map((cell) => optionsSheet.getCell(cell).value)).toEqual([
+      '标准工时制',
+      '综合工时制',
+      '不定时工时制',
+    ]);
+    expect(sheet.getCell('B5').dataValidation).toMatchObject({ type: 'list' });
+    expect(sheet.getCell('B5').dataValidation?.allowBlank).not.toBe(true);
+    expect(sheet.getCell('B5').dataValidation?.formulae?.[0]).toContain('$A$1:$A$3');
+  });
 
   it('generates a template whose headers parse back to configured field names', async () => {
     const service = buildService(fields);
@@ -165,6 +193,47 @@ describe('Imports ImportTemplateService round-trip', () => {
     expect(optionsSheet.getCell('A1').value).toBe('1.是');
     expect(optionsSheet.getCell('A2').value).toBe('2.否');
     expect(sheet.getCell(`${String.fromCharCode(64 + needCompanyContractCol)}5`).dataValidation?.formulae?.[0]).toContain('__options');
+  });
+
+  it('renders onboarding salary text hints and company address esign condition in import template', async () => {
+    const onboardingFields = [
+      makeField({ fieldCode: 'employee_name', fieldName: '姓名', isRequired: true, displayOrder: 1 }),
+      makeField({ fieldCode: 'base_salary', fieldName: '基本工资', fieldType: FieldType.TEXT, helpText: '可填写数字、货币格式或文字说明。', displayOrder: 2 }),
+      makeField({ fieldCode: 'other_salary', fieldName: '其他工资', fieldType: FieldType.TEXT, helpText: '可填写文字说明，如可填写数字加文字。', displayOrder: 3 }),
+      makeField({ fieldCode: 'probation_salary', fieldName: '试用期工资', fieldType: FieldType.TEXT, helpText: '可填写数字、货币格式或文字说明。', displayOrder: 4 }),
+      makeField({ fieldCode: 'probation_other_salary', fieldName: '试用期其他工资', fieldType: FieldType.TEXT, helpText: '可填写文字说明，如可填写数字加文字。', displayOrder: 5 }),
+      makeField({ fieldCode: 'esign_platform', fieldName: '电子签平台', fieldType: FieldType.DROPDOWN, dropdownOptions: ['速创', 'E签宝'], displayOrder: 6 }),
+      makeField({
+        fieldCode: 'company_address',
+        fieldName: '甲方住所',
+        fieldType: FieldType.TEXT,
+        conditionalRequired: { field: 'esign_platform', op: 'EQ', value: 'E签宝' },
+        helpText: '电子签平台为速创时非必填；电子签平台为E签宝时必填。',
+        displayOrder: 7,
+      }),
+    ];
+    const service = buildService(onboardingFields);
+    const result = await service.generate(OrderType.ONBOARDING);
+    const parsed = await new ExcelParserService().parseBuffer(result.buffer);
+    const workbook = new Workbook();
+    await workbook.xlsx.load(result.buffer as never);
+    const sheet = workbook.getWorksheet('当前字段配置')!;
+
+    const baseSalaryCol = parsed.headers.indexOf('基本工资') + 1;
+    const otherSalaryCol = parsed.headers.indexOf('其他工资') + 1;
+    const probationSalaryCol = parsed.headers.indexOf('试用期工资') + 1;
+    const probationOtherSalaryCol = parsed.headers.indexOf('试用期其他工资') + 1;
+    const companyAddressCol = parsed.headers.indexOf('甲方住所') + 1;
+
+    expect(sheet.getRow(3).getCell(baseSalaryCol).value).toBe('可填写数字、货币格式或文字说明。');
+    expect(sheet.getRow(3).getCell(probationSalaryCol).value).toBe('可填写数字、货币格式或文字说明。');
+    expect(sheet.getRow(3).getCell(otherSalaryCol).value).toBe('可填写文字说明，如可填写数字加文字。');
+    expect(sheet.getRow(3).getCell(probationOtherSalaryCol).value).toBe('可填写文字说明，如可填写数字加文字。');
+    expect(String(sheet.getRow(3).getCell(otherSalaryCol).value)).not.toContain('请填写数字');
+    expect(String(sheet.getRow(3).getCell(probationOtherSalaryCol).value)).not.toContain('请填写数字');
+    expect(sheet.getRow(2).getCell(companyAddressCol).value).toBe('条件必填');
+    expect(String(sheet.getRow(3).getCell(companyAddressCol).value)).toContain('满足条件时必填');
+    expect(String(sheet.getRow(3).getCell(companyAddressCol).value)).toContain('电子签平台为速创时非必填；电子签平台为E签宝时必填。');
   });
 
   it('does not globally remove downstream feedback fields for non-onboarding templates', async () => {

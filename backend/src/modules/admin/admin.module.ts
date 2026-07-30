@@ -12,6 +12,7 @@ import { FieldPermissionsModule } from './field-permissions/field-permissions.mo
 import { FieldsModule } from './fields/fields.module';
 import { LogsModule } from './logs/logs.module';
 import { ModuleConfigsModule } from './module-configs/module-configs.module';
+import { ModuleDelegationsModule } from './module-delegations/module-delegations.module';
 import { ModuleHandlersModule } from './module-handlers/module-handlers.module';
 import { RolesModule } from './roles/roles.module';
 import { SystemSettingsModule } from './system-settings/system-settings.module';
@@ -32,6 +33,7 @@ import { UsersModule } from './users/users.module';
     FieldsModule,
     LogsModule,
     ModuleConfigsModule,
+    ModuleDelegationsModule,
     ModuleHandlersModule,
     RolesModule,
     SystemSettingsModule,

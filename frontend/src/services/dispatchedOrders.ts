@@ -3,6 +3,32 @@ import { isMockMode, mockDelay, type PageParams, type PageResult } from './mock'
 import { addMockNotification } from './notifications';
 import { reloadMockWorkOrders } from './workOrders';
 
+export interface DispatchedOrderTimelineChange {
+  fieldCode: string;
+  fieldLabel: string;
+  oldValue: unknown | null;
+  newValue: unknown | null;
+}
+
+export interface DispatchedOrderTimelineItem {
+  id: string;
+  createdAt: string;
+  operatorId: string | null;
+  operatorName: string;
+  actionType: string;
+  actionLabel: string;
+  description: string;
+  reason: string | null;
+  changes: DispatchedOrderTimelineChange[];
+}
+
+export interface DispatchedOrderTimelineResult {
+  items: DispatchedOrderTimelineItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 export interface DirtyFieldMark {
   field_code: string;
   field_label?: string;
@@ -75,6 +101,7 @@ const MODULE_META: Record<string, { name: string; visible_fields: string[]; supp
       'customer_name', 'customer_code', 'outsource_type', 'position',
       'employee_name', 'id_card_no', 'gender',
       'birth_date', 'age', 'household_type', 'ethnicity',
+      'education', 'graduation_school', 'major', 'graduation_date',
       'mobile', 'email', 'current_address', 'household_address', 'postal_code',
       'social_location', 'start_month', 'social_base', 'fund_base', 'fund_ratio',
       'bank_name', 'bank_account', 'remark',
@@ -106,18 +133,21 @@ const MODULE_META: Record<string, { name: string; visible_fields: string[]; supp
       'customer_name', 'customer_code',
       'employee_name', 'id_card_no',
       'mobile', 'email',
+      'education', 'graduation_school', 'major', 'graduation_date',
       'bank_name', 'bank_account',
       'need_onboarding_contact', 'onboarding_feedback',
       'special_remark',
     ],
-    supplementable_fields: ['mobile', 'email', 'bank_name', 'bank_account'],
+    supplementable_fields: ['mobile', 'email', 'education', 'graduation_school', 'major', 'graduation_date', 'bank_name', 'bank_account'],
   },
   social_insurance: {
     name: '社保公积金增员',
     visible_fields: [
       'customer_name', 'customer_code', 'employee_name', 'id_card_no', 'mobile',
+      'education', 'graduation_school', 'major', 'graduation_date',
       'social_location', 'start_month', 'social_base', 'fund_base', 'fund_ratio',
-      'business_mode', 'employee_type', 'special_remark', 'social_insurance_feedback',
+      'business_mode', 'employee_type', 'special_remark',
+      'social_insurance_result', 'medical_insurance_result', 'housing_fund_result', 'social_insurance_remark',
     ],
     supplementable_fields: ['social_location', 'start_month', 'social_base', 'fund_base'],
   },
@@ -588,6 +618,35 @@ export async function batchAcceptDispatchedOrders(ids: string[]): Promise<BatchA
   return request.post('/dispatched-orders/batch-accept', { ids }) as Promise<BatchAcceptResult>;
 }
 
+export interface BatchApproveModifyResult {
+  success: boolean;
+  processed: number;
+  skipped: Array<{ id: string; reason: string }>;
+}
+
+export async function batchApproveModifyDispatchedOrders(
+  ids: string[],
+  approved = true,
+  comment?: string,
+): Promise<BatchApproveModifyResult> {
+  if (isMockMode) {
+    let processed = 0;
+    const skipped: Array<{ id: string; reason: string }> = [];
+    ids.forEach((id) => {
+      const updated = updateChildInParent(id, (child) => {
+        if (child.status !== 'modify_pending') return;
+        child.status = approved ? 'pending' : 'returned';
+        child.accepted_at = approved ? null : child.accepted_at;
+        child.return_reason = approved ? null : (comment || '修改审批已拒绝');
+      });
+      if (updated && updated.status === (approved ? 'pending' : 'returned')) processed += 1;
+      else skipped.push({ id, reason: '子工单未处于修改审批中' });
+    });
+    return mockDelay({ success: true, processed, skipped });
+  }
+  return request.post('/dispatched-orders/batch-approve-modify', { ids, approved, comment }) as Promise<BatchApproveModifyResult>;
+}
+
 export async function completeDispatchedOrder(id: string, data?: Record<string, unknown>): Promise<DispatchedOrderItem> {
   if (isMockMode) {
     const updated = updateChildInParent(id, (c) => {
@@ -793,6 +852,57 @@ export async function approveVoidDispatchedOrder(id: string, approved: boolean, 
   return normalizeDispatchedOrderItem(raw);
 }
 
+function normalizeTimelineItem(raw: unknown): DispatchedOrderTimelineItem {
+  const row = (raw || {}) as Record<string, unknown>;
+  const changes = Array.isArray(row.changes) ? row.changes : [];
+  return {
+    id: String(row.id ?? ''),
+    createdAt: String(row.createdAt ?? row.created_at ?? ''),
+    operatorId: (row.operatorId ?? row.operator_id ?? null) as string | null,
+    operatorName: String(row.operatorName ?? row.operator_name ?? '系统'),
+    actionType: String(row.actionType ?? row.action_type ?? ''),
+    actionLabel: String(row.actionLabel ?? row.action_label ?? row.actionType ?? row.action_type ?? ''),
+    description: String(row.description ?? ''),
+    reason: typeof row.reason === 'string' ? row.reason : null,
+    changes: changes.map((change) => {
+      const item = (change || {}) as Record<string, unknown>;
+      const fieldCode = String(item.fieldCode ?? item.field_code ?? '');
+      return {
+        fieldCode,
+        fieldLabel: String(item.fieldLabel ?? item.field_label ?? fieldCode),
+        oldValue: (item.oldValue ?? item.old_value ?? null) as unknown,
+        newValue: (item.newValue ?? item.new_value ?? null) as unknown,
+      };
+    }).filter((change) => change.fieldCode),
+  };
+}
+
+export async function getDispatchedOrderTimeline(
+  id: string,
+  params: { page?: number; pageSize?: number } = {},
+): Promise<DispatchedOrderTimelineResult> {
+  const page = params.page ?? 1;
+  const pageSize = params.pageSize ?? 50;
+  if (isMockMode) {
+    return mockDelay({ items: [], total: 0, page, pageSize });
+  }
+  const raw = await request.get(`/dispatched-orders/${id}/timeline`, { params: { page, pageSize } }) as unknown;
+  const result = (raw || {}) as Record<string, unknown>;
+  const rows = Array.isArray(result.items)
+    ? result.items
+    : Array.isArray(result.list)
+      ? result.list
+      : Array.isArray(result.data)
+        ? result.data
+        : [];
+  return {
+    items: rows.map(normalizeTimelineItem),
+    total: Number(result.total ?? rows.length),
+    page: Number(result.page ?? page),
+    pageSize: Number(result.pageSize ?? pageSize),
+  };
+}
+
 export async function resubmitDispatchedOrder(id: string, payload?: { fields?: Record<string, unknown>; reason?: string; moduleCode?: string | null }): Promise<DispatchedOrderItem> {
   if (isMockMode) {
     const updated = updateChildInParent(id, (c) => {
@@ -822,6 +932,44 @@ export async function resubmitDispatchedOrder(id: string, payload?: { fields?: R
     }
     throw new Error('resubmit failed');
   }
+}
+
+export type BatchReassignStrategy = 'single' | 'round_robin' | 'load_balance';
+
+export interface BatchReassignResult {
+  success: boolean;
+  reassigned: number;
+  assignments: Array<{ id: string; previousHandlerId: string | null; newHandlerId: string }>;
+  skipped: Array<{ id: string; reason: string }>;
+}
+
+export async function batchReassignDispatchedOrders(
+  ids: string[],
+  handlerIds: string[],
+  strategy: BatchReassignStrategy,
+  reason: string,
+): Promise<BatchReassignResult> {
+  if (isMockMode) {
+    const assignments: BatchReassignResult['assignments'] = [];
+    ids.forEach((id, index) => {
+      const handlerId = strategy === 'single' ? handlerIds[0] : handlerIds[index % handlerIds.length];
+      const updated = updateChildInParent(id, (child) => {
+        const previousHandlerId = child.handler_id || null;
+        child.handler_id = handlerId;
+        child.handler_name = handlerId ? '新处理人' : null;
+        child.status = 'pending';
+        assignments.push({ id, previousHandlerId, newHandlerId: handlerId });
+      });
+      void updated;
+    });
+    return mockDelay({ success: true, reassigned: assignments.length, assignments, skipped: [] });
+  }
+  return request.post('/dispatched-orders/batch-reassign', {
+    ids,
+    handlerIds,
+    strategy,
+    reason,
+  }) as Promise<BatchReassignResult>;
 }
 
 export async function reassignDispatchedOrder(id: string, handlerId: string, reason?: string): Promise<DispatchedOrderItem> {

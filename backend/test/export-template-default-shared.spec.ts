@@ -24,7 +24,7 @@ describe('ExportTemplatesService default shared template', () => {
     const logRepo = { create: jest.fn((x) => x), save: jest.fn(async (x) => x) };
     const fieldRepo = { find: jest.fn(async () => [{ fieldCode: 'employee_name', fieldName: '姓名' } as FieldConfig]) };
     const upload = { saveBuffer: jest.fn(async () => ({ fileId: 'file-1', originalName: 'export.xlsx' })) };
-    const service = new ExportTemplatesService(templateRepo as never, dispatchedRepo as never, logRepo as never, fieldRepo as never, upload as never);
+    const service = new ExportTemplatesService(templateRepo as never, dispatchedRepo as never, logRepo as never, fieldRepo as never, { find: jest.fn(async () => []) } as never, upload as never);
 
     const result = await service.exportSingleDispatchedOrder('do-1', undefined, { sub: 'u1' } as never);
 

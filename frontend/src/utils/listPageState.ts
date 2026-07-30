@@ -4,6 +4,18 @@ import type { Key } from 'react';
 
 export type CachedTableFilters = Record<string, Key[] | null>;
 
+export const KEEP_ALIVE_ROUTE_ACTIVATED_EVENT = 'work-order:keep-alive-route-activated';
+
+export interface KeepAliveRouteActivatedDetail {
+  pathname: string;
+  search: string;
+}
+
+export function notifyKeepAliveRouteActivated(detail: KeepAliveRouteActivatedDetail) {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent<KeepAliveRouteActivatedDetail>(KEEP_ALIVE_ROUTE_ACTIVATED_EVENT, { detail }));
+}
+
 export interface CachedListPageState {
   month?: string;
   current?: number;

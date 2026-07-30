@@ -407,17 +407,36 @@ export class DashboardService {
              OR ($1::text = 'owner' AND wo.created_by = $2::uuid)
              OR ($1::text = 'department' AND wo.department_id = ANY($3::uuid[])))
       ), scoped_all AS (
-        SELECT d.*
+        SELECT
+          d.id,
+          d.status::text AS status,
+          d.void_at,
+          COALESCE(d.dispatched_at, d.created_at) AS activity_at
           FROM dispatched_orders d
           JOIN scoped_wo wo ON wo.id = d.parent_order_id
          WHERE wo.order_type::text IN ('onboarding','resignation')
            AND d.module_code = ANY($5::text[])
+        UNION ALL
+        SELECT
+          io.id,
+          CASE
+            WHEN io.status::text IN ('failed','archived') THEN 'completed'
+            WHEN io.status::text = 'cancelled' THEN 'void'
+            ELSE io.status::text
+          END AS status,
+          CASE WHEN io.status::text = 'cancelled' THEN io.closed_at ELSE NULL END AS void_at,
+          io.created_at AS activity_at
+          FROM in_service_orders io
+         WHERE io.deleted_at IS NULL
+           AND ($1::text IS NULL
+             OR ($1::text = 'owner' AND io.created_by = $2::uuid)
+             OR ($1::text = 'department' AND io.department_id = ANY($3::uuid[])))
       ), scoped_month AS (
         SELECT d.*
           FROM scoped_all d
           CROSS JOIN bounds b
-         WHERE COALESCE(d.dispatched_at, d.created_at) >= b.cur_start
-           AND COALESCE(d.dispatched_at, d.created_at) < b.cur_end
+         WHERE d.activity_at >= b.cur_start
+           AND d.activity_at < b.cur_end
       )
       SELECT
         (SELECT COUNT(*)::int FROM scoped_month) AS "totalThisMonth",
@@ -454,7 +473,11 @@ export class DashboardService {
           JOIN roles r ON r.id = ur.role_id
          WHERE ur.user_id = $1::uuid
       ), scoped_all AS (
-        SELECT d.*
+        SELECT
+          d.id,
+          d.status::text AS status,
+          d.void_at,
+          COALESCE(d.dispatched_at, d.created_at) AS activity_at
           FROM dispatched_orders d
           JOIN work_orders wo ON wo.id = d.parent_order_id
           CROSS JOIN current_role_scope rs
@@ -465,11 +488,42 @@ export class DashboardService {
              OR (d.handler_id IS NULL AND d.module_code IN (SELECT module_code FROM accessible_modules))
              OR (rs.can_view_module_all = true AND d.module_code IN (SELECT module_code FROM accessible_modules))
            )
+        UNION ALL
+        SELECT
+          io.id,
+          CASE
+            WHEN io.status::text IN ('failed','archived') THEN 'completed'
+            WHEN io.status::text = 'cancelled' THEN 'void'
+            ELSE io.status::text
+          END AS status,
+          CASE WHEN io.status::text = 'cancelled' THEN io.closed_at ELSE NULL END AS void_at,
+          io.created_at AS activity_at
+          FROM in_service_orders io
+          CROSS JOIN current_role_scope rs
+         WHERE io.deleted_at IS NULL
+           AND CASE
+             WHEN io.order_kind::text = 'contract_renewal' THEN 'renewal_contract'
+             WHEN io.order_kind::text = 'certificate' THEN 'in_service_certificate'
+             WHEN io.order_kind::text = 'resignation_certificate' THEN 'resignation_cert'
+             WHEN io.business_scope::text = 'out_of_province' THEN 'out_of_province_dispatch'
+             ELSE 'in_service_single_business'
+           END = ANY($3::text[])
+           AND (
+             io.handler_id = $1::uuid
+             OR (io.handler_id IS NULL AND CASE
+               WHEN io.order_kind::text = 'contract_renewal' THEN 'renewal_contract'
+               WHEN io.order_kind::text = 'certificate' THEN 'in_service_certificate'
+               WHEN io.order_kind::text = 'resignation_certificate' THEN 'resignation_cert'
+               WHEN io.business_scope::text = 'out_of_province' THEN 'out_of_province_dispatch'
+               ELSE 'in_service_single_business'
+             END IN (SELECT module_code FROM accessible_modules))
+             OR rs.can_view_module_all = true
+           )
       ), scoped_month AS (
         SELECT d.*
           FROM scoped_all d, bounds b
-         WHERE COALESCE(d.dispatched_at, d.created_at) >= b.cur_start
-           AND COALESCE(d.dispatched_at, d.created_at) < b.cur_end
+         WHERE d.activity_at >= b.cur_start
+           AND d.activity_at < b.cur_end
       )
       SELECT
         (SELECT COUNT(*)::int FROM scoped_month) AS "totalThisMonth",
@@ -713,7 +767,9 @@ export class DashboardService {
       order_types AS (
         SELECT * FROM (VALUES
           ('onboarding', '入职工单', 1),
-          ('resignation', '离职工单', 2)
+          ('resignation', '离职工单', 2),
+          ('in_service', '在职管理', 3),
+          ('out_of_province', '浙江自签', 4)
         ) AS t(order_type, label, sort_order)
       ),
       scoped_wo AS (
@@ -725,13 +781,35 @@ export class DashboardService {
              OR ($2::uuid[] IS NOT NULL AND array_length($2::uuid[], 1) > 0 AND wo.department_id = ANY($2::uuid[]))
              OR ($3::uuid IS NOT NULL AND wo.created_by = $3::uuid))
       ), scoped_do AS (
-        SELECT d.*, wo.order_type
+        SELECT
+          d.id,
+          d.status::text AS status,
+          d.void_at,
+          wo.order_type::text AS order_type
           FROM dispatched_orders d
           JOIN scoped_wo wo ON wo.id = d.parent_order_id
           CROSS JOIN bounds b
          WHERE COALESCE(d.dispatched_at, d.created_at) >= b.cur_start
            AND COALESCE(d.dispatched_at, d.created_at) < b.cur_end
            AND d.module_code = ANY($5::text[])
+        UNION ALL
+        SELECT
+          io.id,
+          CASE
+            WHEN io.status::text IN ('failed','archived') THEN 'completed'
+            WHEN io.status::text = 'cancelled' THEN 'void'
+            ELSE io.status::text
+          END AS status,
+          CASE WHEN io.status::text = 'cancelled' THEN io.closed_at ELSE NULL END AS void_at,
+          CASE WHEN io.business_scope::text = 'out_of_province' THEN 'out_of_province' ELSE 'in_service' END AS order_type
+          FROM in_service_orders io
+          CROSS JOIN bounds b
+         WHERE io.deleted_at IS NULL
+           AND io.created_at >= b.cur_start
+           AND io.created_at < b.cur_end
+           AND ($1::boolean = false
+             OR ($2::uuid[] IS NOT NULL AND array_length($2::uuid[], 1) > 0 AND io.department_id = ANY($2::uuid[]))
+             OR ($3::uuid IS NOT NULL AND io.created_by = $3::uuid))
       )
       SELECT
         ot.order_type AS "orderType",
@@ -783,7 +861,7 @@ export class DashboardService {
           JOIN roles r ON r.id = ur.role_id
          WHERE ur.user_id = $1::uuid
       ), scoped_do AS (
-        SELECT d.*
+        SELECT d.id, d.module_code, d.status::text AS status, d.void_at
           FROM dispatched_orders d
           JOIN work_orders wo ON wo.id = d.parent_order_id
           CROSS JOIN bounds b
@@ -797,6 +875,36 @@ export class DashboardService {
              OR (d.handler_id IS NULL AND d.module_code IN (SELECT module_code FROM accessible_modules))
              OR (rs.can_view_module_all = true AND d.module_code IN (SELECT module_code FROM accessible_modules))
            )
+        UNION ALL
+        SELECT
+          io.id,
+          CASE
+            WHEN io.order_kind::text = 'contract_renewal' THEN 'renewal_contract'
+            WHEN io.order_kind::text = 'certificate' THEN 'in_service_certificate'
+            WHEN io.order_kind::text = 'resignation_certificate' THEN 'resignation_cert'
+            WHEN io.business_scope::text = 'out_of_province' THEN 'out_of_province_dispatch'
+            ELSE 'in_service_single_business'
+          END AS module_code,
+          CASE
+            WHEN io.status::text IN ('failed','archived') THEN 'completed'
+            WHEN io.status::text = 'cancelled' THEN 'void'
+            ELSE io.status::text
+          END AS status,
+          CASE WHEN io.status::text = 'cancelled' THEN io.closed_at ELSE NULL END AS void_at
+          FROM in_service_orders io
+          CROSS JOIN bounds b
+          CROSS JOIN current_role_scope rs
+         WHERE io.deleted_at IS NULL
+           AND io.created_at >= b.cur_start
+           AND io.created_at < b.cur_end
+           AND CASE
+             WHEN io.order_kind::text = 'contract_renewal' THEN 'renewal_contract'
+             WHEN io.order_kind::text = 'certificate' THEN 'in_service_certificate'
+             WHEN io.order_kind::text = 'resignation_certificate' THEN 'resignation_cert'
+             WHEN io.business_scope::text = 'out_of_province' THEN 'out_of_province_dispatch'
+             ELSE 'in_service_single_business'
+           END = ANY($3::text[])
+           AND (io.handler_id = $1::uuid OR rs.can_view_module_all = true)
       )
       SELECT
         d.module_code AS "moduleCode",
@@ -846,13 +954,37 @@ export class DashboardService {
              OR ($3::uuid IS NOT NULL AND wo.created_by = $3::uuid))
       ),
       scoped_do AS (
-        SELECT d.*
+        SELECT d.id, d.module_code, d.status::text AS status, d.void_at
           FROM dispatched_orders d
           JOIN scoped_wo wo ON wo.id = d.parent_order_id
           CROSS JOIN bounds b
          WHERE COALESCE(d.dispatched_at, d.created_at) >= b.cur_start
            AND COALESCE(d.dispatched_at, d.created_at) < b.cur_end
            AND d.module_code = ANY($5::text[])
+        UNION ALL
+        SELECT
+          io.id,
+          CASE
+            WHEN io.order_kind::text = 'contract_renewal' THEN 'renewal_contract'
+            WHEN io.order_kind::text = 'certificate' THEN 'in_service_certificate'
+            WHEN io.order_kind::text = 'resignation_certificate' THEN 'resignation_cert'
+            WHEN io.business_scope::text = 'out_of_province' THEN 'out_of_province_dispatch'
+            ELSE 'in_service_single_business'
+          END AS module_code,
+          CASE
+            WHEN io.status::text IN ('failed','archived') THEN 'completed'
+            WHEN io.status::text = 'cancelled' THEN 'void'
+            ELSE io.status::text
+          END AS status,
+          CASE WHEN io.status::text = 'cancelled' THEN io.closed_at ELSE NULL END AS void_at
+          FROM in_service_orders io
+          CROSS JOIN bounds b
+         WHERE io.deleted_at IS NULL
+           AND io.created_at >= b.cur_start
+           AND io.created_at < b.cur_end
+           AND ($1::boolean = false
+             OR ($2::uuid[] IS NOT NULL AND array_length($2::uuid[], 1) > 0 AND io.department_id = ANY($2::uuid[]))
+             OR ($3::uuid IS NOT NULL AND io.created_by = $3::uuid))
       )
       SELECT
         d.module_code AS "moduleCode",

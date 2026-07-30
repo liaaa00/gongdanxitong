@@ -36,8 +36,12 @@ const WorkOrdersImport: React.FC = () => {
     }
   };
 
-  const handleDownloadErrorReport = (jobId: string) => {
-    downloadImportErrorReport(jobId);
+  const handleDownloadErrorReport = async (jobId: string) => {
+    try {
+      await downloadImportErrorReport(jobId);
+    } catch {
+      message.error('下载错误报告失败，请稍后重试');
+    }
   };
 
   const handlePreview = async (file: File): Promise<FieldMappingResult> => {

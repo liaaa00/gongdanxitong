@@ -100,6 +100,7 @@ function makeLoginResponse(mustChangePassword: boolean, options?: { camelCaseOnl
 describe('LoginPage mustChangePassword synchronization', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
   });
 
   it('stores mustChangePassword and redirects first-login users to change-password', async () => {
@@ -116,7 +117,11 @@ describe('LoginPage mustChangePassword synchronization', () => {
     await user.type(screen.getByPlaceholderText('密码'), '123456');
     await user.click(screen.getByRole('button', { name: '登录' }));
 
-    await waitFor(() => expect(mocks.login).toHaveBeenCalledWith({ username: 'jianglu', password: '123456' }));
+    await waitFor(() => expect(mocks.login).toHaveBeenCalledWith({
+      username: 'jianglu',
+      password: '123456',
+      businessScope: 'beilun',
+    }));
     expect(mocks.setToken).toHaveBeenCalledWith('access-token-1', 'refresh-token-1');
     expect(mocks.setUser).toHaveBeenCalledWith(expect.objectContaining({ must_change_password: true, mustChangePassword: true }));
     expect(mocks.setMustChangePassword).toHaveBeenCalledWith(true);
@@ -140,6 +145,31 @@ describe('LoginPage mustChangePassword synchronization', () => {
     await waitFor(() => expect(mocks.setUser).toHaveBeenCalledWith(expect.objectContaining({ must_change_password: false, mustChangePassword: false })));
     expect(mocks.setMustChangePassword).toHaveBeenCalledWith(false);
     expect(mocks.navigate).toHaveBeenCalledWith('/dashboard', { replace: true });
+  });
+
+  it('uses the Zhejiang entry scope and redirects an assigned account to the out-of-province home', async () => {
+    const user = userEvent.setup();
+    const response = makeLoginResponse(false, { camelCaseOnly: true });
+    response.user.business_scope = 'out_of_province';
+    mocks.login.mockResolvedValue(response);
+
+    render(
+      <MemoryRouter>
+        <LoginPage businessScope="out_of_province" />
+      </MemoryRouter>,
+    );
+
+    await user.type(screen.getByPlaceholderText('用户名'), 'zhejianguser');
+    await user.type(screen.getByPlaceholderText('密码'), 'changedPass123');
+    await user.click(screen.getByRole('button', { name: '登录' }));
+
+    await waitFor(() => expect(mocks.login).toHaveBeenCalledWith({
+      username: 'zhejianguser',
+      password: 'changedPass123',
+      businessScope: 'out_of_province',
+    }));
+    expect(window.localStorage.getItem('business_scope_v1')).toBe('out_of_province');
+    expect(mocks.navigate).toHaveBeenCalledWith('/out-of-province', { replace: true });
   });
 
   it('shows the backend error message when credentials are wrong', async () => {

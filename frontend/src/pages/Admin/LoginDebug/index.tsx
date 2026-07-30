@@ -1,103 +1,92 @@
-import { useState, useEffect } from 'react';
-import { PageContainer } from '@ant-design/pro-components';
-import { ProTable } from '@ant-design/pro-components';
+import { useState, useEffect, useCallback } from 'react';
+import { PageContainer, ProTable } from '@ant-design/pro-components';
 import type { ProColumns } from '@ant-design/pro-components';
-import { Button, Tag, Space, App, Card, Descriptions, Popconfirm, Alert, Typography, Divider } from 'antd';
-import { ClearOutlined, ReloadOutlined, SafetyCertificateOutlined, DatabaseOutlined, UserOutlined } from '@ant-design/icons';
+import { Button, Tag, Space, App, Card, Alert, Typography, Input, Form, Statistic, Row, Col } from 'antd';
+import { ReloadOutlined, SafetyCertificateOutlined, LoginOutlined } from '@ant-design/icons';
 import {
-  getAllUserPasswordStatus,
-  resetAllSeedPasswords,
-  clearAllAuthCache,
-  verifyAllSeedUserCredentials,
-  type PasswordStatus,
-  type LoginVerifyResult,
+  diagnoseUserLoginReadiness,
+  probeRealLogin,
+  type LoginReadinessResult,
+  type LoginReadinessReport,
+  type RealLoginProbeResult,
 } from '@/services/users';
-import { useUserStore } from '@/stores/userStore';
+import { isMockMode } from '@/services/mock';
 
-const RESULT_TAG: Record<string, { color: string; text: string }> = {
+const STATUS_TAG: Record<string, { color: string; text: string }> = {
   ok: { color: 'green', text: '可登录' },
-  no_user: { color: 'red', text: '无用户' },
-  no_password: { color: 'orange', text: '无密码' },
-  wrong_password: { color: 'red', text: '密码错误' },
-  disabled: { color: 'default', text: '已禁用' },
-  error: { color: 'red', text: '错误' },
+  disabled: { color: 'red', text: '已禁用' },
+  no_role: { color: 'orange', text: '无角色' },
+  never_logged_in: { color: 'gold', text: '从未登录' },
+};
+
+const formatDateTime = (value: string | null): string => {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString('zh-CN', { hour12: false });
 };
 
 const LoginDebugPage: React.FC = () => {
   const { message } = App.useApp();
-  const { user } = useUserStore();
-  const [passwordList, setPasswordList] = useState<PasswordStatus[]>([]);
-  const [verifyResults, setVerifyResults] = useState<LoginVerifyResult[]>([]);
+  const [report, setReport] = useState<LoginReadinessReport | null>(null);
   const [loading, setLoading] = useState(false);
+  const [probing, setProbing] = useState(false);
+  const [probeResult, setProbeResult] = useState<RealLoginProbeResult | null>(null);
+  const [form] = Form.useForm<{ username: string; password: string }>();
 
-  const refreshData = () => {
-    setPasswordList(getAllUserPasswordStatus());
-    setVerifyResults(verifyAllSeedUserCredentials());
-  };
-
-  useEffect(() => { refreshData(); }, []);
-
-  const handleClearCache = () => {
-    const cleared = clearAllAuthCache();
-    message.success(`已清除 ${cleared.length} 个缓存项，页面即将刷新`);
-    setTimeout(() => window.location.reload(), 1000);
-  };
-
-  const handleResetPasswords = () => {
+  const refresh = useCallback(async () => {
     setLoading(true);
-    const result = resetAllSeedPasswords();
-    message.success(`已重置 ${result.fixed.length} 个种子用户密码为默认值`);
-    refreshData();
-    setLoading(false);
+    try {
+      const data = await diagnoseUserLoginReadiness();
+      setReport(data);
+    } catch {
+      message.error('拉取用户诊断数据失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [message]);
+
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  const handleProbe = async () => {
+    const values = await form.validateFields();
+    setProbing(true);
+    setProbeResult(null);
+    try {
+      const result = await probeRealLogin(values.username.trim(), values.password);
+      setProbeResult(result);
+    } catch {
+      setProbeResult({ ok: false, status: 'error', message: '验证过程发生异常' });
+    } finally {
+      setProbing(false);
+    }
   };
 
-  const okCount = verifyResults.filter((r) => r.status === 'ok').length;
-  const failCount = verifyResults.filter((r) => r.status !== 'ok').length;
-  const hasPasswordCount = passwordList.filter((p) => p.has_password).length;
-
-  const passwordColumns: ProColumns<PasswordStatus>[] = [
-    { title: '用户名', dataIndex: 'username', width: 130 },
-    { title: '姓名', dataIndex: 'real_name', width: 120 },
+  const columns: ProColumns<LoginReadinessResult>[] = [
+    { title: '用户名', dataIndex: 'username', width: 140, fixed: 'left' },
+    { title: '姓名', dataIndex: 'real_name', width: 110 },
     {
-      title: '状态', dataIndex: 'is_active', width: 80,
+      title: '账号状态', dataIndex: 'is_active', width: 90,
       render: (_, r) => <Tag color={r.is_active ? 'green' : 'red'}>{r.is_active ? '启用' : '禁用'}</Tag>,
     },
+    { title: '角色', dataIndex: 'role_names', width: 180, ellipsis: true },
     {
-      title: '密码状态', dataIndex: 'has_password', width: 100,
-      render: (_, r) => r.has_password
-        ? <Tag color="green">有密码</Tag>
-        : <Tag color="red">无密码</Tag>,
+      title: '最后登录', dataIndex: 'last_login_at', width: 170,
+      render: (_, r) => formatDateTime(r.last_login_at),
     },
     {
-      title: '当前密码', dataIndex: 'password', width: 140,
-      render: (_, r) => r.has_password ? <Typography.Text code>{r.password}</Typography.Text> : <Tag>无</Tag>,
-    },
-  ];
-
-  const verifyColumns: ProColumns<LoginVerifyResult>[] = [
-    { title: '用户名', dataIndex: 'username', width: 130 },
-    { title: '姓名', dataIndex: 'real_name', width: 100 },
-    {
-      title: '验证结果', dataIndex: 'status', width: 100,
+      title: '诊断', dataIndex: 'status', width: 100, fixed: 'right',
+      filters: Object.entries(STATUS_TAG).map(([value, cfg]) => ({ text: cfg.text, value })),
+      onFilter: (value, record) => record.status === value,
       render: (_, r) => {
-        const cfg = RESULT_TAG[r.status] || { color: 'default', text: '未知' };
+        const cfg = STATUS_TAG[r.status] || { color: 'default', text: '未知' };
         return <Tag color={cfg.color}>{cfg.text}</Tag>;
       },
     },
-    {
-      title: '预期密码', dataIndex: 'expected_password', width: 110,
-      render: (_, r) => <Typography.Text code>{r.expected_password}</Typography.Text>,
-    },
-    { title: '详情', dataIndex: 'error', ellipsis: true },
+    { title: '建议', dataIndex: 'advice', ellipsis: true },
   ];
 
-  const sessionInfo = user ? [
-    { label: '用户名', children: user.username },
-    { label: '姓名', children: user.real_name },
-    { label: '角色', children: user.roles?.map((r) => r.name).join(', ') || '无' },
-  ] : [
-    { label: '状态', children: '未登录' },
-  ];
+  const backendUnreachable = report !== null && !report.backendReachable;
 
   return (
     <PageContainer header={{ title: '登录诊断工具' }}>
@@ -105,84 +94,80 @@ const LoginDebugPage: React.FC = () => {
         type="info"
         showIcon
         message="诊断说明"
-        description="此页面直接读取浏览器本地缓存中的用户和密码数据，帮助排查非管理员账号无法登录的问题。如发现问题，可使用下方按钮修复。"
+        description="本页拉取后端真实用户列表，依据后端登录规则（禁用账号直接拒绝、登录成功才记录最后登录时间、无角色登录后无权限）逐个诊断账号的登录就绪状态。下方还可用任意账号密码实调后端接口做真实登录验证。"
         style={{ marginBottom: 16 }}
       />
 
+      {backendUnreachable && (
+        <Alert
+          type="error"
+          showIcon
+          message="无法连接后端"
+          description="未能获取真实用户数据。请确认后端服务已启动，且当前不是 Mock 模式。"
+          style={{ marginBottom: 16 }}
+        />
+      )}
+
       <Card
-        title={<Space><DatabaseOutlined />本地存储诊断</Space>}
-        extra={
-          <Space>
-            <Popconfirm title="确定清除所有认证缓存？清除后页面将刷新，所有数据将重置为种子数据。" onConfirm={handleClearCache}>
-              <Button icon={<ClearOutlined />} danger>清除所有缓存</Button>
-            </Popconfirm>
-            <Popconfirm title="确定重置所有种子用户密码为默认值？" onConfirm={handleResetPasswords}>
-              <Button icon={<ReloadOutlined />} loading={loading}>重置所有种子密码</Button>
-            </Popconfirm>
-          </Space>
-        }
+        title={<Space><SafetyCertificateOutlined />用户登录就绪诊断</Space>}
+        extra={<Button icon={<ReloadOutlined />} loading={loading} onClick={() => void refresh()}>刷新</Button>}
         style={{ marginBottom: 16 }}
       >
-        <Descriptions title={<Space><UserOutlined />当前会话</Space>} column={3} size="small" style={{ marginBottom: 16 }}>
-          {sessionInfo.map((item) => (
-            <Descriptions.Item key={item.label} label={item.label}>{item.children}</Descriptions.Item>
-          ))}
-        </Descriptions>
-
-        <Divider />
-        <Typography.Title level={5}>
-          用户密码状态 ({hasPasswordCount}/{passwordList.length} 有密码)
-        </Typography.Title>
-        <ProTable<PasswordStatus>
-          columns={passwordColumns}
-          dataSource={passwordList}
+        <Row gutter={16} style={{ marginBottom: 16 }}>
+          <Col span={8}><Statistic title="用户总数" value={report?.total ?? 0} /></Col>
+          <Col span={8}><Statistic title="可正常登录" value={report?.okCount ?? 0} valueStyle={{ color: '#3f8600' }} /></Col>
+          <Col span={8}><Statistic title="存在异常" value={report?.issueCount ?? 0} valueStyle={{ color: (report?.issueCount ?? 0) > 0 ? '#cf1322' : undefined }} /></Col>
+        </Row>
+        <ProTable<LoginReadinessResult>
+          columns={columns}
+          dataSource={report?.results ?? []}
           rowKey="username"
+          loading={loading}
           search={false}
           options={false}
-          pagination={false}
+          pagination={{ pageSize: 20, showSizeChanger: true }}
           size="small"
+          scroll={{ x: 900 }}
           toolBarRender={false}
         />
       </Card>
 
-      <Card title={<Space><SafetyCertificateOutlined />登录验证结果</Space>}>
-        {failCount > 0 && (
+      <Card title={<Space><LoginOutlined />真实登录验证</Space>}>
+        <Alert
+          type={isMockMode ? 'warning' : 'info'}
+          showIcon
+          message={isMockMode
+            ? '当前为 Mock 模式，真实登录验证不可用（需连接真实后端）。'
+            : '输入账号密码，直接调用后端 /auth/login 验证是否真能登录。此操作不会改变你当前的登录会话。'}
+          style={{ marginBottom: 16 }}
+        />
+        <Form form={form} layout="inline" onFinish={handleProbe}>
+          <Form.Item name="username" rules={[{ required: true, message: '请输入用户名' }]}>
+            <Input placeholder="用户名" allowClear style={{ width: 180 }} />
+          </Form.Item>
+          <Form.Item name="password" rules={[{ required: true, message: '请输入密码' }]}>
+            <Input.Password placeholder="密码" style={{ width: 180 }} />
+          </Form.Item>
+          <Form.Item>
+            <Button type="primary" htmlType="submit" loading={probing} disabled={isMockMode}>验证登录</Button>
+          </Form.Item>
+        </Form>
+        {probeResult && (
           <Alert
-            type={okCount === 0 ? 'error' : 'warning'}
+            type={probeResult.ok ? 'success' : 'error'}
             showIcon
-            message={`${okCount}/${verifyResults.length} 个用户可正常登录，${failCount} 个用户存在异常`}
-            style={{ marginBottom: 16 }}
+            style={{ marginTop: 16 }}
+            message={probeResult.ok ? '验证通过' : '验证失败'}
+            description={
+              <Typography.Paragraph style={{ margin: 0 }}>
+                {probeResult.message}
+                {probeResult.ok && probeResult.mustChangePassword && (
+                  <><br /><Typography.Text type="warning">注意：该账号被标记为需要修改密码，登录后会跳转改密页。</Typography.Text></>
+                )}
+              </Typography.Paragraph>
+            }
           />
         )}
-        {failCount === 0 && (
-          <Alert type="success" showIcon message={`全部 ${okCount} 个种子用户均可正常登录`} style={{ marginBottom: 16 }} />
-        )}
-        <ProTable<LoginVerifyResult>
-          columns={verifyColumns}
-          dataSource={verifyResults}
-          rowKey="username"
-          search={false}
-          options={false}
-          pagination={false}
-          size="small"
-          toolBarRender={false}
-        />
-
-        <Divider />
-        <Typography.Title level={5}>种子用户及默认密码</Typography.Title>
-        <Alert
-          type="info"
-          message={
-            <Typography.Paragraph style={{ margin: 0 }}>
-              所有种子账号默认密码均为 123456（admin123 为旧口径，当前后端会返回 401，不可用于演示）<br />
-              管理员账号：lizhanbo/123456、wangzixi/123456<br />
-              业务负责人账号：aolei/123456、xuekun/123456、yuqinxia/123456<br />
-              共享团队账号：jianglu/123456、yangchun/123456、maoyani/123456<br />
-              数据录入账号：annazhen/123456<br />
-              其余组长与组员账号：默认密码均为 123456
-            </Typography.Paragraph>
-          }
-        />
       </Card>
     </PageContainer>
   );

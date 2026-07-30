@@ -45,24 +45,38 @@ const mockTemplates: ExportTemplateItem[] = [
   },
 ];
 
+function normalizeExportTemplates(result: any): ExportTemplateItem[] {
+  const rawList = Array.isArray(result) ? result : (result?.list || result?.items || result?.data || []);
+  return (Array.isArray(rawList) ? rawList : []).map((t: any) => ({
+    id: String(t.id ?? ''),
+    template_name: t.template_name ?? t.templateName ?? '',
+    module_code: t.module_code ?? t.moduleCode ?? '',
+    field_list: t.field_list ?? t.fieldList ?? [],
+    created_by: t.created_by ?? t.createdBy ?? '',
+    is_shared: t.is_shared ?? t.isShared ?? false,
+    sign_platform: t.sign_platform ?? t.signPlatform ?? null,
+    created_at: t.created_at ?? t.createdAt ?? '',
+  } as ExportTemplateItem));
+}
+
 export async function getExportTemplates(moduleCode?: string): Promise<ExportTemplateItem[]> {
   if (isMockMode) {
     const filtered = moduleCode ? mockTemplates.filter((t) => t.module_code === moduleCode) : mockTemplates;
     return mockDelay(filtered);
   }
   try {
-    const result = await request.get('/admin/export-templates', { params: { moduleCode } }) as any;
-    const rawList = Array.isArray(result) ? result : (result?.list || result?.items || result?.data || []);
-    return (Array.isArray(rawList) ? rawList : []).map((t: any) => ({
-      id: String(t.id ?? ''),
-      template_name: t.template_name ?? t.templateName ?? '',
-      module_code: t.module_code ?? t.moduleCode ?? '',
-      field_list: t.field_list ?? t.fieldList ?? [],
-      created_by: t.created_by ?? t.createdBy ?? '',
-      is_shared: t.is_shared ?? t.isShared ?? false,
-      sign_platform: t.sign_platform ?? t.signPlatform ?? null,
-      created_at: t.created_at ?? t.createdAt ?? '',
-    } as ExportTemplateItem));
+    const result = await request.get('/admin/export-templates', { params: { moduleCode }, silentError: true } as any) as any;
+    return normalizeExportTemplates(result);
+  } catch {
+    return [];
+  }
+}
+
+export async function getWorkOrderExportTemplates(moduleCode: 'contract'): Promise<ExportTemplateItem[]> {
+  if (isMockMode) return mockDelay(mockTemplates.filter((template) => template.module_code === moduleCode));
+  try {
+    const result = await request.get(`/work-order-export-templates/${moduleCode}`, { silentError: true } as any) as any;
+    return normalizeExportTemplates(result);
   } catch {
     return [];
   }

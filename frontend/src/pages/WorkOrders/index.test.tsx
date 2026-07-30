@@ -74,7 +74,7 @@ describe('WorkOrders initiated read-only view', () => {
     mocks.pathname = '/my-work/initiated';
     mocks.search = '?employeeName=张三';
     mocks.roles = new Set<string>(['admin']);
-    mocks.getMyRoleActions.mockResolvedValue(['work_order.create', 'work_order.import']);
+    mocks.getMyRoleActions.mockResolvedValue(['work_order.create', 'work_order.import', 'work_order.delete']);
     mocks.getWorkOrders.mockResolvedValue({ list: [], total: 0 });
   });
 
@@ -178,7 +178,7 @@ describe('WorkOrders initiated read-only view', () => {
     mocks.pathname = '/work-orders';
     mocks.search = '';
     mocks.roles = new Set<string>(['business_group_member']);
-    mocks.getMyRoleActions.mockResolvedValue(['work_order.view_own']);
+    mocks.getMyRoleActions.mockResolvedValue(['work_order.view', 'work_order.create', 'work_order.import']);
     mocks.getWorkOrders.mockResolvedValue({
       list: [
         { id: 'wo-on', order_type: 'onboarding' },
@@ -204,7 +204,7 @@ describe('WorkOrders initiated read-only view', () => {
     mocks.pathname = '/work-orders';
     mocks.search = '?orderType=resignation';
     mocks.roles = new Set<string>(['business_group_member']);
-    mocks.getMyRoleActions.mockResolvedValue(['work_order.view_own']);
+    mocks.getMyRoleActions.mockResolvedValue(['work_order.view', 'work_order.create', 'work_order.import']);
     mocks.getWorkOrders.mockResolvedValue({ list: [], total: 0 });
 
     render(<WorkOrders />);

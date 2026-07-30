@@ -1,4 +1,4 @@
-import { DispatchedOrderStatus, OrderType, WorkOrderStatus } from 'src/entities';
+import { BusinessScope, DispatchedOrderStatus, OrderType, WorkOrderStatus } from 'src/entities';
 
 export interface PagedResponse<T> {
   items: T[];
@@ -13,6 +13,8 @@ export interface WorkOrderListItem {
   order_no?: string;
   orderType: OrderType;
   order_type?: OrderType;
+  businessScope: BusinessScope;
+  business_scope?: BusinessScope;
   status: WorkOrderStatus;
   customerId: string;
   customer_id?: string;
@@ -79,6 +81,8 @@ export interface WorkOrderDetailItem {
   order_no?: string;
   orderType: OrderType;
   order_type?: OrderType;
+  businessScope: BusinessScope;
+  business_scope?: BusinessScope;
   status: WorkOrderStatus;
   createdBy: { id: string; username: string; realName: string };
   department: { id: string; name: string };

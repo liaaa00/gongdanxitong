@@ -5,6 +5,7 @@ import { isMockMode, mockDelay } from './mock';
 import { validateUserCredentials, changeUserPassword, getUserPasswordStatus } from './users';
 import { loadList } from './_mockStore';
 import type { RoleItem } from './roles';
+import { DEFAULT_MATRIX } from './roleActionPermissions';
 
 const ROLES_KEY = 'mock_admin_roles_v3'; // ★ v3: 新增福保负责人角色（与 roles.ts 一致）
 const ROLES_SEED: RoleItem[] = [
@@ -66,6 +67,17 @@ function setMockSessionUser(user: UserInfo) {
   try { window.localStorage.setItem(MOCK_SESSION_KEY, JSON.stringify(user)); } catch { /* ignore */ }
 }
 
+
+function buildMockPermissions(roleCodes: string[]): string[] {
+  const actions = roleCodes.flatMap((code) => DEFAULT_MATRIX[code] || []);
+  const adminWildcards = roleCodes.includes('admin') ? ['*'] : [];
+  return Array.from(new Set([
+    ...adminWildcards,
+    ...roleCodes.map((code) => `role:${code}`),
+    ...actions,
+  ]));
+}
+
 function normalizeRole(role: RawRole, rolesMap = getRolesMap()): RoleInfo {
   if (typeof role === 'string') {
     const roleDef = Array.from(rolesMap.values()).find((item) => item.code === role);
@@ -89,7 +101,7 @@ function normalizeRole(role: RawRole, rolesMap = getRolesMap()): RoleInfo {
 
 function normalizeUserInfo(rawUser: RawUser | undefined, rawRoles?: RawRole[], rawPermissions?: string[]): UserInfo {
   const roles = (rawRoles || rawUser?.roles || []).map((role) => normalizeRole(role));
-  const permissions = rawPermissions || rawUser?.permissions || roles.map((role) => `role:${role.code}`);
+  const permissions = rawPermissions || rawUser?.permissions || buildMockPermissions(roles.map((role) => role.code));
 
   return {
     id: rawUser?.id || '',
@@ -101,6 +113,8 @@ function normalizeUserInfo(rawUser: RawUser | undefined, rawRoles?: RawRole[], r
     is_active: rawUser?.is_active ?? rawUser?.isActive ?? true,
     roles,
     permissions,
+    business_scope: rawUser?.business_scope ?? rawUser?.businessScope ?? 'beilun',
+    businessScope: rawUser?.businessScope ?? rawUser?.business_scope ?? 'beilun',
     must_change_password: rawUser?.must_change_password ?? rawUser?.mustChangePassword ?? false,
     mustChangePassword: rawUser?.must_change_password ?? rawUser?.mustChangePassword ?? false,
     password_updated_at: rawUser?.password_updated_at ?? rawUser?.passwordUpdatedAt ?? null,
@@ -148,7 +162,9 @@ export async function login(data: LoginRequest): Promise<LoginResponse> {
             level: roleDef?.level || '',
           };
         }),
-        permissions: user.roles.some((r) => rolesMap.get(r.role_id)?.code === 'admin') ? ['*'] : [],
+        permissions: buildMockPermissions(user.roles.map((r) => rolesMap.get(r.role_id)?.code || r.role_id)),
+        business_scope: user.business_scope ?? 'beilun',
+        businessScope: user.business_scope ?? 'beilun',
         must_change_password: passwordStatus.must_change_password,
         mustChangePassword: passwordStatus.must_change_password,
         password_updated_at: passwordStatus.password_updated_at,
@@ -240,5 +256,5 @@ export async function changePassword(data: ChangePasswordPayload): Promise<void>
     });
     return;
   }
-  return request.post('/auth/change-password', payload) as Promise<void>;
+  return request.post('/auth/change-password', payload, { silentError: true } as any) as Promise<void>;
 }

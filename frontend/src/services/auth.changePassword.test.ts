@@ -38,7 +38,7 @@ describe('auth changePassword DTO', () => {
     expect(post).toHaveBeenCalledWith('/auth/change-password', {
       oldPassword: 'oldPass123',
       newPassword: 'newPass123',
-    });
+    }, { silentError: true });
     expect(post.mock.calls[0][1]).not.toHaveProperty('old_password');
     expect(post.mock.calls[0][1]).not.toHaveProperty('new_password');
   });

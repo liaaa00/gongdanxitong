@@ -1,30 +1,25 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Card, Upload, Button, Select, Tag, Space, App, Popconfirm, Modal, Input } from 'antd';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from 'react';
+import { Card, Upload, Button, Tag, Space, App, Popconfirm } from 'antd';
 import type { UploadFile } from 'antd/es/upload/interface';
 import {
-  CheckOutlined, CloseOutlined, DeleteOutlined, EyeOutlined, FileProtectOutlined,
+  CheckOutlined, CloseOutlined, DeleteOutlined, DownloadOutlined,
   InboxOutlined, UploadOutlined,
 } from '@ant-design/icons';
 import {
   deleteOrderAttachment,
+  downloadOrderAttachment,
   listOrderAttachments,
   receiveOrderAttachment,
   reviewOrderAttachment,
-  stampOrderAttachment,
   uploadMaterialAttachment,
   type AttachmentStatus,
   type OrderAttachmentItem,
 } from '@/services/attachments';
 
-const MATERIAL_TYPES = [
-  '身份证复印件', '离职申请书', '离职交接单', '离职证明', '劳动合同', '社保缴费记录', '其他材料',
-];
-
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   uploaded: { label: '已上传', color: 'default' },
   rejected: { label: '已退回', color: 'red' },
   approved: { label: '已审核', color: 'green' },
-  stamped: { label: '已用印', color: 'purple' },
   received: { label: '已收齐', color: 'blue' },
 };
 
@@ -33,16 +28,34 @@ interface MaterialsUploadProps {
   bizPurpose: 'benefit_material' | 'resignation_cert' | 'resignation_material' | 'renewal_contract';
 }
 
-const MaterialsUpload: React.FC<MaterialsUploadProps> = ({ workOrderId, bizPurpose }) => {
+// 提交前暂存能力：workOrderId 为空时选中的文件先本地缓存，
+// 父组件在工单创建成功后通过 ref 调用 uploadStaged 一次性上传。
+export interface MaterialsUploadHandle {
+  uploadStaged: (workOrderId: string) => Promise<void>;
+  hasStaged: () => boolean;
+}
+
+interface StagedFile {
+  uid: string;
+  file: File;
+}
+
+// 附件格式白名单：图片、Word、PDF（与后端 20MB 上限、黑名单兜底一致，前端做正向拦截）。
+const ALLOWED_UPLOAD_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'doc', 'docx', 'pdf'];
+const UPLOAD_ACCEPT = 'image/*,.pdf,.doc,.docx';
+
+function isAllowedUploadFile(fileName: string): boolean {
+  const ext = fileName.split('.').pop()?.toLowerCase() ?? '';
+  return ALLOWED_UPLOAD_EXTENSIONS.includes(ext);
+}
+
+const MaterialsUpload = forwardRef<MaterialsUploadHandle, MaterialsUploadProps>(({ workOrderId, bizPurpose }, ref) => {
   const { message } = App.useApp();
   const [attachments, setAttachments] = useState<OrderAttachmentItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [materialType, setMaterialType] = useState('其他材料');
   const [fileList, setFileList] = useState<UploadFile[]>([]);
-  const [stampModalOpen, setStampModalOpen] = useState(false);
-  const [stampTarget, setStampTarget] = useState<OrderAttachmentItem | null>(null);
-  const [stampNo, setStampNo] = useState('');
+  const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([]);
 
   const title = bizPurpose === 'benefit_material' ? '申报材料' : '离职材料收集';
 
@@ -69,12 +82,18 @@ const MaterialsUpload: React.FC<MaterialsUploadProps> = ({ workOrderId, bizPurpo
       message.warning('请先选择文件');
       return;
     }
+    if (!workOrderId) {
+      setStagedFiles((prev) => [...prev, { uid: `staged-${Date.now()}-${file.name}`, file }]);
+      setFileList([]);
+      message.success('已加入待上传列表，提交工单后自动上传');
+      return;
+    }
     setUploading(true);
     try {
       const item = await uploadMaterialAttachment(file, {
         work_order_id: workOrderId,
         biz_purpose: bizPurpose,
-        material_type: materialType,
+        status: 'received',
       });
       setAttachments((prev) => [item, ...prev.filter((old) => old.id !== item.id)]);
       setFileList([]);
@@ -103,22 +122,6 @@ const MaterialsUpload: React.FC<MaterialsUploadProps> = ({ workOrderId, bizPurpo
     }
   };
 
-  const handleStamp = async () => {
-    if (!stampTarget) return;
-    if (!stampNo.trim()) {
-      message.warning('请输入用印单号');
-      return;
-    }
-    try {
-      replaceAttachment(await stampOrderAttachment(stampTarget.id, stampNo.trim()));
-      setStampModalOpen(false);
-      setStampTarget(null);
-      setStampNo('');
-      message.success('用印信息已记录');
-    } catch {
-      message.error('用印信息保存失败');
-    }
-  };
 
   const handleDelete = async (item: OrderAttachmentItem) => {
     try {
@@ -130,20 +133,46 @@ const MaterialsUpload: React.FC<MaterialsUploadProps> = ({ workOrderId, bizPurpo
     }
   };
 
-  const getMaterialType = (item: OrderAttachmentItem) => String(item.metadata?.material_type || item.metadata?.materialType || '其他材料');
+  const handleDownload = async (item: OrderAttachmentItem) => {
+    try {
+      await downloadOrderAttachment(item);
+    } catch {
+      message.error('文件下载失败');
+    }
+  };
+
+  const removeStaged = (uid: string) => {
+    setStagedFiles((prev) => prev.filter((item) => item.uid !== uid));
+  };
+
+  const uploadStaged = useCallback(async (targetWorkOrderId: string) => {
+    if (!targetWorkOrderId || stagedFiles.length === 0) return;
+    for (const staged of stagedFiles) {
+      await uploadMaterialAttachment(staged.file, {
+        work_order_id: targetWorkOrderId,
+        biz_purpose: bizPurpose,
+        status: 'received',
+      });
+    }
+    setStagedFiles([]);
+  }, [bizPurpose, stagedFiles]);
+
+  useImperativeHandle(ref, () => ({
+    uploadStaged,
+    hasStaged: () => stagedFiles.length > 0,
+  }), [uploadStaged, stagedFiles.length]);
 
   return (
     <Card title={title} loading={loading}>
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
         <Space wrap>
-          <Select
-            value={materialType}
-            onChange={setMaterialType}
-            style={{ width: 180 }}
-            options={MATERIAL_TYPES.map((type) => ({ label: type, value: type }))}
-          />
           <Upload
+            accept={UPLOAD_ACCEPT}
             beforeUpload={(file) => {
+              if (!isAllowedUploadFile(file.name)) {
+                message.error('仅支持图片、Word、PDF 格式');
+                return Upload.LIST_IGNORE;
+              }
               setFileList([{ uid: file.uid, name: file.name, status: 'done', originFileObj: file }]);
               return false;
             }}
@@ -162,6 +191,23 @@ const MaterialsUpload: React.FC<MaterialsUploadProps> = ({ workOrderId, bizPurpo
         </Space>
 
         <div>
+          {stagedFiles.map((staged) => (
+            <Card key={staged.uid} size="small" style={{ marginBottom: 8 }} styles={{ body: { padding: '8px 12px' } }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                <Space>
+                  <InboxOutlined />
+                  <div>
+                    <div style={{ fontWeight: 500, fontSize: 13 }}>{staged.file.name}</div>
+                    <Space size={4} style={{ fontSize: 11, color: '#999' }} wrap>
+                      <Tag color="orange">待上传</Tag>
+                      <span>{(staged.file.size / 1024).toFixed(1)} KB</span>
+                    </Space>
+                  </div>
+                </Space>
+                <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => removeStaged(staged.uid)} />
+              </div>
+            </Card>
+          ))}
           {attachments.map((item) => {
             const statusInfo = STATUS_LABELS[item.status] || { label: item.status, color: 'default' };
             return (
@@ -172,7 +218,6 @@ const MaterialsUpload: React.FC<MaterialsUploadProps> = ({ workOrderId, bizPurpo
                     <div>
                       <div style={{ fontWeight: 500, fontSize: 13 }}>{item.original_name || item.file_name}</div>
                       <Space size={4} style={{ fontSize: 11, color: '#999' }} wrap>
-                        <Tag>{getMaterialType(item)}</Tag>
                         <Tag color={statusInfo.color}>{statusInfo.label}</Tag>
                         <span>{(Number(item.file_size || 0) / 1024).toFixed(1)} KB</span>
                         <span>{item.created_at ? new Date(item.created_at).toLocaleDateString('zh-CN') : '-'}</span>
@@ -181,31 +226,8 @@ const MaterialsUpload: React.FC<MaterialsUploadProps> = ({ workOrderId, bizPurpo
                     </div>
                   </Space>
                   <Space size={4} wrap>
-                    {item.status === 'uploaded' && (
-                      <>
-                        <Button type="link" size="small" icon={<CheckOutlined />} onClick={() => handleStatusChange(item, 'approved')}>
-                          审核通过
-                        </Button>
-                        <Popconfirm title="退回此材料？" onConfirm={() => handleStatusChange(item, 'rejected')}>
-                          <Button type="link" size="small" danger icon={<CloseOutlined />}>退回</Button>
-                        </Popconfirm>
-                      </>
-                    )}
-                    {item.status === 'approved' && (
-                      <Button type="link" size="small" icon={<FileProtectOutlined />} onClick={() => { setStampTarget(item); setStampNo(''); setStampModalOpen(true); }}>
-                        申请用印
-                      </Button>
-                    )}
-                    {item.status === 'stamped' && (
-                      <>
-                        <Tag color="purple">用印单号: {item.stamp_no}</Tag>
-                        <Button type="link" size="small" icon={<CheckOutlined />} onClick={() => handleStatusChange(item, 'received')}>
-                          确认收齐
-                        </Button>
-                      </>
-                    )}
-                    <Button type="link" size="small" icon={<EyeOutlined />} disabled={!item.download_url} onClick={() => item.download_url && window.open(item.download_url, '_blank')}>
-                      预览
+                    <Button type="link" size="small" icon={<DownloadOutlined />} disabled={!item.download_url} onClick={() => handleDownload(item)}>
+                      下载
                     </Button>
                     <Popconfirm title="确定删除此附件？" onConfirm={() => handleDelete(item)}>
                       <Button type="link" size="small" danger icon={<DeleteOutlined />} />
@@ -215,7 +237,7 @@ const MaterialsUpload: React.FC<MaterialsUploadProps> = ({ workOrderId, bizPurpo
               </Card>
             );
           })}
-          {attachments.length === 0 && (
+          {attachments.length === 0 && stagedFiles.length === 0 && (
             <div style={{ textAlign: 'center', color: '#999', padding: 24 }}>
               <InboxOutlined style={{ fontSize: 32 }} />
               <div>暂无材料</div>
@@ -223,20 +245,10 @@ const MaterialsUpload: React.FC<MaterialsUploadProps> = ({ workOrderId, bizPurpo
           )}
         </div>
       </Space>
-
-      <Modal
-        title="用印申请"
-        open={stampModalOpen}
-        onOk={handleStamp}
-        onCancel={() => { setStampModalOpen(false); setStampTarget(null); }}
-      >
-        <div style={{ marginBottom: 12 }}>
-          材料: <Tag>{stampTarget ? getMaterialType(stampTarget) : ''}</Tag> {stampTarget?.original_name || stampTarget?.file_name}
-        </div>
-        <Input placeholder="请输入用印单号" value={stampNo} onChange={(event) => setStampNo(event.target.value)} />
-      </Modal>
     </Card>
   );
-};
+});
+
+MaterialsUpload.displayName = 'MaterialsUpload';
 
 export default MaterialsUpload;

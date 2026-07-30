@@ -46,6 +46,9 @@ export class ImportTemplateService {
     optionsSheet.state = 'veryHidden';
 
     this.writeHeaderAndMetaRows(sheet, fields);
+    if (orderType === OrderType.RESIGNATION) {
+      this.writeAttachmentHintColumn(sheet, fields.length);
+    }
     this.applyColumnWidths(sheet, fields);
     this.applyDropdownValidations(sheet, optionsSheet, fields);
 
@@ -111,6 +114,17 @@ export class ImportTemplateService {
     exampleRow.font = { color: { argb: 'FF999999' } };
   }
 
+  // 离职模板追加一列「附件」提示：字段占 2..fieldCount+1，提示列落在 fieldCount+2。
+  // 该列不参与字段映射/写库，仅引导用户在数据行任意单元格插入附件；附件按物理行号关联。
+  private writeAttachmentHintColumn(sheet: Worksheet, fieldCount: number): void {
+    const col = fieldCount + 2;
+    sheet.getRow(1).getCell(col).value = '附件';
+    sheet.getRow(2).getCell(col).value = '非必填';
+    sheet.getRow(3).getCell(col).value = '在本行任意单元格插入附件文件（图片/Word/PDF），系统按行自动关联';
+    sheet.getRow(4).getCell(col).value = '（在此行插入附件）';
+    sheet.getColumn(col).width = 40;
+  }
+
   private headerName(field: TemplateField): string {
     return field.templateHeader || field.fieldName || field.fieldCode;
   }
@@ -148,7 +162,7 @@ export class ImportTemplateService {
     } else if (field.fieldType === FieldType.NUMBER) {
       parts.push('请填写数字');
     }
-    if (parts.length === 0 && field.helpText) {
+    if (field.helpText && !parts.includes(field.helpText)) {
       parts.push(field.helpText);
     }
     return parts.join('；');

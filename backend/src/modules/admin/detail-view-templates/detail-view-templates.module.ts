@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { DetailViewTemplate } from 'src/entities';
+import { DetailViewTemplate, FieldConfig, FieldPermission, Role } from 'src/entities';
 import { DetailViewTemplatesController } from './detail-view-templates.controller';
 import { DetailViewTemplatesService } from './detail-view-templates.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([DetailViewTemplate])],
+  imports: [TypeOrmModule.forFeature([DetailViewTemplate, FieldConfig, FieldPermission, Role])],
   controllers: [DetailViewTemplatesController],
   providers: [DetailViewTemplatesService],
   exports: [DetailViewTemplatesService],

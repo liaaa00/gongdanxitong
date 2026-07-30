@@ -3,11 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { type Dayjs } from 'dayjs';
 import { PageContainer, ProTable } from '@ant-design/pro-components';
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
-import { Button, DatePicker, Space, Tag } from 'antd';
-import { EyeOutlined } from '@ant-design/icons';
-import { getDispatchedOrdersSafe } from '@/services/dispatchedOrders';
+import { Alert, App, Button, DatePicker, Form, Input, Modal, Segmented, Select, Space, Tag } from 'antd';
+import { EyeOutlined, SwapOutlined } from '@ant-design/icons';
+import { batchReassignDispatchedOrders, getDispatchedOrdersSafe } from '@/services/dispatchedOrders';
 import type { DispatchedOrderItem } from '@/services/dispatchedOrders';
 import type { PageParams } from '@/services/mock';
+import { getUsers } from '@/services/users';
+import type { UserItem } from '@/services/users';
 import { getModuleLabel, getPhaseOneModuleOptions } from '@/constants/modules';
 import { getStatusColor, getStatusText } from '@/constants/dictionaries';
 import { isPhase1VisibleModule, isPhase1VisibleOrderType } from '@/utils/moduleAccess';
@@ -78,6 +80,72 @@ const TeamDispatched: React.FC = () => {
   const actionRef = useRef<ActionType>();
   const cachedPageState = getCachedListPageState(PAGE_STATE_KEY);
   const [month, setMonth] = useState<Dayjs | null>(() => getCachedMonthOrNull(PAGE_STATE_KEY));
+  const { message } = App.useApp();
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+  const [reassignOpen, setReassignOpen] = useState(false);
+  const [reassigning, setReassigning] = useState(false);
+  const [userSearching, setUserSearching] = useState(false);
+  const [userOptions, setUserOptions] = useState<Array<{ value: string; label: string }>>([]);
+  const [reassignForm] = Form.useForm<{
+    handlerIds: string[];
+    strategy: 'single' | 'round_robin' | 'load_balance';
+    reason: string;
+  }>();
+
+  const searchUsers = async (keyword = '') => {
+    setUserSearching(true);
+    try {
+      const result = await getUsers({ page: 1, pageSize: 50, keyword, isActive: true });
+      const list = Array.isArray(result) ? result : result.list || [];
+      setUserOptions(list.map((user: UserItem) => {
+        const roleNames = (user.roles || []).map((role) => role.role_name).filter(Boolean).join('、');
+        const name = user.real_name || user.realName || user.username;
+        return {
+          value: user.id,
+          label: `${name} (${user.username})${roleNames ? ` · ${roleNames}` : ''}`,
+        };
+      }));
+    } catch {
+      message.error('加载在职用户失败');
+    } finally {
+      setUserSearching(false);
+    }
+  };
+
+  const openBatchReassign = () => {
+    reassignForm.resetFields();
+    reassignForm.setFieldsValue({ strategy: 'single', handlerIds: [] });
+    setReassignOpen(true);
+    void searchUsers();
+  };
+
+  const submitBatchReassign = async () => {
+    const values = await reassignForm.validateFields();
+    setReassigning(true);
+    try {
+      const result = await batchReassignDispatchedOrders(
+        selectedRowKeys.map(String),
+        values.handlerIds,
+        values.strategy,
+        values.reason.trim(),
+      );
+      if (result.skipped.length > 0) {
+        Modal.warning({
+          title: `已改派 ${result.reassigned} 条，跳过 ${result.skipped.length} 条`,
+          content: result.skipped.map((item) => `${item.id}: ${item.reason}`).join('\n'),
+        });
+      } else {
+        message.success(`已改派 ${result.reassigned} 条工单`);
+      }
+      setSelectedRowKeys([]);
+      setReassignOpen(false);
+      actionRef.current?.reload();
+    } catch (error: any) {
+      message.error(error?._friendlyMsg || error?.message || '批量改派失败');
+    } finally {
+      setReassigning(false);
+    }
+  };
 
   const columns: ProColumns<DispatchedOrderItem>[] = useMemo(() => applyCachedColumnFilters<DispatchedOrderItem>([
     {
@@ -162,6 +230,14 @@ const TeamDispatched: React.FC = () => {
               }}
             />
           </Space>,
+          <Button
+            key="batch-reassign"
+            icon={<SwapOutlined />}
+            disabled={selectedRowKeys.length === 0}
+            onClick={openBatchReassign}
+          >
+            批量改派{selectedRowKeys.length > 0 ? ` (${selectedRowKeys.length})` : ''}
+          </Button>,
         ],
       }}
     >
@@ -184,6 +260,11 @@ const TeamDispatched: React.FC = () => {
           return { data: list, success: true, total: result.total };
         }}
         rowKey="id"
+        rowSelection={{
+          selectedRowKeys,
+          preserveSelectedRowKeys: true,
+          onChange: (keys) => setSelectedRowKeys(keys),
+        }}
         search={false}
         headerTitle="授权团队范围内子工单"
         pagination={{ defaultCurrent: cachedPageState.current || 1, defaultPageSize: cachedPageState.pageSize || 20, showSizeChanger: true }}
@@ -192,6 +273,70 @@ const TeamDispatched: React.FC = () => {
         toolBarRender={false}
         scroll={{ x: 1650 }}
       />
+
+      <Modal
+        title={`批量改派 ${selectedRowKeys.length} 条工单`}
+        open={reassignOpen}
+        confirmLoading={reassigning}
+        okText="确认改派"
+        cancelText="取消"
+        onOk={submitBatchReassign}
+        onCancel={() => setReassignOpen(false)}
+        destroyOnHidden
+      >
+        <Alert
+          type="info"
+          showIcon
+          message="只会改派未完成且所选人员具备对应模块负责人配置的工单"
+          style={{ marginBottom: 16 }}
+        />
+        <Form form={reassignForm} layout="vertical">
+          <Form.Item name="strategy" label="分配策略" rules={[{ required: true }]}>
+            <Segmented
+              block
+              options={[
+                { label: '全部给一人', value: 'single' },
+                { label: '轮流平均', value: 'round_robin' },
+                { label: '按待办量', value: 'load_balance' },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item
+            name="handlerIds"
+            label="接替负责人"
+            dependencies={['strategy']}
+            rules={[
+              { required: true, message: '请选择至少一名接替负责人' },
+              ({ getFieldValue }) => ({
+                validator: (_, value: string[]) => getFieldValue('strategy') !== 'single' || value?.length === 1
+                  ? Promise.resolve()
+                  : Promise.reject(new Error('全部给一人策略只能选择一名负责人')),
+              }),
+            ]}
+          >
+            <Select
+              mode="multiple"
+              showSearch
+              filterOption={false}
+              loading={userSearching}
+              options={userOptions}
+              onSearch={(value) => void searchUsers(value)}
+              placeholder="输入姓名、账号或角色搜索在职用户"
+              maxTagCount="responsive"
+            />
+          </Form.Item>
+          <Form.Item
+            name="reason"
+            label="改派原因"
+            rules={[
+              { required: true, message: '请填写改派原因' },
+              { validator: (_, value) => String(value || '').trim() ? Promise.resolve() : Promise.reject(new Error('改派原因不能只填空格')) },
+            ]}
+          >
+            <Input.TextArea rows={3} maxLength={512} showCount placeholder="例如：离职交接、休假代理或工作量调整" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </PageContainer>
   );
 };

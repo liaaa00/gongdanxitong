@@ -11,10 +11,13 @@ export interface UserItem {
   is_active: boolean;
   roles: { role_id: string; role_name: string; role_code?: string }[];
   group_name: string;
+  business_scope?: 'beilun' | 'out_of_province';
+  businessScope?: 'beilun' | 'out_of_province';
   position?: string;           // 岗位
   department_name?: string;    // 部门名称（与 group_name 可能不同）
   department_id?: string;      // 部门ID
   created_at: string;
+  last_login_at?: string | null; // 最后登录时间（后端真实字段）
   password?: string;
   // aliases for camelCase backend compatibility
   realName?: string;
@@ -68,10 +71,13 @@ export function normalizeUserItem(raw: any): UserItem {
     is_active: raw.is_active ?? raw.isActive ?? raw.isActive ?? true,
     roles,
     group_name,
+    business_scope: raw.business_scope ?? raw.businessScope ?? 'beilun',
+    businessScope: raw.businessScope ?? raw.business_scope ?? 'beilun',
     position: raw.position ?? raw.job_title ?? raw.jobTitle ?? '',
     department_name,
     department_id,
     created_at: raw.created_at ?? raw.createdAt ?? raw.created_at ?? '',
+    last_login_at: raw.last_login_at ?? raw.lastLoginAt ?? null,
     password: raw.password,
   };
 }
@@ -321,6 +327,8 @@ export async function createUser(data: Partial<UserItem>): Promise<UserItem> {
       is_active: data.is_active ?? true,
       roles: data.roles || [],
       group_name: data.group_name || '',
+      business_scope: data.business_scope ?? data.businessScope ?? 'beilun',
+      businessScope: data.businessScope ?? data.business_scope ?? 'beilun',
       created_at: new Date().toISOString(),
     };
     list.push(item); commit(list);
@@ -397,6 +405,72 @@ export async function resetUserPassword(id: string, newPassword?: string): Promi
   // 后端需要 newPassword 参数，默认重置为当前种子默认密码 123456
   const resetPassword = newPassword || '123456';
   return request.post(`/admin/users/${id}/reset-password`, { newPassword: resetPassword }) as Promise<void>;
+}
+
+export async function forceLogoutUser(id: string): Promise<void> {
+  if (isMockMode) {
+    return mockDelay(undefined);
+  }
+  return request.post(`/admin/users/${id}/force-logout`) as Promise<void>;
+}
+
+export interface UserHandoverPreview {
+  user: { id: string; username: string; realName: string; isActive: boolean };
+  modules: Array<{ moduleCode: string; isPrimary: boolean; openOrderCount: number }>;
+  totalOpenOrders: number;
+}
+
+export interface UserHandoverResult {
+  success: boolean;
+  disabledUserId: string;
+  transferredOrders: number;
+  replacedModules: string[];
+  replacementUserIds: string[];
+  rolesPreserved: boolean;
+}
+
+export async function getUserHandoverPreview(id: string): Promise<UserHandoverPreview> {
+  if (isMockMode) {
+    const user = store().find((item) => item.id === id);
+    if (!user) throw new Error('用户不存在');
+    return mockDelay({
+      user: {
+        id: user.id,
+        username: user.username,
+        realName: user.real_name,
+        isActive: user.is_active,
+      },
+      modules: [],
+      totalOpenOrders: 0,
+    });
+  }
+  return request.get(`/admin/users/${id}/handover-preview`) as Promise<UserHandoverPreview>;
+}
+
+export async function executeUserHandover(
+  id: string,
+  input: {
+    replacementUserIds: string[];
+    strategy: 'single' | 'round_robin' | 'load_balance';
+    reason: string;
+  },
+): Promise<UserHandoverResult> {
+  if (isMockMode) {
+    const list = store();
+    const index = list.findIndex((item) => item.id === id);
+    if (index < 0) throw new Error('用户不存在');
+    list[index] = { ...list[index], is_active: false };
+    commit(list);
+    return mockDelay({
+      success: true,
+      disabledUserId: id,
+      transferredOrders: 0,
+      replacedModules: [],
+      replacementUserIds: input.replacementUserIds,
+      rolesPreserved: true,
+    });
+  }
+  return request.post(`/admin/users/${id}/handover`, input) as Promise<UserHandoverResult>;
 }
 
 export async function toggleUserActive(id: string): Promise<UserItem> {
@@ -559,4 +633,124 @@ export function verifyAllSeedUserCredentials(): LoginVerifyResult[] {
     });
   }
   return results;
+}
+
+// ============ 动态登录诊断（基于真实后端 /admin/users 数据）============
+// 与上方基于 localStorage 明文密码的静态诊断不同，这里拉取真实用户列表，
+// 依据后端登录规则推断每个账号能否正常登录：
+//   - 后端 login 查询条件为 { username, isActive: true }，禁用账号直接查不到 → 无法登录
+//   - 登录成功才会写入 last_login_at，为空说明该账号从未成功登录过（常见于密码从未设置/错误）
+//   - 无角色账号可登录，但登录后没有任何菜单与权限，等同不可用
+export type LoginReadinessStatus = 'ok' | 'disabled' | 'no_role' | 'never_logged_in';
+
+export interface LoginReadinessResult {
+  username: string;
+  real_name: string;
+  is_active: boolean;
+  role_names: string;
+  last_login_at: string | null;
+  status: LoginReadinessStatus;
+  advice: string;
+}
+
+export interface LoginReadinessReport {
+  backendReachable: boolean;
+  total: number;
+  okCount: number;
+  issueCount: number;
+  results: LoginReadinessResult[];
+}
+
+function classifyLoginReadiness(user: UserItem): { status: LoginReadinessStatus; advice: string } {
+  if (!user.is_active) {
+    return { status: 'disabled', advice: '账号已禁用，后端登录直接拒绝。请在用户管理中启用后再试。' };
+  }
+  if (!user.roles || user.roles.length === 0) {
+    return { status: 'no_role', advice: '账号无任何角色，可登录但登录后无菜单与权限。请为其绑定角色。' };
+  }
+  if (!user.last_login_at) {
+    return { status: 'never_logged_in', advice: '该账号从未成功登录过，通常是密码未设置或不正确。可重置密码后让用户重试。' };
+  }
+  return { status: 'ok', advice: '' };
+}
+
+export async function diagnoseUserLoginReadiness(): Promise<LoginReadinessReport> {
+  let list: UserItem[] = [];
+  let backendReachable = true;
+  try {
+    // 拉取全量用户（后端单页上限 100，操作员规模足够）
+    const page = await getUsers({ page: 1, pageSize: 100 });
+    backendReachable = page.success !== false;
+    list = page.list;
+    // 若总数超过一页，继续翻页拉全
+    const total = page.total ?? list.length;
+    let current = 1;
+    while (backendReachable && list.length < total && current < 20) {
+      current += 1;
+      const next = await getUsers({ page: current, pageSize: 100 });
+      if (next.success === false || next.list.length === 0) break;
+      list = list.concat(next.list);
+    }
+  } catch {
+    backendReachable = false;
+  }
+
+  const results: LoginReadinessResult[] = list.map((user) => {
+    const { status, advice } = classifyLoginReadiness(user);
+    return {
+      username: user.username,
+      real_name: user.real_name,
+      is_active: user.is_active,
+      role_names: (user.roles ?? []).map((r) => r.role_name).filter(Boolean).join('、') || '（无角色）',
+      last_login_at: user.last_login_at ?? null,
+      status,
+      advice,
+    };
+  });
+
+  const okCount = results.filter((r) => r.status === 'ok').length;
+  return {
+    backendReachable,
+    total: results.length,
+    okCount,
+    issueCount: results.length - okCount,
+    results,
+  };
+}
+
+// 真实登录验证：用给定账号密码实调后端 /auth/login，验证是否真能登录。
+// 使用 silentError 避免触发全局错误提示；不写入任何会话状态。
+export interface RealLoginProbeResult {
+  ok: boolean;
+  status: 'ok' | 'unauthorized' | 'network' | 'error';
+  message: string;
+  mustChangePassword?: boolean;
+}
+
+export async function probeRealLogin(username: string, password: string): Promise<RealLoginProbeResult> {
+  if (isMockMode) {
+    return { ok: false, status: 'error', message: '当前为 Mock 模式，无法进行真实登录验证' };
+  }
+  try {
+    const res = await request.post(
+      '/auth/login',
+      { username, password },
+      { silentError: true } as never,
+    ) as { must_change_password?: boolean; mustChangePassword?: boolean };
+    return {
+      ok: true,
+      status: 'ok',
+      message: '登录成功，账号密码有效',
+      mustChangePassword: res?.must_change_password ?? res?.mustChangePassword ?? false,
+    };
+  } catch (error) {
+    const status = (error as { response?: { status?: number } })?.response?.status;
+    if (status === 401) {
+      return { ok: false, status: 'unauthorized', message: '后端返回 401：用户名或密码错误，或账号已禁用' };
+    }
+    if (status === undefined) {
+      return { ok: false, status: 'network', message: '无法连接后端，请确认后端服务已启动' };
+    }
+    return { ok: false, status: 'error', message: `登录失败（HTTP ${status}）` };
+  }
 }

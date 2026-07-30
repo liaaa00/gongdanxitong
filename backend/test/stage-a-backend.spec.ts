@@ -1,7 +1,7 @@
 import { HttpException } from '@nestjs/common';
-import { Repository } from 'typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
 import { DispatchRule, DispatchStrategy, OrderType, WorkOrder } from 'src/entities';
-import { findDuplicateIdCardInMonth, throwDuplicateIdCardConflict, DUPLICATE_ID_CARD_IN_MONTH } from 'src/modules/work-orders/duplicate-id-card.util';
+import { findDuplicateIdCardInMonth, isDuplicateIdCardIndexError, throwDuplicateIdCardConflict, DUPLICATE_ID_CARD_IN_MONTH } from 'src/modules/work-orders/duplicate-id-card.util';
 import { DispatchEngineService } from 'src/modules/dispatch-engine/dispatch-engine.service';
 import { AstEvaluator } from 'src/modules/dispatch-engine/ast-evaluator';
 import { FieldChangeHook } from 'src/modules/notifications/field-change.hook';
@@ -32,6 +32,32 @@ describe('BE-A4 duplicate id-card global check', () => {
     expect(qb.andWhere).toHaveBeenCalledWith('w.id <> :excludeId', { excludeId: 'current' });
     expect(qb.andWhere).not.toHaveBeenCalledWith(expect.stringContaining('createdAt >='), expect.anything());
     expect(qb.andWhere).not.toHaveBeenCalledWith(expect.stringContaining('createdAt <'), expect.anything());
+  });
+
+  it('checks resignation duplicates within the same month', async () => {
+    const qb = qbChain({ orderNo: 'ON202607001' });
+    const repo = { createQueryBuilder: jest.fn(() => qb) } as unknown as Repository<WorkOrder>;
+
+    const row = await findDuplicateIdCardInMonth(repo, {
+      orderType: OrderType.RESIGNATION,
+      employeeIdCard: '3301',
+      createdAt: new Date('2026-07-28T10:00:00.000Z'),
+    });
+
+    expect(row?.orderNo).toBe('ON202607001');
+    expect(qb.where).toHaveBeenCalledWith('w.orderType = :orderType', { orderType: OrderType.RESIGNATION });
+    expect(qb.andWhere).toHaveBeenCalledWith('w.createdAt >= :monthStart', { monthStart: new Date('2026-07-01T00:00:00.000Z') });
+    expect(qb.andWhere).toHaveBeenCalledWith('w.createdAt < :nextMonthStart', { nextMonthStart: new Date('2026-08-01T00:00:00.000Z') });
+  });
+
+  it('recognizes the database duplicate guard as a business conflict', () => {
+    const driverError = Object.assign(new Error('duplicate'), {
+      code: '23505',
+      constraint: 'uq_work_orders_idcard_guard',
+    });
+    const error = new QueryFailedError('INSERT INTO work_orders', [], driverError);
+
+    expect(isDuplicateIdCardIndexError(error)).toBe(true);
   });
 
   it('throws structured DUPLICATE_ID_CARD_IN_MONTH error', () => {

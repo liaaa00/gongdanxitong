@@ -7,7 +7,10 @@ export const DISPATCH_MODULE_LABELS: Record<string, string> = {
   benefit_apply: '待遇申报',
   social_insurance_change: '社保公积金变更',
   resignation_contact: '离职材料收集',
-  resignation_cert: '离职材料收集',
+  resignation_cert: '离职证明',
+  in_service_certificate: '证明开具',
+  in_service_single_business: '单项业务办理',
+  out_of_province_dispatch: '省外增减员',
   data_entry_resign: '减员报岗录入',
   resignation_social_insurance: '社保公积金减员',
 };
@@ -17,14 +20,27 @@ export const PHASE1_VISIBLE_DISPATCH_MODULE_CODES = [
   'contract',
   'data_entry',
   'social_insurance',
+  'renewal_contract',
+  'in_service_certificate',
+  'in_service_single_business',
+  'out_of_province_dispatch',
   'resignation_contact',
+  'resignation_cert',
   'data_entry_resign',
   'resignation_social_insurance',
 ] as const;
 
 export const PHASE1_VISIBLE_ORDER_TYPES = ['onboarding', 'resignation'] as const;
 
+export const OUT_OF_PROVINCE_DISPATCH_MODULE_CODES = ['out_of_province_dispatch'] as const;
+export const OUT_OF_PROVINCE_ORDER_TYPES = [
+  'out_of_province_increase',
+  'out_of_province_decrease',
+] as const;
+
 const PHASE1_VISIBLE_DISPATCH_MODULE_SET = new Set<string>(PHASE1_VISIBLE_DISPATCH_MODULE_CODES);
+const OUT_OF_PROVINCE_DISPATCH_MODULE_SET = new Set<string>(OUT_OF_PROVINCE_DISPATCH_MODULE_CODES);
+const OUT_OF_PROVINCE_ORDER_TYPE_SET = new Set<string>(OUT_OF_PROVINCE_ORDER_TYPES);
 const PHASE1_VISIBLE_ORDER_TYPE_SET = new Set<string>(PHASE1_VISIBLE_ORDER_TYPES);
 
 const SOCIAL_INSURANCE_DISPATCH_MODULES = new Set<string>([
@@ -73,6 +89,7 @@ export function normalizeDispatchModuleCode(input: string | undefined | null): s
   return MODULE_CODE_ALIASES[value] ?? value;
 }
 
+
 export function resolveDispatchModuleCode(input: string | undefined | null): string | undefined {
   const value = input?.trim();
   if (!value) return undefined;
@@ -89,6 +106,24 @@ export function isPhase1VisibleDispatchModule(moduleCode: string | undefined | n
 export function isPhase1VisibleOrderType(orderType: string | undefined | null): boolean {
   const normalized: string = orderType?.trim() ?? '';
   return normalized.length > 0 && PHASE1_VISIBLE_ORDER_TYPE_SET.has(normalized);
+}
+
+export function isOutOfProvinceOrderType(orderType: string | undefined | null): boolean {
+  const normalized = orderType?.trim() ?? '';
+  return normalized.length > 0 && OUT_OF_PROVINCE_ORDER_TYPE_SET.has(normalized);
+}
+
+export function isOutOfProvinceDispatchModule(moduleCode: string | undefined | null): boolean {
+  return OUT_OF_PROVINCE_DISPATCH_MODULE_SET.has(normalizeDispatchModuleCode(moduleCode));
+}
+
+export function isDispatchModuleVisibleForOrderType(
+  moduleCode: string | undefined | null,
+  orderType: string | undefined | null,
+): boolean {
+  return isOutOfProvinceOrderType(orderType)
+    ? isOutOfProvinceDispatchModule(moduleCode)
+    : isPhase1VisibleOrderType(orderType) && isPhase1VisibleDispatchModule(moduleCode);
 }
 
 export function filterPhase1VisibleDispatchModules(moduleCodes: readonly string[]): string[] {

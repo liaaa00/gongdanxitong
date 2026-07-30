@@ -25,6 +25,7 @@ import {
   ADMIN_ROLE,
   BUSINESS_LEADER_ROLES,
   BUSINESS_MEMBER_ROLES,
+  SOCIAL_INSURANCE_MODULE_ROLES,
 } from 'src/common/auth/role-permissions';
 import { Audit } from 'src/common/decorators/audit.decorator';
 import { Roles } from 'src/common/decorators/roles.decorator';
@@ -172,6 +173,7 @@ const WORK_ORDER_FIELD_READ_ROLES = [
   ADMIN_ROLE,
   ...BUSINESS_LEADER_ROLES,
   ...BUSINESS_MEMBER_ROLES,
+  ...SOCIAL_INSURANCE_MODULE_ROLES,
 ];
 
 @Controller(['admin/fields', 'field-configs'])

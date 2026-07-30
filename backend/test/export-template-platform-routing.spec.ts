@@ -1,5 +1,11 @@
 import { ExportTemplatesService } from 'src/modules/admin/export-templates/export-templates.service';
-import { DispatchedOrder, ExportTemplate, FieldConfig } from 'src/entities';
+import {
+  DispatchedOrder,
+  ExportTemplate,
+  FieldConfig,
+  InServiceOrder,
+  InServiceOrderKind,
+} from 'src/entities';
 
 const NAME = '\u59d3\u540d';
 const ID_NO = '\u8bc1\u4ef6\u53f7\u7801';
@@ -74,6 +80,7 @@ describe('ExportTemplatesService platform routing', () => {
       dispatchedRepo as never,
       logRepo as never,
       fieldRepo as never,
+      { find: jest.fn(async () => []) } as never,
       upload as never,
     );
 
@@ -120,6 +127,90 @@ describe('ExportTemplatesService platform routing', () => {
     expect(esign.workbook.getWorksheet('Sheet1')?.getRow(3).hidden).toBe(true);
   }, 30000);
 
+  it('exports a direct renewal with the platform template and changes signing method to renewal', async () => {
+    const template = makeTemplate('tpl-renewal-suchuang', '劳动合同签订批导出模板-速创', SUCHUANG, [
+      { fieldCode: 'customer_code', order: 1 },
+      { const: '', order: 2 },
+      { fieldCode: 'id_card_no', order: 3 },
+      { fieldCode: 'need_esign', order: 4 },
+      { fieldCode: 'employee_name', order: 5 },
+      { const: '1.新签', order: 6 },
+    ]);
+    const templateRepo = {
+      findOne: jest.fn(async () => ({ ...template, fieldList: [...template.fieldList] })),
+      createQueryBuilder: jest.fn(),
+      create: jest.fn((input) => input),
+      save: jest.fn(),
+      remove: jest.fn(),
+    };
+    const dispatchedRepo = {
+      createQueryBuilder: jest.fn(),
+      findOne: jest.fn(),
+    };
+    const logRepo = {
+      create: jest.fn((input) => input),
+      save: jest.fn(async (input) => input),
+    };
+    const upload = {
+      saveBuffer: jest.fn(async ({ buffer, originalName }: { buffer: Buffer; originalName: string }) => ({
+        fileId: 'renewal-file',
+        originalName,
+        buffer,
+      })),
+    };
+    const service = new ExportTemplatesService(
+      templateRepo as never,
+      dispatchedRepo as never,
+      logRepo as never,
+      { find: jest.fn(async () => []) } as never,
+      { find: jest.fn(async () => []) } as never,
+      upload as never,
+    );
+    const order = {
+      id: '11111111-1111-4111-8111-111111111111',
+      orderNo: 'RN-20260730-TEST',
+      orderKind: InServiceOrderKind.CONTRACT_RENEWAL,
+      employeeName: '张三',
+      idCardNo: '330206199001011234',
+      extraData: {
+        esign_platform: SUCHUANG,
+        need_esign: '1.是',
+      },
+      customer: { customerCode: 'C001', customerName: '测试客户' },
+      handlerId: null,
+      handler: null,
+      status: 'accepted',
+      dispatchedAt: new Date(),
+      acceptedAt: new Date(),
+      completedAt: null,
+      createdBy: 'creator-1',
+      creator: { realName: '王五', username: 'wangwu' },
+    } as unknown as InServiceOrder;
+
+    const result = await service.exportContractRenewal(order, { sub: 'handler-1' } as never);
+
+    expect(result.moduleCode).toBe('contract');
+    expect(result.rowCount).toBe(1);
+    expect(templateRepo.findOne).toHaveBeenCalledWith(expect.objectContaining({
+      where: { moduleCode: 'contract', isShared: true, signPlatform: SUCHUANG },
+    }));
+    expect(dispatchedRepo.findOne).not.toHaveBeenCalled();
+    expect(dispatchedRepo.createQueryBuilder).not.toHaveBeenCalled();
+    expect(logRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+      entityType: 'in_service_order',
+      entityId: order.id,
+      afterData: expect.objectContaining({ inServiceOrderId: order.id }),
+    }));
+
+    const ExcelJS = require('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    const [[payload]] = upload.saveBuffer.mock.calls as Array<[{ buffer: Buffer; originalName: string }]>;
+    await workbook.xlsx.load(payload.buffer);
+    expect(workbook.getWorksheet(SUCHUANG_SHEET)?.getCell(4, 6).value).toBe('续签');
+    expect(workbook.getWorksheet(SUCHUANG_SHEET)?.getCell(4, 3).value).toBe(order.idCardNo);
+    expect(workbook.getWorksheet(SUCHUANG_SHEET)?.getCell(4, 5).value).toBe(order.employeeName);
+  }, 30000);
+
   it('does not fall back to an arbitrary contract template when electronic-sign platform is missing', async () => {
     const order = makeOrder('do-missing-platform', '\u738b\u4e94', '');
     const qb = {
@@ -146,6 +237,7 @@ describe('ExportTemplatesService platform routing', () => {
       templateRepo as never,
       { createQueryBuilder: jest.fn(() => qb), findOne: jest.fn() } as never,
       { create: jest.fn((input) => input), save: jest.fn(async (input) => input) } as never,
+      { find: jest.fn(async () => []) } as never,
       { find: jest.fn(async () => []) } as never,
       { saveBuffer: jest.fn() } as never,
     );

@@ -27,7 +27,7 @@ const fields: CandidateField[] = [
   { fieldCode: 'employee_name', fieldName: '姓名', fieldType: 'text', required: true },
   { fieldCode: 'mobile', fieldName: '移动电话', fieldType: 'text', required: false },
   { fieldCode: 'id_card_no', fieldName: '身份证号', fieldType: 'text', required: true },
-  { fieldCode: 'base_salary', fieldName: '基本工资', fieldType: 'number', required: true },
+  { fieldCode: 'base_salary', fieldName: '基本工资', fieldType: 'text', required: true },
   { fieldCode: 'need_onboarding_contact', fieldName: '是否需要入职联系', fieldType: 'dropdown', required: true },
   { fieldCode: 'customer_code', fieldName: '客户代码', fieldType: 'text', required: true },
   { fieldCode: 'work_city', fieldName: '工作城市', fieldType: 'text', required: true },

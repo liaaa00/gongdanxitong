@@ -123,7 +123,7 @@ describe('P1 split4 dirty return backend rules', () => {
     ]));
   });
 
-  it('denies normal handler returning a completed child but allows configured module supervisor', async () => {
+  it('denies a non-current handler returning a completed child but allows configured module supervisor', async () => {
     const completed = child({ status: DispatchedOrderStatus.COMPLETED, handlerId: 'handler-1', moduleCode: 'contract' });
     const dispatchedRepo = repo<DispatchedOrder>({ findOne: jest.fn(async () => completed) });
     const workOrderRepo = repo<WorkOrder>();
@@ -138,7 +138,7 @@ describe('P1 split4 dirty return backend rules', () => {
       repo<FieldConfig>(),
       repo<Notification>(),
       repo<OperationLog>(),
-      {} as never,
+      { getPermissionsForUser: jest.fn(async () => new Map()), applyExtraData: jest.fn(), applyFieldViews: jest.fn() } as never,
       { supplement: jest.fn(), getLogs: jest.fn() } as never,
       { exportSingleDispatchedOrder: jest.fn() } as never,
       { resolveUserDepartmentIds: jest.fn(async () => []) } as never,
@@ -150,26 +150,52 @@ describe('P1 split4 dirty return backend rules', () => {
       returnRecordRepo,
     );
 
-    await expect(service.returnOrder('do-1', { returnReason: '资料有误' }, user({ sub: 'handler-1', roles: ['onboarding_specialist'] }))).rejects.toBeInstanceOf(HttpException);
+    await expect(service.returnOrder('do-1', { returnReason: '资料有误' }, user({ sub: 'other-handler', roles: ['onboarding_specialist'] }))).rejects.toBeInstanceOf(HttpException);
+    expect(returnRecordRepo.save).not.toHaveBeenCalled();
+
     await expect(service.returnOrder('do-1', { returnReason: '资料有误' }, user({ sub: 'sup-1', roles: ['shared_leader'] }))).resolves.toMatchObject({ id: 'do-1' });
+    expect(returnRecordRepo.save).toHaveBeenCalledTimes(1);
     expect(returnRecordRepo.save).toHaveBeenCalledWith(expect.objectContaining({ returnedBy: 'sup-1', returnReason: '资料有误', beforeStatus: DispatchedOrderStatus.COMPLETED }));
   });
 
-  it('requires Chinese-readable remark for social insurance batch complete', async () => {
+  it('allows optional remark for social insurance batch feedback and uses extraData remark when provided', async () => {
+    const order = child({ status: DispatchedOrderStatus.PROCESSING, handlerId: 'handler-1' });
+    const dispatchedRepo = repo<DispatchedOrder>({
+      findOne: jest.fn(async () => order),
+      save: jest.fn(async (input: DispatchedOrder) => input),
+    });
+    const workOrderRepo = repo<WorkOrder>({ save: jest.fn(async (input: WorkOrder) => input) });
+    const operationLogRepo = repo<OperationLog>();
     const service = new DispatchedOrderService(
-      repo<DispatchedOrder>(),
-      repo<WorkOrder>(),
+      dispatchedRepo,
+      workOrderRepo,
       repo<ModuleHandler>(),
       repo<UserRole>(),
       repo<FieldConfig>(),
       repo<Notification>(),
-      repo<OperationLog>(),
-      {} as never,
+      operationLogRepo,
+      { getPermissionsForUser: jest.fn(async () => new Map()), applyExtraData: jest.fn(), applyFieldViews: jest.fn() } as never,
       { supplement: jest.fn(), getLogs: jest.fn() } as never,
       { exportSingleDispatchedOrder: jest.fn() } as never,
       { resolveUserDepartmentIds: jest.fn(async () => []) } as never,
     );
 
-    await expect(service.batchCompleteSocialInsurance({ ids: ['00000000-0000-4000-8000-000000000001'], remark: '   ' }, user({ sub: 'handler-1' }))).rejects.toThrow('社保批量完成备注必填');
+    await expect(service.batchCompleteSocialInsurance({
+      ids: ['00000000-0000-4000-8000-000000000001'],
+      remark: '   ',
+      extraData: {
+        social_insurance_result: '是',
+        medical_insurance_result: '否',
+        housing_fund_result: '是',
+        social_insurance_remark: 'batch feedback note',
+      },
+    }, user({ sub: 'handler-1' }))).resolves.toMatchObject({ success: true, processed: 1, completed: 0, skipped: [] });
+    expect(order.completionRemark).toBe('batch feedback note');
+    expect(order.parentOrder.extraData).toMatchObject({
+      social_insurance_result: '是',
+      medical_insurance_result: '否',
+      housing_fund_result: '是',
+      social_insurance_remark: 'batch feedback note',
+    });
   });
 });

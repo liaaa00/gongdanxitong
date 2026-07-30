@@ -13,7 +13,7 @@ export interface ImportErrorRow {
 export class ImportErrorExcelService {
   constructor(private readonly uploadsService: UploadsService) {}
 
-  async generate(input: { jobId: string; headers: string[]; errors: ImportErrorRow[] }): Promise<string | null> {
+  async generate(input: { jobId: string; headers: string[]; errors: ImportErrorRow[]; ownerId?: string }): Promise<string | null> {
     if (input.errors.length === 0) {
       return null;
     }
@@ -45,7 +45,7 @@ export class ImportErrorExcelService {
     summary.addRow(['failRows', input.errors.length]);
     const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
     const meta = await this.uploadsService.save({
-      ownerId: 'system',
+      ownerId: input.ownerId ?? 'system',
       kind: 'import-error',
       buffer,
       originalName: `import-errors-${input.jobId}.xlsx`,

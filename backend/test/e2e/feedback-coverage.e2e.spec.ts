@@ -160,10 +160,16 @@ describeIf('0520 feedback coverage E2E (external BASE_URL)', () => {
       expect([401, 403]).toContain(salesTemplates.status);
     });
 
-    it('does not expose social_urge through field configuration search', async () => {
+    it('keeps the required social_urge import field active in field configuration', async () => {
       const res = await request(baseOrigin()).get(apiPath('/admin/fields?keyword=social_urge')).set(auth(ADMIN_TOKEN!));
       expect(res.status).toBe(200);
-      expect(JSON.stringify(res.body)).not.toContain('social_urge');
+      expect(unwrapItems(res.body)).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          fieldCode: 'social_urge',
+          isActive: true,
+          isRequired: true,
+        }),
+      ]));
     });
   });
 
@@ -229,37 +235,78 @@ describeIf('0520 feedback coverage E2E (external BASE_URL)', () => {
       expect(JSON.stringify(resubmit.body)).toMatch(/pending|processing|dispatched|module/i);
     });
 
-    it('R4: editing a processing order must expose resubmit/re-dispatch semantics', async () => {
+    it('R4: an accepted child modification can be batch-approved back to pending', async () => {
       const order = await createAndSubmitOnboarding();
+      const contractIndex = order.moduleCodes.findIndex((code) => code === 'contract');
+      const dispatchedId = order.dispatchedIds[contractIndex >= 0 ? contractIndex : 0];
+      expect(dispatchedId).toBeTruthy();
+
+      const accepted = await request(baseOrigin())
+        .post(apiPath(`/dispatched-orders/${dispatchedId}/accept`))
+        .set(auth(BACKOFFICE_HANDLER_TOKEN!))
+        .send({});
+      await expect2xx(accepted, 'accept dispatched order');
+
+      const returned = await request(baseOrigin())
+        .post(apiPath(`/dispatched-orders/${dispatchedId}/return`))
+        .set(auth(BACKOFFICE_HANDLER_TOKEN!))
+        .send({ returnReason: 'E2E退回后发起修改审批' });
+      await expect2xx(returned, 'return dispatched order before modification');
+
       const update = await request(baseOrigin())
-        .put(apiPath(`/work-orders/${order.id}`))
+        .post(apiPath(`/dispatched-orders/${dispatchedId}/creator-update`))
         .set(auth(SALES_TOKEN!))
-        .send({ extraData: { mobile: '13700000000', special_remark: 'E2E编辑后强制重提' } });
-      await expect2xx(update, 'update processing order');
-
-      const detail = await request(baseOrigin()).get(apiPath(`/work-orders/${order.id}`)).set(auth(SALES_TOKEN!));
-      expect(detail.status).toBe(200);
-      const text = JSON.stringify(detail.body);
-      expect(text).toMatch(/resubmit|重新提交|field_changed|pending|returned|processing|dirty/i);
-    });
-
-    it('R5: sales can withdraw and backoffice supervisor can approve', async () => {
-      const order = await createAndSubmitOnboarding();
-      const withdraw = await request(baseOrigin())
-        .post(apiPath(`/work-orders/${order.id}/withdraw`))
-        .set(auth(SALES_TOKEN!))
-        .send({ reason: 'E2E申请撤回' });
-      await expect2xx(withdraw, 'request withdraw');
+        .send({
+          fields: { mobile: '13700000000' },
+          reason: 'E2E业务员修改已接单子工单',
+        });
+      await expect2xx(update, 'request child modification');
+      expect(JSON.stringify(update.body)).toMatch(/modify_pending/);
 
       const approve = await request(baseOrigin())
-        .post(apiPath(`/work-orders/${order.id}/withdraw/approve`))
+        .post(apiPath('/dispatched-orders/batch-approve-modify'))
         .set(auth(BACKOFFICE_SUPERVISOR_TOKEN!))
-        .send({ approved: true, comment: 'E2E同意撤回' });
-      await expect2xx(approve, 'approve withdraw');
+        .send({ ids: [dispatchedId], approved: true, comment: 'E2E批量同意修改' });
+      await expect2xx(approve, 'batch approve child modification');
+      expect(unwrap(approve.body)).toEqual(expect.objectContaining({ processed: 1 }));
 
-      const detail = await request(baseOrigin()).get(apiPath(`/work-orders/${order.id}`)).set(auth(SALES_TOKEN!));
+      const detail = await request(baseOrigin())
+        .get(apiPath(`/dispatched-orders/${dispatchedId}`))
+        .set(auth(SALES_TOKEN!));
       expect(detail.status).toBe(200);
-      expect(JSON.stringify(detail.body)).toMatch(/withdrawn|撤回/);
+      expect(unwrap(detail.body)).toEqual(expect.objectContaining({ status: 'pending' }));
+    });
+
+    it('R5: sales can withdraw an accepted child and backoffice can approve', async () => {
+      const order = await createAndSubmitOnboarding();
+      const contractIndex = order.moduleCodes.findIndex((code) => code === 'contract');
+      const dispatchedId = order.dispatchedIds[contractIndex >= 0 ? contractIndex : 0];
+      expect(dispatchedId).toBeTruthy();
+
+      const accepted = await request(baseOrigin())
+        .post(apiPath(`/dispatched-orders/${dispatchedId}/accept`))
+        .set(auth(BACKOFFICE_HANDLER_TOKEN!))
+        .send({});
+      await expect2xx(accepted, 'accept dispatched order before withdraw');
+
+      const withdraw = await request(baseOrigin())
+        .post(apiPath(`/dispatched-orders/${dispatchedId}/withdraw`))
+        .set(auth(SALES_TOKEN!))
+        .send({ reason: 'E2E申请撤回已接单子工单' });
+      await expect2xx(withdraw, 'request child withdraw');
+      expect(unwrap(withdraw.body)).toEqual(expect.objectContaining({ status: 'withdraw_pending' }));
+
+      const approve = await request(baseOrigin())
+        .post(apiPath(`/dispatched-orders/${dispatchedId}/withdraw/approve`))
+        .set(auth(BACKOFFICE_SUPERVISOR_TOKEN!))
+        .send({ approved: true, comment: 'E2E同意子工单撤回' });
+      await expect2xx(approve, 'approve child withdraw');
+
+      const detail = await request(baseOrigin())
+        .get(apiPath(`/dispatched-orders/${dispatchedId}`))
+        .set(auth(SALES_TOKEN!));
+      expect(detail.status).toBe(200);
+      expect(unwrap(detail.body)).toEqual(expect.objectContaining({ status: 'withdrawn' }));
     });
   });
 

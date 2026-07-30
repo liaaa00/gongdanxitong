@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ROLE } from '@/constants/roles';
-import { canAccessModuleCode, getAccessibleModuleCodes, getPhase1ModuleDisplayName, isPhase1VisibleModule, isPhase1VisibleOrderType } from './moduleAccess';
+import { canAccessModuleCode, getAccessibleModuleCodes, getPhase1ModuleDisplayName, isModuleAccessible, isPhase1VisibleModule, isPhase1VisibleOrderType } from './moduleAccess';
 
 const roles = (codes: string[]) => codes.map((code) => ({ code }));
 
@@ -30,6 +30,7 @@ describe('moduleAccess phase-1 visibility', () => {
   it('maps social insurance specialist to increase/decrease only', () => {
     const socialRoles = roles([ROLE.SOCIAL_INSURANCE_SPECIALIST]);
     expect(canAccessModuleCode('social_insurance', socialRoles)).toBe(true);
+    expect(isModuleAccessible('social_insurance', socialRoles)).toBe(true);
     expect(canAccessModuleCode('social_insurance_resign', socialRoles)).toBe(true);
     expect(canAccessModuleCode('resignation_social_insurance', socialRoles)).toBe(true);
     expect(canAccessModuleCode('onboarding_contact', socialRoles)).toBe(false);

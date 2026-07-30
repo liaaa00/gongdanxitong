@@ -26,6 +26,14 @@ export interface MappingItemInput {
   defaultValue?: string;
 }
 
+export interface ParsedAttachmentLink {
+  rowIndex: number;
+  columnIndex: number;
+  header: string;
+  text: string;
+  hyperlink: string;
+}
+
 export interface ParsedSheet {
   headers: string[];
   rows: Array<Record<string, unknown>>;
@@ -33,6 +41,10 @@ export interface ParsedSheet {
     sheetName: string;
     totalRows: number;
     headerRows: number;
+    // 0-based physical row numbers aligned with rows; used for drawing/vml attachment anchors.
+    rowNumbers: number[];
+    // Hyperlinks in attachment-like columns; rowIndex is a 0-based physical row number.
+    attachmentLinks?: ParsedAttachmentLink[];
   };
 }
 

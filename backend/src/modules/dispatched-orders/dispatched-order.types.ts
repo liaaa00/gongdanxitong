@@ -1,4 +1,4 @@
-import { DispatchedOrderStatus, WorkOrderFieldSyncBatchStatus, WorkOrderFieldSyncItemStatus } from 'src/entities';
+import { BusinessScope, DispatchedOrderStatus, WorkOrderFieldSyncBatchStatus, WorkOrderFieldSyncItemStatus } from 'src/entities';
 import { FieldViewItem } from 'src/modules/field-permissions/field-permission.service';
 
 export interface PagedResponse<T> {
@@ -6,6 +6,25 @@ export interface PagedResponse<T> {
   total: number;
   page: number;
   pageSize: number;
+}
+
+export interface DispatchedOrderTimelineChange {
+  fieldCode: string;
+  fieldLabel: string;
+  oldValue: unknown | null;
+  newValue: unknown | null;
+}
+
+export interface DispatchedOrderTimelineItem {
+  id: string;
+  createdAt: Date;
+  operatorId: string | null;
+  operatorName: string;
+  actionType: string;
+  actionLabel: string;
+  description: string;
+  reason: string | null;
+  changes: DispatchedOrderTimelineChange[];
 }
 
 export interface FieldSyncItemView {
@@ -104,6 +123,8 @@ export interface DispatchedOrderListItem {
   customer_name?: string | null;
   orderType?: string;
   order_type?: string;
+  businessScope?: BusinessScope;
+  business_scope?: BusinessScope;
   returnReason: string | null;
   return_reason?: string | null;
   flowRound?: number;
@@ -143,6 +164,7 @@ export interface DispatchedOrderDetailItem extends DispatchedOrderListItem {
     id: string;
     orderNo: string;
     orderType: string;
+    businessScope: BusinessScope;
     status: string;
     createdBy: string;
     updatedAt: Date;

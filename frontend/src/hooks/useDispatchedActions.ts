@@ -118,10 +118,11 @@ export function useDispatchedActions({ orderId, order, onOrderUpdated }: UseDisp
     return null;
   }, [orderId, onOrderUpdated]);
 
-  const handleResubmit = useCallback(async () => {
+  const handleResubmit = useCallback(async (reason?: string) => {
     setActionLoading(true);
     try {
-      const updated = await resubmitDispatchedOrder(orderId, { moduleCode: order?.module_code, reason: '发起人重新提交子工单' });
+      const normalizedReason = reason?.trim() || undefined;
+      const updated = await resubmitDispatchedOrder(orderId, { moduleCode: order?.module_code, reason: normalizedReason });
       onOrderUpdated(updated);
       message.success('已重新提交该子工单');
       return updated;

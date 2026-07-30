@@ -1,5 +1,6 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { createHash } from 'crypto';
 import { Repository } from 'typeorm';
 import { businessException } from 'src/common/exceptions/business-exception';
 import { OrderAttachment } from 'src/entities';
@@ -8,7 +9,6 @@ import { UploadsService } from 'src/modules/uploads/uploads.service';
 import {
   ListOrderAttachmentsDto,
   ReviewOrderAttachmentDto,
-  StampOrderAttachmentDto,
   UploadOrderAttachmentDto,
 } from './dto';
 
@@ -47,11 +47,9 @@ export class AttachmentsService {
       mimeType: meta.mimeType,
       filePath: meta.filePath,
       fileSize: meta.size,
-      status: payload.status ?? 'uploaded',
+      status: payload.status ?? 'received',
       rejectReason: null,
-      stampNo: null,
-      stampedAt: null,
-      receivedAt: null,
+      receivedAt: payload.status && payload.status !== 'received' ? null : new Date(),
       reviewedBy: null,
       reviewedAt: null,
       metadata: payload.metadata ?? null,
@@ -64,8 +62,8 @@ export class AttachmentsService {
     };
   }
 
-  async list(query: ListOrderAttachmentsDto): Promise<OrderAttachment[]> {
-    return this.repository.find({
+  async list(query: ListOrderAttachmentsDto): Promise<Record<string, unknown>[]> {
+    const rows = await this.repository.find({
       where: {
         ...(query.work_order_id ? { workOrderId: query.work_order_id } : {}),
         ...(query.biz_purpose ? { bizPurpose: query.biz_purpose } : {}),
@@ -73,6 +71,7 @@ export class AttachmentsService {
       },
       order: { createdAt: 'DESC' },
     });
+    return rows.map((row) => this.toResponse(row));
   }
 
   async review(id: string, payload: ReviewOrderAttachmentDto, user: JwtUserPayload): Promise<Record<string, unknown>> {
@@ -90,14 +89,6 @@ export class AttachmentsService {
     return this.toResponse(saved);
   }
 
-  async stamp(id: string, payload: StampOrderAttachmentDto): Promise<Record<string, unknown>> {
-    const row = await this.load(id);
-    row.stampNo = payload.stamp_no;
-    row.stampedAt = new Date();
-    row.status = 'stamped';
-    const saved = await this.repository.save(row);
-    return this.toResponse(saved);
-  }
 
   async receive(id: string): Promise<Record<string, unknown>> {
     const row = await this.load(id);
@@ -107,9 +98,72 @@ export class AttachmentsService {
     return this.toResponse(saved);
   }
 
+  async createFromBuffer(
+    workOrderId: string,
+    file: { buffer: Buffer; originalName: string; mimeType: string },
+    userId: string,
+  ): Promise<OrderAttachment> {
+    const meta = await this.uploadsService.save({
+      ownerId: userId,
+      kind: 'attachment',
+      buffer: file.buffer,
+      originalName: file.originalName,
+      mimeType: file.mimeType,
+    });
+    return this.repository.save(this.repository.create({
+      workOrderId,
+      dispatchedOrderId: null,
+      bizPurpose: 'resignation_material',
+      fileId: meta.fileId,
+      fileName: meta.fileName,
+      originalName: meta.originalName,
+      mimeType: meta.mimeType,
+      filePath: meta.filePath,
+      fileSize: meta.size,
+      status: 'received',
+      rejectReason: null,
+      receivedAt: new Date(),
+      reviewedBy: null,
+      reviewedAt: null,
+      metadata: null,
+    }));
+  }
+
+  async createFromExternalLink(
+    workOrderId: string,
+    link: { url: string; originalName: string },
+    userId: string,
+  ): Promise<OrderAttachment> {
+    const url = link.url.trim();
+    const originalName = link.originalName.trim() || url;
+    return this.repository.save(this.repository.create({
+      workOrderId,
+      dispatchedOrderId: null,
+      bizPurpose: 'resignation_material',
+      fileId: `external:${createHash('sha256').update(url).digest('hex')}`,
+      fileName: originalName,
+      originalName,
+      mimeType: 'text/uri-list',
+      filePath: url,
+      fileSize: 0,
+      status: 'received',
+      rejectReason: null,
+      receivedAt: new Date(),
+      reviewedBy: null,
+      reviewedAt: null,
+      metadata: {
+        source: 'excel_hyperlink',
+        externalUrl: url,
+        importedBy: userId,
+      },
+    }));
+  }
+
   async remove(id: string, user: JwtUserPayload): Promise<{ success: boolean; id: string }> {
     const row = await this.load(id);
-    await this.uploadsService.resolveForUser(row.fileId, user);
+    if (!this.isExternalLink(row)) {
+      await this.uploadsService.resolveForUser(row.fileId, user);
+    }
     await this.repository.delete(id);
     return { success: true, id };
   }
@@ -136,15 +190,25 @@ export class AttachmentsService {
       file_size: row.fileSize,
       status: row.status,
       reject_reason: row.rejectReason,
-      stamp_no: row.stampNo,
-      stamped_at: row.stampedAt,
       received_at: row.receivedAt,
       reviewed_by: row.reviewedBy,
       reviewed_at: row.reviewedAt,
       metadata: row.metadata,
-      download_url: `/api/files/${row.fileId}`,
+      download_url: this.resolveDownloadUrl(row),
       created_at: row.createdAt,
       updated_at: row.updatedAt,
     };
   }
+
+  private resolveDownloadUrl(row: OrderAttachment): string | null {
+    const externalUrl = row.metadata && typeof row.metadata.externalUrl === 'string'
+      ? row.metadata.externalUrl
+      : null;
+    return externalUrl || `/api/files/${row.fileId}`;
+  }
+
+  private isExternalLink(row: OrderAttachment): boolean {
+    return Boolean(row.metadata && typeof row.metadata.externalUrl === 'string');
+  }
+
 }

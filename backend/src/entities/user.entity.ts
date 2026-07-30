@@ -14,6 +14,7 @@ import { ModuleHandler } from './module-handler.entity';
 import { OperationLog } from './operation-log.entity';
 import { UserRole } from './user-role.entity';
 import { WorkOrder } from './work-order.entity';
+import { BusinessScope } from './enums';
 
 @Entity({ name: 'users' })
 export class User {
@@ -38,11 +39,28 @@ export class User {
   @Column({ name: 'group_code', type: 'varchar', length: 32, nullable: true })
   groupCode!: string | null;
 
+  @Column({
+    name: 'business_scope',
+    type: 'varchar',
+    length: 32,
+    default: BusinessScope.BEILUN,
+  })
+  businessScope!: BusinessScope;
+
   @Column({ name: 'must_change_password', type: 'boolean', default: true })
   mustChangePassword!: boolean;
 
   @Column({ name: 'password_updated_at', type: 'timestamptz', nullable: true })
   passwordUpdatedAt!: Date | null;
+
+  @Column({ name: 'auth_version', type: 'int', default: 0 })
+  authVersion!: number;
+
+  @Column({ name: 'failed_login_attempts', type: 'int', default: 0 })
+  failedLoginAttempts!: number;
+
+  @Column({ name: 'locked_until', type: 'timestamptz', nullable: true })
+  lockedUntil!: Date | null;
 
   @Column({ name: 'avatar_url', type: 'varchar', length: 512, nullable: true })
   avatarUrl!: string | null;

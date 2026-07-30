@@ -28,11 +28,15 @@ interface TemplateSeed {
   fieldList: Array<Record<string, unknown>>;
 }
 
-// ── 3A. 入职联系导出（onboarding_contact，7 列，单行表头）──────────────────
+// ── 3A. 入职联系导出（onboarding_contact，12 列，单行表头）─────────────────
 const onboardingContactColumns: Array<[string, string]> = [
   ['employee_name', '姓名'],
   ['mobile', '联系电话'],
   ['id_card_no', '证件号码'],
+  ['education', '学历'],
+  ['graduation_school', '毕业院校'],
+  ['major', '专业'],
+  ['graduation_date', '毕业时间'],
   ['feedback_deadline', '需要反馈截止日期'],
   ['is_common_template', '是否为通用模板'],
   ['template_name', '模板名称'],
@@ -143,6 +147,96 @@ const contractEsignFieldList = contractEsignColumns.map(([r1, r2, r3, r4, source
   order: index + 1,
 }));
 
+// ── 3D. 社保公积金增员导出（social_insurance，17 列）──────────────────────────
+const socialInsuranceColumns: Array<[string, string]> = [
+  ['employee_name', '姓名'],
+  ['id_card_no', '身份证号'],
+  ['customer_name', '客户名称'],
+  ['customer_code', '客户代码'],
+  ['education', '学历'],
+  ['graduation_school', '毕业院校'],
+  ['major', '专业'],
+  ['graduation_date', '毕业时间'],
+  ['social_location', '社保参缴地'],
+  ['start_month', '参保月份'],
+  ['social_base', '社保基数'],
+  ['fund_base', '公积金基数'],
+  ['fund_ratio', '公积金比例'],
+  ['social_insurance_result', '社保是否办结'],
+  ['medical_insurance_result', '医保是否办结'],
+  ['housing_fund_result', '公积金是否办结'],
+  ['social_insurance_remark', '社保公积金办理备注'],
+];
+
+const socialInsuranceFieldList = socialInsuranceColumns.map(([fieldCode, header], index) => ({
+  fieldCode,
+  alias: header,
+  header: [header],
+  order: index + 1,
+}));
+
+// ── 3E. 离职材料收集导出（resignation_contact，11 列）─────────────────────────
+const resignationContactColumns: Array<[string, string]> = [
+  ['employee_name', '姓名'],
+  ['id_card_no', '身份证号'],
+  ['customer_name', '客户名称'],
+  ['customer_code', '客户代码'],
+  ['social_pay_region', '社保缴纳地区'],
+  ['social_stop_month', '停保月份'],
+  ['resignation_date', '离职日期'],
+  ['feedback_deadline', '需要反馈截止日期'],
+  ['is_common_template', '是否为通用模板'],
+  ['template_name', '模板名称'],
+  ['attachments_summary', '附件'],
+];
+
+const resignationContactFieldList = resignationContactColumns.map(([fieldCode, header], index) => ({
+  fieldCode,
+  alias: header,
+  header: [header],
+  order: index + 1,
+}));
+
+// ── 3F. 减员报岗录入导出（data_entry_resign，8 列）──────────────────────────
+const dataEntryResignColumns: Array<[string, string]> = [
+  ['employee_name', '姓名'],
+  ['id_card_no', '身份证号'],
+  ['customer_name', '客户名称'],
+  ['customer_code', '客户代码'],
+  ['social_pay_region', '社保缴纳地区'],
+  ['social_stop_month', '停保月份'],
+  ['resignation_date', '离职日期'],
+];
+
+const dataEntryResignFieldList = dataEntryResignColumns.map(([fieldCode, header], index) => ({
+  fieldCode,
+  alias: header,
+  header: [header],
+  order: index + 1,
+}));
+
+// ── 3G. 社保公积金减员导出（resignation_social_insurance，12 列）─────────────
+const resignationSocialColumns: Array<[string, string]> = [
+  ['employee_name', '姓名'],
+  ['id_card_no', '身份证号'],
+  ['customer_name', '客户名称'],
+  ['customer_code', '客户代码'],
+  ['social_pay_region', '社保缴纳地区'],
+  ['social_stop_month', '停保月份'],
+  ['resignation_date', '离职日期'],
+  ['social_insurance_result', '社保是否办结'],
+  ['medical_insurance_result', '医保是否办结'],
+  ['housing_fund_result', '公积金是否办结'],
+  ['social_insurance_remark', '社保公积金办理备注'],
+];
+
+const resignationSocialFieldList = resignationSocialColumns.map(([fieldCode, header], index) => ({
+  fieldCode,
+  alias: header,
+  header: [header],
+  order: index + 1,
+}));
+
 const templateSeeds: TemplateSeed[] = [
   {
     templateName: '入职联系批导出模板',
@@ -161,6 +255,30 @@ const templateSeeds: TemplateSeed[] = [
     moduleCode: 'contract',
     signPlatform: 'E签宝',
     fieldList: contractEsignFieldList,
+  },
+  {
+    templateName: '社保公积金增员批导出模板',
+    moduleCode: 'social_insurance',
+    signPlatform: null,
+    fieldList: socialInsuranceFieldList,
+  },
+  {
+    templateName: '社保公积金减员批导出模板',
+    moduleCode: 'resignation_social_insurance',
+    signPlatform: null,
+    fieldList: resignationSocialFieldList,
+  },
+  {
+    templateName: '离职材料收集批导出模板',
+    moduleCode: 'resignation_contact',
+    signPlatform: null,
+    fieldList: resignationContactFieldList,
+  },
+  {
+    templateName: '减员报岗录入批导出模板',
+    moduleCode: 'data_entry_resign',
+    signPlatform: null,
+    fieldList: dataEntryResignFieldList,
   },
 ];
 

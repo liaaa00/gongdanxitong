@@ -14,6 +14,9 @@ $nodeDir = 'D:\AI\node-v20.20.2-win-x64'
 $npmCmd = Join-Path $nodeDir 'npm.cmd'
 $pgBin = 'D:\pgsql16portable\pgsql\bin\pg_ctl.exe'
 $pgData = 'D:\pgsql16portable\data'
+$dbHost = '127.0.0.1'
+$dbPort = 5433
+$dbName = 'ticket_system'
 $backendPort = 3000
 $frontendPort = 5173
 $runSeed = $true
@@ -21,6 +24,11 @@ $runSeed = $true
 $env:PATH = "$nodeDir;$env:PATH"
 $env:HOST = '0.0.0.0'
 $env:PORT = [string]$backendPort
+$env:DB_HOST = $dbHost
+$env:DB_PORT = [string]$dbPort
+$env:DB_USERNAME = 'postgres'
+$env:DB_PASSWORD = 'postgres'
+$env:DB_DATABASE = $dbName
 $env:AUTO_SEED = 'true'
 $env:VITE_API_BASE_URL = $null
 
@@ -130,16 +138,15 @@ if (Test-PortListen $frontendPort) { throw 'Port 5173 is still listening after c
 Write-Host '  Cleanup OK.' -ForegroundColor Green
 
 Write-Step '[2/7] Start/check PostgreSQL shared database...'
-$pgProcess = Get-Process -Name postgres -ErrorAction SilentlyContinue
-if ($pgProcess) {
-    Write-Host '  PostgreSQL already running.' -ForegroundColor Green
+if (Test-PortListen $dbPort) {
+    Write-Host "  PostgreSQL already running on port $dbPort." -ForegroundColor Green
 } else {
     Assert-Path $pgBin 'PostgreSQL pg_ctl'
     $logFile = "D:\pgsql16portable\pg_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
-    & $pgBin start -D $pgData -l $logFile
+    & $pgBin start -D $pgData -l $logFile -o "-p $dbPort"
     Assert-LastExit 'Start PostgreSQL'
     Start-Sleep -Seconds 3
-    Write-Host '  PostgreSQL started.' -ForegroundColor Green
+    Write-Host "  PostgreSQL started on port $dbPort." -ForegroundColor Green
 }
 
 Write-Step '[3/8] Build latest backend dist...'
@@ -194,7 +201,7 @@ Write-Host "Server local URL: http://localhost:$frontendPort" -ForegroundColor Y
 if ($localIP) { Write-Host "Coworker URL: http://${localIP}:$frontendPort" -ForegroundColor Yellow }
 Write-Host 'Demo login: lizhanbo / 123456 (all seed users use 123456; admin123 is obsolete, returns 401, and must not be used for demos).' -ForegroundColor Yellow
 Write-Host 'Frontend API mode: browser calls relative /api; Vite proxy sends to server 127.0.0.1:3000.' -ForegroundColor Cyan
-Write-Host 'Database: server PostgreSQL 127.0.0.1:5432 / ticket_system.' -ForegroundColor Cyan
+Write-Host "Database: server PostgreSQL ${dbHost}:$dbPort / $dbName." -ForegroundColor Cyan
 if (-not $NoPause) { Write-Host "`nPress Enter to close this launcher window. Services keep running." -ForegroundColor Gray; Read-Host }
 
 } catch {
