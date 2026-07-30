@@ -1117,3 +1117,8 @@
 - 改了什么：桌面 `工单系统.lnk` 改为调用 `D:\AI\SpeceAppDate\工单系统\快速启动.ps1`，工作目录同步改为 `D:\AI\SpeceAppDate\工单系统`；将 `backend/src` 与 `frontend/src` 下未跟踪源码隔离到 `.tmp_quarantine_untracked_src_20260730-164042/` 和 `.tmp_quarantine_untracked_src_20260730-164112/`，避免主仓库 build 混入旧分支残留。未删除业务数据、未改服务器。
 - 为什么：原桌面入口指向 `work-order-feature`，且主仓库存在未跟踪源码污染，导致本地启动与服务器/main 不一致。
 - 验证：主仓库快速启动脚本 `-NoBrowser -NoPause` 成功，`/api/health` 返回 ok，前端 `5173` 返回 200，快捷方式目标与工作目录均为 `D:\AI\SpeceAppDate\工单系统`；`git diff --check` 通过；`./回归测试.ps1 -SkipBuild` 通过（前端关键 10 files / 114 tests）。
+## 2026-07-30 修复入职联系导出模板mobile字段表头
+
+- 改了什么：将 `backend/src/database/seeds/seed-export-templates.ts` 第34行 `mobile` 字段表头从"联系电话"改为"移动电话"。种子数据使用幂等键（templateName + moduleCode + signPlatform），已存在的模板不会自动更新，需要重启系统触发种子数据重新执行或手动更新数据库。
+- 为什么：后道反馈按固定模板导出入职联系工单时，Excel表头显示"联系电话"而非预期的"移动电话"。
+- 如何验证：重启系统后，通过管理员账号访问 `/admin/export-templates?moduleCode=onboarding_contact`，检查入职联系批导出模板的第2列（mobile字段）表头是否为"移动电话"；或实际导出入职联系工单，检查Excel第2列表头。
