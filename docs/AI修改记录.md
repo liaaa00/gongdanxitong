@@ -1294,3 +1294,12 @@
 - 数据修复：模块权限解析时统一移除 `.view`、`.manage`、`:view`、`:manage` 动作后缀，保留角色和模块白名单边界不变。
 - 布局修复：统计卡从固定 6 个等宽窄列改为最小 150px 的响应式自动换行网格；1036px 视口下实际为 4 列，每卡 161.5px，6 个标题均单行显示。
 - 验证：moduleAccess 与 Dashboard 定向 2 文件 / 17 项通过，前端 production build 通过；Playwright 使用 fuqianwen 真实登录态验证表格显示入职管理 12 条和离职管理 12 条，不再显示空态。
+
+## 2026-07-31 · 本地应用修改同步内网服务器（业务数据不同步）
+
+- 目标：SpectrAI 加密 SSH profile `work-order-local-ssh`，`192.168.26.195:22`，部署根目录 `/data/apps/work-order-system`；未连接其他项目服务器。
+- 可复现来源：功能提交 `6f141dce69b6f8f787b75f0e46179446ef9ee354`，Linux 行尾门禁提交 `c50b43bd9f7dc15a98aa0a5a8d3926b0f307dc26`。最终以 `c50b43b` 生成完整应用归档，覆盖 `backend/src`、`backend/test`、`frontend/src` 及两端构建配置，共 668 个文件，服务器逐文件 SHA-256 为 668/668 一致；未上传 `.env`、uploads、dist、node_modules、本地数据库、调试脚本、日志或验证 Excel。
+- 数据边界：未从本地同步任何数据库行，未执行 seed；启动日志明确显示 `No migrations are pending`、`Skipping database seeds` 和 `Startup seed skipped`。部署前后 8 张服务器权威表行数与整行摘要完全一致：`work_orders=58`、`dispatched_orders=170`、`users=33`、`user_roles=37`、`customers=42`、`notifications=450`、`operation_logs=1042`、`order_attachments=1`。
+- 备份与回滚：备份目录 `/data/apps/work-order-system/backups/deploy_6f141dc_20260731_130544`，包含原目标源码、完整应用源码归档、Compose 和 922165 字节 PostgreSQL dump；回滚镜像为 `work-order-system-backend:rollback-6f141dc-20260731_130544`、`work-order-system-frontend:rollback-6f141dc-20260731_130544`。
+- 异常与纠正：第一次完整源码构建发现服务器缺少已提交的 `certificateTypes` 服务文件，改为按提交完整应用清单补齐；首次同时切换因 Windows CRLF 进入 Linux 入口脚本导致容器失败，已立即使用回滚镜像恢复服务。新增 `.gitattributes` 固定 shell、Dockerfile、Nginx 配置为 LF，并改为先后端 healthy、再切前端的顺序重新部署。
+- 最终验证：`ticket_backend` healthy、`ticket_frontend` running、`ticket_postgres` healthy、`ticket_nginx` healthy，首页和 `/api/health` 均为 HTTP 200；运行容器包含离职证明权限、入职模板 12 字段高亮、省外工单路由和仪表盘响应式网格标记。本地完整固定回归通过（前端 10 文件 / 115 项、前端 build、后端 build），后端定向 3 套件 / 53 项通过。
