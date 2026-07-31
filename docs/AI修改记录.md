@@ -1308,3 +1308,12 @@
 - 改了什么：从 `backend/src/database/seeds/seed-module-configs.ts` 删除 `out_of_province_increase`、`out_of_province_decrease` 两个错误的子模块、模块字段、主管、动作和导出模板种子定义；在 `backend/test/module-fields-baseline.spec.ts` 增加回归断言，防止省外直单类型再次被当作子工单模块码。
 - 为什么：省外增减员是独立 `in_service_orders`，统一使用 `out_of_province_dispatch` 与 Sheet5 处理人映射，不创建 `work_orders` 或 `dispatched_orders`。错误子模块种子与已确认业务规则、运行时代码和派单规则冲突。
 - 如何验证：根目录 `回归测试.ps1` 通过（前端 10 个文件/115 项、前端 production build、后端 build）；省外 QA、Sheet5 分派与模块字段基线后端定向测试 3 个套件/24 项通过。
+
+## 2026-07-31 · 内网服务器安全同步 7c73b9e 配置与种子纠正
+
+- 目标：仅同步绑定的 `work-order-local-ssh`（`192.168.26.195:22`，部署根 `/data/apps/work-order-system`），不访问其他 SSH 项目；服务器业务数据保持权威，不从本地复制数据库行。
+- 来源与范围：代码/测试来自聚焦提交 `7c73b9e3e0692a465d631058fd329e576abe3764`；获批配置 SQL 来自提交 `d3cb78a`（`docs/deploy/sync_7c73b9e_config.sql`）。实际同步文件为 `backend/src/database/seeds/seed-module-configs.ts`、`backend/test/module-fields-baseline.spec.ts`、本记录文件，以及配置表 `import_template_fields`、`field_permissions`；未同步 `.env`、依赖、前端、上传文件或业务表。
+- 服务器差异与结果：入职模板从 66 行/63 启用但顺序 1..66 调整为 66 行/63 启用、有效顺序 1..63；`social_insurance_specialist` 的 `dispatched:social_insurance` 现为 140 行（10 visible、27 readonly、103 hidden），`dispatched:resignation_social_insurance` 现为 140 行（4 visible、11 readonly、125 hidden）；省外增减员仍为独立直单，`work_order_modules` 对应错误子模块为 0，两个 `dispatch_rules` 仍指向 `out_of_province_dispatch`。
+- 备份与回滚：`/data/apps/work-order-system/backups/sync_7c73b9e_config_20260731_135900`；backend 回滚镜像 `work-order-system-backend:rollback-sync-7c73b9e-20260731_135900`（旧镜像 `sha256:49e33c26dd62da6570c1d52e36c3ba724cd024ca19279193bfb653e641fcad20`），当前镜像 `sha256:c28c5e118124329ebc044361587ac47fd25d31c8120f4a5cf6456073c47b62be`。
+- 保护校验：同步前 `work_orders=58`、`dispatched_orders=170`、`users=33`、`user_roles=37`、`customers=42`、`notifications=450`、`operation_logs=1043`、`order_attachments=1`；同步后除 `notifications=451`（同步期间由既有 SLA 调度产生 1 条 `sla_breach` 通知）外其余计数不变；本次 SQL 未引用任何业务表。
+- 验证：本地固定回归前端 10 文件/115 项、前端 production build、后端 build 通过；后端省外定向测试 3 套件/24 项通过；服务器 backend/frontend/postgres/nginx 均运行且 backend/postgres/nginx healthy，`/api/health` 返回 200/ok，首页返回 200；匿名导入模板接口按预期返回 401，因未使用或猜测凭据，真实登录后的模板下载与 `fuqianwen` 字段响应未验证，不能宣称该项已完成。
