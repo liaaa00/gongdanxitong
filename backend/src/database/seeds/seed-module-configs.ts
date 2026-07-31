@@ -26,8 +26,6 @@ const modules: Array<Partial<WorkOrderModuleConfig>> = [
   { moduleCode: 'data_entry_resign', moduleName: '减员报岗录入', moduleType: 'sub_module', parentModuleCode: 'resignation_management', displayOrder: 32, description: '离职减员报岗录入' },
   { moduleCode: 'resignation_social_insurance', moduleName: '社保公积金减员', moduleType: 'sub_module', parentModuleCode: 'resignation_management', displayOrder: 33, description: '离职社保公积金减员，负责人傅倩雯' },
   { moduleCode: 'resignation_cert', moduleName: '离职材料收集（历史兼容）', moduleType: 'sub_module', parentModuleCode: 'resignation_management', displayOrder: 99, description: '历史兼容配置，第一阶段不在可见列表展示' },
-  { moduleCode: 'out_of_province_increase', moduleName: '社保公积金增员（省外）', moduleType: 'sub_module', parentModuleCode: null, displayOrder: 100, description: '省外增员独立子工单，无主工单' },
-  { moduleCode: 'out_of_province_decrease', moduleName: '社保公积金减员（省外）', moduleType: 'sub_module', parentModuleCode: null, displayOrder: 101, description: '省外减员独立子工单，无主工单' },
 ];
 
 const defaultSlaByModule: Record<string, { slaHours: number; reminderBeforeHours: number }> = {
@@ -44,8 +42,6 @@ const defaultSlaByModule: Record<string, { slaHours: number; reminderBeforeHours
   resignation_cert: { slaHours: 24, reminderBeforeHours: 4 },
   data_entry_resign: { slaHours: 24, reminderBeforeHours: 4 },
   resignation_social_insurance: { slaHours: 48, reminderBeforeHours: 8 },
-  out_of_province_increase: { slaHours: 48, reminderBeforeHours: 8 },
-  out_of_province_decrease: { slaHours: 48, reminderBeforeHours: 8 },
 };
 
 const onboardingContactFields = [
@@ -98,23 +94,6 @@ const resignationSocialFields = [
   ...resignationCoreFields,
 ];
 
-// 省外增员20字段
-const outOfProvinceIncreaseFields = [
-  'employee_name', 'id_card_no', 'payment_institution', 'payment_region',
-  'social_start_month', 'social_base', 'fund_start_month', 'fund_base',
-  'mobile', 'agent', 'contract_start_date', 'contract_end_date',
-  'social_feedback', 'medical_feedback', 'fund_feedback',
-  'ethnicity', 'education', 'current_address', 'household_type', 'household_address',
-];
-
-// 省外减员12字段
-const outOfProvinceDecreaseFields = [
-  'employee_name', 'id_card_no', 'payment_institution', 'payment_region',
-  'social_stop_month', 'fund_stop_month', 'agent',
-  'resignation_reason', 'last_work_date',
-  'social_feedback', 'medical_feedback', 'fund_feedback',
-];
-
 const moduleFields: Record<string, string[]> = {
   onboarding_contact: onboardingContactFields,
   contract: contractFields,
@@ -139,8 +118,6 @@ const moduleFields: Record<string, string[]> = {
   data_entry_resign: dataEntryResignFields,
   resignation_social_insurance: resignationSocialFields,
   resignation_cert: resignationContactFields,
-  out_of_province_increase: outOfProvinceIncreaseFields,
-  out_of_province_decrease: outOfProvinceDecreaseFields,
 };
 
 const supervisorSeeds: Array<{ moduleCode: string; usernames: string[] }> = [
@@ -152,8 +129,6 @@ const supervisorSeeds: Array<{ moduleCode: string; usernames: string[] }> = [
   { moduleCode: 'data_entry_resign', usernames: ['annazhen', 'dataentrysup01'] },
   { moduleCode: 'social_insurance', usernames: ['fuqianwen'] },
   { moduleCode: 'resignation_social_insurance', usernames: ['fuqianwen'] },
-  { moduleCode: 'out_of_province_increase', usernames: ['fuqianwen'] },
-  { moduleCode: 'out_of_province_decrease', usernames: ['fuqianwen'] },
 ];
 
 const actionSeeds: Array<Partial<ActionConfig>> = [
@@ -164,14 +139,10 @@ const actionSeeds: Array<Partial<ActionConfig>> = [
   { moduleCode: 'resignation_contact', actionCode: 'complete', actionName: '完成', remarkRequired: false, formSchema: null },
   { moduleCode: 'data_entry_resign', actionCode: 'complete', actionName: '完成', remarkRequired: false, formSchema: null },
   { moduleCode: 'resignation_social_insurance', actionCode: 'complete', actionName: '完成', remarkRequired: true, formSchema: { fields: [{ fieldCode: 'remark', label: '办理备注', required: true }] } },
-  { moduleCode: 'out_of_province_increase', actionCode: 'complete', actionName: '完成', remarkRequired: true, formSchema: { fields: [{ fieldCode: 'remark', label: '办理备注', required: true }] } },
-  { moduleCode: 'out_of_province_decrease', actionCode: 'complete', actionName: '完成', remarkRequired: true, formSchema: { fields: [{ fieldCode: 'remark', label: '办理备注', required: true }] } },
   { moduleCode: 'social_insurance', actionCode: 'batch_complete', actionName: '社保批量完成', remarkRequired: true, formSchema: { fields: [{ fieldCode: 'remark', label: '批量完成备注', required: true, helpText: '请填写月份、基数、操作类型等追溯信息' }] } },
   { moduleCode: 'resignation_social_insurance', actionCode: 'batch_complete', actionName: '社保批量完成', remarkRequired: true, formSchema: { fields: [{ fieldCode: 'remark', label: '批量完成备注', required: true, helpText: '请填写月份、基数、操作类型等追溯信息' }] } },
-  { moduleCode: 'out_of_province_increase', actionCode: 'batch_complete', actionName: '社保批量完成', remarkRequired: true, formSchema: { fields: [{ fieldCode: 'remark', label: '批量完成备注', required: true, helpText: '请填写月份、基数、操作类型等追溯信息' }] } },
-  { moduleCode: 'out_of_province_decrease', actionCode: 'batch_complete', actionName: '社保批量完成', remarkRequired: true, formSchema: { fields: [{ fieldCode: 'remark', label: '批量完成备注', required: true, helpText: '请填写月份、基数、操作类型等追溯信息' }] } },
-  ...['onboarding_contact', 'contract', 'data_entry', 'social_insurance', 'resignation_contact', 'data_entry_resign', 'resignation_social_insurance', 'out_of_province_increase', 'out_of_province_decrease'].map((moduleCode) => ({ moduleCode, actionCode: 'confirm_read', actionName: '确认已阅', remarkRequired: false, formSchema: null })),
-  ...['onboarding_contact', 'contract', 'data_entry', 'social_insurance', 'resignation_contact', 'data_entry_resign', 'resignation_social_insurance', 'out_of_province_increase', 'out_of_province_decrease'].map((moduleCode) => ({ moduleCode, actionCode: 'return_completed', actionName: '退回已完成子单', remarkRequired: true, formSchema: { fields: [{ fieldCode: 'returnReason', label: '退回原因', required: true }] } })),
+  ...['onboarding_contact', 'contract', 'data_entry', 'social_insurance', 'resignation_contact', 'data_entry_resign', 'resignation_social_insurance'].map((moduleCode) => ({ moduleCode, actionCode: 'confirm_read', actionName: '确认已阅', remarkRequired: false, formSchema: null })),
+  ...['onboarding_contact', 'contract', 'data_entry', 'social_insurance', 'resignation_contact', 'data_entry_resign', 'resignation_social_insurance'].map((moduleCode) => ({ moduleCode, actionCode: 'return_completed', actionName: '退回已完成子单', remarkRequired: true, formSchema: { fields: [{ fieldCode: 'returnReason', label: '退回原因', required: true }] } })),
 ];
 
 export async function seedModuleConfigs(dataSource: DataSource): Promise<void> {
@@ -249,11 +220,9 @@ export async function seedModuleConfigs(dataSource: DataSource): Promise<void> {
 
   const admin = await userRepo.findOne({ where: { username: 'admin' } }) ?? await userRepo.findOne({ where: { isActive: true } });
   if (admin) {
-    for (const moduleCode of ['social_insurance', 'resignation_social_insurance', 'out_of_province_increase', 'out_of_province_decrease']) {
+    for (const moduleCode of ['social_insurance', 'resignation_social_insurance']) {
       const templateName = moduleCode === 'social_insurance' ? '社保公积金增员导出模板'
-        : moduleCode === 'resignation_social_insurance' ? '社保公积金减员导出模板'
-        : moduleCode === 'out_of_province_increase' ? '省外增员导出模板'
-        : '省外减员导出模板';
+        : '社保公积金减员导出模板';
       const existed = await exportTemplateRepo.findOne({ where: { templateName, moduleCode } });
       const fieldList = (moduleFields[moduleCode] ?? []).map((fieldCode, order) => ({ fieldCode, alias: fieldCode, order }));
       if (existed) {
@@ -343,8 +312,6 @@ function defaultGroupName(moduleCode: string): string {
     resignation_contact: '离职材料收集字段',
     data_entry_resign: '减员报岗录入字段',
     resignation_social_insurance: '社保公积金减员字段',
-    out_of_province_increase: '省外增员字段',
-    out_of_province_decrease: '省外减员字段',
   };
   return map[moduleCode] ?? '基础字段';
 }

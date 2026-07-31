@@ -74,4 +74,10 @@ describe('onboarding module_fields baseline', () => {
     expect(extractFields('data_entry_resign')).toEqual(expect.arrayContaining(['mobile', 'email']));
     expect(extractFields('resignation_social_insurance')).toEqual(expect.arrayContaining(['mobile', 'email']));
   });
+
+  it('does not treat out-of-province direct-order types as child module codes', () => {
+    expect(moduleSeed).not.toContain("moduleCode: 'out_of_province_increase'");
+    expect(moduleSeed).not.toContain("moduleCode: 'out_of_province_decrease'");
+    expect(moduleSeed).not.toMatch(/out_of_province_(increase|decrease):/);
+  });
 });

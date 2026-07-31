@@ -1303,3 +1303,8 @@
 - 备份与回滚：备份目录 `/data/apps/work-order-system/backups/deploy_6f141dc_20260731_130544`，包含原目标源码、完整应用源码归档、Compose 和 922165 字节 PostgreSQL dump；回滚镜像为 `work-order-system-backend:rollback-6f141dc-20260731_130544`、`work-order-system-frontend:rollback-6f141dc-20260731_130544`。
 - 异常与纠正：第一次完整源码构建发现服务器缺少已提交的 `certificateTypes` 服务文件，改为按提交完整应用清单补齐；首次同时切换因 Windows CRLF 进入 Linux 入口脚本导致容器失败，已立即使用回滚镜像恢复服务。新增 `.gitattributes` 固定 shell、Dockerfile、Nginx 配置为 LF，并改为先后端 healthy、再切前端的顺序重新部署。
 - 最终验证：`ticket_backend` healthy、`ticket_frontend` running、`ticket_postgres` healthy、`ticket_nginx` healthy，首页和 `/api/health` 均为 HTTP 200；运行容器包含离职证明权限、入职模板 12 字段高亮、省外工单路由和仪表盘响应式网格标记。本地完整固定回归通过（前端 10 文件 / 115 项、前端 build、后端 build），后端定向 3 套件 / 53 项通过。
+## 2026-07-31 · 纠正省外增减员直单的模块种子定义
+
+- 改了什么：从 `backend/src/database/seeds/seed-module-configs.ts` 删除 `out_of_province_increase`、`out_of_province_decrease` 两个错误的子模块、模块字段、主管、动作和导出模板种子定义；在 `backend/test/module-fields-baseline.spec.ts` 增加回归断言，防止省外直单类型再次被当作子工单模块码。
+- 为什么：省外增减员是独立 `in_service_orders`，统一使用 `out_of_province_dispatch` 与 Sheet5 处理人映射，不创建 `work_orders` 或 `dispatched_orders`。错误子模块种子与已确认业务规则、运行时代码和派单规则冲突。
+- 如何验证：根目录 `回归测试.ps1` 通过（前端 10 个文件/115 项、前端 production build、后端 build）；省外 QA、Sheet5 分派与模块字段基线后端定向测试 3 个套件/24 项通过。
