@@ -165,6 +165,17 @@ describe('Dashboard display behavior', () => {
     expect(container.textContent).toContain('3');
   });
 
+  it('wraps metric cards responsively instead of compressing six fixed columns', () => {
+    const { getByTestId } = render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>,
+    );
+
+    expect(getByTestId('dashboard-metric-cards').style.gridTemplateColumns)
+      .toBe('repeat(auto-fit, minmax(150px, 1fr))');
+  });
+
   it('keeps business group leader scope switch available and defaults to mine', async () => {
     useUserStore.setState({
       user: {
@@ -324,7 +335,7 @@ describe('Dashboard display behavior', () => {
         phone: '',
         avatar_url: null,
         is_active: true,
-        permissions: [],
+        permissions: ['module.social_insurance.manage', 'module.social_insurance_resign.manage'],
         roles: [{ id: 'r-social', code: ROLE.SOCIAL_INSURANCE_SPECIALIST, name: '福保负责人', level: 'member' }],
       },
     });

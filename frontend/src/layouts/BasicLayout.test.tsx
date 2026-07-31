@@ -450,6 +450,7 @@ describe('BasicLayout menu visibility', () => {
     expect(text).not.toContain('劳动合同新签子工单');
     expect(text).not.toContain('增员报岗录入子工单');
     expect(text).not.toContain('减员报岗录入子工单');
+    expect(text).not.toContain('离职证明');
     expect(text).toContain('在职管理');
     expect(text).toContain('单项业务办理');
   });
@@ -507,6 +508,30 @@ describe('BasicLayout notification dropdown', () => {
     fireEvent.click(processButton as HTMLButtonElement);
 
     expect(markNotificationRead).not.toHaveBeenCalled();
+  });
+
+  it('mounts the notification popup outside the sidebar account actions', async () => {
+    const { container } = renderLayout();
+
+    await waitFor(() => {
+      expect(container.querySelector('.anticon-bell')).toBeTruthy();
+    });
+    fireEvent.click(container.querySelector('.anticon-bell') as Element);
+
+    await screen.findByText('劳动合同新签反馈 更新');
+    const popup = document.querySelector('.ant-popover:not(.ant-popover-hidden)');
+
+    expect(popup).toBeTruthy();
+    expect(popup?.parentElement).toBe(document.body);
+    expect(popup?.closest('[data-testid="layout-actions"]')).toBeNull();
+  });
+
+  it('keeps the unread badge outside the bell button visible', () => {
+    const { container } = renderLayout();
+    const accountActions = container.querySelector('[data-testid="layout-actions"] .ant-space') as HTMLElement | null;
+
+    expect(accountActions).toBeTruthy();
+    expect(accountActions?.style.overflow).toBe('visible');
   });
 });
 

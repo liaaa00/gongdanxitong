@@ -32,6 +32,20 @@ export const ONBOARDING_RESIGNATION_MODULE_ROLES = ['onboarding_specialist', 'on
 export const DATA_ENTRY_MODULE_ROLES = ['data_entry_leader', 'data_entry_team', 'data_entry_supervisor', 'data_entry_specialist'] as const;
 export const SOCIAL_INSURANCE_MODULE_ROLES = ['social_insurance_specialist', 'social_insurance_team', 'social_insurance_supervisor', 'social_security_supervisor'] as const;
 
+const RESIGNATION_CERT_HANDLER_USERNAMES = new Set(['yangchun', 'jianglu']);
+const RESIGNATION_CERT_HANDLER_REAL_NAMES = new Set(['杨纯', '江璐']);
+
+/** Historical resignation certificate sub-orders are restricted to the two configured handlers. */
+export function isResignationCertHandler(user: {
+  username?: string | null;
+  realName?: string | null;
+  real_name?: string | null;
+}): boolean {
+  const username = String(user.username ?? '').trim().toLowerCase();
+  const realName = String(user.realName ?? user.real_name ?? '').trim();
+  return RESIGNATION_CERT_HANDLER_USERNAMES.has(username) || RESIGNATION_CERT_HANDLER_REAL_NAMES.has(realName);
+}
+
 const MODULE_HANDLER_ROLES: Record<string, readonly string[]> = {
   contract: CONTRACT_MODULE_ROLES,
   contract_signing: CONTRACT_MODULE_ROLES,

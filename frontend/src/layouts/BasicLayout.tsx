@@ -766,7 +766,7 @@ const BasicLayout: React.FC = () => {
     : allNotifications.filter((n) => getNotificationBucket(n) === activeTab);
 
   const notifContent = (
-    <div style={{ width: 360, maxHeight: 520 }}>
+    <div style={{ width: 360, maxHeight: 'calc(100vh - 24px)', overflowY: 'auto' }}>
       <Tabs activeKey={activeTab} onChange={setActiveTab} size="small"
         items={[
           { key: 'all', label: <Badge count={unreadCount} size="small" offset={[6, -2]}>全部</Badge> },
@@ -784,7 +784,7 @@ const BasicLayout: React.FC = () => {
       {filteredNotifications.length > 0 ? (
         <List
           dataSource={filteredNotifications.slice(0, 20)}
-          style={{ maxHeight: 360, overflow: 'auto' }}
+          style={{ maxHeight: 'min(360px, calc(100vh - 170px))', overflow: 'auto' }}
           renderItem={(item) => (
             <List.Item
               style={{ padding: '8px 12px', background: item.is_read ? 'transparent' : '#f6ffed' }}
@@ -943,12 +943,13 @@ const BasicLayout: React.FC = () => {
                 maxWidth: '100%',
                 boxSizing: 'border-box',
                 justifyContent: 'space-between',
-                overflow: 'hidden',
+                overflow: 'visible',
                 padding: '0 8px',
               }}
           >
             <Dropdown
               placement="bottomRight"
+              getPopupContainer={() => document.body}
               menu={{
                 items: [
                   {
@@ -992,7 +993,8 @@ const BasicLayout: React.FC = () => {
             </Dropdown>
             {canViewNotifications ? (
               <Popover content={notifContent} title={null} trigger="click"
-                open={notifOpen} onOpenChange={setNotifOpen} placement="bottomRight">
+                open={notifOpen} onOpenChange={setNotifOpen} placement="bottomRight"
+                getPopupContainer={() => document.body}>
                 <Badge count={unreadCount} size="small" offset={[-2, 4]}>
                   <Button
                     type="text"

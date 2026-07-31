@@ -331,8 +331,9 @@ describe('dispatched order field sync records', () => {
 
     await service.approveModify(ORDER_ID, { approved: true, comment: 'agree' }, handler);
 
-    expect(order.status).toBe(DispatchedOrderStatus.PENDING);
-    expect(order.acceptedAt).toBeNull();
+    // 修复问题3：批准修改后，从RETURNED状态应恢复为PROCESSING（已接单）而非PENDING（未接单）
+    expect(order.status).toBe(DispatchedOrderStatus.PROCESSING);
+    expect(order.acceptedAt).toBeTruthy(); // 应该有接单时间
     expect(order.completedAt).toBeNull();
     expect(order.returnReason).toBeNull();
     expect(order.parentOrder.status).toBe(WorkOrderStatus.PROCESSING);

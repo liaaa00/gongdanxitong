@@ -104,7 +104,7 @@ function moduleCodesFromPermissions(permissions?: string[]): Set<string> {
     for (const pattern of MODULE_PERMISSION_PATTERNS) {
       const matched = value.match(pattern);
       if (matched?.[1]) {
-        const code = normalizeModuleCode(matched[1]);
+        const code = normalizeModuleCode(matched[1].replace(/[.:](?:view|manage)$/, ''));
         if (code) result.add(code);
       }
     }

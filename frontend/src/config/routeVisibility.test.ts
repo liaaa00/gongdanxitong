@@ -126,6 +126,8 @@ describe('routeVisibility admin-only configuration routes', () => {
     const leaderRoles = roles([ROLE.BUSINESS_GROUP_LEADER]);
     const memberRoles = roles([ROLE.BUSINESS_GROUP_MEMBER]);
     const contractRoles = roles([ROLE.LABOR_CONTRACT_MEMBER]);
+    const sharedOwnerRoles = roles([ROLE.SHARED_TEAM_OWNER]);
+    const socialRoles = roles([ROLE.SOCIAL_INSURANCE_SPECIALIST]);
 
     expect(canAccessPath('/in-service', adminRoles)).toBe(true);
     expect(canAccessPath('/in-service/new', memberRoles)).toBe(true);
@@ -141,6 +143,8 @@ describe('routeVisibility admin-only configuration routes', () => {
     expect(canAccessPath('/in-service/certificates/new', memberRoles)).toBe(true);
     expect(canAccessPath('/in-service/certificates/new', contractRoles)).toBe(false);
     expect(canAccessPath('/resignation-certificates', contractRoles)).toBe(true);
+    expect(canAccessPath('/resignation-certificates', sharedOwnerRoles)).toBe(true);
+    expect(canAccessPath('/resignation-certificates', socialRoles)).toBe(false);
     expect(canAccessPath('/resignation-certificates/new', memberRoles)).toBe(true);
     expect(canAccessPath('/resignation-certificates/new', contractRoles)).toBe(false);
 

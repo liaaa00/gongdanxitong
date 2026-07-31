@@ -9,6 +9,7 @@ import {
   SOCIAL_INSURANCE_MODULE_ROLES,
   hasAnyRole,
   hasModuleSupervisorRole,
+  isResignationCertHandler,
   isAdminRole,
 } from 'src/common/auth/role-permissions';
 import {
@@ -951,14 +952,15 @@ export class WorkOrderService {
       }
     }
 
-    const items = rows.map((row) => {
-      const subOrders = toWorkOrderSubOrderItems(
-        (childrenByParentId.get(row.id) ?? [])
-          .filter((child) => isPhase1VisibleDispatchModule(child.moduleCode))
-          .sort((a, b) => getModuleSortOrder(a.moduleCode) - getModuleSortOrder(b.moduleCode)),
-      );
-      return toWorkOrderListItem(row, subOrders);
-    });
+    const items: WorkOrderListItem[] = [];
+    for (const row of rows) {
+      const rawSubOrders = (childrenByParentId.get(row.id) ?? [])
+        .filter((child) => isPhase1VisibleDispatchModule(child.moduleCode))
+        .sort((a, b) => getModuleSortOrder(a.moduleCode) - getModuleSortOrder(b.moduleCode));
+      const subOrders = toWorkOrderSubOrderItems(rawSubOrders);
+      const filteredSubOrders = await this.filterSubOrdersByUserPermission(row.createdBy, subOrders, user);
+      items.push(toWorkOrderListItem(row, filteredSubOrders));
+    }
 
     return { items, total, page, pageSize };
   }
@@ -969,7 +971,12 @@ export class WorkOrderService {
       throw new NotFoundException('工单不存在');
     }
     await this.assertReadable(workOrder, user);
-    return this.loadDetail(id);
+    const detail = await this.loadDetail(id);
+    const filtered = await this.filterSubOrdersByUserPermission(workOrder.createdBy, detail.dispatchedOrders, user);
+    detail.dispatchedOrders = filtered;
+    detail.subOrders = filtered;
+    detail.sub_orders = filtered;
+    return detail;
   }
 
   async timeline(id: string, user: JwtUserPayload): Promise<WorkOrderTimelineResponse> {
@@ -1685,7 +1692,11 @@ export class WorkOrderService {
   }
 
   private async assertReadable(workOrder: WorkOrder, user: JwtUserPayload): Promise<void> {
-    if (isAdminRole(user.roles) || workOrder.createdBy === user.sub) {
+    if (isAdminRole(user.roles)) {
+      return;
+    }
+
+    if (workOrder.createdBy === user.sub) {
       return;
     }
 
@@ -1710,6 +1721,9 @@ export class WorkOrderService {
     });
     const visibleChildren = children.filter((child) =>
       isDispatchModuleVisibleForOrderType(child.moduleCode, workOrder.orderType));
+    if (isResignationCertHandler(user) && visibleChildren.some((child) => child.moduleCode === 'resignation_cert')) {
+      return;
+    }
     if (visibleChildren.some((child) => child.handlerId === user.sub)) {
       return;
     }
@@ -1754,6 +1768,22 @@ export class WorkOrderService {
     if (hasAnyRole(roles, DATA_ENTRY_MODULE_ROLES)) modules.push('data_entry', 'data_entry_resign');
     if (hasAnyRole(roles, SOCIAL_INSURANCE_MODULE_ROLES)) modules.push('social_insurance', 'resignation_social_insurance');
     return filterPhase1VisibleDispatchModules(modules);
+  }
+
+  /**
+   * 按当前用户权限过滤子工单列表，防止主工单详情/列表旁路泄露无权访问的子工单。
+   * ponytail: 仅依赖已有的 resolveReadableBackendModules，业务主管/负责人已在 assertReadable 层面放行。
+   */
+  private async filterSubOrdersByUserPermission(
+    parentCreatedBy: string,
+    subOrders: WorkOrderSubOrderItem[],
+    user: JwtUserPayload,
+  ): Promise<WorkOrderSubOrderItem[]> {
+    const canReadResignationCert = isAdminRole(user.roles) || isResignationCertHandler(user);
+    const candidates = subOrders.filter((sub) => sub.moduleCode !== 'resignation_cert' || canReadResignationCert);
+    if (isAdminRole(user.roles) || parentCreatedBy === user.sub) return candidates;
+    const accessibleModules = await this.resolveReadableBackendModules(user);
+    return candidates.filter((sub) => sub.moduleCode === 'resignation_cert' || accessibleModules.includes(sub.moduleCode));
   }
 
   private resolveBusinessScope(orderType: OrderType): BusinessScope {

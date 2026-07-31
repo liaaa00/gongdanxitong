@@ -88,8 +88,8 @@ const CertificateTypesPage: React.FC = () => {
       dataIndex: 'isActive',
       key: 'isActive',
       width: 80,
-      render: (isActive: boolean) => (
-        <Tag color={isActive ? 'green' : 'red'}>{isActive ? '启用' : '禁用'}</Tag>
+      render: (_, record) => (
+        <Tag color={record.isActive ? 'green' : 'red'}>{record.isActive ? '启用' : '禁用'}</Tag>
       ),
     },
     {

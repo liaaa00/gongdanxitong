@@ -14,6 +14,7 @@ import {
   ModuleHandler,
 } from 'src/entities';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
+import { toWorkOrderSubOrderItems } from 'src/modules/work-orders/work-order.mapper';
 import { WorkOrderService } from 'src/modules/work-orders/work-order.service';
 import { WorkOrderValidationService } from 'src/modules/work-orders/work-order-validation.service';
 
@@ -446,6 +447,40 @@ describe('WorkOrderService unit tests', () => {
     await expect(
       service.findOne('wo-1', makeUser({ sub: 'other-1', roles: ['salesperson'] })),
     ).rejects.toBeInstanceOf(HttpException);
+  });
+
+  it('restricts resignation certificate child summaries to Yang Chun, Jiang Lu, and admins', async () => {
+    const filter = (service as unknown as {
+      filterSubOrdersByUserPermission: (
+        parentCreatedBy: string,
+        subOrders: ReturnType<typeof toWorkOrderSubOrderItems>,
+        user: JwtUserPayload,
+      ) => Promise<Array<{ moduleCode: string }>>;
+    }).filterSubOrdersByUserPermission.bind(service);
+    const children = toWorkOrderSubOrderItems([
+      makeDispatched({ id: 'do-cert', moduleCode: 'resignation_cert', handlerId: 'yang-id' }),
+      makeDispatched({ id: 'do-social', moduleCode: 'resignation_social_insurance', handlerId: 'social-id' }),
+    ]);
+
+    await expect(filter('social-id', children, makeUser({
+      sub: 'social-id',
+      username: 'fuqianwen',
+      realName: '傅倩雯',
+      roles: ['social_insurance_specialist'],
+    }))).resolves.toEqual([
+      expect.objectContaining({ moduleCode: 'resignation_social_insurance' }),
+    ]);
+
+    for (const handler of [
+      makeUser({ sub: 'yang-id', username: 'yangchun', realName: '杨纯', roles: ['contract_specialist'] }),
+      makeUser({ sub: 'jiang-id', username: 'jianglu', realName: '江璐', roles: ['shared_leader'] }),
+    ]) {
+      await expect(filter('creator-id', children, handler)).resolves.toEqual([
+        expect.objectContaining({ moduleCode: 'resignation_cert' }),
+      ]);
+    }
+
+    await expect(filter('creator-id', children, makeUser({ sub: 'admin-id', roles: ['admin'] }))).resolves.toHaveLength(2);
   });
 
   it('allows salesperson to update a processing work order and resubmit it to pending', async () => {

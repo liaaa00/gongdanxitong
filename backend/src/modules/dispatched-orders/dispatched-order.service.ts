@@ -10,6 +10,7 @@ import {
   hasAnyRole,
   hasManagementScopeRole,
   hasModuleSupervisorRole,
+  isResignationCertHandler,
   isAdminRole,
 } from 'src/common/auth/role-permissions';
 import {
@@ -840,8 +841,9 @@ export class DispatchedOrderService {
       }
     }
 
-    order.status = shouldRedispatch ? DispatchedOrderStatus.PENDING : previousStatus;
-    order.acceptedAt = shouldRedispatch ? null : order.acceptedAt;
+    // 修复问题3：批准修改后，如果之前是已退回状态，应恢复为处理中（已接单）而非待处理（未接单）
+    order.status = shouldRedispatch ? DispatchedOrderStatus.PROCESSING : previousStatus;
+    order.acceptedAt = shouldRedispatch ? (order.acceptedAt || new Date()) : order.acceptedAt;
     if (shouldRedispatch) order.dispatchedAt = new Date();
     order.returnReason = approved ? null : (comment ? `修改审批已拒绝：${comment}` : null);
     order.completedAt = previousStatus === DispatchedOrderStatus.COMPLETED ? order.completedAt : null;
@@ -2435,7 +2437,12 @@ export class DispatchedOrderService {
   }
 
   private async assertCanRead(order: DispatchedOrder, user: JwtUserPayload): Promise<void> {
-    if (this.isAdmin(user) || order.parentOrder.createdBy === user.sub) return;
+    if (this.isAdmin(user)) return;
+    if (order.moduleCode === 'resignation_cert') {
+      if (isResignationCertHandler(user)) return;
+      throw new ForbiddenException('无权访问该离职证明子工单');
+    }
+    if (order.parentOrder.createdBy === user.sub) return;
     if (order.handlerId === user.sub && this.canReadAssignedModule(user, order.moduleCode)) return;
     if (!order.handlerId && (await this.hasModuleAccess(user.sub, order.moduleCode, user.roles))) return;
     if (await this.canViewAsSupervisor(user, order.moduleCode)) return;

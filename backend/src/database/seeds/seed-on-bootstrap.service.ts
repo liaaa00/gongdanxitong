@@ -14,6 +14,7 @@ import { seedNotificationTemplates } from './seed-notification-templates';
 import { seedRoles } from './seed-roles';
 import { seedUsers } from './seed-users';
 import { ensureWorkflowRuntimeSchema } from './database-schema-guard';
+import { seedImportTemplateFields } from './seed-import-template-fields';
 
 @Injectable()
 export class SeedOnBootstrapService implements OnApplicationBootstrap {
@@ -36,6 +37,7 @@ export class SeedOnBootstrapService implements OnApplicationBootstrap {
     await seedCustomers(this.dataSource);
     await seedUsers(this.dataSource);
     await seedFields(this.dataSource);
+    await seedImportTemplateFields(this.dataSource);
     await seedDispatchRules(this.dataSource);
     await seedFieldPermissions(this.dataSource);
     await seedModuleHandlers(this.dataSource);

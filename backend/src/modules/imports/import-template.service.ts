@@ -18,13 +18,20 @@ type TemplateField = FieldConfig & {
 const MAIN_SHEET_NAME = '当前字段配置';
 const OPTIONS_SHEET_NAME = '__options';
 
-// 表头不标黄的字段（与权威入职导入模板一致）：客户代码、外包类型 + 全部业务判断项。
-const NON_HIGHLIGHT_HEADER_FIELD_CODES = new Set<string>([
-  'customer_code', 'outsource_type',
-  'business_mode', 'employee_type', 'need_company_contract', 'need_esign', 'esign_platform',
-  'contract_subject', 'company_address', 'project_name', 'work_arrangement', 'contract_template',
-  'need_contract_urge', 'need_onboarding_contact', 'feedback_deadline', 'is_common_template', 'template_name',
-  'need_company_payroll', 'payroll_location', 'social_urge', 'special_remark',
+// 客户必填12字段（标黄），在导入模板中排在前12列（A-L，即Excel的B-M列）
+const CUSTOMER_REQUIRED_FIELD_CODES = new Set<string>([
+  'customer_name',       // 客户名称
+  'employee_name',       // 姓名
+  'id_card_type',        // 证件类型
+  'id_card_no',          // 证件号码
+  'mobile',              // 移动电话
+  'position',            // 岗位
+  'contract_start_date', // 合同开始日期
+  'work_city',           // 工作城市
+  'base_salary',         // 基本工资
+  'social_location',     // 参保地
+  'bank_account',        // 银行借记卡帐号
+  'bank_name',           // 开户银行信息
 ]);
 const LABEL_COLUMN_WIDTH = 12;
 const DATA_VALIDATION_ROWS = 500;
@@ -82,9 +89,6 @@ export class ImportTemplateService {
     } as TemplateField;
   }
 
-  // 列 A 放说明标签（字段名/是否必填/填写要求/填写示例），字段从列 B 起。
-  // 解析器以「行首单元格命中 TEMPLATE_META_ROW_LABELS」跳过第 2~4 行说明行，
-  // 第 1 行作为表头（header=field_name/header_alias 用于往返匹配），数据从第 5 行开始。
   private writeHeaderAndMetaRows(sheet: Worksheet, fields: TemplateField[]): void {
     const headerRow = sheet.getRow(1);
     const requiredRow = sheet.getRow(2);
@@ -100,7 +104,8 @@ export class ImportTemplateService {
       const col = index + 2;
       const headerCell = headerRow.getCell(col);
       headerCell.value = this.headerName(field);
-      if (this.shouldHighlightHeader(field)) {
+      const shouldHighlight = this.shouldHighlightHeader(field);
+      if (shouldHighlight) {
         headerCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
       }
       requiredRow.getCell(col).value = this.requiredText(field);
@@ -143,11 +148,10 @@ export class ImportTemplateService {
     return '非必填';
   }
 
-  // 与权威导入模板一致：员工数据字段(基本信息/合同/薪资/社保)表头标黄以提示重点填报；
-  // 客户代码、外包类型以及全部「业务判断项」(业务模式→特殊备注)为已知/判断字段，不标黄。
+  // 入职模板：只标黄客户必填的12个核心字段，其余员工数据与业务判断字段均不标黄
   private shouldHighlightHeader(field: TemplateField): boolean {
     return field.orderType === OrderType.ONBOARDING
-      && !NON_HIGHLIGHT_HEADER_FIELD_CODES.has(field.fieldCode);
+      && CUSTOMER_REQUIRED_FIELD_CODES.has(field.fieldCode);
   }
 
   private buildRequirement(field: TemplateField): string {

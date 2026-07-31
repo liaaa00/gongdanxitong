@@ -117,9 +117,12 @@ const HANDLING_FEEDBACK_FIELDS = [
   'housing_fund_result',
 ];
 const SOCIAL_INSURANCE_VISIBLE = new Set([
-  'customer_name','customer_code','position_type','employee_name','id_card_type','id_card_no','mobile','email','household_type',
+  'customer_name','customer_code','outsource_type','position','position_type','employee_name','id_card_type','id_card_no','gender','birth_date','age','household_type','ethnicity',
   'education','graduation_school','major','graduation_date','marital_status',
-  'social_location','start_month','social_base','fund_base','fund_ratio','social_urge','special_remark',
+  'mobile','email','current_address','household_address','postal_code',
+  'social_location','start_month','social_base','fund_base','fund_ratio',
+  'bank_name','bank_account',
+  'social_urge','special_remark','remark',
   ...HANDLING_FEEDBACK_FIELDS,
 ]);
 const SOCIAL_INSURANCE_EDITABLE = new Set([

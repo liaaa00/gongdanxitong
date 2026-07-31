@@ -43,4 +43,14 @@ describe('moduleAccess phase-1 visibility', () => {
     const modules = getAccessibleModuleCodes(contractRoles, ['module:social_insurance:view']);
     expect(modules && Array.from(modules)).toEqual(['social_insurance']);
   });
+
+  it('parses dotted backend module permissions without treating the action as part of the module code', () => {
+    const socialRoles = roles([ROLE.SOCIAL_INSURANCE_SPECIALIST]);
+    const modules = getAccessibleModuleCodes(socialRoles, [
+      'module.social_insurance.manage',
+      'module.social_insurance_resign.manage',
+    ]);
+
+    expect(modules && Array.from(modules)).toEqual(['social_insurance', 'social_insurance_resign']);
+  });
 });

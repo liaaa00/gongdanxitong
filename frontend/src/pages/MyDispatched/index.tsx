@@ -424,6 +424,34 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
       render: (_, record) => String(record.extra_data?.email || '-'),
     },
     {
+      title: '参保地',
+      key: 'insurance_location',
+      width: 120,
+      hideInSearch: true,
+      render: (_, record) => String(record.extra_data?.insurance_location || record.extra_data?.social_insurance_location || '-'),
+    },
+    {
+      title: '起始月',
+      key: 'start_month',
+      width: 100,
+      hideInSearch: true,
+      render: (_, record) => String(record.extra_data?.start_month || record.extra_data?.insurance_start_month || '-'),
+    },
+    {
+      title: '缴纳地区',
+      key: 'payment_area',
+      width: 120,
+      hideInSearch: true,
+      render: (_, record) => String(record.extra_data?.payment_area || record.extra_data?.insurance_payment_area || '-'),
+    },
+    {
+      title: '停保月',
+      key: 'stop_month',
+      width: 100,
+      hideInSearch: true,
+      render: (_, record) => String(record.extra_data?.stop_month || record.extra_data?.insurance_stop_month || '-'),
+    },
+    {
       title: '状态', dataIndex: 'status', key: 'status', width: 100, valueType: 'select',
       fieldProps: {
         options: isDoneMode

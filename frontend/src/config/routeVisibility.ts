@@ -57,6 +57,15 @@ const IN_SERVICE_ROLES = [
   ROLE.SOCIAL_INSURANCE_SPECIALIST,
 ] as const satisfies readonly CanonicalRole[];
 
+const RESIGNATION_CERTIFICATE_LIST_ROLES = [
+  ROLE.ADMIN,
+  ROLE.BUSINESS_OWNER,
+  ROLE.BUSINESS_GROUP_LEADER,
+  ROLE.BUSINESS_GROUP_MEMBER,
+  ROLE.SHARED_TEAM_OWNER,
+  ROLE.LABOR_CONTRACT_MEMBER,
+] as const satisfies readonly CanonicalRole[];
+
 const OFFBOARDING_ROLES = [
   ROLE.ADMIN,
   ROLE.SHARED_TEAM_OWNER,
@@ -156,7 +165,7 @@ export const ROUTE_VISIBILITY = {
   '/renewal': IN_SERVICE_ROLES,
   '/renewal/new': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER],
   '/renewal/:id': IN_SERVICE_ROLES,
-  '/resignation-certificates': IN_SERVICE_ROLES,
+  '/resignation-certificates': RESIGNATION_CERTIFICATE_LIST_ROLES,
   '/resignation-certificates/new': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER],
   '/in-service/contract-renewal': IN_SERVICE_ROLES,
   '/in-service/benefit-claim': IN_SERVICE_ROLES,

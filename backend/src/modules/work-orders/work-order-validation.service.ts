@@ -94,6 +94,27 @@ export class WorkOrderValidationService {
     if (invalid.length > 0) {
       throw businessException(4112, HttpStatus.BAD_REQUEST, '字段值不合法', { invalid });
     }
+
+    // 问题5修复：检查证件号重复（仅对新增员工类工单）
+    const isOnboardingOrder = ['ONBOARDING', 'INCREASE'].includes(workOrder.orderType);
+    const idCardNo = this.readText(workOrder.extraData.id_card_no ?? workOrder.extraData.employee_id_card);
+    if (isOnboardingOrder && idCardNo) {
+      const existingOrder = await this.workOrderRepository
+        .createQueryBuilder('wo')
+        .where('wo.id != :currentId', { currentId: workOrder.id })
+        .andWhere("wo.extraData->>'id_card_no' = :idCardNo OR wo.extraData->>'employee_id_card' = :idCardNo", { idCardNo })
+        .andWhere('wo.status NOT IN (:...excludedStatuses)', { excludedStatuses: ['void', 'withdrawn'] })
+        .orderBy('wo.createdAt', 'DESC')
+        .getOne();
+
+      if (existingOrder) {
+        throw businessException(4113, HttpStatus.CONFLICT, `证件号 ${idCardNo} 已存在于工单 ${existingOrder.orderNo} 中，请勿重复提交`, {
+          duplicateOrderNo: existingOrder.orderNo,
+          duplicateOrderId: existingOrder.id,
+          idCardNo,
+        });
+      }
+    }
   }
 
   async isRequiredField(field: FieldConfig, extraData: Record<string, unknown>): Promise<boolean> {

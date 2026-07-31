@@ -182,6 +182,36 @@ describe('DispatchedOrderService', () => {
     )).toBe(false);
   });
 
+  it('allows only Yang Chun, Jiang Lu, or admins to read resignation certificate child details', async () => {
+    const { service } = makeService();
+    const assertCanRead = (service as unknown as {
+      assertCanRead: (order: DispatchedOrder, user: JwtUserPayload) => Promise<void>;
+    }).assertCanRead.bind(service);
+    const order = {
+      ...makeDispatchedOrder(),
+      moduleCode: 'resignation_cert',
+      handlerId: 'social-id',
+      parentOrder: { ...makeDispatchedOrder().parentOrder, createdBy: 'social-id' },
+    } as DispatchedOrder;
+
+    await expect(assertCanRead(order, {
+      sub: 'social-id',
+      username: 'fuqianwen',
+      realName: '傅倩雯',
+      roles: ['social_insurance_specialist'],
+    } as JwtUserPayload)).rejects.toMatchObject({ status: HttpStatus.FORBIDDEN });
+
+    await expect(assertCanRead(order, {
+      sub: 'yang-id', username: 'yangchun', realName: '杨纯', roles: ['contract_specialist'],
+    } as JwtUserPayload)).resolves.toBeUndefined();
+    await expect(assertCanRead(order, {
+      sub: 'jiang-id', username: 'jianglu', realName: '江璐', roles: ['shared_leader'],
+    } as JwtUserPayload)).resolves.toBeUndefined();
+    await expect(assertCanRead(order, {
+      sub: 'admin-id', username: 'admin', roles: ['admin'],
+    } as JwtUserPayload)).resolves.toBeUndefined();
+  });
+
   it('scopes business owner/leader child-order history by department range', async () => {
     const { service, queryBuilder } = makeService({
       find: jest.fn(async () => []),

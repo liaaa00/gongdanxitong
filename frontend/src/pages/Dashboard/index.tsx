@@ -601,7 +601,7 @@ const Dashboard: React.FC = () => {
       ],
     }}>
       <Space direction="vertical" size="large" style={{ width: '100%' }}>
-        <div data-testid="dashboard-metric-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', gap: 16, overflowX: 'auto' }}>
+        <div data-testid="dashboard-metric-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 16 }}>
           <Card loading={loading} styles={{ body: CARD_BODY_STYLE }}>
             <Statistic title={roleMeta.cardTitles.totalPending} value={dashboardCardValues.totalPending} prefix={<ClockCircleOutlined />} valueStyle={{ color: '#fa8c16' }} />
           </Card>
