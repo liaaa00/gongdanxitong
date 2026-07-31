@@ -1317,3 +1317,10 @@
 - 备份与回滚：`/data/apps/work-order-system/backups/sync_7c73b9e_config_20260731_135900`；backend 回滚镜像 `work-order-system-backend:rollback-sync-7c73b9e-20260731_135900`（旧镜像 `sha256:49e33c26dd62da6570c1d52e36c3ba724cd024ca19279193bfb653e641fcad20`），当前镜像 `sha256:c28c5e118124329ebc044361587ac47fd25d31c8120f4a5cf6456073c47b62be`。
 - 保护校验：同步前 `work_orders=58`、`dispatched_orders=170`、`users=33`、`user_roles=37`、`customers=42`、`notifications=450`、`operation_logs=1043`、`order_attachments=1`；同步后除 `notifications=451`（同步期间由既有 SLA 调度产生 1 条 `sla_breach` 通知）外其余计数不变；本次 SQL 未引用任何业务表。
 - 验证：本地固定回归前端 10 文件/115 项、前端 production build、后端 build 通过；后端省外定向测试 3 套件/24 项通过；服务器 backend/frontend/postgres/nginx 均运行且 backend/postgres/nginx healthy，`/api/health` 返回 200/ok，首页返回 200；匿名导入模板接口按预期返回 401，因未使用或猜测凭据，真实登录后的模板下载与 `fuqianwen` 字段响应未验证，不能宣称该项已完成。
+
+## 2026-07-31 · 修复管理员修改增员报岗录入子工单被旧字段快照误拦
+
+- 问题：管理员账号在入职管理的增员报岗录入子工单修改字段时，可能被 `creator-update` 链路里的 `visibleFields` 快照校验拦截，前端表现为权限不足。
+- 根因：`creatorUpdateFields` 和重新提交时虽然先允许管理员作为创建侧操作者，但后续 `assertCreatorFieldsEditable` 只按子工单创建时保存的 `visibleFields` 判断字段归属；旧子工单快照不包含新字段时，管理员也被当成普通创建人拒绝。
+- 修复：字段归属校验接收当前用户；管理员在该快照校验处短路放行，普通业务员仍按当前子工单 `visibleFields` 拒绝越权字段。
+- 验证：`backend/test/dispatched-field-sync.spec.ts` 新增管理员可改旧快照外字段、普通业务员仍被拒绝两个回归用例；定向测试 8/8 通过，后端 `npm run build` 通过，根目录 `回归测试.ps1 -SkipBuild` 通过（前端 10 文件/115 项）。本地后端 3000 已重启并 `/api/health` 返回 200/ok。

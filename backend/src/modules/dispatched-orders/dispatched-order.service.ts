@@ -720,7 +720,7 @@ export class DispatchedOrderService {
       throw businessException(4301, HttpStatus.BAD_REQUEST, '至少提供一个要修改的字段');
     }
 
-    await this.assertCreatorFieldsEditable(order, entries.map(([fieldCode]) => fieldCode));
+    await this.assertCreatorFieldsEditable(order, entries.map(([fieldCode]) => fieldCode), user);
 
     if (
       payload.workOrderUpdatedAt
@@ -1145,7 +1145,7 @@ export class DispatchedOrderService {
     const fields = fieldPatch && typeof fieldPatch === 'object' ? fieldPatch : {};
     const entries = Object.entries(fields).filter(([key]) => key.trim().length > 0);
     if (entries.length > 0) {
-      await this.assertCreatorFieldsEditable(order, entries.map(([fieldCode]) => fieldCode));
+      await this.assertCreatorFieldsEditable(order, entries.map(([fieldCode]) => fieldCode), user);
       const nextExtraData = { ...(order.parentOrder.extraData ?? {}) };
       for (const [fieldCode, newValue] of entries) {
         nextExtraData[fieldCode] = newValue;
@@ -2805,7 +2805,8 @@ export class DispatchedOrderService {
     }
   }
 
-  private async assertCreatorFieldsEditable(order: DispatchedOrder, fieldCodes: string[]): Promise<void> {
+  private async assertCreatorFieldsEditable(order: DispatchedOrder, fieldCodes: string[], user: JwtUserPayload): Promise<void> {
+    if (this.isAdmin(user)) return;
     let allowedFields = order.visibleFields ? new Set(order.visibleFields) : null;
     if (order.moduleCode === 'contract' && this.detailViewTemplatesService) {
       const template = await this.detailViewTemplatesService.getActiveByModule('contract');

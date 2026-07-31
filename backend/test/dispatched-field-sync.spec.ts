@@ -173,6 +173,7 @@ function buildService(order: DispatchedOrder) {
 
 const creator: JwtUserPayload = { sub: CREATOR_ID, username: 'sales', roles: ['business_group_member'] } as JwtUserPayload;
 const handler: JwtUserPayload = { sub: HANDLER_ID, username: 'handler', roles: ['contract_specialist'] } as JwtUserPayload;
+const admin: JwtUserPayload = { sub: 'admin-1', username: 'admin', roles: ['admin'] } as JwtUserPayload;
 
 describe('dispatched order field sync records', () => {
   it('records direct sync details for an unaccepted child order', async () => {
@@ -357,5 +358,40 @@ describe('dispatched order field sync records', () => {
     expect(workOrderRepo.save).not.toHaveBeenCalled();
     expect(fieldSyncBatchRepo.save).toHaveBeenCalledWith(expect.objectContaining({ status: 'approval_pending' }));
     expect(fieldSyncItemRepo.save).toHaveBeenCalled();
+  });
+
+  it('allows admin to update a data_entry field outside an old visibleFields snapshot', async () => {
+    const order = makeOrder(DispatchedOrderStatus.PENDING, {
+      moduleCode: 'data_entry',
+      visibleFields: ['employee_name'],
+      handlerId: null,
+      acceptedAt: null,
+    });
+    const { service, workOrderRepo, fieldSyncBatchRepo } = buildService(order);
+
+    await service.creatorUpdateFields(ORDER_ID, { fields: { mobile: 'new' }, reason: 'admin correction' }, admin);
+
+    expect(workOrderRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+      extraData: expect.objectContaining({ mobile: 'new' }),
+    }));
+    expect(fieldSyncBatchRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'direct_synced',
+      changedFields: ['mobile'],
+    }));
+  });
+
+  it('still rejects a non-admin creator updating a field outside current child visibleFields', async () => {
+    const order = makeOrder(DispatchedOrderStatus.PENDING, {
+      moduleCode: 'data_entry',
+      visibleFields: ['employee_name'],
+      handlerId: null,
+      acceptedAt: null,
+    });
+    const { service, workOrderRepo, fieldSyncBatchRepo } = buildService(order);
+
+    await expect(service.creatorUpdateFields(ORDER_ID, { fields: { mobile: 'new' } }, creator)).rejects.toMatchObject({ status: 403 });
+
+    expect(workOrderRepo.save).not.toHaveBeenCalled();
+    expect(fieldSyncBatchRepo.save).not.toHaveBeenCalled();
   });
 });
