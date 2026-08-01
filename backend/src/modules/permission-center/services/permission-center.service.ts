@@ -3,18 +3,27 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { PermissionConfigVersionEntity } from '../entities/permission-config-version.entity';
 import { PermissionConfig, FieldViewMode } from '../types/permission-config.types';
+import { PermissionCacheService } from './permission-cache.service';
 
 @Injectable()
 export class PermissionCenterService {
   constructor(
     @InjectRepository(PermissionConfigVersionEntity)
     private configRepo: Repository<PermissionConfigVersionEntity>,
+    private cacheService: PermissionCacheService,
   ) {}
 
   /**
    * 获取当前激活的权限配置
    */
   async getActiveConfig(): Promise<PermissionConfig> {
+    // 先尝试从缓存获取
+    const cached = await this.cacheService.get<PermissionConfig>('active_config');
+    if (cached) {
+      return cached;
+    }
+
+    // 缓存未命中，从数据库查询
     const active = await this.configRepo.findOne({
       where: { is_active: true },
       order: { activated_at: 'DESC' },
@@ -23,6 +32,9 @@ export class PermissionCenterService {
     if (!active) {
       throw new NotFoundException('No active permission config found');
     }
+
+    // 写入缓存
+    await this.cacheService.set('active_config', active.config, 3600);
 
     return active.config;
   }

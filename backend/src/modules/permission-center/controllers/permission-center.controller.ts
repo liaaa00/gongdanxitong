@@ -8,6 +8,8 @@ import {
   Request,
 } from '@nestjs/common';
 import { PermissionCenterService } from '../services/permission-center.service';
+import { PermissionCacheService } from '../services/permission-cache.service';
+import { PermissionNotificationGateway } from '../gateways/permission-notification.gateway';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { PermissionConfig } from '../types/permission-config.types';
@@ -15,7 +17,11 @@ import { PermissionConfig } from '../types/permission-config.types';
 @Controller('api/permission-center')
 @UseGuards(JwtAuthGuard)
 export class PermissionCenterController {
-  constructor(private service: PermissionCenterService) {}
+  constructor(
+    private service: PermissionCenterService,
+    private cacheService: PermissionCacheService,
+    private notificationGateway: PermissionNotificationGateway,
+  ) {}
 
   @Get('config')
   @Roles('admin')
@@ -51,7 +57,18 @@ export class PermissionCenterController {
   @Post('config/:versionId/activate')
   @Roles('admin')
   async activateVersion(@Param('versionId') versionId: string) {
+    const version = await this.service.getVersionById(versionId);
     await this.service.activateVersion(versionId);
+
+    // 清除缓存
+    await this.cacheService.clearPermissionCache();
+
+    // 通过WebSocket广播配置变更
+    await this.notificationGateway.broadcastConfigActivated(
+      versionId,
+      version.version,
+    );
+
     return { message: 'Version activated successfully' };
   }
 

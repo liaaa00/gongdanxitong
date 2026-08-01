@@ -11,7 +11,7 @@ export type FieldViewMode = 'visible' | 'hidden' | 'readonly' | 'masked';
 /**
  * 角色级别
  */
-export type RoleLevel = 'SYSTEM' | 'MANAGEMENT' | 'BUSINESS' | 'OPERATIONAL';
+export type RoleLevel = 'execution' | 'supervisor' | 'management' | 'global';
 
 /**
  * 角色定义
@@ -46,7 +46,7 @@ export interface MenuConfig {
   /** 是否隐藏菜单项 */
   hidden?: boolean;
   /** 父菜单路径 */
-  parent?: string;
+  parentPath?: string;
 }
 
 /**
