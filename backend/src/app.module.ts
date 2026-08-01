@@ -48,6 +48,8 @@ import {
   WorkOrderModuleConfig,
   WorkflowDefinition,
 } from './entities';
+import { PermissionConfigVersionEntity } from './modules/permission-center/entities/permission-config-version.entity';
+import { PermissionChangeLogEntity } from './modules/permission-center/entities/permission-change-log.entity';
 import { AdminModule } from './modules/admin/admin.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
@@ -67,6 +69,7 @@ import { RoleActionPermissionModule } from './modules/role-action-permissions/ro
 import { UploadsModule } from './modules/uploads/uploads.module';
 import { WorkOrderModule } from './modules/work-orders/work-order.module';
 import { WorkflowModule } from './modules/workflows/workflow.module';
+import { PermissionCenterModule } from './modules/permission-center/permission-center.module';
 import { SeedOnBootstrapService } from './database/seeds/seed-on-bootstrap.service';
 import { OperationLogCleanupService } from './modules/operation-logs/operation-log-cleanup.service';
 
@@ -129,6 +132,8 @@ import { OperationLogCleanupService } from './modules/operation-logs/operation-l
           WorkOrderFieldSyncItem,
           WorkOrderModuleConfig,
           WorkflowDefinition,
+          PermissionConfigVersionEntity,
+          PermissionChangeLogEntity,
         ],
       }),
     }),
@@ -150,6 +155,7 @@ import { OperationLogCleanupService } from './modules/operation-logs/operation-l
     UploadsModule,
     NotificationModule,
     RoleActionPermissionModule,
+    PermissionCenterModule,
     HealthModule,
   ],
   providers: [
