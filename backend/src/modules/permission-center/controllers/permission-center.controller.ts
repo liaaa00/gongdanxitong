@@ -45,7 +45,7 @@ export class PermissionCenterController {
   @Roles('admin')
   async createVersion(
     @Body() createDto: { config: PermissionConfig; description?: string },
-    @Request() req,
+    @Request() req: any,
   ) {
     return this.service.createVersion(
       createDto.config,

@@ -65,6 +65,7 @@ import { InServiceOrdersModule } from './modules/in-service-orders/in-service-or
 import { OutOfProvinceOrdersModule } from './modules/out-of-province-orders/out-of-province-orders.module';
 import { StagesModule } from './modules/stages/stages.module';
 import { NotificationModule } from './modules/notifications/notification.module';
+import { MonitoringModule } from './modules/monitoring/monitoring.module';
 import { RoleActionPermissionModule } from './modules/role-action-permissions/role-action-permission.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 import { WorkOrderModule } from './modules/work-orders/work-order.module';
@@ -154,6 +155,7 @@ import { OperationLogCleanupService } from './modules/operation-logs/operation-l
     StagesModule,
     UploadsModule,
     NotificationModule,
+    MonitoringModule,
     RoleActionPermissionModule,
     PermissionCenterModule,
     HealthModule,

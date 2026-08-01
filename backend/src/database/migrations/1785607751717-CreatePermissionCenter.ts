@@ -1,24 +1,32 @@
-﻿import { MigrationInterface, QueryRunner, Table, TableIndex } from 'typeorm';
+import {
+  MigrationInterface,
+  QueryRunner,
+  Table,
+  TableForeignKey,
+  TableIndex,
+} from 'typeorm';
 
 export class CreatePermissionCenter1785607751717 implements MigrationInterface {
+  name = 'CreatePermissionCenter1785607751717';
+
   public async up(queryRunner: QueryRunner): Promise<void> {
-    // 创建权限配置版本表
-    await queryRunner.createTable(
-      new Table({
+    if (!(await queryRunner.hasTable('permission_config_versions'))) {
+      await queryRunner.createTable(new Table({
         name: 'permission_config_versions',
         columns: [
           {
             name: 'id',
             type: 'uuid',
             isPrimary: true,
+            generationStrategy: 'uuid',
             default: 'gen_random_uuid()',
           },
           {
             name: 'version',
             type: 'varchar',
             length: '50',
-            isUnique: true,
             isNullable: false,
+            isUnique: true,
           },
           {
             name: 'config',
@@ -28,6 +36,7 @@ export class CreatePermissionCenter1785607751717 implements MigrationInterface {
           {
             name: 'is_active',
             type: 'boolean',
+            isNullable: false,
             default: false,
           },
           {
@@ -37,12 +46,19 @@ export class CreatePermissionCenter1785607751717 implements MigrationInterface {
           },
           {
             name: 'created_at',
-            type: 'timestamp',
-            default: 'NOW()',
+            type: 'timestamptz',
+            isNullable: false,
+            default: 'now()',
+          },
+          {
+            name: 'updated_at',
+            type: 'timestamptz',
+            isNullable: false,
+            default: 'now()',
           },
           {
             name: 'activated_at',
-            type: 'timestamp',
+            type: 'timestamptz',
             isNullable: true,
           },
           {
@@ -51,19 +67,27 @@ export class CreatePermissionCenter1785607751717 implements MigrationInterface {
             isNullable: true,
           },
         ],
-      }),
-      true,
-    );
+        foreignKeys: [
+          new TableForeignKey({
+            name: 'fk_permission_config_versions_created_by',
+            columnNames: ['created_by'],
+            referencedTableName: 'users',
+            referencedColumnNames: ['id'],
+            onDelete: 'SET NULL',
+          }),
+        ],
+      }), true);
+    }
 
-    // 创建权限变更审计表
-    await queryRunner.createTable(
-      new Table({
+    if (!(await queryRunner.hasTable('permission_change_logs'))) {
+      await queryRunner.createTable(new Table({
         name: 'permission_change_logs',
         columns: [
           {
             name: 'id',
             type: 'uuid',
             isPrimary: true,
+            generationStrategy: 'uuid',
             default: 'gen_random_uuid()',
           },
           {
@@ -96,12 +120,25 @@ export class CreatePermissionCenter1785607751717 implements MigrationInterface {
           {
             name: 'changed_by',
             type: 'uuid',
-            isNullable: false,
+            isNullable: true,
           },
           {
             name: 'changed_at',
-            type: 'timestamp',
-            default: 'NOW()',
+            type: 'timestamptz',
+            isNullable: false,
+            default: 'now()',
+          },
+          {
+            name: 'created_at',
+            type: 'timestamptz',
+            isNullable: false,
+            default: 'now()',
+          },
+          {
+            name: 'updated_at',
+            type: 'timestamptz',
+            isNullable: false,
+            default: 'now()',
           },
           {
             name: 'reason',
@@ -109,44 +146,77 @@ export class CreatePermissionCenter1785607751717 implements MigrationInterface {
             isNullable: true,
           },
         ],
-      }),
-      true,
-    );
+        foreignKeys: [
+          new TableForeignKey({
+            name: 'fk_permission_change_logs_version',
+            columnNames: ['version_id'],
+            referencedTableName: 'permission_config_versions',
+            referencedColumnNames: ['id'],
+            onDelete: 'CASCADE',
+          }),
+          new TableForeignKey({
+            name: 'fk_permission_change_logs_changed_by',
+            columnNames: ['changed_by'],
+            referencedTableName: 'users',
+            referencedColumnNames: ['id'],
+            onDelete: 'SET NULL',
+          }),
+        ],
+      }), true);
+    }
 
-    // 创建索引
-    await queryRunner.createIndex(
-      'permission_change_logs',
-      new TableIndex({
-        name: 'idx_perm_logs_version',
-        columnNames: ['version_id'],
-      }),
-    );
+    const indexes: Array<[string, TableIndex]> = [
+      [
+        'permission_config_versions',
+        new TableIndex({
+          name: 'idx_permission_config_versions_version',
+          columnNames: ['version'],
+        }),
+      ],
+      [
+        'permission_config_versions',
+        new TableIndex({
+          name: 'idx_permission_config_versions_active',
+          columnNames: ['is_active', 'activated_at'],
+        }),
+      ],
+      [
+        'permission_change_logs',
+        new TableIndex({
+          name: 'idx_permission_change_logs_version',
+          columnNames: ['version_id'],
+        }),
+      ],
+      [
+        'permission_change_logs',
+        new TableIndex({
+          name: 'idx_permission_change_logs_changed_at',
+          columnNames: ['changed_at'],
+        }),
+      ],
+    ];
 
-    await queryRunner.createIndex(
-      'permission_change_logs',
-      new TableIndex({
-        name: 'idx_perm_logs_time',
-        columnNames: ['changed_at'],
-      }),
-    );
+    for (const [tableName, index] of indexes) {
+      const table = await queryRunner.getTable(tableName);
+      if (table && !table.indices.some((existing) => existing.name === index.name)) {
+        await queryRunner.createIndex(tableName, index);
+      }
+    }
 
-    await queryRunner.createIndex(
-      'permission_config_versions',
-      new TableIndex({
-        name: 'idx_perm_config_active',
-        columnNames: ['is_active', 'activated_at'],
-      }),
+    await queryRunner.query(
+      `COMMENT ON TABLE "permission_config_versions" IS 'Permission configuration versions'`,
+    );
+    await queryRunner.query(
+      `COMMENT ON TABLE "permission_change_logs" IS 'Permission configuration change audit log'`,
     );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    // 删除索引
-    await queryRunner.dropIndex('permission_change_logs', 'idx_perm_logs_version');
-    await queryRunner.dropIndex('permission_change_logs', 'idx_perm_logs_time');
-    await queryRunner.dropIndex('permission_config_versions', 'idx_perm_config_active');
-
-    // 删除表
-    await queryRunner.dropTable('permission_change_logs');
-    await queryRunner.dropTable('permission_config_versions');
+    if (await queryRunner.hasTable('permission_change_logs')) {
+      await queryRunner.dropTable('permission_change_logs', true, true, true);
+    }
+    if (await queryRunner.hasTable('permission_config_versions')) {
+      await queryRunner.dropTable('permission_config_versions', true, true, true);
+    }
   }
 }

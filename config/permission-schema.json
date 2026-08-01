@@ -2,45 +2,159 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://workorder-system.local/permission-config.schema.json",
   "title": "Permission Configuration Schema",
-  "description": "统一权限配置数据模型",
+  "description": "统一权限配置数据模型，支持角色、路由权限和字段权限。",
   "type": "object",
-  "required": ["version", "roles", "routePermissions", "fieldPermissions"],
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "roles",
+    "routePermissions",
+    "fieldPermissions"
+  ],
   "properties": {
     "version": {
       "type": "string",
-      "pattern": "^v\d+\.\d+\.\d+$"
+      "description": "配置版本号，遵循语义化版本（例如 1.0.0）。",
+      "pattern": "^v?(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
     },
     "roles": {
       "type": "array",
+      "description": "角色定义列表。",
+      "minItems": 1,
       "items": {
         "type": "object",
-        "required": ["id", "code", "name", "canonicalCode", "isActive"],
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "code",
+          "name",
+          "canonicalCode",
+          "isActive"
+        ],
         "properties": {
-          "id": { "type": "string", "format": "uuid" },
-          "code": { "type": "string", "pattern": "^[a-z_]+$" },
-          "name": { "type": "string" },
-          "canonicalCode": { "type": "string", "pattern": "^[a-z_]+$" },
-          "isActive": { "type": "boolean" },
-          "description": { "type": "string" }
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "角色唯一标识（UUID）。"
+          },
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "description": "后端角色代码。"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50,
+            "description": "角色显示名称。"
+          },
+          "canonicalCode": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "description": "前端使用的规范化角色代码。"
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "角色是否启用。"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "角色描述。"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "execution",
+              "supervisor",
+              "management",
+              "global",
+              "SYSTEM",
+              "MANAGEMENT",
+              "BUSINESS",
+              "OPERATIONAL"
+            ],
+            "description": "角色层级。"
+          }
         }
       }
     },
     "routePermissions": {
       "type": "array",
+      "description": "路由权限配置列表。",
       "items": {
         "type": "object",
-        "required": ["path", "allowedRoles"],
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "allowedRoles"
+        ],
         "properties": {
-          "path": { "type": "string" },
-          "allowedRoles": { "type": "array", "items": { "type": "string" } },
-          "backendActions": { "type": "array", "items": { "type": "string" } },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^\\/(?:[A-Za-z0-9_-]+|:[A-Za-z0-9_-]+|\\*)(?:\\/(?:[A-Za-z0-9_-]+|:[A-Za-z0-9_-]+|\\*))*$",
+            "description": "路由路径，例如 /work-orders/:id。"
+          },
+          "allowedRoles": {
+            "type": "array",
+            "description": "允许访问的角色代码列表。",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[a-z][a-z0-9_]*$"
+            }
+          },
+          "backendActions": {
+            "type": "array",
+            "description": "对应的后端操作权限码。",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[a-z][a-z0-9_.-]*$"
+            }
+          },
           "menu": {
             "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "title"
+            ],
             "properties": {
-              "title": { "type": "string" },
-              "icon": { "type": "string" },
-              "order": { "type": "integer" },
-              "hidden": { "type": "boolean" }
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 50,
+                "description": "菜单标题。"
+              },
+              "icon": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100,
+                "description": "Ant Design 图标名称。"
+              },
+              "order": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "菜单排序值。"
+              },
+              "hidden": {
+                "type": "boolean",
+                "default": false,
+                "description": "是否隐藏菜单项。"
+              },
+              "parentPath": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^\\/(?:[A-Za-z0-9_-]+|:[A-Za-z0-9_-]+|\\*)(?:\\/(?:[A-Za-z0-9_-]+|:[A-Za-z0-9_-]+|\\*))*$",
+                "description": "父级菜单路由路径。"
+              }
             }
           }
         }
@@ -48,25 +162,76 @@
     },
     "fieldPermissions": {
       "type": "array",
+      "description": "字段权限配置列表。",
       "items": {
         "type": "object",
-        "required": ["scenario", "roleFieldRules"],
+        "additionalProperties": false,
+        "required": [
+          "scenario",
+          "roleFieldRules"
+        ],
         "properties": {
-          "scenario": { "type": "string" },
+          "scenario": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_-]*(?::[a-z][a-z0-9_-]*)*$",
+            "description": "字段权限场景，例如 dispatched:contract。"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "场景描述。"
+          },
           "roleFieldRules": {
             "type": "object",
+            "description": "角色代码到字段权限模式的映射。",
+            "minProperties": 1,
             "patternProperties": {
-              "^[a-z_]+$": {
+              "^[a-z][a-z0-9_]*$": {
                 "type": "object",
+                "minProperties": 1,
                 "patternProperties": {
-                  "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+                  "^[A-Za-z_][A-Za-z0-9_]*$": {
                     "type": "string",
-                    "enum": ["visible", "hidden", "readonly", "masked"]
+                    "enum": [
+                      "visible",
+                      "hidden",
+                      "readonly",
+                      "masked"
+                    ]
                   }
-                }
+                },
+                "additionalProperties": false
               }
-            }
+            },
+            "additionalProperties": false
           }
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "createdAt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "createdBy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "updatedAt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "updatedBy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "comment": {
+          "type": "string",
+          "maxLength": 500
         }
       }
     }

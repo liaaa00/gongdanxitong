@@ -17,7 +17,7 @@ export class PermissionNotificationGateway
   implements OnGatewayConnection, OnGatewayDisconnect
 {
   @WebSocketServer()
-  server: Server;
+  server!: Server;
 
   private logger = new Logger('PermissionNotificationGateway');
 

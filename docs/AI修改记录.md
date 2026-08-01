@@ -1,5 +1,11 @@
 # AI 修改记录
 
+## 2026-08-02 · 统一权限配置中心 migration
+
+- 改动：将 `permission_config_versions` 与 `permission_change_logs` 合并为单一 TypeORM `Table` migration，补齐 JSONB 配置字段、UUID 主键、`created_at`/`updated_at` 时间戳、版本/激活/审计索引，以及版本、创建人和变更人的外键约束。
+- 原因：原 Phase 1 提交包含重复的建表 migration，且缺少更新时间和用户外键；重复执行会在第二份 migration 处失败。
+- 验证：migration 文件单独 `tsc --noEmit` 通过；`npm run migration:run` 已尝试但本机 PostgreSQL 返回 `28P01 password authentication failed`，未能执行数据库级验证。后端全量 build 当前被其他代理新增 permission-center entity 的 strictPropertyInitialization 错误阻断。
+
 ## 2026-07-31 · 修复问题8：福报人员社保公积金详情页显示不全 ✅ 已修复
 - 背景：福报人员（社保公积金专员）打开社保公积金子工单详情页时，很多字段不显示（如性别、出生日期、年龄、民族、地址等）。
 - 根因：`backend/src/database/seeds/seed-field-permissions.ts` 第119-126行，`SOCIAL_INSURANCE_VISIBLE` 字段集合不完整，只有24个字段，而数据录入岗有34个字段。
@@ -1324,3 +1330,15 @@
 - 根因：`creatorUpdateFields` 和重新提交时虽然先允许管理员作为创建侧操作者，但后续 `assertCreatorFieldsEditable` 只按子工单创建时保存的 `visibleFields` 判断字段归属；旧子工单快照不包含新字段时，管理员也被当成普通创建人拒绝。
 - 修复：字段归属校验接收当前用户；管理员在该快照校验处短路放行，普通业务员仍按当前子工单 `visibleFields` 拒绝越权字段。
 - 验证：`backend/test/dispatched-field-sync.spec.ts` 新增管理员可改旧快照外字段、普通业务员仍被拒绝两个回归用例；定向测试 8/8 通过，后端 `npm run build` 通过，根目录 `回归测试.ps1 -SkipBuild` 通过（前端 10 文件/115 项）。本地后端 3000 已重启并 `/api/health` 返回 200/ok。
+
+## 2026-08-02 · Phase 1 权限配置模型单元测试
+
+- 改了什么：新增权限配置 JSON Schema、TypeScript 类型契约及权限中心数据库 migration 的单元测试，覆盖合法/非法配置、字段权限模式、版本与审计类型、建表列与外键、索引、幂等执行和回滚顺序。
+- 为什么：为 Phase 1 三类交付物建立可执行验收基线，并在测试中发现并修正 Schema 正则转义、角色层级值和菜单父路径的契约漂移。
+- 如何验证：三套定向 Jest 测试共 13 项通过；权限中心 migration 覆盖率 statements/branches/functions/lines 均为 100%；后端 `tsc --noEmit --incremental false` 通过。固定回归 `回归测试.ps1 -SkipBuild` 中 10 个前端文件通过 9 个、115 项通过 112 项，3 项失败均为当前分支 `business_owner` 被放行 `/work-orders` 后与既有权限断言冲突；后端完整 build 两次被共享工作区的并发构建清理 `dist` 阻断（`ENOENT` / `ENOTEMPTY`），未能取得独占构建结果，均已上报团队负责人。
+
+## 2026-08-02 · Phase 1 权限 Schema 与 TypeScript 契约强化
+
+- 改了什么：重写 `config/permission-schema.json` 为合法 draft-07 Schema，补齐顶层及嵌套对象的 `required`、`additionalProperties`、格式、正则、数组约束和字段模式枚举；同步 `permission-config.types.ts` 的角色、路由、字段权限、元数据及查询摘要类型，并保留历史版本号/角色层级别名。
+- 为什么：原 Schema 的正则未按 JSON 转义导致 AJV 无法解析，且菜单父路径、字段模式和摘要命名与现有测试/seed 契约漂移。
+- 如何验证：`permission-config-schema.spec.ts` 与 `permission-config-types.spec.ts` 共 9 项通过；`npx tsc --noEmit` 仅剩同期 `metrics.interceptor.ts` 的既有 Express 类型错误，权限配置类型自身无编译错误。完整 `npm run build` 受同期改动和 `dist` 清理竞争阻断，未宣称通过。
