@@ -1,0 +1,149 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Permission Configuration Schema",
+  "description": "统一权限配置模型，支持角色、路由权限、字段权限的完整表达",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "配置版本号，遵循语义化版本"
+    },
+    "roles": {
+      "type": "array",
+      "description": "角色定义列表",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "角色唯一ID"
+          },
+          "code": {
+            "type": "string",
+            "pattern": "^[a-z_]+$",
+            "description": "角色代码（后端使用）"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50,
+            "description": "角色显示名称"
+          },
+          "canonicalCode": {
+            "type": "string",
+            "pattern": "^[a-z_]+$",
+            "description": "规范化角色代码（前端使用）"
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "角色是否启用"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "角色描述"
+          }
+        },
+        "required": ["id", "code", "name", "canonicalCode", "isActive"]
+      },
+      "minItems": 1
+    },
+    "routePermissions": {
+      "type": "array",
+      "description": "路由权限配置",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "pattern": "^\\/[a-z0-9\\-\\/:\\*]*$",
+            "description": "路由路径"
+          },
+          "allowedRoles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "description": "允许访问的角色代码列表"
+          },
+          "backendActions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z_\\.]+$"
+            },
+            "description": "对应的后端业务权限码"
+          },
+          "menu": {
+            "type": "object",
+            "description": "菜单配置（如果该路由显示在菜单中）",
+            "properties": {
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 50,
+                "description": "菜单标题"
+              },
+              "icon": {
+                "type": "string",
+                "description": "Ant Design图标名称"
+              },
+              "order": {
+                "type": "number",
+                "minimum": 0,
+                "description": "菜单排序"
+              },
+              "hidden": {
+                "type": "boolean",
+                "default": false,
+                "description": "是否隐藏菜单项"
+              },
+              "parentPath": {
+                "type": "string",
+                "description": "父级菜单路径"
+              }
+            },
+            "required": ["title"]
+          }
+        },
+        "required": ["path", "allowedRoles"]
+      }
+    },
+    "fieldPermissions": {
+      "type": "array",
+      "description": "字段权限配置",
+      "items": {
+        "type": "object",
+        "properties": {
+          "scenario": {
+            "type": "string",
+            "pattern": "^[a-z_:]+$",
+            "description": "场景标识，如 dispatched:contract"
+          },
+          "description": {
+            "type": "string",
+            "description": "场景描述"
+          },
+          "roleFieldRules": {
+            "type": "object",
+            "description": "角色×字段权限规则",
+            "additionalProperties": {
+              "type": "object",
+              "description": "字段名称 -> 权限模式",
+              "additionalProperties": {
+                "type": "string",
+                "enum": ["visible", "hidden", "readonly", "masked"],
+                "description": "字段可见性模式"
+              }
+            }
+          }
+        },
+        "required": ["scenario", "roleFieldRules"]
+      }
+    }
+  },
+  "required": ["version", "roles", "routePermissions", "fieldPermissions"]
+}
