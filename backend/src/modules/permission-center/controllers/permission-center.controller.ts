@@ -14,7 +14,7 @@ import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { PermissionConfig } from '../types/permission-config.types';
 
-@Controller('api/permission-center')
+@Controller('permission-center')
 @UseGuards(JwtAuthGuard)
 export class PermissionCenterController {
   constructor(

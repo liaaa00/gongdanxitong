@@ -62,14 +62,25 @@ export class PermissionCenterService {
    * 激活指定版本的配置
    */
   async activateVersion(versionId: string): Promise<void> {
+    // 先验证版本是否存在
+    const version = await this.configRepo.findOne({ where: { id: versionId } });
+    if (!version) {
+      throw new NotFoundException(`Version ${versionId} not found`);
+    }
+
     // 停用所有现有版本
     await this.configRepo.update({ is_active: true }, { is_active: false });
 
     // 激活指定版本
-    await this.configRepo.update(
+    const result = await this.configRepo.update(
       { id: versionId },
       { is_active: true, activated_at: new Date() },
     );
+
+    // 校验update是否成功
+    if (result.affected === 0) {
+      throw new NotFoundException(`Failed to activate version ${versionId}`);
+    }
   }
 
   /**
