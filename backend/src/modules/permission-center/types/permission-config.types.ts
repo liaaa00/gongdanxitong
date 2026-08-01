@@ -1,35 +1,36 @@
 /**
- * 权限配置中心类型定义
- *
- * 对应 config/permission-schema.json
+ * 权限配置类型定义
+ * 与 config/permission-schema.json 保持一致
  */
 
 /**
  * 字段可见性模式
  */
-export enum FieldViewMode {
-  VISIBLE = 'visible',   // 可见可编辑
-  HIDDEN = 'hidden',     // 完全隐藏
-  READONLY = 'readonly', // 可见只读
-  MASKED = 'masked',     // 脱敏显示
-}
+export type FieldViewMode = 'visible' | 'hidden' | 'readonly' | 'masked';
+
+/**
+ * 角色级别
+ */
+export type RoleLevel = 'SYSTEM' | 'MANAGEMENT' | 'BUSINESS' | 'OPERATIONAL';
 
 /**
  * 角色定义
  */
 export interface RoleDefinition {
-  /** 角色唯一ID (UUID) */
+  /** 角色唯一标识（UUID） */
   id: string;
-  /** 角色代码（后端使用，如 biz_manager） */
+  /** 角色代码（后端使用） */
   code: string;
   /** 角色显示名称 */
   name: string;
-  /** 规范化角色代码（前端使用，如 business_owner） */
+  /** 规范化角色代码（前端使用） */
   canonicalCode: string;
-  /** 角色是否启用 */
+  /** 是否启用 */
   isActive: boolean;
   /** 角色描述 */
   description?: string;
+  /** 角色级别 */
+  level?: RoleLevel;
 }
 
 /**
@@ -38,77 +39,91 @@ export interface RoleDefinition {
 export interface MenuConfig {
   /** 菜单标题 */
   title: string;
-  /** Ant Design图标名称 */
+  /** 菜单图标（Ant Design图标名） */
   icon?: string;
   /** 菜单排序 */
   order?: number;
   /** 是否隐藏菜单项 */
   hidden?: boolean;
-  /** 父级菜单路径 */
-  parentPath?: string;
+  /** 父菜单路径 */
+  parent?: string;
 }
 
 /**
  * 路由权限配置
  */
 export interface RoutePermission {
-  /** 路由路径（如 /work-orders） */
+  /** 路由路径 */
   path: string;
   /** 允许访问的角色代码列表 */
   allowedRoles: string[];
-  /** 对应的后端业务权限码（如 ['route.work_orders', 'work_order.view']） */
+  /** 对应的后端权限操作 */
   backendActions?: string[];
-  /** 菜单配置（如果该路由显示在菜单中） */
+  /** 菜单配置 */
   menu?: MenuConfig;
 }
 
 /**
  * 字段权限规则
- *
- * 场景 → 角色 → 字段 → 权限模式
+ * 格式：{ [roleCode]: { [fieldKey]: FieldViewMode } }
+ */
+export type RoleFieldRules = Record<string, Record<string, FieldViewMode>>;
+
+/**
+ * 字段权限配置
  */
 export interface FieldPermissionRule {
-  /** 场景标识（如 dispatched:contract） */
+  /** 场景标识，格式：模块:操作 */
   scenario: string;
   /** 场景描述 */
   description?: string;
-  /** 角色×字段权限规则 */
-  roleFieldRules: Record<string, Record<string, FieldViewMode>>;
+  /** 角色×字段权限映射 */
+  roleFieldRules: RoleFieldRules;
 }
 
 /**
- * 完整权限配置
+ * 配置元数据
+ */
+export interface PermissionConfigMetadata {
+  /** 创建时间 */
+  createdAt?: string;
+  /** 创建人 */
+  createdBy?: string;
+  /** 更新时间 */
+  updatedAt?: string;
+  /** 更新人 */
+  updatedBy?: string;
+  /** 变更说明 */
+  comment?: string;
+}
+
+/**
+ * 权限配置（完整）
  */
 export interface PermissionConfig {
-  /** 配置版本号（语义化版本，如 1.0.0） */
+  /** 配置版本号 */
   version: string;
   /** 角色定义列表 */
   roles: RoleDefinition[];
-  /** 路由权限配置 */
+  /** 路由权限配置列表 */
   routePermissions: RoutePermission[];
-  /** 字段权限配置 */
+  /** 字段权限配置列表 */
   fieldPermissions: FieldPermissionRule[];
+  /** 元数据 */
+  metadata?: PermissionConfigMetadata;
 }
 
 /**
  * 权限配置版本（数据库实体）
  */
 export interface PermissionConfigVersion {
-  /** 版本ID (UUID) */
   id: string;
-  /** 版本号 */
   version: string;
-  /** 完整配置（JSONB） */
   config: PermissionConfig;
-  /** 是否为当前激活版本 */
   isActive: boolean;
-  /** 创建人ID */
-  createdBy: string;
-  /** 创建时间 */
+  createdBy?: string;
   createdAt: Date;
-  /** 激活时间 */
   activatedAt?: Date;
-  /** 版本描述 */
   description?: string;
 }
 
@@ -116,39 +131,24 @@ export interface PermissionConfigVersion {
  * 权限变更日志（数据库实体）
  */
 export interface PermissionChangeLog {
-  /** 日志ID (UUID) */
   id: string;
-  /** 关联的配置版本ID */
   versionId: string;
-  /** 变更类型 */
-  changeType: 'create_role' | 'update_role' | 'delete_role'
-    | 'update_route' | 'update_field' | 'activate_version';
-  /** 目标资源 */
+  changeType: string;
   targetResource: string;
-  /** 变更前的值 */
   oldValue?: any;
-  /** 变更后的值 */
   newValue?: any;
-  /** 变更人ID */
-  changedBy: string;
-  /** 变更时间 */
+  changedBy?: string;
   changedAt: Date;
-  /** 变更原因 */
   reason?: string;
 }
 
 /**
- * 权限查询辅助类型
+ * 角色权限摘要（查询辅助类型）
  */
 export interface RolePermissionSummary {
-  /** 角色代码 */
   roleCode: string;
-  /** 角色名称 */
   roleName: string;
-  /** 可访问的路由列表 */
-  accessibleRoutes: string[];
-  /** 拥有的业务权限码 */
-  businessActions: string[];
-  /** 各场景的字段权限 */
-  fieldPermissions: Record<string, Record<string, FieldViewMode>>;
+  allowedRoutes: string[];
+  backendActions: string[];
+  fieldPermissionScenarios: string[];
 }

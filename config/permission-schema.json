@@ -1,149 +1,74 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://workorder-system.local/permission-config.schema.json",
   "title": "Permission Configuration Schema",
-  "description": "统一权限配置模型，支持角色、路由权限、字段权限的完整表达",
+  "description": "统一权限配置数据模型",
   "type": "object",
+  "required": ["version", "roles", "routePermissions", "fieldPermissions"],
   "properties": {
     "version": {
       "type": "string",
-      "pattern": "^\\d+\\.\\d+\\.\\d+$",
-      "description": "配置版本号，遵循语义化版本"
+      "pattern": "^v\d+\.\d+\.\d+$"
     },
     "roles": {
       "type": "array",
-      "description": "角色定义列表",
       "items": {
         "type": "object",
+        "required": ["id", "code", "name", "canonicalCode", "isActive"],
         "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "角色唯一ID"
-          },
-          "code": {
-            "type": "string",
-            "pattern": "^[a-z_]+$",
-            "description": "角色代码（后端使用）"
-          },
-          "name": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 50,
-            "description": "角色显示名称"
-          },
-          "canonicalCode": {
-            "type": "string",
-            "pattern": "^[a-z_]+$",
-            "description": "规范化角色代码（前端使用）"
-          },
-          "isActive": {
-            "type": "boolean",
-            "description": "角色是否启用"
-          },
-          "description": {
-            "type": "string",
-            "maxLength": 200,
-            "description": "角色描述"
-          }
-        },
-        "required": ["id", "code", "name", "canonicalCode", "isActive"]
-      },
-      "minItems": 1
+          "id": { "type": "string", "format": "uuid" },
+          "code": { "type": "string", "pattern": "^[a-z_]+$" },
+          "name": { "type": "string" },
+          "canonicalCode": { "type": "string", "pattern": "^[a-z_]+$" },
+          "isActive": { "type": "boolean" },
+          "description": { "type": "string" }
+        }
+      }
     },
     "routePermissions": {
       "type": "array",
-      "description": "路由权限配置",
       "items": {
         "type": "object",
+        "required": ["path", "allowedRoles"],
         "properties": {
-          "path": {
-            "type": "string",
-            "pattern": "^\\/[a-z0-9\\-\\/:\\*]*$",
-            "description": "路由路径"
-          },
-          "allowedRoles": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "minItems": 1,
-            "description": "允许访问的角色代码列表"
-          },
-          "backendActions": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "pattern": "^[a-z_\\.]+$"
-            },
-            "description": "对应的后端业务权限码"
-          },
+          "path": { "type": "string" },
+          "allowedRoles": { "type": "array", "items": { "type": "string" } },
+          "backendActions": { "type": "array", "items": { "type": "string" } },
           "menu": {
             "type": "object",
-            "description": "菜单配置（如果该路由显示在菜单中）",
             "properties": {
-              "title": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 50,
-                "description": "菜单标题"
-              },
-              "icon": {
-                "type": "string",
-                "description": "Ant Design图标名称"
-              },
-              "order": {
-                "type": "number",
-                "minimum": 0,
-                "description": "菜单排序"
-              },
-              "hidden": {
-                "type": "boolean",
-                "default": false,
-                "description": "是否隐藏菜单项"
-              },
-              "parentPath": {
-                "type": "string",
-                "description": "父级菜单路径"
-              }
-            },
-            "required": ["title"]
+              "title": { "type": "string" },
+              "icon": { "type": "string" },
+              "order": { "type": "integer" },
+              "hidden": { "type": "boolean" }
+            }
           }
-        },
-        "required": ["path", "allowedRoles"]
+        }
       }
     },
     "fieldPermissions": {
       "type": "array",
-      "description": "字段权限配置",
       "items": {
         "type": "object",
+        "required": ["scenario", "roleFieldRules"],
         "properties": {
-          "scenario": {
-            "type": "string",
-            "pattern": "^[a-z_:]+$",
-            "description": "场景标识，如 dispatched:contract"
-          },
-          "description": {
-            "type": "string",
-            "description": "场景描述"
-          },
+          "scenario": { "type": "string" },
           "roleFieldRules": {
             "type": "object",
-            "description": "角色×字段权限规则",
-            "additionalProperties": {
-              "type": "object",
-              "description": "字段名称 -> 权限模式",
-              "additionalProperties": {
-                "type": "string",
-                "enum": ["visible", "hidden", "readonly", "masked"],
-                "description": "字段可见性模式"
+            "patternProperties": {
+              "^[a-z_]+$": {
+                "type": "object",
+                "patternProperties": {
+                  "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+                    "type": "string",
+                    "enum": ["visible", "hidden", "readonly", "masked"]
+                  }
+                }
               }
             }
           }
-        },
-        "required": ["scenario", "roleFieldRules"]
+        }
       }
     }
-  },
-  "required": ["version", "roles", "routePermissions", "fieldPermissions"]
+  }
 }
