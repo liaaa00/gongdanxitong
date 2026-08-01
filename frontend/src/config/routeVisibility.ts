@@ -22,6 +22,7 @@ const ALL_ROLES = [
 
 const BUSINESS_ORDER_ROLES = [
   ROLE.ADMIN,
+  ROLE.BUSINESS_OWNER,
   ROLE.BUSINESS_GROUP_LEADER,
   ROLE.BUSINESS_GROUP_MEMBER,
 ] as const satisfies readonly CanonicalRole[];
@@ -114,10 +115,10 @@ export const ROUTE_VISIBILITY = {
 
   // 主工单列表/创建入口：菜单中只保留 /work-orders，创建页由列表 toolBar 进入。
   '/work-orders': BUSINESS_ORDER_ROLES,
-  // 新建/导入是否真正允许，由“角色管理 → 分配权限”和后端业务权限统一控制。
+  // 新建/导入是否真正允许，由”角色管理 → 分配权限”和后端业务权限统一控制。
   '/work-orders/create': WORK_ORDER_CREATE_ROLES,
   '/work-orders/import': WORK_ORDER_CREATE_ROLES,
-  '/work-orders/:id': WORK_ORDER_CREATE_ROLES,
+  '/work-orders/:id': BUSINESS_ORDER_ROLES,
 
   // 省外增减员主单：使用专用 API 路径隔离，不进入前端全局 store。
   '/out-of-province': OUT_OF_PROVINCE_ROLES,
