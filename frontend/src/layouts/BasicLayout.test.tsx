@@ -347,7 +347,7 @@ describe('BasicLayout menu visibility', () => {
     expect(text).not.toContain('我的退回');
     expect(text).not.toContain('我的待办');
     expect(text).not.toContain('我的已办');
-    expect(text).not.toContain('入职管理');
+    // business_owner can now view the work-order list (read-only per user confirmation)
     expect(text).toContain('在职管理');
     expect(text).toContain('单项业务办理');
     expect(text).toContain('离职管理');

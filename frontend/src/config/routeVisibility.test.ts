@@ -71,10 +71,11 @@ describe('routeVisibility admin-only configuration routes', () => {
     expect(canAccessPath('/my-work/team', ownerRoles)).toBe(false);
     expect(canAccessPath('/my-work/history', ownerRoles)).toBe(false);
     expect(canAccessPath('/my-dispatched/child-1', ownerRoles)).toBe(true);
-    expect(canAccessPath('/work-orders', ownerRoles)).toBe(false);
+    // business_owner can view work order list and detail (read-only), but cannot create/import
+    expect(canAccessPath('/work-orders', ownerRoles)).toBe(true);
     expect(canAccessPath('/work-orders/create', ownerRoles)).toBe(false);
     expect(canAccessPath('/work-orders/import', ownerRoles)).toBe(false);
-    expect(canAccessPath('/work-orders/wo-1', ownerRoles)).toBe(false);
+    expect(canAccessPath('/work-orders/wo-1', ownerRoles)).toBe(true);
     expect(canAccessPath('/my-work/initiated', ownerRoles)).toBe(false);
     expect(canAccessPath('/my-work/returned', ownerRoles)).toBe(false);
     expect(canAccessPath('/onboarding/contract', ownerRoles)).toBe(false);
@@ -226,7 +227,7 @@ describe('routeVisibility admin-only configuration routes', () => {
 
     expect(canAccessPath('/my-work/team', ownerRoles, broadPermissions)).toBe(false);
     expect(canAccessPath('/my-work/history', ownerRoles, broadPermissions)).toBe(false);
-    expect(canAccessPath('/work-orders', ownerRoles, broadPermissions)).toBe(false);
+    expect(canAccessPath('/work-orders', ownerRoles, broadPermissions)).toBe(true);
     expect(canAccessPath('/my-work/initiated', ownerRoles, broadPermissions)).toBe(false);
     expect(canAccessPath('/my-work/pending', ownerRoles, broadPermissions)).toBe(false);
     expect(canAccessPath('/onboarding/contract', ownerRoles, broadPermissions)).toBe(false);
@@ -259,7 +260,7 @@ describe('routeVisibility admin-only configuration routes', () => {
 
     expect(canAccessPath('/work-orders?orderType=onboarding&page=2', memberRoles)).toBe(true);
     expect(canAccessPath('/my-dispatched/child-1?tab=logs', memberRoles)).toBe(true);
-    expect(canAccessPath('/work-orders/wo-1?tab=detail', ownerRoles)).toBe(false);
+    expect(canAccessPath('/work-orders/wo-1?tab=detail', ownerRoles)).toBe(true);
   });
 
   it('does not expose notification route to business owner only role', () => {
