@@ -2,6 +2,12 @@ import { matchPath } from 'react-router-dom';
 import { ROLE, canonicalRoleCode, canonicalRoleCodes, userHasAnyCanonicalRole, type CanonicalRole } from '@/constants/roles';
 import type { PermissionConfig } from '@/services/permissionCenter';
 
+/**
+ * @deprecated Static route visibility is retained only as a client-side
+ * bootstrap/availability fallback. Runtime authority is the active permission
+ * center configuration loaded through `setDynamicPermissionConfig`; backend
+ * `RolesGuard` and `RbacEngineService` remain authoritative for enforcement.
+ */
 // Dynamic permissions are optional. Until the permission center has loaded (or
 // when its API is unavailable), all callers continue to use the static matrix.
 let dynamicPermissionConfig: PermissionConfig | null = null;

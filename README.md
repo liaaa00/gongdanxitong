@@ -138,6 +138,12 @@ pnpm dev             # http://localhost:5173
 - **通知中心**：队列去重 + SSE 推送 + 未读桶分钟聚合
 - **看板**：三层角色视图 + SQL 口径统一 + Grafana 同源指标
 
+### 权限架构
+
+系统运行时以权限配置中心的激活版本为唯一权限来源：`PermissionCenterService` 读取激活配置，`RolesGuard` 校验路由角色与 `backendActions`，`RbacEngineService` 提供统一的 `can/canAccess` 判断，字段权限由配置中心的场景规则合并后再由后端拦截器执行。角色 code 与 canonical code 在配置中心内作为别名处理，停用角色不会获得权限。
+
+旧的 `roleActionPermissions.v1` 接口和 `DEFAULT_ROLE_ACTION_PERMISSIONS` 仅保留为配置中心尚未激活或数据库暂时不可用时的应急兼容基线；正常请求不会读取旧矩阵。部署时应先创建并激活权限配置版本，再逐步停用旧矩阵管理入口。
+
 ---
 
 ## 环境要求
