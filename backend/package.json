@@ -21,6 +21,7 @@
     "migration:create": "npm run typeorm -- migration:create src/database/migrations/ManualMigration",
     "migration:run": "npm run typeorm -- migration:run",
     "migration:revert": "npm run typeorm -- migration:revert",
+    "permission:migrate-legacy": "ts-node -r tsconfig-paths/register src/database/migrate-legacy-permissions.ts",
     "seed": "ts-node -r tsconfig-paths/register src/database/seeds/index.ts",
     "db:clean-orders": "ts-node -r tsconfig-paths/register scripts/clean-orders.ts",
     "ai-eval": "ts-node ../tests/ai-mapping-eval/run-eval.ts"

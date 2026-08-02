@@ -1,0 +1,1102 @@
+{
+  "canonicalRoleAliases": {
+    "admin": "admin",
+    "data_entry_leader": "data_entry_leader",
+    "data_entry_team": "data_entry_leader",
+    "social_security_team": "social_insurance_specialist",
+    "social_security_supervisor": "social_insurance_specialist",
+    "biz_manager": "business_owner",
+    "manager": "business_owner",
+    "biz_leader": "business_group_leader",
+    "biz_member": "business_group_member",
+    "salesperson": "business_group_member",
+    "shared_leader": "shared_team_owner",
+    "contract_specialist": "labor_contract_member",
+    "onboarding_specialist": "onboarding_resignation_member",
+    "business_owner": "business_owner",
+    "business_group_leader": "business_group_leader",
+    "business_group_member": "business_group_member",
+    "shared_team_owner": "shared_team_owner",
+    "labor_contract_member": "labor_contract_member",
+    "onboarding_resignation_member": "onboarding_resignation_member",
+    "social_insurance_specialist": "social_insurance_specialist"
+  },
+  "routePermissions": [
+    {
+      "path": "/dashboard",
+      "allowedRoles": [
+        "admin",
+        "business_owner",
+        "business_group_leader",
+        "business_group_member",
+        "data_entry_leader",
+        "shared_team_owner",
+        "labor_contract_member",
+        "onboarding_resignation_member",
+        "social_insurance_specialist"
+      ]
+    },
+    {
+      "path": "/notifications",
+      "allowedRoles": [
+        "admin",
+        "business_group_leader",
+        "business_group_member",
+        "data_entry_leader",
+        "shared_team_owner",
+        "labor_contract_member",
+        "onboarding_resignation_member",
+        "social_insurance_specialist"
+      ]
+    },
+    {
+      "path": "/profile",
+      "allowedRoles": [
+        "admin",
+        "business_owner",
+        "business_group_leader",
+        "business_group_member",
+        "data_entry_leader",
+        "shared_team_owner",
+        "labor_contract_member",
+        "onboarding_resignation_member",
+        "social_insurance_specialist"
+      ]
+    },
+    {
+      "path": "/work-orders",
+      "allowedRoles": [
+        "admin",
+        "business_owner",
+        "business_group_leader",
+        "business_group_member"
+      ]
+    },
+    {
+      "path": "/work-orders/create",
+      "allowedRoles": [
+        "admin",
+        "business_group_leader",
+        "business_group_member"
+      ]
+    },
+    {
+      "path": "/work-orders/import",
+      "allowedRoles": [
+        "admin",
+        "business_group_leader",
+        "business_group_member"
+      ]
+    },
+    {
+      "path": "/work-orders/:id",
+      "allowedRoles": [
+        "admin",
+        "business_owner",
+        "business_group_leader",
+        "business_group_member"
+      ]
+    },
+    {
+      "path": "/out-of-province",
+      "allowedRoles": [
+        "admin",
+        "business_owner",
+        "business_group_leader",
+        "business_group_member"
+      ]
+    },
+    {
+      "path": "/out-of-province/import",
+      "allowedRoles": [
+        "admin",
+        "business_group_leader",
+        "business_group_member"
+      ]
+    },
+    {
+      "path": "/out-of-province/new",
+      "allowedRoles": [
+        "admin",
+        "business_group_leader",
+        "business_group_member"
+      ]
+    },
+    {
+      "path": "/out-of-province/increase",
+      "allowedRoles": [
+        "admin",
+        "business_owner",
+        "business_group_leader",
+        "business_group_member"
+      ]
+    },
+    {
+      "path": "/out-of-province/increase/new",
+      "allowedRoles": [
+        "admin",
+        "business_group_leader",
+        "business_group_member"
+      ]
+    },
+    {
+      "path": "/out-of-province/decrease",
+      "allowedRoles": [
+        "admin",
+        "business_owner",
+        "business_group_leader",
+        "business_group_member"
+      ]
+    },
+    {
+      "path": "/out-of-province/decrease/new",
+      "allowedRoles": [
+        "admin",
+        "business_group_leader",
+        "business_group_member"
+      ]
+    },
+    {
+      "path": "/out-of-province/single-business",
+      "allowedRoles": [
+        "admin",
+        "business_owner",
+        "business_group_leader",
+        "business_group_member"
+      ]
+    },
+    {
+      "path": "/out-of-province/single-business/new",
+      "allowedRoles": [
+        "admin",
+        "business_group_leader",
+        "business_group_member"
+      ]
+    },
+    {
+      "path": "/my-field-permissions",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/my-work/initiated",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/my-work/returned",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/my-work/pending",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/my-work/done",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/my-work/team",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/my-work/history",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/dispatched-orders",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/my-dispatched/:id",
+      "allowedRoles": [
+        "admin",
+        "business_owner",
+        "business_group_leader",
+        "business_group_member",
+        "data_entry_leader",
+        "shared_team_owner",
+        "labor_contract_member",
+        "onboarding_resignation_member",
+        "social_insurance_specialist"
+      ]
+    },
+    {
+      "path": "/onboarding",
+      "allowedRoles": [
+        "admin",
+        "data_entry_leader",
+        "shared_team_owner",
+        "labor_contract_member",
+        "onboarding_resignation_member",
+        "social_insurance_specialist"
+      ]
+    },
+    {
+      "path": "/onboarding/onboarding_contact",
+      "allowedRoles": [
+        "admin",
+        "business_group_leader",
+        "business_group_member",
+        "onboarding_resignation_member",
+        "shared_team_owner"
+      ]
+    },
+    {
+      "path": "/onboarding/contract",
+      "allowedRoles": [
+        "admin",
+        "business_group_leader",
+        "business_group_member",
+        "labor_contract_member",
+        "shared_team_owner"
+      ]
+    },
+    {
+      "path": "/onboarding/data_entry",
+      "allowedRoles": [
+        "admin",
+        "business_group_leader",
+        "business_group_member",
+        "data_entry_leader"
+      ]
+    },
+    {
+      "path": "/onboarding/social_insurance",
+      "allowedRoles": [
+        "admin",
+        "business_group_leader",
+        "business_group_member",
+        "social_insurance_specialist"
+      ]
+    },
+    {
+      "path": "/onboarding/renewal_contract",
+      "allowedRoles": [
+        "admin",
+        "business_group_leader",
+        "business_group_member",
+        "labor_contract_member",
+        "shared_team_owner"
+      ]
+    },
+    {
+      "path": "/onboarding/benefit_apply",
+      "allowedRoles": [
+        "admin",
+        "business_owner",
+        "business_group_leader",
+        "business_group_member",
+        "data_entry_leader",
+        "shared_team_owner",
+        "labor_contract_member",
+        "onboarding_resignation_member",
+        "social_insurance_specialist"
+      ]
+    },
+    {
+      "path": "/onboarding/resignation_contact",
+      "allowedRoles": [
+        "admin",
+        "business_group_leader",
+        "business_group_member",
+        "onboarding_resignation_member",
+        "shared_team_owner"
+      ]
+    },
+    {
+      "path": "/onboarding/data_entry_resign",
+      "allowedRoles": [
+        "admin",
+        "business_group_leader",
+        "business_group_member",
+        "data_entry_leader"
+      ]
+    },
+    {
+      "path": "/onboarding/social_insurance_resign",
+      "allowedRoles": [
+        "admin",
+        "business_group_leader",
+        "business_group_member",
+        "social_insurance_specialist"
+      ]
+    },
+    {
+      "path": "/in-service",
+      "allowedRoles": [
+        "admin",
+        "business_owner",
+        "business_group_leader",
+        "business_group_member",
+        "data_entry_leader",
+        "shared_team_owner",
+        "labor_contract_member",
+        "onboarding_resignation_member",
+        "social_insurance_specialist"
+      ]
+    },
+    {
+      "path": "/in-service/new",
+      "allowedRoles": [
+        "admin",
+        "business_group_leader",
+        "business_group_member"
+      ]
+    },
+    {
+      "path": "/in-service/certificates",
+      "allowedRoles": [
+        "admin",
+        "business_owner",
+        "business_group_leader",
+        "business_group_member",
+        "data_entry_leader",
+        "shared_team_owner",
+        "labor_contract_member",
+        "onboarding_resignation_member",
+        "social_insurance_specialist"
+      ]
+    },
+    {
+      "path": "/in-service/certificates/new",
+      "allowedRoles": [
+        "admin",
+        "business_group_leader",
+        "business_group_member"
+      ]
+    },
+    {
+      "path": "/renewal",
+      "allowedRoles": [
+        "admin",
+        "business_owner",
+        "business_group_leader",
+        "business_group_member",
+        "data_entry_leader",
+        "shared_team_owner",
+        "labor_contract_member",
+        "onboarding_resignation_member",
+        "social_insurance_specialist"
+      ]
+    },
+    {
+      "path": "/renewal/new",
+      "allowedRoles": [
+        "admin",
+        "business_group_leader",
+        "business_group_member"
+      ]
+    },
+    {
+      "path": "/renewal/:id",
+      "allowedRoles": [
+        "admin",
+        "business_owner",
+        "business_group_leader",
+        "business_group_member",
+        "data_entry_leader",
+        "shared_team_owner",
+        "labor_contract_member",
+        "onboarding_resignation_member",
+        "social_insurance_specialist"
+      ]
+    },
+    {
+      "path": "/resignation-certificates",
+      "allowedRoles": [
+        "admin",
+        "business_owner",
+        "business_group_leader",
+        "business_group_member",
+        "shared_team_owner",
+        "labor_contract_member"
+      ]
+    },
+    {
+      "path": "/resignation-certificates/new",
+      "allowedRoles": [
+        "admin",
+        "business_group_leader",
+        "business_group_member"
+      ]
+    },
+    {
+      "path": "/in-service/contract-renewal",
+      "allowedRoles": [
+        "admin",
+        "business_owner",
+        "business_group_leader",
+        "business_group_member",
+        "data_entry_leader",
+        "shared_team_owner",
+        "labor_contract_member",
+        "onboarding_resignation_member",
+        "social_insurance_specialist"
+      ]
+    },
+    {
+      "path": "/in-service/benefit-claim",
+      "allowedRoles": [
+        "admin",
+        "business_owner",
+        "business_group_leader",
+        "business_group_member",
+        "data_entry_leader",
+        "shared_team_owner",
+        "labor_contract_member",
+        "onboarding_resignation_member",
+        "social_insurance_specialist"
+      ]
+    },
+    {
+      "path": "/in-service/:id/audit",
+      "allowedRoles": [
+        "admin",
+        "business_owner",
+        "business_group_leader"
+      ]
+    },
+    {
+      "path": "/in-service/:id",
+      "allowedRoles": [
+        "admin",
+        "business_owner",
+        "business_group_leader",
+        "business_group_member",
+        "data_entry_leader",
+        "shared_team_owner",
+        "labor_contract_member",
+        "onboarding_resignation_member",
+        "social_insurance_specialist"
+      ]
+    },
+    {
+      "path": "/out-of-province/orders",
+      "allowedRoles": [
+        "admin",
+        "business_owner",
+        "business_group_leader",
+        "business_group_member"
+      ]
+    },
+    {
+      "path": "/out-of-province/orders/new",
+      "allowedRoles": [
+        "admin",
+        "business_group_leader",
+        "business_group_member"
+      ]
+    },
+    {
+      "path": "/out-of-province/orders/:id",
+      "allowedRoles": [
+        "admin",
+        "business_owner",
+        "business_group_leader",
+        "business_group_member"
+      ]
+    },
+    {
+      "path": "/offboarding",
+      "allowedRoles": [
+        "admin",
+        "shared_team_owner",
+        "onboarding_resignation_member",
+        "data_entry_leader"
+      ]
+    },
+    {
+      "path": "/offboarding/contact-pool",
+      "allowedRoles": [
+        "admin",
+        "onboarding_resignation_member",
+        "shared_team_owner"
+      ]
+    },
+    {
+      "path": "/offboarding/social-suspend-pool",
+      "allowedRoles": [
+        "admin",
+        "data_entry_leader"
+      ]
+    },
+    {
+      "path": "/dashboards/leader",
+      "allowedRoles": [
+        "admin",
+        "business_owner",
+        "business_group_leader",
+        "data_entry_leader",
+        "shared_team_owner"
+      ]
+    },
+    {
+      "path": "/export-templates",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/admin",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/admin/users",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/admin/roles",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/admin/departments",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/admin/branches",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/admin/customers",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/admin/customer-assignees",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/admin/module-config",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/admin/fields",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/admin/import-templates",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/admin/field-permissions",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/admin/permission-center",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/admin/dispatch-config",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/admin/flow-config",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/admin/workflow-config",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/admin/workflows",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/admin/workflows/:id",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/admin/export-templates",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/admin/detail-view-templates",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/admin/notifications",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/admin/approval-flows",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/admin/audit-log",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/admin/logs",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/admin/ai-settings",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/admin/login-debug",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/admin/system-settings",
+      "allowedRoles": [
+        "admin"
+      ]
+    },
+    {
+      "path": "/admin/certificate-types",
+      "allowedRoles": [
+        "admin"
+      ]
+    }
+  ],
+  "defaultRoleActionPermissions": {
+    "admin": [
+      "work_order.view",
+      "work_order.view_team",
+      "work_order.view_all",
+      "work_order.create",
+      "work_order.import",
+      "work_order.update",
+      "work_order.withdraw",
+      "work_order.void",
+      "work_order.urge",
+      "work_order.export",
+      "work_order.delete",
+      "route.dashboard",
+      "route.notifications",
+      "route.work_orders",
+      "route.work_order_create",
+      "route.work_order_import",
+      "route.work_order_detail",
+      "route.dispatched_detail",
+      "route.onboarding",
+      "route.onboarding_contract",
+      "route.onboarding_contact",
+      "route.onboarding_data_entry",
+      "route.onboarding_social_insurance",
+      "route.resignation_contact",
+      "route.data_entry_resign",
+      "route.social_insurance_resign",
+      "route.offboarding",
+      "route.offboarding_contact_pool",
+      "route.offboarding_social_suspend_pool",
+      "route.leader_dashboard",
+      "system.admin",
+      "module.contract.manage",
+      "module.onboarding_contact.manage",
+      "module.resignation_contact.manage",
+      "module.data_entry.manage",
+      "module.data_entry_resign.manage",
+      "module.social_insurance.manage",
+      "module.social_insurance_resign.manage",
+      "dispatched_order.batch_import",
+      "dispatched_order.batch_import_fields",
+      "dispatched_order.batch_export",
+      "dispatched_order.batch_accept",
+      "dispatched_order.batch_complete",
+      "dispatched_order.batch_feedback",
+      "dispatched_order.batch_urge"
+    ],
+    "biz_manager": [
+      "work_order.view_all",
+      "work_order.export",
+      "route.dashboard",
+      "route.dispatched_detail",
+      "route.leader_dashboard"
+    ],
+    "business_owner": [
+      "work_order.view_all",
+      "work_order.export",
+      "route.dashboard",
+      "route.dispatched_detail",
+      "route.leader_dashboard"
+    ],
+    "manager": [
+      "work_order.view_all",
+      "work_order.export",
+      "route.dashboard",
+      "route.dispatched_detail",
+      "route.leader_dashboard"
+    ],
+    "biz_leader": [
+      "work_order.view_team",
+      "work_order.create",
+      "work_order.import",
+      "work_order.update",
+      "work_order.withdraw",
+      "work_order.void",
+      "work_order.urge",
+      "work_order.export",
+      "route.dashboard",
+      "route.dispatched_detail",
+      "route.notifications",
+      "route.work_orders",
+      "route.work_order_create",
+      "route.work_order_import",
+      "route.work_order_detail",
+      "route.onboarding_contact",
+      "route.onboarding_contract",
+      "route.onboarding_data_entry",
+      "route.onboarding_social_insurance",
+      "route.resignation_contact",
+      "route.data_entry_resign",
+      "route.social_insurance_resign",
+      "route.offboarding",
+      "dispatched_order.batch_urge",
+      "route.leader_dashboard"
+    ],
+    "business_group_leader": [
+      "work_order.view_team",
+      "work_order.create",
+      "work_order.import",
+      "work_order.update",
+      "work_order.withdraw",
+      "work_order.void",
+      "work_order.urge",
+      "work_order.export",
+      "route.dashboard",
+      "route.dispatched_detail",
+      "route.notifications",
+      "route.work_orders",
+      "route.work_order_create",
+      "route.work_order_import",
+      "route.work_order_detail",
+      "route.onboarding_contact",
+      "route.onboarding_contract",
+      "route.onboarding_data_entry",
+      "route.onboarding_social_insurance",
+      "route.resignation_contact",
+      "route.data_entry_resign",
+      "route.social_insurance_resign",
+      "route.offboarding",
+      "dispatched_order.batch_urge",
+      "route.leader_dashboard"
+    ],
+    "biz_member": [
+      "work_order.view",
+      "work_order.create",
+      "work_order.import",
+      "work_order.update",
+      "work_order.withdraw",
+      "work_order.void",
+      "work_order.urge",
+      "route.dashboard",
+      "route.dispatched_detail",
+      "route.notifications",
+      "route.work_orders",
+      "route.work_order_create",
+      "route.work_order_import",
+      "route.work_order_detail",
+      "route.onboarding_contact",
+      "route.onboarding_contract",
+      "route.onboarding_data_entry",
+      "route.onboarding_social_insurance",
+      "route.resignation_contact",
+      "route.data_entry_resign",
+      "route.social_insurance_resign",
+      "dispatched_order.batch_urge"
+    ],
+    "business_group_member": [
+      "work_order.view",
+      "work_order.create",
+      "work_order.import",
+      "work_order.update",
+      "work_order.withdraw",
+      "work_order.void",
+      "work_order.urge",
+      "route.dashboard",
+      "route.dispatched_detail",
+      "route.notifications",
+      "route.work_orders",
+      "route.work_order_create",
+      "route.work_order_import",
+      "route.work_order_detail",
+      "route.onboarding_contact",
+      "route.onboarding_contract",
+      "route.onboarding_data_entry",
+      "route.onboarding_social_insurance",
+      "route.resignation_contact",
+      "route.data_entry_resign",
+      "route.social_insurance_resign",
+      "dispatched_order.batch_urge"
+    ],
+    "salesperson": [
+      "work_order.view",
+      "work_order.create",
+      "work_order.import",
+      "work_order.update",
+      "work_order.withdraw",
+      "work_order.void",
+      "work_order.urge",
+      "route.dashboard",
+      "route.dispatched_detail",
+      "route.notifications",
+      "route.work_orders",
+      "route.work_order_create",
+      "route.work_order_import",
+      "route.work_order_detail",
+      "route.onboarding_contact",
+      "route.onboarding_contract",
+      "route.onboarding_data_entry",
+      "route.onboarding_social_insurance",
+      "route.resignation_contact",
+      "route.data_entry_resign",
+      "route.social_insurance_resign",
+      "dispatched_order.batch_urge"
+    ],
+    "shared_leader": [
+      "work_order.view_team",
+      "work_order.export",
+      "route.dashboard",
+      "route.dispatched_detail",
+      "route.notifications",
+      "route.leader_dashboard",
+      "route.onboarding",
+      "route.onboarding_contract",
+      "module.contract.manage",
+      "dispatched_order.batch_import",
+      "dispatched_order.batch_export",
+      "dispatched_order.batch_accept",
+      "dispatched_order.batch_complete",
+      "route.onboarding",
+      "route.onboarding_contact",
+      "module.onboarding_contact.manage",
+      "dispatched_order.batch_import_fields",
+      "dispatched_order.batch_import",
+      "dispatched_order.batch_export",
+      "dispatched_order.batch_accept",
+      "dispatched_order.batch_complete",
+      "route.onboarding",
+      "route.offboarding",
+      "route.offboarding_contact_pool",
+      "route.resignation_contact",
+      "module.resignation_contact.manage",
+      "dispatched_order.batch_import",
+      "dispatched_order.batch_export",
+      "dispatched_order.batch_accept",
+      "dispatched_order.batch_complete"
+    ],
+    "shared_team_owner": [
+      "work_order.view_team",
+      "work_order.export",
+      "route.dashboard",
+      "route.dispatched_detail",
+      "route.notifications",
+      "route.leader_dashboard",
+      "route.onboarding",
+      "route.onboarding_contract",
+      "module.contract.manage",
+      "dispatched_order.batch_import",
+      "dispatched_order.batch_export",
+      "dispatched_order.batch_accept",
+      "dispatched_order.batch_complete",
+      "route.onboarding",
+      "route.onboarding_contact",
+      "module.onboarding_contact.manage",
+      "dispatched_order.batch_import_fields",
+      "dispatched_order.batch_import",
+      "dispatched_order.batch_export",
+      "dispatched_order.batch_accept",
+      "dispatched_order.batch_complete",
+      "route.onboarding",
+      "route.offboarding",
+      "route.offboarding_contact_pool",
+      "route.resignation_contact",
+      "module.resignation_contact.manage",
+      "dispatched_order.batch_import",
+      "dispatched_order.batch_export",
+      "dispatched_order.batch_accept",
+      "dispatched_order.batch_complete"
+    ],
+    "data_entry_leader": [
+      "work_order.view_team",
+      "work_order.export",
+      "route.dashboard",
+      "route.dispatched_detail",
+      "route.notifications",
+      "route.leader_dashboard",
+      "route.onboarding",
+      "route.onboarding_data_entry",
+      "module.data_entry.manage",
+      "dispatched_order.batch_import",
+      "dispatched_order.batch_export",
+      "dispatched_order.batch_accept",
+      "dispatched_order.batch_complete",
+      "route.onboarding",
+      "route.offboarding",
+      "route.offboarding_social_suspend_pool",
+      "route.data_entry_resign",
+      "module.data_entry_resign.manage",
+      "dispatched_order.batch_import",
+      "dispatched_order.batch_export",
+      "dispatched_order.batch_accept",
+      "dispatched_order.batch_complete"
+    ],
+    "contract_specialist": [
+      "work_order.view",
+      "work_order.export",
+      "route.dashboard",
+      "route.dispatched_detail",
+      "route.notifications",
+      "route.onboarding",
+      "route.onboarding_contract",
+      "module.contract.manage",
+      "dispatched_order.batch_import",
+      "dispatched_order.batch_export",
+      "dispatched_order.batch_accept",
+      "dispatched_order.batch_complete"
+    ],
+    "labor_contract_member": [
+      "work_order.view",
+      "work_order.export",
+      "route.dashboard",
+      "route.dispatched_detail",
+      "route.notifications",
+      "route.onboarding",
+      "route.onboarding_contract",
+      "module.contract.manage",
+      "dispatched_order.batch_import",
+      "dispatched_order.batch_export",
+      "dispatched_order.batch_accept",
+      "dispatched_order.batch_complete"
+    ],
+    "onboarding_specialist": [
+      "work_order.view",
+      "work_order.export",
+      "route.dashboard",
+      "route.dispatched_detail",
+      "route.notifications",
+      "route.onboarding",
+      "route.onboarding_contact",
+      "module.onboarding_contact.manage",
+      "dispatched_order.batch_import_fields",
+      "dispatched_order.batch_import",
+      "dispatched_order.batch_export",
+      "dispatched_order.batch_accept",
+      "dispatched_order.batch_complete",
+      "route.onboarding",
+      "route.offboarding",
+      "route.offboarding_contact_pool",
+      "route.resignation_contact",
+      "module.resignation_contact.manage",
+      "dispatched_order.batch_import",
+      "dispatched_order.batch_export",
+      "dispatched_order.batch_accept",
+      "dispatched_order.batch_complete"
+    ],
+    "onboarding_resignation_member": [
+      "work_order.view",
+      "work_order.export",
+      "route.dashboard",
+      "route.dispatched_detail",
+      "route.notifications",
+      "route.onboarding",
+      "route.onboarding_contact",
+      "module.onboarding_contact.manage",
+      "dispatched_order.batch_import_fields",
+      "dispatched_order.batch_import",
+      "dispatched_order.batch_export",
+      "dispatched_order.batch_accept",
+      "dispatched_order.batch_complete",
+      "route.onboarding",
+      "route.offboarding",
+      "route.offboarding_contact_pool",
+      "route.resignation_contact",
+      "module.resignation_contact.manage",
+      "dispatched_order.batch_import",
+      "dispatched_order.batch_export",
+      "dispatched_order.batch_accept",
+      "dispatched_order.batch_complete"
+    ],
+    "social_insurance_specialist": [
+      "work_order.view",
+      "work_order.export",
+      "route.dashboard",
+      "route.dispatched_detail",
+      "route.notifications",
+      "route.onboarding",
+      "route.onboarding_social_insurance",
+      "module.social_insurance.manage",
+      "dispatched_order.batch_import",
+      "dispatched_order.batch_export",
+      "dispatched_order.batch_accept",
+      "dispatched_order.batch_feedback",
+      "route.onboarding",
+      "route.social_insurance_resign",
+      "module.social_insurance_resign.manage",
+      "dispatched_order.batch_import",
+      "dispatched_order.batch_export",
+      "dispatched_order.batch_accept",
+      "dispatched_order.batch_feedback"
+    ],
+    "social_security_team": [
+      "work_order.view",
+      "work_order.export"
+    ]
+  }
+}
