@@ -1,12 +1,14 @@
-import type {
+import { describe, expect, expectTypeOf, it } from 'vitest';
+import {
   FieldViewMode,
-  PermissionChangeLog,
-  PermissionConfig,
-  PermissionConfigVersion,
-  RolePermissionSummary,
-} from 'src/modules/permission-center/types/permission-config.types';
+  RoleLevel,
+  type PermissionChangeLog,
+  type PermissionConfig,
+  type PermissionConfigVersion,
+  type RolePermissionSummary,
+} from '../src/modules/permission-center/types/permission-config.types';
 
-const permissionConfig: PermissionConfig = {
+const permissionConfig = {
   version: '1.0.0',
   roles: [
     {
@@ -15,7 +17,7 @@ const permissionConfig: PermissionConfig = {
       name: '业务负责人',
       canonicalCode: 'business_owner',
       isActive: true,
-      level: 'management',
+      level: RoleLevel.MANAGEMENT,
     },
   ],
   routePermissions: [
@@ -23,7 +25,7 @@ const permissionConfig: PermissionConfig = {
       path: '/work-orders',
       allowedRoles: ['business_owner'],
       backendActions: ['route.work_orders'],
-      menu: { title: '工单管理', hidden: false, parentPath: '/work-orders' },
+      menu: { title: '工单管理', parentPath: '/work-orders' },
     },
   ],
   fieldPermissions: [
@@ -31,37 +33,34 @@ const permissionConfig: PermissionConfig = {
       scenario: 'dispatched:contract',
       roleFieldRules: {
         business_owner: {
-          employee_name: 'visible',
-          id_card: 'masked',
-          customer_code: 'readonly',
-          internal_note: 'hidden',
+          employee_name: FieldViewMode.VISIBLE,
+          id_card: FieldViewMode.MASKED,
+          customer_code: FieldViewMode.READONLY,
+          internal_note: FieldViewMode.HIDDEN,
         },
       },
     },
   ],
-};
+} satisfies PermissionConfig;
 
 describe('permission configuration TypeScript contracts', () => {
-  it('represents the complete permission hierarchy', () => {
-    expect(permissionConfig.roles[0].canonicalCode).toBe('business_owner');
-    expect(permissionConfig.roles[0].level).toBe('management');
-    expect(permissionConfig.routePermissions[0].backendActions).toEqual(['route.work_orders']);
-    expect(permissionConfig.routePermissions[0].menu?.parentPath).toBe('/work-orders');
-    expect(permissionConfig.fieldPermissions[0].roleFieldRules.business_owner).toEqual({
-      employee_name: 'visible',
-      id_card: 'masked',
-      customer_code: 'readonly',
-      internal_note: 'hidden',
-    });
+  it('infers the complete permission hierarchy', () => {
+    expectTypeOf(permissionConfig).toExtend<PermissionConfig>();
+    expectTypeOf(permissionConfig.roles[0].level).toEqualTypeOf<'management'>();
+    expectTypeOf(permissionConfig.fieldPermissions[0].roleFieldRules.business_owner.id_card)
+      .toEqualTypeOf<'masked'>();
+
+    expect(permissionConfig.routePermissions[0].menu.parentPath).toBe('/work-orders');
   });
 
-  it('defines all field view modes as stable serialized values', () => {
-    const modes: FieldViewMode[] = ['visible', 'hidden', 'readonly', 'masked'];
-
-    expect(modes).toEqual(['visible', 'hidden', 'readonly', 'masked']);
+  it('enforces field mode and role level constraints', () => {
+    expectTypeOf<'visible'>().toExtend<FieldViewMode>();
+    expectTypeOf<'editable'>().not.toExtend<FieldViewMode>();
+    expectTypeOf<'management'>().toExtend<RoleLevel>();
+    expectTypeOf<'unknown-level'>().not.toExtend<RoleLevel>();
   });
 
-  it('types version, audit and query result records consistently', () => {
+  it('keeps version, audit and summary records mutually consistent', () => {
     const version: PermissionConfigVersion = {
       id: 'version-id',
       version: '1.0.0',
@@ -69,7 +68,6 @@ describe('permission configuration TypeScript contracts', () => {
       isActive: true,
       createdBy: 'user-id',
       createdAt: new Date('2026-08-02T00:00:00.000Z'),
-      activatedAt: new Date('2026-08-02T01:00:00.000Z'),
     };
     const log: PermissionChangeLog = {
       id: 'log-id',
@@ -88,6 +86,7 @@ describe('permission configuration TypeScript contracts', () => {
       fieldPermissionScenarios: ['dispatched:contract'],
     };
 
+    expectTypeOf(log.changeType).toEqualTypeOf<PermissionChangeLog['changeType']>();
     expect(log.versionId).toBe(version.id);
     expect(summary.fieldPermissionScenarios).toContain('dispatched:contract');
   });

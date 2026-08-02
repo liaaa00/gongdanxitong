@@ -1,8 +1,9 @@
-import { readFileSync } from 'fs';
-import { resolve } from 'path';
-import Ajv, { ErrorObject, ValidateFunction } from 'ajv';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import Ajv, { type ErrorObject, type ValidateFunction } from 'ajv';
+import { describe, expect, it } from 'vitest';
 
-const SCHEMA_PATH = resolve(__dirname, '../../config/permission-schema.json');
+const SCHEMA_PATH = resolve(process.cwd(), '../config/permission-schema.json');
 
 function createValidator(): ValidateFunction {
   const schema = JSON.parse(readFileSync(SCHEMA_PATH, 'utf8')) as object;
@@ -21,7 +22,7 @@ function makeValidConfig() {
         name: '业务负责人',
         canonicalCode: 'business_owner',
         isActive: true,
-        description: '管理团队工单',
+        level: 'management',
       },
     ],
     routePermissions: [
@@ -29,19 +30,12 @@ function makeValidConfig() {
         path: '/work-orders/:id',
         allowedRoles: ['business_owner'],
         backendActions: ['route.work_orders', 'work_order.view'],
-        menu: {
-          title: '工单管理',
-          icon: 'FileTextOutlined',
-          order: 10,
-          hidden: false,
-          parentPath: '/work-orders',
-        },
+        menu: { title: '工单管理', parentPath: '/work-orders' },
       },
     ],
     fieldPermissions: [
       {
         scenario: 'dispatched:contract',
-        description: '劳动合同字段权限',
         roleFieldRules: {
           business_owner: {
             employee_name: 'visible',
@@ -63,13 +57,12 @@ function expectInvalid(validate: ValidateFunction, config: unknown, keyword: str
 describe('permission configuration JSON Schema', () => {
   const validate = createValidator();
 
-  it('is itself a valid schema and accepts a complete permission config', () => {
-    expect(validate.schema).toBeDefined();
+  it('accepts a complete permission configuration', () => {
     expect(validate(makeValidConfig())).toBe(true);
     expect(validate.errors).toBeNull();
   });
 
-  it('requires every top-level permission section', () => {
+  it('rejects a missing required section', () => {
     const config = makeValidConfig();
     delete (config as Partial<typeof config>).routePermissions;
 
@@ -77,8 +70,9 @@ describe('permission configuration JSON Schema', () => {
   });
 
   it.each([
-    ['non-semantic version', (config: ReturnType<typeof makeValidConfig>) => { config.version = '1.0'; }, 'pattern'],
-    ['invalid role UUID', (config: ReturnType<typeof makeValidConfig>) => { config.roles[0].id = 'not-a-uuid'; }, 'format'],
+    ['invalid semantic version', (config: ReturnType<typeof makeValidConfig>) => { config.version = '1.0'; }, 'pattern'],
+    ['invalid UUID type', (config: ReturnType<typeof makeValidConfig>) => { config.roles[0].id = 'not-a-uuid'; }, 'format'],
+    ['boolean type mismatch', (config: ReturnType<typeof makeValidConfig>) => { (config.roles[0] as { isActive: unknown }).isActive = 'yes'; }, 'type'],
     ['empty allowed roles', (config: ReturnType<typeof makeValidConfig>) => { config.routePermissions[0].allowedRoles = []; }, 'minItems'],
     ['unsupported field mode', (config: ReturnType<typeof makeValidConfig>) => { config.fieldPermissions[0].roleFieldRules.business_owner.id_card = 'editable'; }, 'enum'],
   ])('rejects %s', (_label, mutate, keyword) => {

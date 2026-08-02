@@ -7,6 +7,7 @@ import { PermissionCenterService } from './services/permission-center.service';
 import { PermissionCacheService } from './services/permission-cache.service';
 import { PermissionCenterController } from './controllers/permission-center.controller';
 import { PermissionNotificationGateway } from './gateways/permission-notification.gateway';
+import { RbacEngineService } from './engine/rbac-engine.service';
 
 @Module({
   imports: [
@@ -24,7 +25,8 @@ import { PermissionNotificationGateway } from './gateways/permission-notificatio
     PermissionCenterService,
     PermissionCacheService,
     PermissionNotificationGateway,
+    RbacEngineService,
   ],
-  exports: [PermissionCenterService],
+  exports: [PermissionCenterService, RbacEngineService],
 })
 export class PermissionCenterModule {}

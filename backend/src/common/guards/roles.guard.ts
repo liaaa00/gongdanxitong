@@ -3,11 +3,17 @@ import {
   ExecutionContext,
   ForbiddenException,
   Injectable,
+  Optional,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { BUSINESS_PERMISSION_KEY } from 'src/common/decorators/business-permission.decorator';
 import { ROLES_KEY } from 'src/common/decorators/roles.decorator';
-import { RoleActionPermissionService } from 'src/modules/role-action-permissions/role-action-permission.service';
+import {
+  DEFAULT_ROLE_ACTION_PERMISSIONS,
+  RoleActionPermissionService,
+} from 'src/modules/role-action-permissions/role-action-permission.service';
+import { PermissionCenterService } from 'src/modules/permission-center/services/permission-center.service';
+import { PermissionConfig } from 'src/modules/permission-center/types/permission-config.types';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
 
 @Injectable()
@@ -15,6 +21,7 @@ export class RolesGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly roleActionPermissionService: RoleActionPermissionService,
+    @Optional() private readonly permissionCenterService?: PermissionCenterService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -27,7 +34,8 @@ export class RolesGuard implements CanActivate {
     const userRoles = request.user?.roles ?? [];
 
     if (businessPermission) {
-      const allowed = await this.roleActionPermissionService.hasAnyRoleAction(userRoles, businessPermission);
+      const configResult = await this.checkActiveConfigBusinessPermission(userRoles, businessPermission);
+      const allowed = configResult ?? await this.checkFallbackBusinessPermission(userRoles, businessPermission);
       if (!allowed) {
         throw new ForbiddenException('业务权限不足');
       }
@@ -43,11 +51,95 @@ export class RolesGuard implements CanActivate {
       return true;
     }
 
-    const hasRole = requiredRoles.some((role) => userRoles.includes(role));
+    const configResult = await this.checkActiveConfigRoles(userRoles, requiredRoles);
+    const hasRole = configResult ?? requiredRoles.some((role) => userRoles.includes(role));
     if (!hasRole) {
       throw new ForbiddenException('角色权限不足');
     }
 
     return true;
+  }
+
+  /**
+   * A null result means the configuration center could not be read and the
+   * legacy role-action matrix must remain authoritative for this request.
+   */
+  private async checkActiveConfigBusinessPermission(
+    userRoles: readonly string[],
+    businessPermission: string,
+  ): Promise<boolean | null> {
+    const config = await this.readActiveConfig();
+    if (!config) return null;
+
+    try {
+      const activeRoleGroups = this.activeRoleGroups(config);
+      return config.routePermissions.some((route) =>
+        route.backendActions?.includes(businessPermission)
+        && route.allowedRoles.some((allowedRole) => this.userHasRoleAlias(userRoles, allowedRole, activeRoleGroups)));
+    } catch {
+      return null;
+    }
+  }
+
+  private async checkActiveConfigRoles(
+    userRoles: readonly string[],
+    requiredRoles: readonly string[],
+  ): Promise<boolean | null> {
+    const config = await this.readActiveConfig();
+    if (!config) return null;
+
+    try {
+      const activeRoleGroups = this.activeRoleGroups(config);
+      return requiredRoles.some((requiredRole) =>
+        this.userHasRoleAlias(userRoles, requiredRole, activeRoleGroups));
+    } catch {
+      return null;
+    }
+  }
+
+  private async readActiveConfig(): Promise<PermissionConfig | null> {
+    if (!this.permissionCenterService) return null;
+    try {
+      return await this.permissionCenterService.getActiveConfig();
+    } catch {
+      return null;
+    }
+  }
+
+  private async checkFallbackBusinessPermission(
+    userRoles: readonly string[],
+    businessPermission: string,
+  ): Promise<boolean> {
+    if (this.roleActionPermissionService?.hasAnyRoleAction) {
+      try {
+        return await this.roleActionPermissionService.hasAnyRoleAction(userRoles, businessPermission);
+      } catch {
+        // A failed legacy store should degrade to the checked-in baseline.
+      }
+    }
+
+    if (userRoles.includes('admin')) return true;
+    return userRoles.some((roleCode) =>
+      DEFAULT_ROLE_ACTION_PERMISSIONS[roleCode]?.some((action) => action === businessPermission) ?? false);
+  }
+
+  private activeRoleGroups(config: PermissionConfig): ReadonlySet<string>[] {
+    return config.roles
+      .filter((role) => role.isActive)
+      .map((role) => new Set([role.code, role.canonicalCode].filter(Boolean)));
+  }
+
+  private userHasRoleAlias(
+    userRoles: readonly string[],
+    requestedRole: string,
+    activeRoleGroups: readonly ReadonlySet<string>[],
+  ): boolean {
+    if (userRoles.includes(requestedRole)) {
+      return activeRoleGroups.some((group) => group.has(requestedRole)
+        && userRoles.some((userRole) => group.has(userRole)));
+    }
+
+    return activeRoleGroups.some((group) =>
+      group.has(requestedRole) && userRoles.some((userRole) => group.has(userRole)));
   }
 }
