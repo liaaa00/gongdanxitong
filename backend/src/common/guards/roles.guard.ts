@@ -9,7 +9,7 @@ import { Reflector } from '@nestjs/core';
 import { BUSINESS_PERMISSION_KEY } from 'src/common/decorators/business-permission.decorator';
 import { ROLES_KEY } from 'src/common/decorators/roles.decorator';
 import {
-  DEFAULT_ROLE_ACTION_PERMISSIONS,
+  hasDefaultRoleActionPermission,
   RoleActionPermissionService,
 } from 'src/modules/role-action-permissions/role-action-permission.service';
 import { PermissionCenterService } from 'src/modules/permission-center/services/permission-center.service';
@@ -61,8 +61,9 @@ export class RolesGuard implements CanActivate {
   }
 
   /**
-   * A null result means the configuration center could not be read and the
-   * legacy role-action matrix must remain authoritative for this request.
+   * A null result means the configuration center could not be read. The
+   * role-action service is retained as a narrowly scoped emergency fallback
+   * for existing deployments that have not activated a permission version.
    */
   private async checkActiveConfigBusinessPermission(
     userRoles: readonly string[],
@@ -114,13 +115,14 @@ export class RolesGuard implements CanActivate {
       try {
         return await this.roleActionPermissionService.hasAnyRoleAction(userRoles, businessPermission);
       } catch {
-        // A failed legacy store should degrade to the checked-in baseline.
+        // A failed emergency store must fail closed.
       }
     }
 
-    if (userRoles.includes('admin')) return true;
-    return userRoles.some((roleCode) =>
-      DEFAULT_ROLE_ACTION_PERMISSIONS[roleCode]?.some((action) => action === businessPermission) ?? false);
+    // Keep the emergency baseline for two-argument construction and legacy
+    // deployments; this path is reached only when the center and its store
+    // are unavailable.
+    return hasDefaultRoleActionPermission(userRoles, businessPermission);
   }
 
   private activeRoleGroups(config: PermissionConfig): ReadonlySet<string>[] {

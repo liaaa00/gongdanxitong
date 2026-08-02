@@ -162,6 +162,17 @@ export const DEFAULT_ROLE_ACTION_PERMISSIONS: RoleActionPermissionMatrix = {
   social_security_team: ['work_order.view', 'work_order.export'],
 };
 
+/**
+ * Emergency-only baseline used while the permission center has no active
+ * version. Runtime authorization should prefer PermissionCenterService; this
+ * helper exists for bootstrapping and backwards-compatible deployments.
+ */
+export function hasDefaultRoleActionPermission(roleCodes: readonly string[], action: string): boolean {
+  if (roleCodes.includes('admin')) return true;
+  return roleCodes.some((roleCode) =>
+    DEFAULT_ROLE_ACTION_PERMISSIONS[roleCode]?.some((candidate) => candidate === action) ?? false);
+}
+
 @Injectable()
 export class RoleActionPermissionService {
   private readonly logger = new Logger(RoleActionPermissionService.name);

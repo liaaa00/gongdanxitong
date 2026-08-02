@@ -1,5 +1,13 @@
 # AI 修改记录
 
+## 2026-08-02 · Phase8 权限配置中心全量迁移收尾
+- 用户要求：清理旧静态权限配置并完成配置中心迁移，保留必要的应急兼容，更新架构说明。
+- 改动：`RolesGuard` 正常请求仅使用激活权限配置；配置中心不可用时才调用旧 `RoleActionPermissionService`，其最终基线封装为 `hasDefaultRoleActionPermission` 并明确标注 emergency-only。`README.md` 新增权限配置中心、RBAC、字段权限和旧矩阵应急边界说明；`frontend/src/config/routeVisibility.ts` 标记静态路由矩阵为 deprecated，说明仅作客户端启动/不可用兜底。
+- 是否覆盖旧规则：否。未改变既有角色、路由或字段权限口径，仅明确配置中心优先级和旧矩阵应急边界。
+- 同步更新规则文档：无。
+- 验证：后端 `npm run build` 通过；`roles.guard.permission-center.spec.ts` 与 `role-action-permission-baseline.spec.ts` 共 10 个测试通过。
+- 未提交无关文件：工作区原有未跟踪文档及部署文件保持不动。
+
 ## 2026-08-02 · Phase 6 RBAC 权限引擎
 
 - 改动：新增 `RbacEngineService`，从激活权限配置统一实现 `can`/`canAccess`、路由访问集合和场景字段权限合并；支持后端角色码与 canonical 角色码别名、停用角色拒绝、资源路径参数/通配符匹配，以及无配置时 fail-closed。
@@ -1361,3 +1369,9 @@
 - 改了什么：为 NestJS 后端增加 Prometheus Node/进程默认指标和低基数 HTTP 请求数、状态码、耗时指标，新增内部 `/api/metrics` 抓取端点；Docker Compose 增加 Prometheus 与 Grafana，提供 15 天指标存储、3 条基础告警、自动配置的数据源和 8 面板总览看板；业务 Nginx 与前端 Nginx 均阻止外部访问指标端点，监控端口默认只绑定本机。
 - 为什么：为权限中心后续阶段及现有工单后端提供可复现的容器化监控基线，同时避免指标标签记录动态 ID 或将内部运行信息暴露到业务入口。
 - 如何验证：后端 `npm run build` 与根目录 `回归测试.ps1 -BackendOnly` 通过；`monitoring.spec.ts`、`docker-seed-guard.spec.ts` 共 4 项通过；`docker compose -p ticket-system config --quiet` 通过；官方 `promtool check config` 通过并识别 1 个规则文件、3 条有效告警。后端 Docker 镜像构建因本机 BuildKit 长时间无输出，两次在 5 分钟窗口内超时，未宣称镜像构建通过。完整 `回归测试.ps1 -SkipBuild` 中前端 10 文件通过 9 个、115 项通过 112 项，3 项失败均为同期 `business_owner` 被放行 `/work-orders` 与既有权限断言冲突，与本次监控改动无关。
+
+## 2026-08-02 · 生产环境配置与部署准备
+
+- 改了什么：新增强制校验生产密钥的 Compose 覆盖层、TLS 1.2/1.3 Nginx 配置和同域 Grafana 子路径代理；PostgreSQL 默认改为仅绑定 `127.0.0.1`；新增兼容 Windows PowerShell 5.1 的生产环境生成器，分别生成 64 字节 JWT/刷新密钥、数据库密码和 Grafana 密码并写入 Git 忽略文件；新增迁移前 `pg_dump` 备份、TypeORM migration 和服务启动脚本，以及生产部署手册和部署约束测试。
+- 为什么：消除默认口令、数据库公网暴露、纯 HTTP 和无迁移前备份等上线风险，并将已有 Prometheus/Grafana 三条告警基线纳入可重复验证的生产部署流程。
+- 如何验证：实际生成 `.env.production.local`，两枚 JWT 密钥均为 64 字节且互不相同，文件确认被 Git 忽略；生产 Compose `config --quiet` 通过；官方 Nginx 镜像 `nginx -t` 通过；`promtool` 校验 Prometheus 配置和 3 条告警规则通过；部署定向测试 3 套件/8 项通过；后端 `npm run build` 通过；根目录 `回归测试.ps1 -SkipBuild` 通过（前端关键 10 文件/117 项）。未连接或修改任何生产环境、生产数据库或 CI。
