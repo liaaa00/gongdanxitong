@@ -188,6 +188,7 @@ describe('BasicLayout menu visibility', () => {
       '/admin/import-templates',
       '/admin/module-config',
       '/admin/field-permissions',
+      '/admin/permission-center',
       '/admin/export-templates',
       '/admin/dispatch-flow-group',
       '/admin/dispatch-config',

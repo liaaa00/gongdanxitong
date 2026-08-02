@@ -232,6 +232,7 @@ const RAW_MENU: MenuItem[] = [
           { path: '/admin/import-templates', name: '导入模板配置', icon: <FileTextOutlined />, key: 'admin-import-templates' },
           { path: '/admin/module-config', name: '子工单字段配置', icon: <BranchesOutlined /> },
           { path: '/admin/field-permissions', name: '字段权限配置', icon: <LockOutlined /> },
+          { path: '/admin/permission-center', name: '权限配置中心', icon: <SafetyCertificateOutlined /> },
           { path: '/admin/export-templates', name: '导出模板配置', key: 'admin-export-templates' },
           { path: '/admin/detail-view-templates', name: '详情页字段配置', key: 'admin-detail-view-templates' },
         ],
@@ -492,7 +493,7 @@ function RollbackIcon() {
 const BasicLayout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, logout: storeLogout, fetchUser, isLoggedIn, loading: userLoading } = useUserStore();
+  const { user, permissionConfig, logout: storeLogout, fetchUser, isLoggedIn, loading: userLoading } = useUserStore();
   const { message } = App.useApp();
   const [unreadCount, setUnreadCount] = useState(0);
   const [unreadBuckets, setUnreadBuckets] = useState<UnreadCountByBucket>(EMPTY_UNREAD_BUCKETS);
@@ -510,6 +511,9 @@ const BasicLayout: React.FC = () => {
   );
   const accountBusinessScope = user?.business_scope ?? user?.businessScope ?? BUSINESS_SCOPE.BEILUN;
   const canSwitchBusinessScope = !isBusinessFrontAccount;
+  // The value is intentionally read here so menu filtering re-renders after a
+  // permission-center activation; routeVisibility keeps the static fallback.
+  void permissionConfig;
   const effectiveBusinessScope = canSwitchBusinessScope ? businessScope : accountBusinessScope;
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 

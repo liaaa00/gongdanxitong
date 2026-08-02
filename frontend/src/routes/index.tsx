@@ -63,6 +63,7 @@ const AdminSystemSettings = lazy(() => import('@/pages/Admin/SystemSettings'));
 const AdminLoginDebug = lazy(() => import('@/pages/Admin/LoginDebug'));
 const AdminCustomerAssignees = lazy(() => import('@/pages/Admin/CustomerAssignees'));
 const AdminCertificateTypes = lazy(() => import('@/pages/Admin/CertificateTypes'));
+const AdminPermissionCenter = lazy(() => import('@/pages/Admin/PermissionCenter'));
 const WorkOrderPool = lazy(() => import('@/pages/WorkOrderPool'));
 
 const Loading: React.FC = () => (
@@ -105,9 +106,11 @@ const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 };
 
 const RoleRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user } = useUserStore();
+  const { user, permissionConfig } = useUserStore();
   const location = useLocation();
   if (!user) return <Loading />;
+  // Subscribe to the store field so an activated config re-evaluates the guard.
+  void permissionConfig;
   if (!canAccessPath(location.pathname, user.roles, user.permissions)) return <Navigate to="/403" replace />;
   return <>{children}</>;
 };
@@ -259,6 +262,7 @@ const AppRoutes: React.FC = () => (
           <Route path="ai-settings" element={<RouteGuard moduleName="智能设置"><AdminAISettings /></RouteGuard>} />
           <Route path="system-settings" element={<RouteGuard moduleName="系统设置"><AdminSystemSettings /></RouteGuard>} />
           <Route path="certificate-types" element={<RouteGuard moduleName="证明类型管理"><AdminCertificateTypes /></RouteGuard>} />
+          <Route path="permission-center" element={<RouteGuard moduleName="权限配置中心"><AdminPermissionCenter /></RouteGuard>} />
           <Route path="login-debug" element={<RouteGuard moduleName="登录诊断"><AdminLoginDebug /></RouteGuard>} />
           <Route path="customer-assignees" element={<RouteGuard moduleName="业务员客户绑定"><AdminCustomerAssignees /></RouteGuard>} />
         </Route>

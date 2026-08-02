@@ -1,10 +1,16 @@
 # AI 修改记录
 
+## 2026-08-02 · Phase 6 RBAC 权限引擎
+
+- 改动：新增 `RbacEngineService`，从激活权限配置统一实现 `can`/`canAccess`、路由访问集合和场景字段权限合并；支持后端角色码与 canonical 角色码别名、停用角色拒绝、资源路径参数/通配符匹配，以及无配置时 fail-closed。
+- 改动：新增 `@RequirePermission()` 元数据装饰器，并在 `PermissionCenterModule` 注册和导出 RBAC service。
+- 验证：`backend/test/rbac-engine.service.spec.ts` 定向测试 6/6 通过；后端 `npm run build` 通过。
+
 ## 2026-08-02 · 统一权限配置中心 migration
 
 - 改动：将 `permission_config_versions` 与 `permission_change_logs` 合并为单一 TypeORM `Table` migration，补齐 JSONB 配置字段、UUID 主键、`created_at`/`updated_at` 时间戳、版本/激活/审计索引，以及版本、创建人和变更人的外键约束。
 - 原因：原 Phase 1 提交包含重复的建表 migration，且缺少更新时间和用户外键；重复执行会在第二份 migration 处失败。
-- 验证：migration 文件单独 `tsc --noEmit` 通过；`npm run migration:run` 已尝试但本机 PostgreSQL 返回 `28P01 password authentication failed`，未能执行数据库级验证。后端全量 build 当前被其他代理新增 permission-center entity 的 strictPropertyInitialization 错误阻断。
+- 验证：migration 文件单独 `tsc --noEmit` 通过，后端 `npm run build` 已通过；`npm run migration:run` 已尝试但本机 PostgreSQL 返回 `28P01 password authentication failed`，未能执行数据库级验证。
 
 ## 2026-07-31 · 修复问题8：福报人员社保公积金详情页显示不全 ✅ 已修复
 - 背景：福报人员（社保公积金专员）打开社保公积金子工单详情页时，很多字段不显示（如性别、出生日期、年龄、民族、地址等）。
@@ -1333,12 +1339,25 @@
 
 ## 2026-08-02 · Phase 1 权限配置模型单元测试
 
-- 改了什么：新增权限配置 JSON Schema、TypeScript 类型契约及权限中心数据库 migration 的单元测试，覆盖合法/非法配置、字段权限模式、版本与审计类型、建表列与外键、索引、幂等执行和回滚顺序。
+- 改了什么：在 `backend/__tests__` 新增基于 Vitest 的权限配置 JSON Schema、TypeScript 类型契约及权限中心数据库 migration 单元测试，覆盖合法/非法配置、required 缺失、类型错误、字段权限模式、类型推导与约束、建表列与外键、索引、幂等执行和回滚顺序；新增 Phase 1 测试、类型检查及覆盖率脚本。
 - 为什么：为 Phase 1 三类交付物建立可执行验收基线，并在测试中发现并修正 Schema 正则转义、角色层级值和菜单父路径的契约漂移。
-- 如何验证：三套定向 Jest 测试共 13 项通过；权限中心 migration 覆盖率 statements/branches/functions/lines 均为 100%；后端 `tsc --noEmit --incremental false` 通过。固定回归 `回归测试.ps1 -SkipBuild` 中 10 个前端文件通过 9 个、115 项通过 112 项，3 项失败均为当前分支 `business_owner` 被放行 `/work-orders` 后与既有权限断言冲突；后端完整 build 两次被共享工作区的并发构建清理 `dist` 阻断（`ENOENT` / `ENOTEMPTY`），未能取得独占构建结果，均已上报团队负责人。
+- 如何验证：`npm run test:phase1:coverage` 三套 Vitest 测试共 15 项通过，migration statements/branches/functions/lines 均为 100%；`npm run test:phase1:typecheck` 与后端 `npm run build` 通过。根目录完整 `回归测试.ps1` 中前端 10 个文件通过 9 个、115 项通过 112 项，3 项失败均为当前分支 `business_owner` 被放行 `/work-orders` 后与既有权限断言冲突，已上报团队负责人。
 
 ## 2026-08-02 · Phase 1 权限 Schema 与 TypeScript 契约强化
 
 - 改了什么：重写 `config/permission-schema.json` 为合法 draft-07 Schema，补齐顶层及嵌套对象的 `required`、`additionalProperties`、格式、正则、数组约束和字段模式枚举；同步 `permission-config.types.ts` 的角色、路由、字段权限、元数据及查询摘要类型，并保留历史版本号/角色层级别名。
 - 为什么：原 Schema 的正则未按 JSON 转义导致 AJV 无法解析，且菜单父路径、字段模式和摘要命名与现有测试/seed 契约漂移。
 - 如何验证：`permission-config-schema.spec.ts` 与 `permission-config-types.spec.ts` 共 9 项通过；`npx tsc --noEmit` 仅剩同期 `metrics.interceptor.ts` 的既有 Express 类型错误，权限配置类型自身无编译错误。完整 `npm run build` 受同期改动和 `dist` 清理竞争阻断，未宣称通过。
+
+## 2026-08-02 · Phase 3 权限配置中心前端
+
+- 改了什么：新增管理员专用 `/admin/permission-center` 页面及菜单/路由守卫，用角色管理、路由权限矩阵、字段权限矩阵、版本历史四个标签页统一编辑。所有修改先留在本地草稿，保存时创建未激活新版本，版本对比后需二次确认才激活；保留旧角色和字段权限页，未切换现有运行时权限判断。新增 `permissionCenter` service，对齐 Phase 2 配置查询、版本创建/列表/详情和激活端点，并归一化后端 snake_case 版本字段。
+- 为什么：将分散的角色、路由和字段权限收口到可审计的版本化界面，避免单个勾选立即改变全站权限；本阶段是新增管理面，不改动《业务规则回归清单》中现有角色菜单口径。
+- 如何验证：`permissionCenter.test.ts` 与 `PermissionCenter/index.test.tsx` 共 6 项通过，含角色删除后同步清理路由/字段引用；Playwright `permission-center.spec.ts` 1 项通过，覆盖管理员收紧路由权限、保存 `1.0.1` 未激活版本且不自动激活；前端 `npm run build` 通过。根目录 `.\回归测试.ps1 -FrontendOnly` 的 10 个关键套件中 9 个通过，115 项中 112 项通过；仍有同日 Phase 1 记录已上报的 3 项 `business_owner` `/work-orders` 旧权限断言冲突，固定回归未全绿。
+- 集成注意：前端统一请求基址已含 `/api`，因此使用 `/permission-center/*`。已向 Phase 2 后端负责人上报控制器重复声明 `api` 前缀会导致 `/api/api/permission-center` 的集成阻断点。
+
+## 2026-08-02 · Phase 7 Docker 监控配置
+
+- 改了什么：为 NestJS 后端增加 Prometheus Node/进程默认指标和低基数 HTTP 请求数、状态码、耗时指标，新增内部 `/api/metrics` 抓取端点；Docker Compose 增加 Prometheus 与 Grafana，提供 15 天指标存储、3 条基础告警、自动配置的数据源和 8 面板总览看板；业务 Nginx 与前端 Nginx 均阻止外部访问指标端点，监控端口默认只绑定本机。
+- 为什么：为权限中心后续阶段及现有工单后端提供可复现的容器化监控基线，同时避免指标标签记录动态 ID 或将内部运行信息暴露到业务入口。
+- 如何验证：后端 `npm run build` 与根目录 `回归测试.ps1 -BackendOnly` 通过；`monitoring.spec.ts`、`docker-seed-guard.spec.ts` 共 4 项通过；`docker compose -p ticket-system config --quiet` 通过；官方 `promtool check config` 通过并识别 1 个规则文件、3 条有效告警。后端 Docker 镜像构建因本机 BuildKit 长时间无输出，两次在 5 分钟窗口内超时，未宣称镜像构建通过。完整 `回归测试.ps1 -SkipBuild` 中前端 10 文件通过 9 个、115 项通过 112 项，3 项失败均为同期 `business_owner` 被放行 `/work-orders` 与既有权限断言冲突，与本次监控改动无关。

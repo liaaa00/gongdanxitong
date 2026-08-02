@@ -29,6 +29,11 @@ export default defineConfig(() => ({
         changeOrigin: true,
         ws: true,
       },
+      '/socket.io': {
+        target: apiTarget,
+        changeOrigin: true,
+        ws: true,
+      },
     },
   },
   css: {

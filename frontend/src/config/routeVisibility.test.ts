@@ -1,16 +1,43 @@
-import { describe, expect, it } from 'vitest';
-import { canAccessPath } from './routeVisibility';
+import { afterEach, describe, expect, it } from 'vitest';
+import { canAccessPath, setDynamicPermissionConfig } from './routeVisibility';
 import { ROLE } from '@/constants/roles';
 import { DEFAULT_MATRIX } from '@/services/roleActionPermissions';
 
 const roles = (codes: string[]) => codes.map((code) => ({ code }));
 
+afterEach(() => setDynamicPermissionConfig(null));
+
 describe('routeVisibility admin-only configuration routes', () => {
+  it('uses the loaded permission-center route matrix before static fallback', () => {
+    setDynamicPermissionConfig({
+      version: '2.0.0',
+      roles: [],
+      routePermissions: [
+        { path: '/work-orders', allowedRoles: ['admin'] },
+        { path: '/dynamic-reports', allowedRoles: ['biz_member'] },
+      ],
+      fieldPermissions: [],
+    });
+
+    expect(canAccessPath('/work-orders', roles(['business_group_member']))).toBe(false);
+    expect(canAccessPath('/work-orders', roles(['admin']))).toBe(true);
+    expect(canAccessPath('/dynamic-reports', roles(['business_group_member']))).toBe(true);
+    expect(canAccessPath('/dynamic-reports', roles(['admin']))).toBe(false);
+  });
+
+  it('falls back to the static matrix after dynamic configuration is cleared', () => {
+    setDynamicPermissionConfig({ version: '2.0.0', roles: [], routePermissions: [{ path: '/work-orders', allowedRoles: ['admin'] }], fieldPermissions: [] });
+    expect(canAccessPath('/work-orders', roles(['business_group_member']))).toBe(false);
+    setDynamicPermissionConfig(null);
+    expect(canAccessPath('/work-orders', roles(['business_group_member']))).toBe(true);
+  });
+
   it('allows admin to access field/workflow/export/portal configuration routes', () => {
     const adminRoles = roles([ROLE.ADMIN]);
     expect(canAccessPath('/admin/fields', adminRoles)).toBe(true);
     expect(canAccessPath('/admin/import-templates', adminRoles)).toBe(true);
     expect(canAccessPath('/admin/field-permissions', adminRoles)).toBe(true);
+    expect(canAccessPath('/admin/permission-center', adminRoles)).toBe(true);
     expect(canAccessPath('/admin/workflows', adminRoles)).toBe(true);
     expect(canAccessPath('/admin/workflow-config', adminRoles)).toBe(true);
     expect(canAccessPath('/admin/export-templates', adminRoles)).toBe(true);
@@ -26,6 +53,7 @@ describe('routeVisibility admin-only configuration routes', () => {
     expect(canAccessPath('/admin/fields', businessRoles)).toBe(false);
     expect(canAccessPath('/admin/import-templates', businessRoles)).toBe(false);
     expect(canAccessPath('/admin/field-permissions', businessRoles)).toBe(false);
+    expect(canAccessPath('/admin/permission-center', businessRoles)).toBe(false);
     expect(canAccessPath('/admin/workflows', businessRoles)).toBe(false);
     expect(canAccessPath('/admin/workflow-config', businessRoles)).toBe(false);
     expect(canAccessPath('/admin/export-templates', businessRoles)).toBe(false);

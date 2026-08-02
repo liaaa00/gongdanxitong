@@ -29,6 +29,7 @@ test_*.json
 phase3-e2e-results.json
 test-results/
 playwright-report/
+coverage/
 frontend/test-results/
 frontend/playwright-report/
 

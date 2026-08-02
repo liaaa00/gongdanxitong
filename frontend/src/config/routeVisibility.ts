@@ -1,5 +1,18 @@
 import { matchPath } from 'react-router-dom';
-import { ROLE, canonicalRoleCodes, userHasAnyCanonicalRole, type CanonicalRole } from '@/constants/roles';
+import { ROLE, canonicalRoleCode, canonicalRoleCodes, userHasAnyCanonicalRole, type CanonicalRole } from '@/constants/roles';
+import type { PermissionConfig } from '@/services/permissionCenter';
+
+// Dynamic permissions are optional. Until the permission center has loaded (or
+// when its API is unavailable), all callers continue to use the static matrix.
+let dynamicPermissionConfig: PermissionConfig | null = null;
+
+export function setDynamicPermissionConfig(config: PermissionConfig | null): void {
+  dynamicPermissionConfig = config;
+}
+
+export function getDynamicPermissionConfig(): PermissionConfig | null {
+  return dynamicPermissionConfig;
+}
 
 /**
  * 路由×角色可见性表。
@@ -199,6 +212,7 @@ export const ROUTE_VISIBILITY = {
   '/admin/fields': [ROLE.ADMIN],
   '/admin/import-templates': [ROLE.ADMIN],
   '/admin/field-permissions': [ROLE.ADMIN],
+  '/admin/permission-center': [ROLE.ADMIN],
   '/admin/dispatch-config': [ROLE.ADMIN],
   '/admin/flow-config': [ROLE.ADMIN],
   '/admin/workflow-config': [ROLE.ADMIN],
@@ -256,6 +270,7 @@ const ROUTE_ACTION_PERMISSIONS: Partial<Record<VisibilityRoute, readonly string[
   '/admin/fields': ['system.admin'],
   '/admin/import-templates': ['system.admin'],
   '/admin/field-permissions': ['system.admin'],
+  '/admin/permission-center': ['system.admin'],
   '/admin/dispatch-config': ['system.admin'],
   '/admin/flow-config': ['system.admin'],
   '/admin/workflow-config': ['system.admin'],
@@ -326,6 +341,13 @@ export function resolveVisibilityRoute(pathname: string): VisibilityRoute | null
   return null;
 }
 
+function resolveDynamicRoute(pathname: string): PermissionConfig['routePermissions'][number] | null {
+  const config = dynamicPermissionConfig;
+  if (!config) return null;
+  const path = normalizePath(pathname);
+  return config.routePermissions.find((route) => matchPath({ path: route.path, end: true }, path)) || null;
+}
+
 export function getRequiredRolesForPath(pathname: string): readonly CanonicalRole[] {
   const route = resolveVisibilityRoute(pathname);
   return route ? ROUTE_VISIBILITY[route] : [];
@@ -392,6 +414,14 @@ function hasDynamicPermissionForPath(pathname: string, permissions?: string[], u
 }
 
 export function canAccessPath(pathname: string, userRoles: { code?: string }[] | undefined, permissions?: string[]): boolean {
+  const dynamicRoute = resolveDynamicRoute(pathname);
+  if (dynamicRoute) {
+    // Frozen phase-one routes remain inaccessible even if an accidental dynamic
+    // config entry contains them; this preserves the established business rule.
+    const staticRoute = resolveVisibilityRoute(pathname);
+    if (staticRoute && PHASE1_HIDDEN_ROUTES.has(staticRoute)) return false;
+    return userHasAnyCanonicalRole(userRoles, dynamicRoute.allowedRoles.map((role) => canonicalRoleCode(String(role))));
+  }
   const route = resolveVisibilityRoute(pathname);
   const requiredRoles = getRequiredRolesForPath(pathname);
   if (!route || !requiredRoles.length || PHASE1_HIDDEN_ROUTES.has(route)) return false;

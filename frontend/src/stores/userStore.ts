@@ -9,10 +9,17 @@ import {
   clearAll,
 } from '@/utils/storage';
 import { canonicalRoleCode } from '@/constants/roles';
+import { getActivePermissionConfig } from '@/services/permissionCenter';
+import { closePermissionConfigUpdates, subscribePermissionConfigUpdates } from '@/services/permissionConfigRealtime';
+import { setDynamicPermissionConfig } from '@/config/routeVisibility';
+import type { PermissionConfig } from '@/services/permissionCenter';
 
 function readMustChangePassword(user: UserInfo | null | undefined): boolean {
   return Boolean(user?.must_change_password ?? user?.mustChangePassword ?? false);
 }
+
+let permissionConfigRequest: Promise<void> | null = null;
+let unsubscribePermissionUpdates: (() => void) | null = null;
 
 interface UserState {
   user: UserInfo | null;
@@ -21,11 +28,14 @@ interface UserState {
   isLoggedIn: boolean;
   loading: boolean;
   mustChangePassword: boolean;  // ★ 首登强制改密标记
+  permissionConfig: PermissionConfig | null;
+  permissionConfigLoading: boolean;
 
   setToken: (token: string, refreshToken?: string) => void;
   setUser: (user: UserInfo | null) => void;
   setMustChangePassword: (v: boolean) => void;
   fetchUser: () => Promise<void>;
+  loadPermissionConfig: () => Promise<void>;
   logout: () => void;
   hasRole: (roleCode: string) => boolean;
   hasAnyRole: (roleCodes: string[]) => boolean;
@@ -38,6 +48,8 @@ export const useUserStore = create<UserState>((set, get) => ({
   isLoggedIn: !!getToken(),
   loading: false,
   mustChangePassword: false,
+  permissionConfig: null,
+  permissionConfigLoading: false,
 
   setToken: (token: string, refreshToken?: string) => {
     setTokenStorage(token);
@@ -45,6 +57,7 @@ export const useUserStore = create<UserState>((set, get) => ({
       setRefreshTokenStorage(refreshToken);
     }
     set({ token, refreshToken: refreshToken || null, isLoggedIn: true });
+    void get().loadPermissionConfig();
   },
 
   setUser: (user: UserInfo | null) => {
@@ -56,10 +69,36 @@ export const useUserStore = create<UserState>((set, get) => ({
     try {
       const user = await getMe();
       set({ user, isLoggedIn: true, loading: false, mustChangePassword: readMustChangePassword(user) });
+      void get().loadPermissionConfig();
     } catch {
       set({ loading: false });
       get().logout();
     }
+  },
+
+  loadPermissionConfig: async () => {
+    if (permissionConfigRequest) return permissionConfigRequest;
+    set({ permissionConfigLoading: true });
+    permissionConfigRequest = (async () => {
+      try {
+        const config = await getActivePermissionConfig();
+        setDynamicPermissionConfig(config);
+        set({ permissionConfig: config });
+        if (!unsubscribePermissionUpdates) {
+          unsubscribePermissionUpdates = subscribePermissionConfigUpdates(() => {
+            void get().loadPermissionConfig();
+          });
+        }
+      } catch {
+        // Dynamic configuration is an enhancement; static routeVisibility remains authoritative fallback.
+        setDynamicPermissionConfig(null);
+        set({ permissionConfig: null });
+      } finally {
+        set({ permissionConfigLoading: false });
+        permissionConfigRequest = null;
+      }
+    })();
+    return permissionConfigRequest;
   },
 
   logout: () => {
@@ -67,7 +106,11 @@ export const useUserStore = create<UserState>((set, get) => ({
     if (typeof window !== 'undefined' && window.localStorage) {
       window.localStorage.removeItem('mock_session_user_v1');
     }
-    set({ user: null, token: null, refreshToken: null, isLoggedIn: false, mustChangePassword: false });
+    unsubscribePermissionUpdates?.();
+    unsubscribePermissionUpdates = null;
+    closePermissionConfigUpdates();
+    setDynamicPermissionConfig(null);
+    set({ user: null, token: null, refreshToken: null, isLoggedIn: false, mustChangePassword: false, permissionConfig: null, permissionConfigLoading: false });
   },
 
   hasRole: (roleCode: string) => {
