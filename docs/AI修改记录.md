@@ -1,5 +1,12 @@
 # AI 修改记录
 
+## 2026-08-02 · 初始化权限配置中心数据迁移
+- 用户要求：创建并激活首个权限配置版本，将前端路由、后端角色动作和字段权限迁移到 `permission_config_versions`。
+- 改动核查：项目已有 `backend/src/database/migrate-legacy-permissions.ts`、`legacy-permission-import.ts` 与 `migrations/legacy-permission-baseline.json`，可从 `ROUTE_VISIBILITY` 快照、`DEFAULT_ROLE_ACTION_PERMISSIONS`、数据库 `roles/field_permissions/system_settings` 构建 `PermissionConfig`，支持 `--version`、`--activate`、`--dry-run`、事务、幂等和审计日志。无需重复新增 seed。
+- 验证：后端 `npm run build` 通过；`legacy-permission-import.spec.ts` 2 项通过；执行 `npm run permission:migrate-legacy -- --version 1.0.0 --activate --dry-run` 时被本机 PostgreSQL `postgres` 密码认证阻断，未写入数据库。
+- 是否覆盖旧规则：否。仅初始化配置中心数据，不改变角色/路由/字段权限口径。
+- 后续修正：`migrate-legacy-permissions.ts` 增加 `import 'dotenv/config'`，CLI 已能读取 `backend/.env`；认证错误消失后确认当前数据库尚未运行 `1785607751717-CreatePermissionCenter` migration。无输出 TypeScript 类型检查及迁移单测通过；完整 build 因并行进程占用 `dist/modules/imports` 出现 `ENOTEMPTY`，与本次源码无关。
+
 ## 2026-08-02 · Phase8 权限配置中心全量迁移收尾
 - 用户要求：清理旧静态权限配置并完成配置中心迁移，保留必要的应急兼容，更新架构说明。
 - 改动：`RolesGuard` 正常请求仅使用激活权限配置；配置中心不可用时才调用旧 `RoleActionPermissionService`，其最终基线封装为 `hasDefaultRoleActionPermission` 并明确标注 emergency-only。`README.md` 新增权限配置中心、RBAC、字段权限和旧矩阵应急边界说明；`frontend/src/config/routeVisibility.ts` 标记静态路由矩阵为 deprecated，说明仅作客户端启动/不可用兜底。
@@ -1372,6 +1379,7 @@
 
 ## 2026-08-02 · 生产环境配置与部署准备
 
-- 改了什么：新增强制校验生产密钥的 Compose 覆盖层、TLS 1.2/1.3 Nginx 配置和同域 Grafana 子路径代理；PostgreSQL 默认改为仅绑定 `127.0.0.1`；新增兼容 Windows PowerShell 5.1 的生产环境生成器，分别生成 64 字节 JWT/刷新密钥、数据库密码和 Grafana 密码并写入 Git 忽略文件；新增迁移前 `pg_dump` 备份、TypeORM migration 和服务启动脚本，以及生产部署手册和部署约束测试。
-- 为什么：消除默认口令、数据库公网暴露、纯 HTTP 和无迁移前备份等上线风险，并将已有 Prometheus/Grafana 三条告警基线纳入可重复验证的生产部署流程。
-- 如何验证：实际生成 `.env.production.local`，两枚 JWT 密钥均为 64 字节且互不相同，文件确认被 Git 忽略；生产 Compose `config --quiet` 通过；官方 Nginx 镜像 `nginx -t` 通过；`promtool` 校验 Prometheus 配置和 3 条告警规则通过；部署定向测试 3 套件/8 项通过；后端 `npm run build` 通过；根目录 `回归测试.ps1 -SkipBuild` 通过（前端关键 10 文件/117 项）。未连接或修改任何生产环境、生产数据库或 CI。
+- 改了什么：新增强制校验生产密钥的 Compose 覆盖层、TLS 1.2/1.3 Nginx 配置和同域 Grafana 子路径代理；PostgreSQL 默认仅绑定 `127.0.0.1`；新增仅 Docker 内网可达、强制密码、AOF 持久化和健康检查的 Redis，并向后端提供 `REDIS_URL`；新增兼容 Windows PowerShell 5.1 的 `.env.production` 生成器，分别生成与 `openssl rand -hex 32` 等价的 JWT/刷新密钥及独立数据库、Redis、Grafana 密码；新增迁移前 `pg_dump` 备份、TypeORM migration、服务启动脚本和生产部署/回滚手册。
+- 权限数据迁移：在 Phase 8 删除旧配置前冻结 83 条有效路由、20 组角色别名和 18 组默认动作权限；新增幂等导入器，从生产数据库读取角色、字段权限及 `system_settings.roleActionPermissions.v1` 覆盖，合成符合权限 JSON Schema 的配置写入 `permission_config_versions`，可 `--dry-run`，仅显式 `--activate` 才切换活动版本，并写 `permission_change_logs` 审计记录。同版本重跑不重复插入。
+- 为什么：消除默认口令、数据库/Redis公网暴露、纯 HTTP、无迁移前备份和权限配置切换无可追溯导入路径等上线风险，并将 Prometheus/Grafana 三条告警基线纳入可重复验证的生产部署流程。
+- 如何验证：实际生成被 Git 忽略的 `.env.production`，JWT、刷新、数据库和 Redis 密钥均为独立 64 位十六进制值；生产 Compose `config --quiet` 通过；Redis 容器达到 healthy 且认证 `PING` 返回 `PONG`；官方 Nginx `nginx -t`、Prometheus 配置和 3 条告警规则校验通过；后端部署/权限迁移定向测试 5 套件/14 项通过，生成配置通过现有 JSON Schema；后端 `npm run build` 通过；根目录 `回归测试.ps1 -SkipBuild` 通过（前端关键 10 文件/117 项）。本地权限导入 dry-run 因本地库尚无权限中心表而按设计拒绝，未产生数据库改动；未连接或修改任何生产环境、生产数据库或 CI。

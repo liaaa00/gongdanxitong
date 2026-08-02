@@ -12,7 +12,7 @@ param(
 
   [string]$DatabaseName = 'ticket_system',
   [string]$DatabaseUser = 'ticket_app',
-  [string]$OutputPath = '.env.production.local',
+  [string]$OutputPath = '.env.production',
   [switch]$Force
 )
 
@@ -57,9 +57,16 @@ if ((Test-Path -LiteralPath $resolvedOutput) -and -not $Force) {
   throw "Output already exists: $resolvedOutput. Use -Force to replace it."
 }
 
-$jwtSecret = New-RandomSecret
-$jwtRefreshSecret = New-RandomSecret
+$jwtSecret = -join (
+  (New-RandomBytes -ByteCount 32) | ForEach-Object { $_.ToString('x2') }
+)
+$jwtRefreshSecret = -join (
+  (New-RandomBytes -ByteCount 32) | ForEach-Object { $_.ToString('x2') }
+)
 $databasePassword = -join (
+  (New-RandomBytes -ByteCount 32) | ForEach-Object { $_.ToString('x2') }
+)
+$redisPassword = -join (
   (New-RandomBytes -ByteCount 32) | ForEach-Object { $_.ToString('x2') }
 )
 $grafanaPassword = New-RandomSecret -ByteCount 32
@@ -80,6 +87,8 @@ $lines = @(
   "POSTGRES_USER=$DatabaseUser"
   "POSTGRES_PASSWORD=$databasePassword"
   'DB_SCHEMA=public'
+  "REDIS_PASSWORD=$redisPassword"
+  'REDIS_KEY_PREFIX=ticket-system:'
   "JWT_SECRET=$jwtSecret"
   "JWT_REFRESH_SECRET=$jwtRefreshSecret"
   'JWT_EXPIRES_IN=2h'
@@ -120,3 +129,4 @@ if ($IsLinux -or $IsMacOS) {
 
 Write-Host "Production environment written to $resolvedOutput"
 Write-Host 'Secrets were generated with a cryptographic random number generator and were not printed.'
+Write-Host 'JWT values are 32-byte hexadecimal secrets equivalent to: openssl rand -hex 32'

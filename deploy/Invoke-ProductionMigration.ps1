@@ -1,8 +1,10 @@
 [CmdletBinding()]
 param(
-  [string]$EnvFile = '.env.production.local',
+  [string]$EnvFile = '.env.production',
   [string]$BackupDirectory = 'backups',
-  [switch]$RunSeed
+  [switch]$RunSeed,
+  [switch]$ImportLegacyPermissions,
+  [string]$PermissionConfigVersion = '1.0.0-legacy.20260802'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -73,8 +75,17 @@ if ($RunSeed) {
   Invoke-DockerCompose -Arguments @('run', '--rm', '--no-deps', 'backend', 'npm', 'run', 'seed')
 }
 
+if ($ImportLegacyPermissions) {
+  Write-Host "Importing legacy permissions as version $PermissionConfigVersion"
+  Invoke-DockerCompose -Arguments @(
+    'run', '--rm', '--no-deps', 'backend',
+    'npm', 'run', 'permission:migrate-legacy', '--',
+    '--version', $PermissionConfigVersion, '--activate'
+  )
+}
+
 Write-Host '[5/5] Starting the application services'
-Invoke-DockerCompose -Arguments @('up', '-d', '--build', 'backend', 'frontend', 'nginx', 'prometheus', 'grafana')
+Invoke-DockerCompose -Arguments @('up', '-d', '--build', 'backend', 'frontend', 'nginx', 'redis', 'prometheus', 'grafana')
 Invoke-DockerCompose -Arguments @('ps')
 
 Write-Host "Migration completed. Pre-migration backup: $localBackup"

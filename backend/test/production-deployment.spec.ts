@@ -27,6 +27,15 @@ describe('Production deployment assets', () => {
     expect(productionCompose).toContain(
       'GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}',
     );
+    expect(productionCompose).toContain('image: redis:7.4-alpine');
+    expect(productionCompose).toContain(
+      'REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}',
+    );
+    const redisBlock = productionCompose
+      .split('\n  redis:')[1]
+      .split('\n  nginx:')[0];
+    expect(redisBlock).toContain('expose:\n      - "6379"');
+    expect(redisBlock).not.toContain('ports:');
     expect(productionCompose).toContain('AUTO_SEED: "false"');
   });
 
@@ -56,8 +65,10 @@ describe('Production deployment assets', () => {
       '[System.Security.Cryptography.RandomNumberGenerator]::Create()',
     );
     expect(generator).toContain('$generator.GetBytes($bytes)');
-    expect(generator).toContain('$jwtSecret = New-RandomSecret');
-    expect(generator).toContain('$jwtRefreshSecret = New-RandomSecret');
+    expect(generator).toContain('$jwtSecret = -join');
+    expect(generator).toContain('(New-RandomBytes -ByteCount 32)');
+    expect(generator).toContain("$OutputPath = '.env.production'");
+    expect(generator).toContain('openssl rand -hex 32');
     expect(generator).toContain(
       'Secrets were generated with a cryptographic random number generator and were not printed.',
     );
@@ -74,5 +85,7 @@ describe('Production deployment assets', () => {
     expect(migration).toContain('--format=custom');
     expect(migration).toContain("'--project-name', 'ticket-system'");
     expect(migration).toContain('[switch]$RunSeed');
+    expect(migration).toContain('[switch]$ImportLegacyPermissions');
+    expect(migration).toContain("'permission:migrate-legacy'");
   });
 });
