@@ -7,6 +7,7 @@ import { In, Repository } from 'typeorm';
 import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 import { toPageResult } from 'src/common/types/pagination.types';
 import {
+  BusinessScope,
   DispatchedOrder,
   ExportTemplate,
   FieldConfig,
@@ -52,6 +53,7 @@ export interface ExportTemplateView {
   isShared: boolean;
   signPlatform: string | null;
   createdAt: Date;
+  businessScope: BusinessScope;
 }
 
 @Injectable()
@@ -70,12 +72,14 @@ export class ExportTemplatesService {
     private readonly uploadService: UploadService,
   ) {}
 
-  async list(query: PaginationQueryDto & { moduleCode?: string }, currentUserId: string) {
+  async list(query: PaginationQueryDto & { moduleCode?: string; businessScope?: BusinessScope }, currentUserId: string) {
     const page = query.page ?? 1;
+    const businessScope = query.businessScope ?? BusinessScope.BEILUN;
     const pageSize = query.pageSize ?? 20;
     const qb = this.repository
       .createQueryBuilder('template')
-      .where('(template.createdBy = :userId OR template.isShared = true)', { userId: currentUserId });
+      .where('(template.createdBy = :userId OR template.isShared = true)', { userId: currentUserId })
+      .andWhere('template.business_scope = :businessScope', { businessScope });
     if (query.moduleCode) qb.andWhere('template.moduleCode = :moduleCode', { moduleCode: query.moduleCode });
     if (query.keyword) qb.andWhere('template.templateName ILIKE :keyword', { keyword: `%${query.keyword}%` });
     qb.orderBy('template.createdAt', 'DESC');
@@ -84,11 +88,11 @@ export class ExportTemplatesService {
     return toPageResult(page, pageSize, total, rows.map((row) => this.toTemplateView(row, fieldNameMap)));
   }
 
-  async listSharedContractTemplates(): Promise<ExportTemplateView[]> {
+  async listSharedContractTemplates(businessScope: BusinessScope = BusinessScope.BEILUN): Promise<ExportTemplateView[]> {
     const rows = await this.repository.find({
       where: [
-        { moduleCode: 'contract', isShared: true, signPlatform: '速创' },
-        { moduleCode: 'contract', isShared: true, signPlatform: 'E签宝' },
+        { moduleCode: 'contract', isShared: true, signPlatform: '速创', businessScope },
+        { moduleCode: 'contract', isShared: true, signPlatform: 'E签宝', businessScope },
       ],
       order: { createdAt: 'DESC' },
     });
@@ -96,13 +100,13 @@ export class ExportTemplatesService {
     return rows.map((row) => this.toTemplateView(row, fieldNameMap));
   }
 
-  async get(id: string): Promise<ExportTemplateView> {
-    const row = await this.loadTemplate(id);
+  async get(id: string, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<ExportTemplateView> {
+    const row = await this.loadTemplate(id, businessScope);
     return this.toTemplateView(row, await this.loadFieldNameMap());
   }
 
-  private async loadTemplate(id: string): Promise<ExportTemplate> {
-    const row = await this.repository.findOne({ where: { id } });
+  private async loadTemplate(id: string, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<ExportTemplate> {
+    const row = await this.repository.findOne({ where: { id, businessScope } });
     if (!row) throw new NotFoundException('导出模板未找到');
     return row;
   }
@@ -114,7 +118,9 @@ export class ExportTemplatesService {
     createdBy: string;
     isShared?: boolean;
     signPlatform?: string | null;
+    businessScope?: BusinessScope;
   }): Promise<ExportTemplateView> {
+    const businessScope = input.businessScope ?? BusinessScope.BEILUN;
     const fieldNameMap = await this.loadFieldNameMap();
     const saved = await this.repository.save(this.repository.create({
       templateName: input.templateName,
@@ -123,12 +129,13 @@ export class ExportTemplatesService {
       createdBy: input.createdBy,
       isShared: input.isShared ?? false,
       signPlatform: this.normalizeSignPlatform(input.signPlatform),
+      businessScope,
     }));
     return this.toTemplateView(saved, fieldNameMap);
   }
 
-  async update(id: string, input: Partial<{ templateName: string; moduleCode: string; fieldList: Array<Record<string, unknown>>; isShared: boolean; signPlatform: string | null }>): Promise<ExportTemplateView> {
-    const row = await this.loadTemplate(id);
+  async update(id: string, input: Partial<{ templateName: string; moduleCode: string; fieldList: Array<Record<string, unknown>>; isShared: boolean; signPlatform: string | null; businessScope?: BusinessScope }>): Promise<ExportTemplateView> {
+    const row = await this.loadTemplate(id, input.businessScope ?? BusinessScope.BEILUN);
     const fieldNameMap = await this.loadFieldNameMap();
     Object.assign(
       row,
@@ -139,21 +146,31 @@ export class ExportTemplatesService {
     return this.toTemplateView(await this.repository.save(row), fieldNameMap);
   }
 
-  async remove(id: string): Promise<{ success: boolean }> {
-    const row = await this.loadTemplate(id);
+  async remove(id: string, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<{ success: boolean }> {
+    const row = await this.loadTemplate(id, businessScope);
     await this.repository.remove(row);
     return { success: true };
   }
 
-  async previewApply(templateId: string, dispatchedOrderIds: string[]): Promise<DispatchedOrderExportResult> {
-    const template = await this.loadTemplate(templateId);
-    const orders = await this.loadOrders(dispatchedOrderIds, template.moduleCode);
+  async previewApply(
+    templateId: string,
+    dispatchedOrderIds: string[],
+    businessScope: BusinessScope = BusinessScope.BEILUN,
+  ): Promise<DispatchedOrderExportResult> {
+    const template = await this.loadTemplate(templateId, businessScope);
+    const orders = await this.loadOrders(dispatchedOrderIds, template.moduleCode, businessScope);
     return this.buildResult(template, orders, await this.loadFieldNameMap());
   }
 
-  async apply(templateId: string, dispatchedOrderIds: string[], user: JwtUserPayload): Promise<DispatchedOrderExportResult> {
-    const template = await this.loadTemplate(templateId);
-    const orders = await this.loadOrders(dispatchedOrderIds, template.moduleCode);
+  async apply(
+    templateId: string,
+    dispatchedOrderIds: string[],
+    user: JwtUserPayload,
+    businessScope?: BusinessScope,
+  ): Promise<DispatchedOrderExportResult> {
+    const scope = businessScope ?? user.businessScope ?? BusinessScope.BEILUN;
+    const template = await this.loadTemplate(templateId, scope);
+    const orders = await this.loadOrders(dispatchedOrderIds, template.moduleCode, scope);
     return this.applyTemplateToOrders(template, orders, dispatchedOrderIds, user, 'export_template');
   }
 
@@ -163,9 +180,15 @@ export class ExportTemplatesService {
       relations: { parentOrder: { creator: true }, handler: true },
     });
     if (!order) throw new NotFoundException('子工单未找到');
+    const businessScope = order.parentOrder?.businessScope ?? user.businessScope ?? BusinessScope.BEILUN;
     const template = templateId
-      ? await this.loadTemplate(templateId)
-      : await this.resolveDefaultTemplate(order.moduleCode, order.visibleFields ?? [], this.resolveTemplateRouteSignPlatform(order));
+      ? await this.loadTemplate(templateId, businessScope)
+      : await this.resolveDefaultTemplate(
+        order.moduleCode,
+        order.visibleFields ?? [],
+        this.resolveTemplateRouteSignPlatform(order),
+        businessScope,
+      );
     if (template.moduleCode !== order.moduleCode) throw new NotFoundException('该模块下未找到导出模板');
     return this.applyTemplateToOrders(template, [order], [dispatchedOrderId], user, 'dispatched_order');
   }
@@ -185,10 +208,12 @@ export class ExportTemplatesService {
       throw new BadRequestException('续签工单缺少电子签平台，无法匹配速创/E签宝导出模板');
     }
 
+    const businessScope = order.businessScope ?? BusinessScope.BEILUN;
     const template = await this.resolveDefaultTemplate(
       'contract',
       Object.keys(sourceExtraData),
       signPlatform,
+      businessScope,
     );
     const renewalTemplate = {
       ...template,
@@ -241,29 +266,36 @@ export class ExportTemplatesService {
   async exportDispatchedOrdersAuto(dispatchedOrderIds: string[], templateId: string | undefined, user: JwtUserPayload): Promise<DispatchedOrderExportResult> {
     const ids = Array.from(new Set(dispatchedOrderIds));
     if (ids.length === 0) throw new NotFoundException('未选择子工单');
-    if (templateId) return this.apply(templateId, ids, user);
 
     const orders = await this.loadOrdersByIds(ids);
+    const orderScopes = new Set(orders.map((order) => order.parentOrder?.businessScope ?? user.businessScope ?? BusinessScope.BEILUN));
+    if (orderScopes.size > 1) {
+      throw new BadRequestException('不能跨北仑和省外账套混合导出');
+    }
+    const businessScope = [...orderScopes][0] ?? user.businessScope ?? BusinessScope.BEILUN;
+    if (templateId) return this.apply(templateId, ids, user, businessScope);
+
     const fieldNameMap = await this.loadFieldNameMap();
     const fieldOptionsMap = await this.loadFieldOptionsMap();
     let rowCount = 0;
-    const grouped = new Map<string, { moduleCode: string; signPlatform: string | null; orders: DispatchedOrder[] }>();
+    const grouped = new Map<string, { moduleCode: string; signPlatform: string | null; businessScope: BusinessScope; orders: DispatchedOrder[] }>();
     for (const order of orders) {
       const moduleCode = order.moduleCode;
       const signPlatform = this.resolveTemplateRouteSignPlatform(order);
-      const groupKey = `${moduleCode}::${signPlatform ?? ''}`;
-      const group = grouped.get(groupKey) ?? { moduleCode, signPlatform, orders: [] };
+      const orderBusinessScope = order.parentOrder?.businessScope ?? businessScope;
+      const groupKey = `${orderBusinessScope}::${moduleCode}::${signPlatform ?? ''}`;
+      const group = grouped.get(groupKey) ?? { moduleCode, signPlatform, businessScope: orderBusinessScope, orders: [] };
       group.orders.push(order);
       grouped.set(groupKey, group);
     }
 
     // 每个分组（模块+电子签平台）各自生成一个独立文件，前端逐个下载，互不合并。
     const files: DispatchedOrderExportFile[] = [];
-    for (const { moduleCode, signPlatform, orders: moduleOrders } of grouped.values()) {
+    for (const { moduleCode, signPlatform, businessScope: groupBusinessScope, orders: moduleOrders } of grouped.values()) {
       let workbook = new Workbook();
       const usedSheetNames = new Set<string>();
       const visibleFields = Array.from(new Set(moduleOrders.flatMap((order) => order.visibleFields ?? [])));
-      const template = await this.resolveDefaultTemplate(moduleCode, visibleFields, signPlatform);
+      const template = await this.resolveDefaultTemplate(moduleCode, visibleFields, signPlatform, groupBusinessScope);
       const result = this.buildResult(template, moduleOrders, fieldNameMap);
       rowCount += result.rowCount ?? result.rows.length;
       const standardWorkbook = await this.tryBuildStandardTemplateWorkbook(template, moduleOrders);
@@ -393,7 +425,11 @@ export class ExportTemplatesService {
     return candidate;
   }
 
-  private async loadOrders(ids: string[], moduleCode: string): Promise<DispatchedOrder[]> {
+  private async loadOrders(
+    ids: string[],
+    moduleCode: string,
+    businessScope: BusinessScope,
+  ): Promise<DispatchedOrder[]> {
     if (ids.length === 0) return [];
     const orders = await this.dispatchedOrderRepository
       .createQueryBuilder('d')
@@ -402,32 +438,38 @@ export class ExportTemplatesService {
       .leftJoinAndSelect('d.handler', 'h')
       .where('d.id IN (:...ids)', { ids })
       .andWhere('d.module_code = :moduleCode', { moduleCode })
+      .andWhere('w.business_scope = :businessScope', { businessScope })
       .orderBy('d.created_at', 'ASC')
       .getMany();
     if (orders.length === 0) throw new NotFoundException('该模板模块下未匹配到子工单');
     return orders;
   }
 
-  private async resolveDefaultTemplate(moduleCode: string, visibleFields: string[], signPlatform?: string | null): Promise<ExportTemplate> {
+  private async resolveDefaultTemplate(
+    moduleCode: string,
+    visibleFields: string[],
+    signPlatform?: string | null,
+    businessScope: BusinessScope = BusinessScope.BEILUN,
+  ): Promise<ExportTemplate> {
     const platform = this.normalizeSignPlatform(signPlatform);
     let shared: ExportTemplate | null = null;
     if (moduleCode === 'contract') {
       if (!platform) {
         throw new BadRequestException('劳动合同子工单缺少电子签平台，无法自动匹配速创/E签宝导出模板');
       }
-      shared = await this.repository.findOne({ where: { moduleCode, isShared: true, signPlatform: platform }, order: { createdAt: 'DESC' } });
+      shared = await this.repository.findOne({ where: { moduleCode, isShared: true, signPlatform: platform, businessScope }, order: { createdAt: 'DESC' } });
       if (!shared) {
         throw new BadRequestException(`未找到电子签平台“${platform}”对应的劳动合同导出模板，请先重启后端或执行 seed 同步后台导出模板配置`);
       }
     } else {
-      shared = await this.repository.findOne({ where: { moduleCode, isShared: true }, order: { createdAt: 'DESC' } });
+      shared = await this.repository.findOne({ where: { moduleCode, isShared: true, businessScope }, order: { createdAt: 'DESC' } });
     }
     if (shared) {
       shared.fieldList = this.prepareExportFieldList(shared.fieldList);
       return shared;
     }
     const fieldList = this.prepareExportFieldList(visibleFields.map((fieldCode, order) => ({ fieldCode, order: order + 10 })));
-    return this.repository.create({ id: '', templateName: `${moduleCode}-default`, moduleCode, fieldList, createdBy: '', isShared: false, signPlatform: null });
+    return this.repository.create({ id: '', templateName: `${moduleCode}-default`, moduleCode, fieldList, createdBy: '', isShared: false, signPlatform: null, businessScope });
   }
 
   private readonly exportExcludedFieldCodes = new Set(['order_no', 'employee_id_card']);
@@ -630,12 +672,32 @@ export class ExportTemplatesService {
     const platform = this.normalizeSignPlatform(template.signPlatform);
     for (const sheet of workbook.worksheets) this.clearWorksheetDataValidations(sheet);
     const dataStartRow = platform === 'E签宝' ? 5 : 4;
+    // 母版原始列数：物理 xlsx 里固定的列（含合并表头/公式）。后台模板新增字段排在这之后。
+    const templateColumnCount = worksheet.columnCount;
     const columns = this.resolveRichColumns(
       { ...template, fieldList: this.prepareStandardTemplateFieldList(template.fieldList ?? []) } as ExportTemplate,
       new Map(),
-    ).slice(0, worksheet.columnCount);
+    );
     this.fillStandardTemplateWorksheet(worksheet, columns, orders, dataStartRow);
+    // 后台在母版列数之外新增的字段：母版没有对应表头，需补写列名（合并区在原始列内，右侧追加不冲突）。
+    this.appendStandardTemplateHeaders(worksheet, columns, templateColumnCount, dataStartRow);
     return workbook;
+  }
+
+  private appendStandardTemplateHeaders(
+    worksheet: Worksheet,
+    columns: RichExportColumn[],
+    templateColumnCount: number,
+    dataStartRow: number,
+  ): void {
+    if (columns.length <= templateColumnCount) return;
+    const headerRow = worksheet.getRow(Math.max(1, dataStartRow - 1));
+    for (let index = templateColumnCount; index < columns.length; index += 1) {
+      const title = columns[index].publicTitle;
+      if (!title) continue;
+      headerRow.getCell(index + 1).value = title;
+    }
+    headerRow.commit();
   }
 
   private async writeWorkbookBuffer(workbook: Workbook): Promise<Buffer> {
@@ -906,6 +968,7 @@ export class ExportTemplatesService {
       isShared: template.isShared,
       signPlatform: template.signPlatform ?? null,
       createdAt: template.createdAt,
+      businessScope: template.businessScope,
     };
   }
 

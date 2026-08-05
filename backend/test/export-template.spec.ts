@@ -180,10 +180,11 @@ describe('ExportTemplatesService', () => {
     const sheet = workbook.worksheets[0];
 
     expect(sheet.name).toBe('Sheet1');
-    expect(sheet.columnCount).toBe(31);
+    expect(sheet.columnCount).toBe(32);
     expect(sheet.getRow(3).hidden).toBe(true);
     expect(sheet.getCell(2, 4).value).toBe('\u8bc1\u4ef6\u53f7(\u9009\u586b)-\u7b7e\u7f72\u65b92');
     expect(sheet.getCell(2, 31).value).toBe('\u52b3\u52a8\u5408\u540c\u6a21\u677f\uff08\u6807\u51c6\u6a21\u677f/\u7279\u6b8a\u6a21\u677f\uff09');
+    expect(sheet.getCell(4, 32).value).toBe('\u53d1\u8d77\u4eba');
     const firstDataRow = 5;
     expect(sheet.getCell(firstDataRow, 1).value).toBe('\u5f20\u4e09');
     expect(sheet.getCell(firstDataRow, 2).value).toBe('13800000000');
@@ -219,9 +220,10 @@ describe('ExportTemplatesService', () => {
     const firstDataRow = 4;
 
     expect(sheet.name).toBe('\u52b3\u52a8\u5408\u540c\u6279\u5bfc\u5165\u6a21\u677f2026-05-26');
-    expect(sheet.columnCount).toBe(39);
+    expect(sheet.columnCount).toBe(40);
     expect(sheet.getCell(2, 38).value).toBe('\u52b3\u52a8\u5408\u540c\u6a21\u677f');
     expect(sheet.getCell(2, 39).value).toBe('\u52b3\u52a8\u5408\u540c\u4e3b\u4f53');
+    expect(sheet.getCell(3, 40).value).toBe('\u53d1\u8d77\u4eba');
     expect(sheet.getCell(firstDataRow, 5).value).toBe('\u5f20\u4e09');
     expect(sheet.getCell(firstDataRow, 6).value).toBe('1.\u65b0\u7b7e');
     expect(sheet.getCell(firstDataRow, 12).formula).toBe('IFERROR(EDATE(K4,VALUE("3"))-1,"")');
