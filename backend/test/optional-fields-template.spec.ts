@@ -1,24 +1,17 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ImportTemplateService } from 'src/modules/imports/import-template.service';
 import { ImportTemplateConfigService } from 'src/modules/imports/import-template-config.service';
-import { FieldConfig } from 'src/entities';
-import * as XLSX from 'xlsx';
+import { FieldConfig, OrderType } from 'src/entities';
+import * as ExcelJS from 'exceljs';
 
 describe('可选字段模板生成测试', () => {
   let service: ImportTemplateService;
   let configService: ImportTemplateConfigService;
 
-  const mockStandardFields: Partial<FieldConfig>[] = [
-    { field_code: 'employee_name', field_name: '姓名', is_included_in_template: true },
-    { field_code: 'id_card_no', field_name: '身份证号', is_included_in_template: true },
-    { field_code: 'mobile', field_name: '手机号', is_included_in_template: true },
-  ];
-
-  const mockOptionalFields: Partial<FieldConfig>[] = [
-    { field_code: 'education', field_name: '学历', field_type: 'select', is_included_in_template: false },
-    { field_code: 'graduation_school', field_name: '毕业院校', field_type: 'text', is_included_in_template: false },
-    { field_code: 'major', field_name: '专业', field_type: 'text', is_included_in_template: false },
-    { field_code: 'graduation_date', field_name: '毕业时间', field_type: 'date', is_included_in_template: false },
+  const mockStandardFields = [
+    { fieldCode: 'employee_name', fieldName: '姓名', fieldType: 'text', isIncludedInTemplate: true, isActive: true, displayOrder: 1 },
+    { fieldCode: 'id_card_no', fieldName: '身份证号', fieldType: 'text', isIncludedInTemplate: true, isActive: true, displayOrder: 2 },
+    { fieldCode: 'mobile', fieldName: '手机号', fieldType: 'text', isIncludedInTemplate: true, isActive: true, displayOrder: 3 },
   ];
 
   beforeEach(async () => {
@@ -28,8 +21,7 @@ describe('可选字段模板生成测试', () => {
         {
           provide: ImportTemplateConfigService,
           useValue: {
-            loadActiveFields: jest.fn().mockResolvedValue(mockStandardFields),
-            listOptionalFields: jest.fn().mockResolvedValue(mockOptionalFields),
+            list: jest.fn().mockResolvedValue(mockStandardFields),
           },
         },
       ],
@@ -40,29 +32,29 @@ describe('可选字段模板生成测试', () => {
   });
 
   describe('生成入职工单导入模板', () => {
-    it('应返回Excel Buffer', async () => {
-      const buffer = await service.generate('onboarding');
+    it('应返回Excel Buffer和字段数', async () => {
+      const result = await service.generate(OrderType.ONBOARDING);
 
-      expect(buffer).toBeInstanceOf(Buffer);
-      expect(buffer.length).toBeGreaterThan(0);
+      expect(result.buffer).toBeInstanceOf(Buffer);
+      expect(result.buffer.length).toBeGreaterThan(0);
+      expect(result.fieldCount).toBe(3);
+      expect(result.fileName).toBe('工单管理系统-入职导入模板.xlsx');
     });
 
-    it('应包含2个工作表', async () => {
-      const buffer = await service.generate('onboarding');
-      const workbook = XLSX.read(buffer, { type: 'buffer' });
+    it('应只包含标准字段（不含学历4字段）', async () => {
+      const result = await service.generate(OrderType.ONBOARDING);
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(result.buffer);
 
-      expect(workbook.SheetNames.length).toBe(2);
-      expect(workbook.SheetNames[0]).toBe('导入数据');
-      expect(workbook.SheetNames[1]).toBe('可选字段说明');
-    });
+      const mainSheet = workbook.getWorksheet('当前字段配置');
+      expect(mainSheet).toBeDefined();
 
-    it('第一个工作表应只包含标准字段', async () => {
-      const buffer = await service.generate('onboarding');
-      const workbook = XLSX.read(buffer, { type: 'buffer' });
-      const sheet1 = workbook.Sheets[workbook.SheetNames[0]];
-      const data = XLSX.utils.sheet_to_json(sheet1, { header: 1 }) as string[][];
+      const headerRow = mainSheet.getRow(1);
+      const headers = [];
+      for (let col = 2; col <= mockStandardFields.length + 1; col++) {
+        headers.push(headerRow.getCell(col).value);
+      }
 
-      const headers = data[0];
       expect(headers).toContain('姓名');
       expect(headers).toContain('身份证号');
       expect(headers).toContain('手机号');
@@ -70,44 +62,10 @@ describe('可选字段模板生成测试', () => {
       expect(headers).not.toContain('毕业院校');
     });
 
-    it('第二个工作表应包含可选字段说明', async () => {
-      const buffer = await service.generate('onboarding');
-      const workbook = XLSX.read(buffer, { type: 'buffer' });
-      const sheet2 = workbook.Sheets[workbook.SheetNames[1]];
-      const data = XLSX.utils.sheet_to_json(sheet2, { header: 1 }) as string[][];
+    it('应调用configService.list加载标准字段', async () => {
+      await service.generate(OrderType.ONBOARDING);
 
-      const headers = data[0];
-      expect(headers).toContain('列名');
-      expect(headers).toContain('字段说明');
-      expect(headers).toContain('数据类型');
-      expect(headers).toContain('示例值');
-
-      const dataRows = data.slice(1);
-      const fieldNames = dataRows.map(row => row[0]);
-      expect(fieldNames).toContain('学历');
-      expect(fieldNames).toContain('毕业院校');
-      expect(fieldNames).toContain('专业');
-      expect(fieldNames).toContain('毕业时间');
-    });
-
-    it('可选字段说明应包含完整信息', async () => {
-      const buffer = await service.generate('onboarding');
-      const workbook = XLSX.read(buffer, { type: 'buffer' });
-      const sheet2 = workbook.Sheets[workbook.SheetNames[1]];
-      const data = XLSX.utils.sheet_to_json(sheet2, { header: 1 }) as string[][];
-
-      const educationRow = data.find(row => row[0] === '学历');
-      expect(educationRow).toBeDefined();
-      expect(educationRow[1]).toBe('学历');
-      expect(educationRow[2]).toContain('下拉');
-      expect(educationRow[3]).toBeTruthy();
-    });
-
-    it('应调用configService加载标准字段和可选字段', async () => {
-      await service.generate('onboarding');
-
-      expect(configService.loadActiveFields).toHaveBeenCalledWith('onboarding');
-      expect(configService.listOptionalFields).toHaveBeenCalledWith('onboarding');
+      expect(configService.list).toHaveBeenCalledWith(OrderType.ONBOARDING);
     });
   });
 });
