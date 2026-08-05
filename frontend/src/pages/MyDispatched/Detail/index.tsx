@@ -62,6 +62,10 @@ const FIELD_GROUPS: Array<{ title: string; codes: string[] }> = [
     codes: ['social_location', 'start_month', 'social_base', 'fund_base', 'fund_ratio', 'social_insurance_feedback', ...HANDLING_FEEDBACK_FIELDS.map((item) => item.result), HANDLING_SHARED_REMARK],
   },
   {
+    title: '学历信息',
+    codes: ['education', 'graduation_school', 'major', 'graduation_date'],
+  },
+  {
     title: '银行与备注',
     codes: ['bank_name', 'bank_account', 'remark', 'special_remark'],
   },

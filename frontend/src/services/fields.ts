@@ -24,6 +24,8 @@ export interface FieldConfigItem {
   collection_group?: string | null;
   /** ★ 后端业务域归属：用于续签/离职复用入职公共字段 */
   business_context?: string[] | null;
+  /** ★ 是否包含在标准导入模板中 */
+  is_included_in_template?: boolean;
   display_order: number;
   is_active: boolean;
 }
@@ -201,6 +203,7 @@ function normalizeField(f: any): FieldConfigItem {
     sub_ticket_scope: f.sub_ticket_scope ?? f.subTicketScope ?? null,
     collection_group: f.collection_group ?? f.collectionGroup ?? null,
     business_context: Array.isArray(f.business_context) ? f.business_context : (Array.isArray(f.businessContext) ? f.businessContext : null),
+    is_included_in_template: f.is_included_in_template ?? f.isIncludedInTemplate ?? true,
     display_order: f.display_order ?? f.displayOrder ?? 99,
     is_active: f.is_active ?? f.isActive ?? true,
   };
@@ -248,6 +251,7 @@ function packField(data: Partial<FieldConfigItem>): Record<string, unknown> {
   if (data.placeholder !== undefined) body.placeholder = data.placeholder;
   if (data.help_text !== undefined) body.helpText = data.help_text;
   if (data.order_type !== undefined) body.orderType = data.order_type;
+  if (data.is_included_in_template !== undefined) body.isIncludedInTemplate = data.is_included_in_template;
   if (data.display_order !== undefined) body.displayOrder = data.display_order;
   if (data.is_active !== undefined) body.isActive = data.is_active;
   return body;

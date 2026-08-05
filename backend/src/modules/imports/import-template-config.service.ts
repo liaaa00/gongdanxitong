@@ -161,6 +161,21 @@ export class ImportTemplateConfigService {
       .map((field) => this.applyTemplateRules(orderType, field));
   }
 
+  async listOptionalFields(orderType: OrderType): Promise<FieldConfig[]> {
+    const fields = await this.fieldRepository
+      .createQueryBuilder('field')
+      .where('field.is_active = true')
+      .andWhere('field.is_included_in_template = false')
+      .andWhere(
+        '(field.order_type IS NULL OR field.order_type = :orderType OR field.business_context @> :businessContext)',
+        { orderType, businessContext: JSON.stringify([orderType]) },
+      )
+      .orderBy('field.display_order', 'ASC')
+      .addOrderBy('field.created_at', 'ASC')
+      .getMany();
+    return this.filterAllowedImportFields(orderType, fields);
+  }
+
   private normalizeInputs(fields: ImportTemplateFieldInput[]): ImportTemplateFieldInput[] {
     const seen = new Set<string>();
     const result: ImportTemplateFieldInput[] = [];
@@ -217,6 +232,7 @@ export class ImportTemplateConfigService {
     return this.fieldRepository
       .createQueryBuilder('field')
       .where('field.is_active = true')
+      .andWhere('field.is_included_in_template = true')
       .andWhere(
         '(field.order_type IS NULL OR field.order_type = :orderType OR field.business_context @> :businessContext)',
         { orderType, businessContext: JSON.stringify([orderType]) },

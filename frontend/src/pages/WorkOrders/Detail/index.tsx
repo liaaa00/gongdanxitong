@@ -8,28 +8,19 @@ import {
 import type { FieldConfig } from '@/components/DynamicForm';
 import { getWorkOrder } from '@/services/workOrders';
 import type { WorkOrderItem } from '@/services/workOrders';
-import { getCreateWorkOrderFields } from '@/services/importTemplates';
 import { getFields } from '@/services/fields';
 import { getStatusColor, getStatusText } from '@/constants/dictionaries';
 import { getModuleLabel } from '@/constants/modules';
 import MaterialsUpload from '@/components/MaterialsUpload';
 
-// 主工单详情仅展示数据和子工单进度；字段范围严格跟随后台导入模板配置。
-function mergeImportFieldsWithSystemMeta(importFields: FieldConfig[], systemFields: FieldConfig[]): FieldConfig[] {
-  const systemMap = new Map(systemFields.map((field) => [field.field_code, field]));
-  return importFields.map((field, index) => {
-    const systemField = systemMap.get(field.field_code);
-    return {
-      ...(systemField || {}),
-      ...field,
-      field_name: field.field_name || systemField?.field_name || field.field_code,
-      field_type: field.field_type || systemField?.field_type || 'text',
-      is_required: field.is_required ?? systemField?.is_required ?? false,
-      default_required: field.default_required ?? systemField?.default_required ?? false,
-      dropdown_options: field.dropdown_options ?? systemField?.dropdown_options ?? null,
-      collection_group: field.collection_group || systemField?.collection_group || null,
-      display_order: field.display_order ?? index + 1,
-    };
+// 主工单详情展示：标准字段（is_included_in_template=true）+ 有值的可选字段
+function filterDisplayFields(allFields: FieldConfig[], extraData: Record<string, unknown>): FieldConfig[] {
+  return allFields.filter((field) => {
+    // 标准字段总是显示
+    if (field.is_included_in_template !== false) return true;
+    // 可选字段只有值时才显示
+    const value = extraData[field.field_code];
+    return value !== null && value !== undefined && value !== '';
   });
 }
 
@@ -51,19 +42,15 @@ const WorkOrdersDetail: React.FC = () => {
       try {
         const orderData = await getWorkOrder(id);
         const orderType = orderData.order_type || 'onboarding';
-        const [importFields, systemFields] = await Promise.all([
-          getCreateWorkOrderFields(orderType).catch((err) => {
-            console.warn('[工单详情] 导入模板字段配置加载失败，降级为空字段列表：', err);
-            return [] as FieldConfig[];
-          }),
-          getFields(orderType).catch((err) => {
-            console.warn('[工单详情] 系统字段配置加载失败，降级为空字段列表：', err);
-            return [] as FieldConfig[];
-          }),
-        ]);
+        const allFields = await getFields(orderType).catch((err) => {
+          console.warn('[工单详情] 系统字段配置加载失败，降级为空字段列表：', err);
+          return [] as FieldConfig[];
+        });
         if (cancelled) return;
+        const extraData = (orderData.extra_data || {}) as Record<string, unknown>;
+        const displayFields = filterDisplayFields(allFields as FieldConfig[], extraData);
         setOrder(orderData);
-        setFields(mergeImportFieldsWithSystemMeta(importFields as FieldConfig[], systemFields as FieldConfig[]));
+        setFields(displayFields);
       } catch (err) {
         console.error('[工单详情] 主详情加载失败：', err);
         if (!cancelled) {

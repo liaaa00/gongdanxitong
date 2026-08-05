@@ -59,6 +59,9 @@ export class ImportTemplateService {
     this.applyColumnWidths(sheet, fields);
     this.applyDropdownValidations(sheet, optionsSheet, fields);
 
+    // 添加可选字段说明工作表
+    await this.addOptionalFieldsSheet(workbook, orderType);
+
     const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
     return { buffer, fieldCount: fields.length, fileName: this.buildFileName(orderType) };
   }
@@ -239,5 +242,54 @@ export class ImportTemplateService {
   private buildFileName(orderType: OrderType): string {
     const label = orderType === OrderType.RESIGNATION ? '离职' : '入职';
     return `工单管理系统-${label}导入模板.xlsx`;
+  }
+
+  // 可选字段说明工作表：列出所有 is_included_in_template=false 的字段，供业务员参考添加
+  private async addOptionalFieldsSheet(workbook: Workbook, orderType: OrderType): Promise<void> {
+    const optionalFields = await this.templateConfigService.listOptionalFields(orderType);
+    if (optionalFields.length === 0) return;
+
+    const sheet = workbook.addWorksheet('可选字段说明');
+
+    // 标题行
+    const headerRow = sheet.getRow(1);
+    headerRow.getCell(1).value = '列名';
+    headerRow.getCell(2).value = '字段说明';
+    headerRow.getCell(3).value = '数据类型';
+    headerRow.getCell(4).value = '示例值';
+    headerRow.font = { bold: true };
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE7E6E6' } };
+
+    // 数据行
+    optionalFields.forEach((field, index) => {
+      const row = sheet.getRow(index + 2);
+      row.getCell(1).value = field.fieldName || field.fieldCode;
+      row.getCell(2).value = field.helpText || '';
+      row.getCell(3).value = this.getFieldTypeLabel(field.fieldType);
+      row.getCell(4).value = this.buildExample({ ...field, fieldCode: field.fieldCode } as TemplateField);
+    });
+
+    // 列宽
+    sheet.getColumn(1).width = 20;
+    sheet.getColumn(2).width = 30;
+    sheet.getColumn(3).width = 20;
+    sheet.getColumn(4).width = 20;
+
+    // 说明文字
+    const noteRow = sheet.getRow(optionalFields.length + 3);
+    noteRow.getCell(1).value = '使用说明：可在"当前字段配置"工作表中添加上述字段作为新列，系统将自动识别并保存数据。';
+    noteRow.font = { italic: true, color: { argb: 'FF666666' } };
+    sheet.mergeCells(optionalFields.length + 3, 1, optionalFields.length + 3, 4);
+  }
+
+  private getFieldTypeLabel(fieldType: FieldType): string {
+    switch (fieldType) {
+      case FieldType.TEXT: return '文本';
+      case FieldType.NUMBER: return '数字';
+      case FieldType.DATE: return '日期(YYYY-MM-DD)';
+      case FieldType.DROPDOWN: return '下拉选项';
+      case FieldType.TEXTAREA: return '多行文本';
+      default: return '文本';
+    }
   }
 }

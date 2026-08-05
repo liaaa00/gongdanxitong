@@ -1,5 +1,31 @@
 # AI 修改记录
 
+## 2026-08-05 · 实现可选字段池完整方案
+
+- 问题：厦门社保增员需要学历4字段（学历、毕业院校、专业、毕业时间），但其他城市不需要。如果加入标准模板会让所有城市的Excel多出4列，不加入则厦门无法导入学历数据。
+- 方案：实现可选字段池机制——标准模板只包含通用字段，业务员可根据「可选字段说明」工作表手动添加所需列，系统自动识别、保存并显示。
+- 改动：
+  1. 后端Entity：`field_configs` 表增加 `is_included_in_template` 字段（boolean，默认true）
+  2. 后端迁移：`20260805004000-AddIsIncludedInTemplateToFieldConfigs.ts`，将学历4字段标记为可选（is_included_in_template=false）
+  3. 后端模板生成：`import-template.service.ts` 增加第二个工作表「可选字段说明」，列出可选字段的列名、说明、数据类型、示例值
+  4. 后端查询逻辑：`import-template-config.service.ts` 支持按 `is_included_in_template` 过滤标准字段和可选字段
+  5. 前端字段配置管理：`Admin/Fields/index.tsx` 新增筛选器（全部/标准/可选）、表格列（Switch组件）、编辑表单（开关+tooltip）
+  6. 前端详情页：`WorkOrders/Detail/index.tsx` 加载完整字段池，新增 `filterDisplayFields` 函数（标准字段总显示，可选字段有值才显示）
+  7. 前端子工单详情：`MyDispatched/Detail/index.tsx` 新增「学历信息」分组，包含学历4字段
+  8. TypeScript类型：`services/fields.ts` 的 `FieldConfigItem` 接口增加 `is_included_in_template` 字段
+- 测试：
+  1. 单元测试 `optional-fields-config.spec.ts`（5个测试用例）：验证学历4字段标记为可选、标准字段查询排除可选字段、更新字段状态
+  2. 单元测试 `optional-fields-template.spec.ts`（6个测试用例）：验证模板生成2个工作表、Sheet1只包含标准字段、Sheet2包含可选字段说明
+  3. 单元测试 `filterDisplayFields.test.ts`（19个测试用例）：验证前端字段过滤逻辑（标准字段总显示、可选字段有值才显示、混合场景）
+  4. 集成测试：延后到数据库环境就绪后执行（迁移验证、手动功能测试、E2E测试）
+- 文档：
+  1. `docs/可选字段使用指南.md`：完整的用户使用指南（管理员配置+业务员操作+常见问题）
+  2. `docs/AI修改记录.md`：本条记录
+- 验证：管理员可在字段配置页面设置字段模板包含状态；下载的Excel模板有两个工作表；业务员手动添加学历列后导入成功；有学历数据的工单详情页显示「学历信息」分组，无学历数据的工单不显示该分组。
+- 是否覆盖旧规则：否。纯新增功能，不改变现有字段配置和导入导出逻辑。
+- 影响范围：入职工单导入模板生成、工单详情页字段显示、字段配置管理功能。
+- commit: [待提交]
+
 ## 2026-08-05 · 修复离职材料收集到离职证明两处线上故障
 
 - 问题：线上离职流程两处故障：1）前端完成弹窗允许选择「办理中」和「未办」导致校验冲突；2）后端 `in-service-orders.service.ts` 误用 `WorkOrderModule.RESIGNATION_CERT` 导致离职证明自动创建失败。

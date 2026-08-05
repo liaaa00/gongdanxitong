@@ -29,6 +29,12 @@ const SOURCE_CATEGORY_OPT = [
   { label: '系统判断', value: 'process_judgment' },
 ];
 
+const TEMPLATE_INCLUSION_OPT = [
+  { label: '全部字段', value: '' },
+  { label: '标准字段', value: 'true' },
+  { label: '可选字段', value: 'false' },
+];
+
 const SUB_TICKET_SCOPE_OPT = [
   { label: '全部环节', value: '' },
   { label: '所有环节', value: 'all' },
@@ -81,6 +87,7 @@ const AdminFields: React.FC = () => {
   const [filterSource, setFilterSource] = useState<string>('');
   const [filterScope, setFilterScope] = useState<string>('');
   const [filterGroup, setFilterGroup] = useState<string>('');
+  const [filterTemplateInclusion, setFilterTemplateInclusion] = useState<string>('');
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<FieldConfigItem | null>(null);
   const [form] = Form.useForm();
@@ -100,11 +107,15 @@ const AdminFields: React.FC = () => {
       if (filterGroup) {
         all = all.filter((f) => f.collection_group === filterGroup);
       }
+      if (filterTemplateInclusion) {
+        const included = filterTemplateInclusion === 'true';
+        all = all.filter((f) => f.is_included_in_template === included);
+      }
       setData(all);
     } catch { message.error('加载失败'); }
     finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, [filterType, filterSource, filterScope, filterGroup]);
+  useEffect(() => { load(); }, [filterType, filterSource, filterScope, filterGroup, filterTemplateInclusion]);
 
   const onSave = async () => {
     const v = await form.validateFields();
@@ -123,20 +134,36 @@ const AdminFields: React.FC = () => {
 
   return (
     <PageContainer header={{ title: '表单字段管理' }} extra={[
-      <Select key="ot" style={{ width: 140 }} value={filterType} onChange={(v) => { setFilterType(v); }} options={ORDER_OPT} placeholder="适用工单" getPopupContainer={getSelectPopupContainer} />,
-      <Select key="sc" style={{ width: 140 }} value={filterSource} onChange={(v) => { setFilterSource(v); }} options={SOURCE_CATEGORY_OPT} placeholder="谁来填写" getPopupContainer={getSelectPopupContainer} />,
-      <Select key="ss" style={{ width: 140 }} value={filterScope} onChange={(v) => { setFilterScope(v); }} options={SUB_TICKET_SCOPE_OPT} placeholder="显示环节" getPopupContainer={getSelectPopupContainer} />,
-      <Select key="cg" style={{ width: 160 }} value={filterGroup} onChange={(v) => { setFilterGroup(v); }} options={COLLECTION_GROUP_OPT} placeholder="表单分组" getPopupContainer={getSelectPopupContainer} />,
-      <Button key="add" type="primary" icon={<PlusOutlined />}
+      <Select key=”ot” style={{ width: 140 }} value={filterType} onChange={(v) => { setFilterType(v); }} options={ORDER_OPT} placeholder=”适用工单” getPopupContainer={getSelectPopupContainer} />,
+      <Select key=”sc” style={{ width: 140 }} value={filterSource} onChange={(v) => { setFilterSource(v); }} options={SOURCE_CATEGORY_OPT} placeholder=”谁来填写” getPopupContainer={getSelectPopupContainer} />,
+      <Select key=”ss” style={{ width: 140 }} value={filterScope} onChange={(v) => { setFilterScope(v); }} options={SUB_TICKET_SCOPE_OPT} placeholder=”显示环节” getPopupContainer={getSelectPopupContainer} />,
+      <Select key=”cg” style={{ width: 160 }} value={filterGroup} onChange={(v) => { setFilterGroup(v); }} options={COLLECTION_GROUP_OPT} placeholder=”表单分组” getPopupContainer={getSelectPopupContainer} />,
+      <Select key=”ti” style={{ width: 140 }} value={filterTemplateInclusion} onChange={(v) => { setFilterTemplateInclusion(v); }} options={TEMPLATE_INCLUSION_OPT} placeholder=”模板包含” getPopupContainer={getSelectPopupContainer} />,
+      <Button key=”add” type=”primary” icon={<PlusOutlined />}
         onClick={() => { setEditing(null); form.resetFields(); setOpen(true); }}>新增表单字段</Button>,
     ]}>
-      <Alert style={{ marginBottom: 12 }} type="info" showIcon message="这里维护工单表单里会出现哪些字段，例如员工姓名、身份证号、合同开始日期。字段是否给某个角色填写，到“字段填写权限”里设置。" />
+      <Alert style={{ marginBottom: 12 }} type=”info” showIcon message=”这里维护工单表单里会出现哪些字段，例如员工姓名、身份证号、合同开始日期。字段是否给某个角色填写，到”字段填写权限”里设置。标准字段包含在Excel导入模板中，可选字段需要业务员手动添加列。” />
       <Table rowKey="id" loading={loading} dataSource={data} pagination={{ pageSize: 20 }}
         columns={[
           { title: '系统标识', dataIndex: 'field_code', width: 180 },
           { title: '字段名称', dataIndex: 'field_name', width: 160 },
           { title: '类型', dataIndex: 'field_type', width: 90,
             render: (v) => TYPE_OPT.find((t) => t.value === v)?.label || v },
+          { title: '包含在标准模板', dataIndex: 'is_included_in_template', width: 140,
+            render: (v, record) => (
+              <Switch
+                checked={v ?? true}
+                onChange={async (checked) => {
+                  try {
+                    await updateField(record.id, { ...record, is_included_in_template: checked });
+                    message.success('已更新');
+                    load();
+                  } catch {
+                    message.error('更新失败');
+                  }
+                }}
+              />
+            )},
           { title: '谁来填写', dataIndex: 'source_category', width: 110,
             render: (v) => {
               const cfg = SOURCE_TAG[v];
@@ -171,7 +198,7 @@ const AdminFields: React.FC = () => {
       />
       <Modal title={editing ? '编辑表单字段' : '新增表单字段'} open={open} width={640}
         onOk={onSave} onCancel={() => { setOpen(false); setEditing(null); form.resetFields(); }} destroyOnHidden>
-        <Form form={form} layout="vertical" initialValues={{ field_type: 'text', is_required: false, is_active: true, display_order: 1 }}>
+        <Form form={form} layout="vertical" initialValues={{ field_type: 'text', is_required: false, is_active: true, is_included_in_template: true, display_order: 1 }}>
           <Form.Item name="field_code" label="系统标识" rules={[{ required: true }]}><Input placeholder="例如 employee_name，保存后尽量不要改" /></Form.Item>
           <Form.Item name="field_name" label="字段名称" rules={[{ required: true }]}><Input placeholder="如 员工姓名" /></Form.Item>
           <Form.Item name="field_type" label="字段类型" rules={[{ required: true }]}>
@@ -208,6 +235,9 @@ const AdminFields: React.FC = () => {
             />
           </Form.Item>
           <Form.Item name="is_required" label="是否必填" valuePropName="checked"><Switch /></Form.Item>
+          <Form.Item name="is_included_in_template" label="包含在标准模板" valuePropName="checked" tooltip="开启后字段会出现在Excel导入模板的标准列中；关闭后作为可选字段，业务员可手动添加">
+            <Switch />
+          </Form.Item>
           <Form.Item name="display_order" label="显示顺序"><InputNumber min={1} /></Form.Item>
           <Form.Item name="placeholder" label="占位提示"><Input /></Form.Item>
           <Form.Item name="help_text" label="字段说明"><Input placeholder="给填写人看的简短说明，可不填" /></Form.Item>

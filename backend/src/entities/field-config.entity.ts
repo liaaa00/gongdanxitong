@@ -69,6 +69,9 @@ export class FieldConfig {
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive!: boolean;
 
+  @Column({ name: 'is_included_in_template', type: 'boolean', default: true })
+  isIncludedInTemplate!: boolean;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 }
