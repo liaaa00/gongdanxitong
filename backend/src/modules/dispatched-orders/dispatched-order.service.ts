@@ -28,6 +28,7 @@ import { businessException } from 'src/common/exceptions/business-exception';
 import { isUuidLike } from 'src/common/utils/uuid-param';
 import {
   BusinessScope,
+  DispatchModuleCode,
   DispatchedOrder,
   DispatchedOrderReturnRecord,
   DispatchedOrderStatus,
@@ -58,6 +59,7 @@ import { FieldPermissionService } from 'src/modules/field-permissions/field-perm
 import { FieldSupplementService } from 'src/modules/field-supplement/field-supplement.service';
 import { FieldChangeHook, FieldDiffItem } from 'src/modules/notifications/field-change.hook';
 import { describeActionCode, humanizeActionCode, toOperationLogActionCode } from 'src/modules/operation-logs/operation-log-semantics';
+import { ResignationCertificateAutomationService } from 'src/modules/work-orders/resignation-certificate-automation.service';
 import { WorkOrderValidationService } from 'src/modules/work-orders/work-order-validation.service';
 import { AcceptDispatchedOrderDto } from './dto/accept.dto';
 import { BatchAcceptDispatchedOrderDto } from './dto/batch-accept.dto';
@@ -152,6 +154,8 @@ export class DispatchedOrderService {
     private readonly fieldSyncItemRepository?: Repository<WorkOrderFieldSyncItem>,
     @Optional()
     private readonly detailViewTemplatesService?: DetailViewTemplatesService,
+    @Optional()
+    private readonly resignationCertificateAutomation?: ResignationCertificateAutomationService,
   ) {}
 
   async findAll(
@@ -323,36 +327,50 @@ export class DispatchedOrderService {
 
     const completedAt = new Date();
     const nextCompleted = completionEvaluation.nextStatus === DispatchedOrderStatus.COMPLETED;
-    const result = await this.dispatchedOrderRepository
-      .createQueryBuilder()
-      .update(DispatchedOrder)
-      .set({
-        status: completionEvaluation.nextStatus,
-        completedAt: nextCompleted ? completedAt : null,
-        completionRemark: remark || null,
-        handlerId: order.handlerId ?? user.sub,
-        acceptedAt: order.acceptedAt ?? completedAt,
-      })
-      .where('id = :id', { id })
-      .andWhere('status IN (:...statuses)', { statuses: [DispatchedOrderStatus.PENDING, DispatchedOrderStatus.PROCESSING] })
-      .execute();
+    let beforeExtraData: Record<string, unknown> | null = null;
 
-    if (result.affected !== 1) {
-      throw businessException(4201, HttpStatus.CONFLICT, '完成失败：子工单状态不允许该操作');
-    }
+    await this.dispatchedOrderRepository.manager.transaction(async (manager) => {
+      const dispatchedOrderRepository = manager.getRepository(DispatchedOrder);
+      const result = await dispatchedOrderRepository
+        .createQueryBuilder()
+        .update(DispatchedOrder)
+        .set({
+          status: completionEvaluation.nextStatus,
+          completedAt: nextCompleted ? completedAt : null,
+          completionRemark: remark || null,
+          handlerId: order.handlerId ?? user.sub,
+          acceptedAt: order.acceptedAt ?? completedAt,
+        })
+        .where('id = :id', { id })
+        .andWhere('status IN (:...statuses)', { statuses: [DispatchedOrderStatus.PENDING, DispatchedOrderStatus.PROCESSING] })
+        .execute();
 
-    if (Object.keys(extraDataPatch).length > 0) {
-      const beforeExtraData = { ...order.parentOrder.extraData };
-      order.parentOrder.extraData = { ...order.parentOrder.extraData, ...extraDataPatch };
-      await this.workOrderRepository.save(order.parentOrder);
-      if (this.fieldChangeHook) {
-        await this.fieldChangeHook.onWorkOrderUpdated({
-          orderId: order.parentOrder.id,
-          actorUserId: user.sub,
-          diff: this.fieldChangeHook.buildDiff(beforeExtraData, order.parentOrder.extraData),
-          bizType: 'order.field_changed',
-        });
+      if (result.affected !== 1) {
+        throw businessException(4201, HttpStatus.CONFLICT, '完成失败：子工单状态不允许该操作');
       }
+
+      if (Object.keys(extraDataPatch).length > 0) {
+        beforeExtraData = { ...order.parentOrder.extraData };
+        order.parentOrder.extraData = { ...order.parentOrder.extraData, ...extraDataPatch };
+        await manager.getRepository(WorkOrder).save(order.parentOrder);
+      }
+
+      if (nextCompleted && order.moduleCode === DispatchModuleCode.RESIGNATION_CONTACT) {
+        await this.resignationCertificateAutomation?.ensureForWorkOrder(
+          order.parentOrder,
+          'materials_completed',
+          manager,
+        );
+      }
+    });
+
+    if (beforeExtraData && this.fieldChangeHook) {
+      await this.fieldChangeHook.onWorkOrderUpdated({
+        orderId: order.parentOrder.id,
+        actorUserId: user.sub,
+        diff: this.fieldChangeHook.buildDiff(beforeExtraData, order.parentOrder.extraData),
+        bizType: 'order.field_changed',
+      });
     }
 
     await this.checkMainOrderComplete(order.parentOrderId);
@@ -1214,7 +1232,7 @@ export class DispatchedOrderService {
 
     const page = query.current ?? query.page;
     const pageSize = query.pageSize;
-    const permissions = await this.fieldPermissionService.getPermissionsForUser(user.sub, `dispatched:${order.moduleCode}`);
+    const permissions = await this.fieldPermissionService.getPermissionsForUser(user.sub, `dispatched:${order.moduleCode}`, order.parentOrder.businessScope);
     const visibleFields = new Map<string, FieldPermissionMode>();
     const dispatchedVisibleSet = order.visibleFields ? new Set(order.visibleFields) : null;
     for (const [fieldCode, permission] of permissions.entries()) {
@@ -2234,7 +2252,7 @@ export class DispatchedOrderService {
       dirtyByField.set(mark.fieldCode, mark);
     }
     const permissions = user
-      ? await this.fieldPermissionService.getPermissionsForUser(user.sub, `dispatched:${order.moduleCode}`)
+      ? await this.fieldPermissionService.getPermissionsForUser(user.sub, `dispatched:${order.moduleCode}`, order.parentOrder.businessScope)
       : new Map<string, FieldPermissionMode>();
     const hasConfiguredPermissions = permissions.size > 0;
     const isReturnedToBusinessCreator = Boolean(

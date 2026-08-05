@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { CandidateField, MappingSuggestion } from 'src/modules/imports/types';
+import { BusinessScope } from 'src/entities';
 import { DeepSeekProvider } from './providers/deepseek.provider';
 import { LlmProvider } from './providers/llm-provider.interface';
 import { OpenAiProvider } from './providers/openai.provider';
@@ -84,6 +85,8 @@ const FIELD_ALIASES: Record<string, string[]> = {
   resignation_reason: ['离职原因', '减员原因', '离职事由'],
   resignation_date: ['离职日期', '离职时间', '减员日期', '减员时间'],
   need_resignation_share: ['离职材料是否需要共享收集', '离职材料是否需要集约收集', '是否共享收集离职材料', '离职材料共享收集'],
+  need_resignation_cert: ['是否需要离职证明', '需要离职证明', '是否开具离职证明', '离职证明'],
+  cert_delivery_address: ['离职证明收件地址', '证明收件地址', '离职证明邮寄地址', '证明邮寄地址'],
 };
 
 @Injectable()
@@ -103,6 +106,7 @@ export class AiMappingService {
     orderType: string,
     headers: string[],
     candidateFields: CandidateField[],
+    businessScope: BusinessScope = BusinessScope.BEILUN,
   ): Promise<MappingSuggestion> {
     const forceLlm = this.isForceLlm();
     const promptHash = this.hash({
@@ -135,12 +139,12 @@ export class AiMappingService {
     const prompt = this.buildPrompt(orderType, llmHeaders, llmCandidateFields);
 
     for (const provider of this.providers()) {
-      if (!(await provider.isAvailable())) {
+      if (!(await provider.isAvailable(businessScope))) {
         this.logger.debug(`LLM provider ${provider.name} unavailable (missing API key or disabled), skipping`);
         continue;
       }
       try {
-        const result = await provider.call(prompt);
+        const result = await provider.call(prompt, businessScope);
         const normalized = await this.normalizeLlmResult(result.content, result.raw, llmCandidateFields, promptHash, provider);
         normalized.suggestion = this.remapFieldNamesToHeaders(normalized.suggestion, llmHeaders, llmCandidateFields);
         const merged = this.mergeLlmResult(localResult, normalized, headers, candidateFields, promptHash);
@@ -149,7 +153,7 @@ export class AiMappingService {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const stack = error instanceof Error ? error.stack : undefined;
-        const modelId = await this.readProviderModelId(provider);
+        const modelId = await this.readProviderModelId(provider, businessScope);
         this.logger.error(
           `LLM provider ${provider.name} (${modelId}) failed: ${message}; falling back to local Jaccard+Levenshtein fuzzy match for unmatched headers only`,
           stack,
@@ -567,9 +571,9 @@ export class AiMappingService {
     return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
   }
 
-  private async readProviderModelId(provider: LlmProvider): Promise<string> {
+  private async readProviderModelId(provider: LlmProvider, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<string> {
     if (typeof provider.getModelId === 'function') {
-      return provider.getModelId().catch(() => '');
+      return provider.getModelId(businessScope).catch(() => '');
     }
     const modelId = (provider as unknown as { modelId?: unknown }).modelId;
     return typeof modelId === 'string' ? modelId : '';

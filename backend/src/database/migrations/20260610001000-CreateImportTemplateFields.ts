@@ -41,9 +41,11 @@ export class CreateImportTemplateFields20260610001000 implements MigrationInterf
           ('resignation_reason', 5),
           ('resignation_date', 6),
           ('need_resignation_share', 7),
-          ('feedback_deadline', 8),
-          ('is_common_template', 9),
-          ('template_name', 10)
+          ('need_resignation_cert', 8),
+          ('cert_delivery_address', 9),
+          ('feedback_deadline', 10),
+          ('is_common_template', 11),
+          ('template_name', 12)
       )
       INSERT INTO import_template_fields(order_type, field_code, display_order, header_alias, is_required_override, is_active)
       SELECT 'resignation'::order_type_enum, c.field_code, c.display_order, NULL, NULL, true

@@ -2,7 +2,7 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { businessException } from 'src/common/exceptions/business-exception';
-import { FieldConfig, ImportTemplateField, OrderType } from 'src/entities';
+import { BusinessScope, FieldConfig, ImportTemplateField, OrderType } from 'src/entities';
 
 export interface ImportTemplateFieldInput {
   fieldCode: string;
@@ -67,6 +67,8 @@ const RESIGNATION_IMPORT_TEMPLATE_FIELDS = [
   'resignation_reason',
   'resignation_date',
   'need_resignation_share',
+  'need_resignation_cert',
+  'cert_delivery_address',
   'feedback_deadline',
   'is_common_template',
   'template_name',
@@ -81,17 +83,17 @@ export class ImportTemplateConfigService {
     private readonly templateFieldRepository: Repository<ImportTemplateField>,
   ) {}
 
-  async list(orderType: OrderType): Promise<ImportTemplateFieldView[]> {
-    const { fields, configured } = await this.resolveFields(orderType);
+  async list(orderType: OrderType, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<ImportTemplateFieldView[]> {
+    const { fields, configured } = await this.resolveFields(orderType, businessScope);
     const configuredByCode = new Map(configured.map((item) => [item.fieldCode, item]));
     return fields.map((field, index) => this.toView(orderType, field, configuredByCode.get(field.fieldCode), index));
   }
 
-  async replace(orderType: OrderType, fields: ImportTemplateFieldInput[]): Promise<{ affected: number }> {
+  async replace(orderType: OrderType, fields: ImportTemplateFieldInput[], businessScope: BusinessScope = BusinessScope.BEILUN): Promise<{ affected: number }> {
     const unique = this.normalizeInputs(fields);
     const fieldCodes = unique.map((item) => item.fieldCode);
     if (fieldCodes.length > 0) {
-      const available = await this.listAvailableFields(orderType);
+      const available = await this.listAvailableFields(orderType, businessScope);
       const availableCodes = new Set(available.map((field) => field.fieldCode));
       const missing = fieldCodes.filter((code) => !availableCodes.has(code));
       if (missing.length > 0) {
@@ -99,7 +101,7 @@ export class ImportTemplateConfigService {
       }
     }
 
-    const existing = await this.templateFieldRepository.find({ where: { orderType } });
+    const existing = await this.templateFieldRepository.find({ where: { orderType, businessScope } });
     const keep = new Set(fieldCodes);
     for (const row of existing) {
       if (!keep.has(row.fieldCode)) {
@@ -114,6 +116,7 @@ export class ImportTemplateConfigService {
       const row = existing.find((item) => item.fieldCode === input.fieldCode);
       const payload = {
         orderType,
+        businessScope,
         fieldCode: input.fieldCode,
         displayOrder: input.displayOrder ?? index + 1,
         headerAlias: this.normalizeNullableString(input.headerAlias),
@@ -131,9 +134,9 @@ export class ImportTemplateConfigService {
     return { affected };
   }
 
-  async resolveFields(orderType: OrderType): Promise<{ fields: FieldConfig[]; configured: ImportTemplateField[] }> {
+  async resolveFields(orderType: OrderType, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<{ fields: FieldConfig[]; configured: ImportTemplateField[] }> {
     const configured = await this.templateFieldRepository.find({
-      where: { orderType, isActive: true },
+      where: { orderType, businessScope, isActive: true },
       order: { displayOrder: 'ASC', fieldCode: 'ASC' },
     });
     if (configured.length > 0) {
@@ -152,7 +155,7 @@ export class ImportTemplateConfigService {
     return { fields: await this.resolveFallbackFields(orderType), configured: [] };
   }
 
-  async listAvailableFields(orderType: OrderType): Promise<FieldConfig[]> {
+  async listAvailableFields(orderType: OrderType, _businessScope: BusinessScope = BusinessScope.BEILUN): Promise<FieldConfig[]> {
     const fields = await this.loadActiveFields(orderType);
     return this.filterAllowedImportFields(orderType, fields)
       .map((field) => this.applyTemplateRules(orderType, field));

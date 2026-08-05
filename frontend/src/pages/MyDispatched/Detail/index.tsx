@@ -1080,11 +1080,10 @@ const MyDispatchedDetail: React.FC = () => {
             ) : (
               <Form.Item name={FEEDBACK_FIELD_MAP[order.module_code] || 'feedback'}
                 label="反馈状态"
-                rules={[{ required: true, message: '请选择反馈状态' }]}>
+                rules={[{ required: true, message: '请选择反馈状态' }]}
+                initialValue="已办结">
                 <Select getPopupContainer={(triggerNode) => triggerNode.parentElement || document.body} options={[
                   { label: '已办结', value: '已办结' },
-                  { label: '办理中', value: '办理中' },
-                  { label: '未办', value: '未办' },
                 ]} />
               </Form.Item>
             )}

@@ -1,5 +1,5 @@
 import { DataSource, Repository } from 'typeorm';
-import { DetailViewTemplate, FieldConfig, FieldPermission, FieldPermissionMode, OrderType, Role } from 'src/entities';
+import { BusinessScope, DetailViewTemplate, FieldConfig, FieldPermission, FieldPermissionMode, OrderType, Role } from 'src/entities';
 import { getDetailViewFieldCodes } from 'src/modules/admin/detail-view-templates/detail-view-template-fields';
 
 /**
@@ -38,6 +38,7 @@ const ACTIVE_ROLE_CODES = [
   'labor_contract_member',
   'onboarding_resignation_member',
   'social_insurance_specialist',
+  'welfare_specialist',
 ];
 
 // 兼容历史角色代码；seed 会为新旧角色都生成矩阵行。
@@ -135,9 +136,11 @@ const RENEWAL_EDITABLE = new Set(['renewal_feedback', 'renewal_remark']);
 // 离职减员表 10 列严格按《外包减员表》「涉及工单」标注重建。
 // 前 6 列（姓名/身份证号/缴纳地区/停保月/离职原因/离职日期）+ 共享收集流转至 离职材料收集/数据录入/社保公积金减员 三单；
 // feedback_deadline/is_common_template/template_name 仅离职材料收集可见。
+// need_resignation_cert/cert_delivery_address 用于离职证明自动流转触发和邮寄地址。
 const RESIGNATION_CORE_VISIBLE = [
   'employee_name', 'id_card_no', 'social_pay_region', 'social_stop_month',
   'resignation_reason', 'resignation_date', 'need_resignation_share',
+  'need_resignation_cert', 'cert_delivery_address',
 ];
 const RESIGNATION_CONTACT_VISIBLE = new Set([
   'customer_name', 'customer_code', 'mobile', 'email',
@@ -198,15 +201,18 @@ async function upsertPermission(
   scenario: string,
   permission: FieldPermissionMode,
 ): Promise<void> {
-  const existed = await repo.findOne({ where: { roleId, fieldCode, scenario } });
-  if (existed) {
-    if (existed.permission !== permission) {
-      existed.permission = permission;
-      await repo.save(existed);
+  // Keep the same matrix in two independent rows; later seeds must never rewrite one account into the other.
+  for (const businessScope of [BusinessScope.BEILUN, BusinessScope.OUT_OF_PROVINCE]) {
+    const existed = await repo.findOne({ where: { roleId, fieldCode, scenario, businessScope } });
+    if (existed) {
+      if (existed.permission !== permission) {
+        existed.permission = permission;
+        await repo.save(existed);
+      }
+      continue;
     }
-    return;
+    await repo.save(repo.create({ roleId, fieldCode, scenario, permission, businessScope }));
   }
-  await repo.save(repo.create({ roleId, fieldCode, scenario, permission }));
 }
 
 function createPermission(roleCode: string, field: FieldConfig, targets: OrderType[]): FieldPermissionMode {

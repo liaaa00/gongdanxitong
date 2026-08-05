@@ -7,6 +7,11 @@ import { AstEvaluator } from 'src/modules/dispatch-engine/ast-evaluator';
 import { FieldConfig, FieldType, OrderType } from 'src/entities';
 import { ImportTemplateConfigService } from './import-template-config.service';
 import { applyOnboardingDerivedFields } from './import-derived-fields.util';
+import {
+  buildOutOfProvinceFieldConfigs,
+  isOutOfProvinceImportOrderType,
+  normalizeOutOfProvinceRow,
+} from './out-of-province-import-mapping';
 
 interface RowValidationError {
   fieldCode: string;
@@ -126,6 +131,8 @@ const HEADER_ALIASES: Record<string, string[]> = {
   resignation_reason: ['离职原因', '减员原因', '离职事由'],
   resignation_date: ['离职日期', '离职时间', '减员日期', '减员时间'],
   need_resignation_share: ['离职材料是否需要共享收集', '离职材料是否需要集约收集', '是否共享收集离职材料', '离职材料共享收集'],
+  need_resignation_cert: ['是否需要离职证明', '需要离职证明', '是否开具离职证明', '离职证明'],
+  cert_delivery_address: ['离职证明收件地址', '证明收件地址', '离职证明邮寄地址', '证明邮寄地址'],
 };
 
 @Injectable()
@@ -139,6 +146,9 @@ export class ImportFieldValidationService {
   ) {}
 
   async getActiveFields(orderType: OrderType): Promise<FieldConfig[]> {
+    if (isOutOfProvinceImportOrderType(orderType)) {
+      return buildOutOfProvinceFieldConfigs(orderType);
+    }
     if (this.templateConfigService) {
       const { fields } = await this.templateConfigService.resolveFields(orderType);
       return fields;
@@ -238,6 +248,10 @@ export class ImportFieldValidationService {
       || fields.some((field) => field.orderType === OrderType.ONBOARDING);
   }
 
+  private isOutOfProvinceFieldSet(fields: FieldConfig[]): boolean {
+    return fields.some((field) => isOutOfProvinceImportOrderType(field.orderType as OrderType));
+  }
+
   private needOnboardingContactCondition(): AstNode {
     return { field: 'need_onboarding_contact', op: 'EQ', value: '是' } as AstNode;
   }
@@ -265,6 +279,9 @@ export class ImportFieldValidationService {
     const warnings = mapped.warnings;
     if (this.isOnboardingImportFieldSet(fields)) {
       applyOnboardingDerivedFields(normalized);
+    }
+    if (this.isOutOfProvinceFieldSet(fields)) {
+      Object.assign(normalized, normalizeOutOfProvinceRow(normalized));
     }
     const errors: RowValidationError[] = [];
 

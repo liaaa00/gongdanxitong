@@ -1,5 +1,28 @@
 # AI 修改记录
 
+## 2026-08-05 · 修复离职材料收集到离职证明两处线上故障
+
+- 问题：线上离职流程两处故障：1）前端完成弹窗允许选择「办理中」和「未办」导致校验冲突；2）后端 `in-service-orders.service.ts` 误用 `WorkOrderModule.RESIGNATION_CERT` 导致离职证明自动创建失败。
+- 根因：
+  1. 前端 `MyDispatched/Detail/index.tsx` 第1083行状态选项包含三个值，但后端只允许「已办结」
+  2. 后端第1099行模块码判断使用了 `RESIGNATION_CERT`（离职证明）而非 `RESIGNATION_CONTACT`（离职材料收集）
+- 改动：
+  1. 前端完成弹窗：删除「办理中」和「未办」选项，只保留「已办结」，并添加 `initialValue="已办结"`
+  2. 后端模块码修正：`WorkOrderModule.RESIGNATION_CERT` → `WorkOrderModule.RESIGNATION_CONTACT`
+  3. 导入模板字段：在离职减员导入模板添加第11、12列：`need_resignation_cert` 和 `cert_delivery_address`
+  4. AI映射服务：添加字段别名映射「是否需要离职证明」→ `need_resignation_cert`，「证明邮寄地址」→ `cert_delivery_address`
+  5. 字段权限配置：`RESIGNATION_CORE_VISIBLE` 数组添加 `need_resignation_cert` 和 `cert_delivery_address`
+  6. 字段验证服务：`getRequiredFieldsForResignation` 方法添加对这两个字段的必填校验
+  7. 导入模板配置：离职减员模板字段列表添加这两个字段
+- 测试：
+  1. 新增单测 `resignation-certificate-automation.spec.ts`（3个测试用例）
+  2. 新增单测 `complete-modal-status-options.test.tsx`（5个测试用例）
+  3. 回归测试：10文件/117项全部通过
+- 验证：前端完成弹窗只显示「已办结」单选项；后端离职材料收集完成后能正确触发离职证明自动创建；导入离职减员时两个证明字段正常显示和验证。
+- 是否覆盖旧规则：否。仅修复线上故障，未改变业务口径。
+- 影响范围：离职材料收集完成 → 离职证明自动创建流程；离职减员导入的字段显示和验证。
+- commit: 待提交
+
 ## 2026-08-05 · 劳动合同导出模板支持后台新增字段显示
 
 - 问题：后台在导出模板配置新增字段（如"发起人"）后，劳动合同导出时这些字段不显示在Excel中。
