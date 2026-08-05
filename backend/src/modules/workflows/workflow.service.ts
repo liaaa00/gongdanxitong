@@ -77,8 +77,11 @@ export class WorkflowService {
     this.applyPatch(workflow, payload);
     this.assertPlainObject(workflow.definitionJson, 'definition_json must be a valid object');
     this.validateEngineDefinition(workflow.definitionJson);
+    const whereCondition = workflow.orderType
+      ? { orderType: workflow.orderType, status: WorkflowDefinitionStatus.PUBLISHED }
+      : { status: WorkflowDefinitionStatus.PUBLISHED };
     await this.workflowRepository.update(
-      { orderType: workflow.orderType, status: WorkflowDefinitionStatus.PUBLISHED },
+      whereCondition,
       { status: WorkflowDefinitionStatus.DRAFT },
     );
     workflow.status = WorkflowDefinitionStatus.PUBLISHED;

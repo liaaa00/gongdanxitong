@@ -7,7 +7,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { OrderType } from 'src/entities/enums';
+import { OrderType, BusinessScope } from 'src/entities/enums';
 import { User } from 'src/entities/user.entity';
 
 export enum WorkflowDefinitionStatus {
@@ -24,14 +24,29 @@ export class WorkflowDefinition {
   @Column({ type: 'varchar', length: 128 })
   name!: string;
 
-  @Column({ name: 'order_type', type: 'enum', enum: OrderType, enumName: 'order_type_enum' })
-  orderType!: OrderType;
+  @Column({ name: 'order_type', type: 'enum', enum: OrderType, enumName: 'order_type_enum', nullable: true })
+  orderType!: OrderType | null;
+
+  @Column({ name: 'business_scope', type: 'varchar', length: 32, default: 'beilun' })
+  businessScope!: BusinessScope;
+
+  @Column({ name: 'flow_key', type: 'varchar', length: 64, nullable: true })
+  flowKey!: string | null;
 
   @Column({ type: 'varchar', length: 512, nullable: true })
   description!: string | null;
 
   @Column({ name: 'definition_json', type: 'jsonb' })
   definitionJson!: Record<string, unknown>;
+
+  @Column({ name: 'published_definition_json', type: 'jsonb', nullable: true })
+  publishedDefinitionJson!: Record<string, unknown> | null;
+
+  @Column({ type: 'integer', default: 0 })
+  version!: number;
+
+  @Column({ name: 'published_at', type: 'timestamptz', nullable: true })
+  publishedAt!: Date | null;
 
   @Column({
     type: 'enum',

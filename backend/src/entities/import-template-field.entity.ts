@@ -9,10 +9,10 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { FieldConfig } from './field-config.entity';
-import { OrderType } from './enums';
+import { OrderType, BusinessScope } from './enums';
 
 @Entity({ name: 'import_template_fields' })
-@Unique('uq_import_template_fields_order_field', ['orderType', 'fieldCode'])
+@Unique('uq_import_template_fields_order_field_scope', ['orderType', 'fieldCode', 'businessScope'])
 export class ImportTemplateField {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -38,6 +38,9 @@ export class ImportTemplateField {
 
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive!: boolean;
+
+  @Column({ name: 'business_scope', type: 'varchar', length: 32, default: 'beilun' })
+  businessScope!: BusinessScope;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;

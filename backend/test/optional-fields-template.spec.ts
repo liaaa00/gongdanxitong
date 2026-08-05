@@ -44,10 +44,11 @@ describe('可选字段模板生成测试', () => {
     it('应只包含标准字段（不含学历4字段）', async () => {
       const result = await service.generate(OrderType.ONBOARDING);
       const workbook = new ExcelJS.Workbook();
-      await workbook.xlsx.load(result.buffer);
+      await workbook.xlsx.load(result.buffer as any);
 
       const mainSheet = workbook.getWorksheet('当前字段配置');
       expect(mainSheet).toBeDefined();
+      if (!mainSheet) return;
 
       const headerRow = mainSheet.getRow(1);
       const headers = [];

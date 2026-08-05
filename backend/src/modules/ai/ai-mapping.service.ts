@@ -139,12 +139,12 @@ export class AiMappingService {
     const prompt = this.buildPrompt(orderType, llmHeaders, llmCandidateFields);
 
     for (const provider of this.providers()) {
-      if (!(await provider.isAvailable(businessScope))) {
+      if (!(await provider.isAvailable())) {
         this.logger.debug(`LLM provider ${provider.name} unavailable (missing API key or disabled), skipping`);
         continue;
       }
       try {
-        const result = await provider.call(prompt, businessScope);
+        const result = await provider.call(prompt);
         const normalized = await this.normalizeLlmResult(result.content, result.raw, llmCandidateFields, promptHash, provider);
         normalized.suggestion = this.remapFieldNamesToHeaders(normalized.suggestion, llmHeaders, llmCandidateFields);
         const merged = this.mergeLlmResult(localResult, normalized, headers, candidateFields, promptHash);
@@ -573,7 +573,7 @@ export class AiMappingService {
 
   private async readProviderModelId(provider: LlmProvider, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<string> {
     if (typeof provider.getModelId === 'function') {
-      return provider.getModelId(businessScope).catch(() => '');
+      return provider.getModelId().catch(() => '');
     }
     const modelId = (provider as unknown as { modelId?: unknown }).modelId;
     return typeof modelId === 'string' ? modelId : '';

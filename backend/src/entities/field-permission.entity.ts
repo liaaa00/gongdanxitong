@@ -7,11 +7,11 @@ import {
   PrimaryGeneratedColumn,
   Unique,
 } from 'typeorm';
-import { FieldPermissionMode } from './enums';
+import { FieldPermissionMode, BusinessScope } from './enums';
 import { Role } from './role.entity';
 
 @Entity({ name: 'field_permissions' })
-@Unique('uq_field_permissions_role_field_scenario', ['roleId', 'fieldCode', 'scenario'])
+@Unique('uq_field_permissions_role_field_scenario_scope', ['roleId', 'fieldCode', 'scenario', 'businessScope'])
 export class FieldPermission {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -37,6 +37,9 @@ export class FieldPermission {
 
   @Column({ type: 'varchar', length: 128 })
   scenario!: string;
+
+  @Column({ name: 'business_scope', type: 'varchar', length: 32, default: 'beilun' })
+  businessScope!: BusinessScope;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;

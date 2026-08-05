@@ -1232,7 +1232,7 @@ export class DispatchedOrderService {
 
     const page = query.current ?? query.page;
     const pageSize = query.pageSize;
-    const permissions = await this.fieldPermissionService.getPermissionsForUser(user.sub, `dispatched:${order.moduleCode}`, order.parentOrder.businessScope);
+    const permissions = await this.fieldPermissionService.getPermissionsForUser(user.sub, `dispatched:${order.moduleCode}`);
     const visibleFields = new Map<string, FieldPermissionMode>();
     const dispatchedVisibleSet = order.visibleFields ? new Set(order.visibleFields) : null;
     for (const [fieldCode, permission] of permissions.entries()) {
@@ -2252,7 +2252,7 @@ export class DispatchedOrderService {
       dirtyByField.set(mark.fieldCode, mark);
     }
     const permissions = user
-      ? await this.fieldPermissionService.getPermissionsForUser(user.sub, `dispatched:${order.moduleCode}`, order.parentOrder.businessScope)
+      ? await this.fieldPermissionService.getPermissionsForUser(user.sub, `dispatched:${order.moduleCode}`)
       : new Map<string, FieldPermissionMode>();
     const hasConfiguredPermissions = permissions.size > 0;
     const isReturnedToBusinessCreator = Boolean(

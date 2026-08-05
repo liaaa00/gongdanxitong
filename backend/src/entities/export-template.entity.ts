@@ -7,6 +7,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { User } from './user.entity';
+import { BusinessScope } from './enums';
 
 @Entity({ name: 'export_templates' })
 export class ExportTemplate {
@@ -38,6 +39,9 @@ export class ExportTemplate {
   // 电子签平台路由：仅劳动合同新签模块使用，区分速创 / E签宝两套导出模板。
   @Column({ name: 'sign_platform', type: 'varchar', length: 16, nullable: true })
   signPlatform!: string | null;
+
+  @Column({ name: 'business_scope', type: 'varchar', length: 32, default: 'beilun' })
+  businessScope!: BusinessScope;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
