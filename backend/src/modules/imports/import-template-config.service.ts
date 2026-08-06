@@ -262,7 +262,7 @@ export class ImportTemplateConfigService {
 
   private applyTemplateRules(orderType: OrderType, field: FieldConfig): FieldConfig {
     if (orderType !== OrderType.ONBOARDING) return field;
-        if (field.fieldCode === 'feedback_deadline' || field.fieldCode === 'is_common_template') {
+    if (field.fieldCode === 'is_common_template') {
       return {
         ...field,
         isRequired: false,

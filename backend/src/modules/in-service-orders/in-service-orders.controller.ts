@@ -49,6 +49,14 @@ export class InServiceOrdersController {
     return this.service.list(query, user);
   }
 
+  @Get('renewal/history')
+  renewalHistory(
+    @Query('customerId') customerId: string,
+    @Query('idCardNo') idCardNo: string,
+  ) {
+    return this.service.getRenewalHistory(customerId, idCardNo);
+  }
+
   @Get('injury-warning')
   injuryWarning(@Query() query: InjuryWarningQueryDto) {
     return this.service.getInjuryWarning(query.idCardNo);

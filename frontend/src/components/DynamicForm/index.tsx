@@ -10,6 +10,7 @@ import {
 import type { ProFormInstance } from '@ant-design/pro-components';
 import { App, Card, Col, Row } from 'antd';
 import type { Dayjs } from 'dayjs';
+import { getContractSubjects, type ContractSubjectItem } from '@/services/contractSubjects';
 
 export interface FieldConfig {
   field_code: string;
@@ -29,6 +30,7 @@ export interface FieldConfig {
   source_category?: 'customer_filled' | 'agent_supplemented' | 'process_judgment' | null;
   /** ★ 后端业务域归属：字段可跨业务复用 */
   business_context?: string[] | null;
+  is_included_in_template?: boolean;
   display_order: number;
   is_active?: boolean;
 }
@@ -119,6 +121,19 @@ function DynamicForm({
 }: DynamicFormProps) {
   const { message } = App.useApp();
   const [currentValues, setCurrentValues] = useState<Record<string, unknown>>(initialValues ?? {});
+  const [contractSubjects, setContractSubjects] = useState<ContractSubjectItem[]>([]);
+  const hasContractSubjectFields = orderType === 'onboarding'
+    && fields.some((field) => field.field_code === 'contract_subject' || field.field_code === 'company_address');
+
+  useEffect(() => {
+    if (!hasContractSubjectFields) {
+      setContractSubjects([]);
+      return;
+    }
+    getContractSubjects()
+      .then(setContractSubjects)
+      .catch(() => message.warning('劳动合同主体目录加载失败，可稍后刷新重试'));
+  }, [hasContractSubjectFields, message]);
 
   const fieldNameMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -248,6 +263,44 @@ function DynamicForm({
         'aria-describedby': field.help_text ? `${field.field_code}-help` : undefined,
       },
     };
+
+    if (field.field_code === 'contract_subject' && contractSubjects.length > 0) {
+      return (
+        <ProFormSelect
+          key={field.field_code}
+          {...commonProps}
+          fieldProps={{
+            ...commonProps.fieldProps,
+            showSearch: true,
+            allowClear: true,
+            optionFilterProp: 'label',
+            getPopupContainer: (triggerNode: HTMLElement) => triggerNode.parentElement || document.body,
+          }}
+          options={contractSubjects.map((subject) => ({
+            value: subject.subjectName,
+            label: `${subject.subjectName}（${subject.city}）`,
+          }))}
+          onChange={(value) => {
+            const selected = contractSubjects.find((subject) => subject.subjectName === value);
+            const address = selected?.registeredAddress || undefined;
+            const nextValues = { ...currentValues, contract_subject: value, company_address: address };
+            formRef?.current?.setFieldsValue({ contract_subject: value, company_address: address });
+            setCurrentValues(nextValues);
+            onValuesChange?.({ contract_subject: value, company_address: address }, nextValues);
+          }}
+        />
+      );
+    }
+
+    if (field.field_code === 'company_address') {
+      return (
+        <ProFormText
+          key={field.field_code}
+          {...commonProps}
+          disabled={disabled || Boolean(currentValues.contract_subject)}
+        />
+      );
+    }
 
     switch (field.field_type) {
       case 'number':

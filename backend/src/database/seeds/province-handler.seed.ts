@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { PROVINCES_27, isValidProvince } from 'src/common/constants/provinces';
 import {
+  BusinessScope,
   DispatchModuleCode,
   ModuleHandler,
   ModuleType,
@@ -18,6 +19,7 @@ export interface ProvinceHandlerSeed {
   moduleType: ModuleType;
   teamRole: TeamRole;
   province: string;
+  city?: string;
   handlerText: string;
   handlerUsernames: readonly string[];
   orderTypes?: readonly OrderType[];
@@ -27,103 +29,169 @@ export interface ProvinceHandlerSeed {
 
 const logger = new Logger('ProvinceHandlerSeed');
 
-// 配置表：单项业务省份映射（5 个双人省份，前者主办、后者备选）
-const SHEET4_MAPPING: Record<string, string> = {
-  广东: 'chenli', 安徽: 'chenli', 黑龙江: 'yangyi', 重庆: 'daijunxiang',
-  湖北: 'zhumin/daiminhua', 江西: 'fangzhiying', 云南: 'fangzhiying', 吉林: 'fangzhiying',
-  江苏: 'hexiaoli/daijunxiang', 山西: 'qianzhuoyun/heyitian', 山东: 'yuzheng/heyitian',
-  北京: 'xuxiaofen', 陕西: 'xuxiaofen', 辽宁: 'xuxiaofen', 天津: 'yangxiaohan',
-  福建: 'yangxiaohan/yangjie', 上海: 'yangjie', 湖南: 'yangjie', 河南: 'yangjie',
-  河北: 'yangyi', 贵州: 'yangyi', 四川: 'zhumin', 广西: 'zhumin',
-  甘肃: 'fangzhiying', 新疆: 'heyitian', 宁夏: 'yangjie', 海南: 'zhumin',
+// 2026-08-04 用户确认：省外增员、减员、单项业务与在职证明统一由这 9 名福保专员按省份办理。
+const UNIFIED_PROVINCE_MAPPING: Record<string, string> = {
+  广东: 'chenli',
+  安徽: 'chenli',
+  黑龙江: 'yangyi',
+  河北: 'yangyi',
+  贵州: 'yangyi',
+  重庆: 'daijunxiang',
+  江苏: 'daijunxiang',
+  湖北: 'zhumin',
+  四川: 'zhumin',
+  广西: 'zhumin',
+  海南: 'zhumin',
+  江西: 'fangzhiying',
+  云南: 'fangzhiying',
+  吉林: 'fangzhiying',
+  甘肃: 'fangzhiying',
+  山西: 'heyitian',
+  山东: 'heyitian',
+  新疆: 'heyitian',
+  北京: 'xuxiaofen',
+  陕西: 'xuxiaofen',
+  辽宁: 'xuxiaofen',
+  天津: 'yangxiaohan',
+  福建: 'yangxiaohan',
+  上海: 'yangjie',
+  湖南: 'yangjie',
+  河南: 'yangjie',
+  宁夏: 'yangjie',
 };
 
-// Sheet5: 省外派单映射（1个双人省份：福建）
-const SHEET5_MAPPING: Record<string, string> = {
-  广东: 'chenli', 安徽: 'chenli', 黑龙江: 'yangyi', 重庆: 'daijunxiang',
-  湖北: 'zhumin', 江西: 'fangzhiying', 云南: 'fangzhiying', 吉林: 'fangzhiying',
-  江苏: 'daijunxiang', 山西: 'heyitian', 山东: 'heyitian',
-  北京: 'xuxiaofen', 陕西: 'xuxiaofen', 辽宁: 'xuxiaofen', 天津: 'yangxiaohan',
-  福建: 'yangxiaohan/yangjie', 上海: 'yangjie', 湖南: 'yangjie', 河南: 'yangjie',
-  河北: 'yangyi', 贵州: 'yangyi', 四川: 'zhumin', 广西: 'zhumin',
-  甘肃: 'fangzhiying', 新疆: 'heyitian', 宁夏: 'yangjie', 海南: 'zhumin',
-};
+function buildProvinceRows(
+  mappingSource: ProvinceMappingSource,
+  moduleCode: DispatchModuleCode,
+  moduleType: ModuleType,
+  teamRole: TeamRole,
+  orderTypes?: readonly OrderType[],
+): ProvinceHandlerSeed[] {
+  return PROVINCES_27.map((province, index) => {
+    const handlerText = UNIFIED_PROVINCE_MAPPING[province] ?? '';
+    return {
+      mappingSource,
+      moduleCode,
+      moduleType,
+      teamRole,
+      province,
+      handlerText,
+      handlerUsernames: parseHandlerUsernames(handlerText),
+      orderTypes,
+      rowOrder: index + 1,
+      isActive: handlerText.length > 0,
+    };
+  });
+}
 
 export const PROVINCE_HANDLER_SEEDS: readonly ProvinceHandlerSeed[] = [
-  ...PROVINCES_27.map((province, index) => {
-    const handlerText = SHEET4_MAPPING[province] ?? '';
-    return {
-      mappingSource: 'sheet4' as const,
-      moduleCode: DispatchModuleCode.IN_SERVICE_SINGLE_BUSINESS,
-      moduleType: ModuleType.IN_SERVICE,
-      teamRole: TeamRole.IN_SERVICE,
-      province,
-      handlerText,
-      handlerUsernames: parseHandlerUsernames(handlerText),
-      rowOrder: index + 1,
-      isActive: handlerText.trim().length > 0,
-    };
-  }),
-  ...PROVINCES_27.map((province, index) => {
-    const handlerText = SHEET5_MAPPING[province] ?? '';
-    return {
-      mappingSource: 'sheet5' as const,
-      moduleCode: DispatchModuleCode.OUT_OF_PROVINCE_DISPATCH,
-      moduleType: ModuleType.OUT_OF_PROVINCE,
-      teamRole: TeamRole.OUT_OF_PROVINCE,
-      province,
-      handlerText,
-      handlerUsernames: parseHandlerUsernames(handlerText),
-      orderTypes: [
-        OrderType.OUT_OF_PROVINCE_INCREASE,
-        OrderType.OUT_OF_PROVINCE_DECREASE,
-      ],
-      rowOrder: index + 1,
-      isActive: handlerText.trim().length > 0,
-    };
-  }),
+  ...buildProvinceRows(
+    'sheet4',
+    DispatchModuleCode.IN_SERVICE_SINGLE_BUSINESS,
+    ModuleType.IN_SERVICE,
+    TeamRole.IN_SERVICE,
+  ),
+  ...buildProvinceRows(
+    'sheet5',
+    DispatchModuleCode.OUT_OF_PROVINCE_DISPATCH,
+    ModuleType.OUT_OF_PROVINCE,
+    TeamRole.OUT_OF_PROVINCE,
+    [OrderType.OUT_OF_PROVINCE_INCREASE, OrderType.OUT_OF_PROVINCE_DECREASE],
+  ),
 ];
+
+// 福建不是主办/备份：厦门固定杨杰，其余福建城市固定羊晓焓。
+export const PROVINCE_CITY_HANDLER_SEEDS: readonly ProvinceHandlerSeed[] = [
+  {
+    mappingSource: 'sheet4',
+    moduleCode: DispatchModuleCode.IN_SERVICE_SINGLE_BUSINESS,
+    moduleType: ModuleType.IN_SERVICE,
+    teamRole: TeamRole.IN_SERVICE,
+    province: '福建',
+    city: '厦门',
+    handlerText: 'yangjie',
+    handlerUsernames: ['yangjie'],
+    rowOrder: 1,
+    isActive: true,
+  },
+  {
+    mappingSource: 'sheet5',
+    moduleCode: DispatchModuleCode.OUT_OF_PROVINCE_DISPATCH,
+    moduleType: ModuleType.OUT_OF_PROVINCE,
+    teamRole: TeamRole.OUT_OF_PROVINCE,
+    province: '福建',
+    city: '厦门',
+    handlerText: 'yangjie',
+    handlerUsernames: ['yangjie'],
+    orderTypes: [OrderType.OUT_OF_PROVINCE_INCREASE, OrderType.OUT_OF_PROVINCE_DECREASE],
+    rowOrder: 1,
+    isActive: true,
+  },
+];
+
+export function provinceHandlerNamespace(
+  moduleCode: string,
+  province: string,
+  city?: string,
+): string {
+  return [moduleCode, province, city].filter(Boolean).join('__');
+}
 
 export async function seedProvinceHandlers(dataSource: DataSource): Promise<void> {
   validateSheet(PROVINCE_HANDLER_SEEDS, 'sheet4');
   validateSheet(PROVINCE_HANDLER_SEEDS, 'sheet5');
-  const activeRows = PROVINCE_HANDLER_SEEDS.filter((row) => row.isActive);
+  validateCityRows(PROVINCE_CITY_HANDLER_SEEDS);
 
   const userRepository = dataSource.getRepository(User);
   const moduleHandlerRepository = dataSource.getRepository(ModuleHandler);
+  const rows = [...PROVINCE_HANDLER_SEEDS, ...PROVINCE_CITY_HANDLER_SEEDS]
+    .filter((row) => row.isActive)
+    .sort((left, right) => (
+      left.mappingSource.localeCompare(right.mappingSource)
+      || left.rowOrder - right.rowOrder
+      || String(left.city ?? '').localeCompare(String(right.city ?? ''))
+    ));
 
-  for (const row of activeRows.sort((left, right) =>
-    left.mappingSource.localeCompare(right.mappingSource) || left.rowOrder - right.rowOrder)) {
-    const namespacedModuleCode = `${row.moduleCode}__${row.province}`;
-    for (const [index, username] of row.handlerUsernames.entries()) {
-      const handler = await userRepository.findOne({ where: { username, isActive: true } });
-      if (!handler) {
-        logger.warn({
-          mappingSource: row.mappingSource,
-          province: row.province,
-          username,
-          reason: 'handler account not found',
-        });
+  for (const row of rows) {
+    const moduleCode = provinceHandlerNamespace(row.moduleCode, row.province, row.city);
+    const businessScope = row.mappingSource === 'sheet5' ? BusinessScope.OUT_OF_PROVINCE : BusinessScope.BEILUN;
+    const expectedHandlers: Array<{ user: User; weight: number }> = [];
+
+    for (const username of row.handlerUsernames) {
+      const user = await userRepository.findOne({ where: { username, isActive: true, businessScope } });
+      if (!user) {
+        logger.warn({ mappingSource: row.mappingSource, province: row.province, city: row.city, username, reason: 'handler account not found' });
         continue;
       }
+      expectedHandlers.push({ user, weight: 100 });
+    }
 
-      const weight = index === 0 ? 100 : 1;
-      const isBackup = index > 0;
-      const existed = await moduleHandlerRepository.findOne({
-        where: { moduleCode: namespacedModuleCode, handlerId: handler.id },
-      });
-      if (existed) {
-        if (existed.weight !== weight || existed.isBackup !== isBackup) {
-          await moduleHandlerRepository.save({ ...existed, weight, isBackup });
+    const expectedIds = new Set(expectedHandlers.map(({ user }) => user.id));
+    const existingRows = await moduleHandlerRepository.find({ where: { moduleCode, businessScope } });
+    for (const existing of existingRows) {
+      const shouldBeActive = expectedIds.has(existing.handlerId);
+      if (
+        existing.isActive !== shouldBeActive
+        || (shouldBeActive && (existing.isBackup || existing.weight !== 100))
+      ) {
+        existing.isActive = shouldBeActive;
+        if (shouldBeActive) {
+          existing.isBackup = false;
+          existing.weight = 100;
         }
-        continue;
+        await moduleHandlerRepository.save(existing);
       }
+    }
 
+    for (const { user, weight } of expectedHandlers) {
+      const existing = existingRows.find((item) => item.handlerId === user.id);
+      if (existing) continue;
       await moduleHandlerRepository.save(moduleHandlerRepository.create({
-        moduleCode: namespacedModuleCode,
-        handlerId: handler.id,
+        moduleCode,
+        businessScope,
+        handlerId: user.id,
         weight,
-        isBackup,
+        isBackup: false,
         isActive: true,
       }));
     }
@@ -144,35 +212,36 @@ function validateSheet(rows: readonly ProvinceHandlerSeed[], mappingSource: Prov
   const expectedTeamRole = mappingSource === 'sheet4' ? TeamRole.IN_SERVICE : TeamRole.OUT_OF_PROVINCE;
 
   for (const row of sheetRows) {
-    if (
-      row.moduleCode !== expectedModuleCode
-      || row.moduleType !== expectedModuleType
-      || row.teamRole !== expectedTeamRole
-    ) {
+    if (row.moduleCode !== expectedModuleCode || row.moduleType !== expectedModuleType || row.teamRole !== expectedTeamRole) {
       throw new Error(`${mappingSource} row ${row.rowOrder}: mapping metadata mismatch`);
     }
-    if (!isValidProvince(row.province)) {
-      throw new Error(`${mappingSource} row ${row.rowOrder}: invalid province ${row.province}`);
+    if (!isValidProvince(row.province) || row.city) {
+      throw new Error(`${mappingSource} row ${row.rowOrder}: invalid province mapping ${row.province}`);
     }
-    const key = `${row.moduleCode}__${row.province}`;
-    if (seen.has(key)) {
-      throw new Error(`${mappingSource} row ${row.rowOrder}: duplicate mapping ${key}`);
-    }
+    const key = provinceHandlerNamespace(row.moduleCode, row.province);
+    if (seen.has(key)) throw new Error(`${mappingSource} row ${row.rowOrder}: duplicate mapping ${key}`);
     seen.add(key);
 
     if (!row.isActive) continue;
-
-    const usernames = parseHandlerUsernames(row.handlerText);
-    if (
-      usernames.length === 0
-      || usernames.length > 2
-      || usernames.join('/') !== row.handlerUsernames.join('/')
-    ) {
-      throw new Error(`${mappingSource} row ${row.rowOrder}: expected one or two ordered handlers`);
+    if (row.handlerUsernames.length !== 1 || row.handlerUsernames[0] !== row.handlerText) {
+      throw new Error(`${mappingSource} row ${row.rowOrder}: expected exactly one primary handler`);
     }
   }
 
   if (seen.size !== PROVINCES_27.length) {
     throw new Error(`${mappingSource}: expected ${PROVINCES_27.length} province mappings, received ${seen.size}`);
+  }
+}
+
+function validateCityRows(rows: readonly ProvinceHandlerSeed[]): void {
+  for (const row of rows) {
+    if (
+      row.province !== '福建'
+      || row.city !== '厦门'
+      || row.handlerUsernames.length !== 1
+      || row.handlerUsernames[0] !== 'yangjie'
+    ) {
+      throw new Error(`invalid city mapping: ${row.mappingSource}/${row.province}/${row.city ?? ''}`);
+    }
   }
 }

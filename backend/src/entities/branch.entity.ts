@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import { Customer } from './customer.entity';
 import { WorkOrder } from './work-order.entity';
+import { BusinessScope } from './enums';
 
 @Entity({ name: 'branches' })
 export class Branch {
@@ -27,6 +28,9 @@ export class Branch {
 
   @Column({ name: 'branch_name', type: 'varchar', length: 128 })
   branchName!: string;
+
+  @Column({ name: 'business_scope', type: 'varchar', length: 32, default: BusinessScope.BEILUN })
+  businessScope!: BusinessScope;
 
   @Column({ type: 'varchar', length: 64, nullable: true })
   city!: string | null;

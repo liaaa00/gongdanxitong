@@ -12,6 +12,7 @@ import {
   ActionConfig,
   Branch,
   CertificateType,
+  ContractSubject,
   Customer,
   CustomerAssignee,
   Department,
@@ -62,6 +63,7 @@ import { AiModule } from './modules/ai/ai.module';
 import { AttachmentsModule } from './modules/attachments/attachments.module';
 import { ImportsModule } from './modules/imports/imports.module';
 import { InServiceOrdersModule } from './modules/in-service-orders/in-service-orders.module';
+import { ContractSubjectsModule } from './modules/contract-subjects/contract-subjects.module';
 import { OutOfProvinceOrdersModule } from './modules/out-of-province-orders/out-of-province-orders.module';
 import { StagesModule } from './modules/stages/stages.module';
 import { NotificationModule } from './modules/notifications/notification.module';
@@ -98,6 +100,7 @@ import { OperationLogCleanupService } from './modules/operation-logs/operation-l
           ActionConfig,
           Branch,
           CertificateType,
+          ContractSubject,
           Customer,
           CustomerAssignee,
           Department,
@@ -150,6 +153,7 @@ import { OperationLogCleanupService } from './modules/operation-logs/operation-l
     AiModule,
     ImportsModule,
     InServiceOrdersModule,
+    ContractSubjectsModule,
     OutOfProvinceOrdersModule,
     AttachmentsModule,
     StagesModule,

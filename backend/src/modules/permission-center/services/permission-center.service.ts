@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { PermissionConfigVersionEntity } from '../entities/permission-config-version.entity';
 import { PermissionConfig, FieldViewMode } from '../types/permission-config.types';
+import { BusinessScope } from 'src/entities';
 import { PermissionCacheService } from './permission-cache.service';
 
 @Injectable()
@@ -16,16 +17,17 @@ export class PermissionCenterService {
   /**
    * 获取当前激活的权限配置
    */
-  async getActiveConfig(): Promise<PermissionConfig> {
+  async getActiveConfig(businessScope: BusinessScope = BusinessScope.BEILUN): Promise<PermissionConfig> {
     // 先尝试从缓存获取
-    const cached = await this.cacheService.get<PermissionConfig>('active_config');
+    const cacheKey = `active_config:${businessScope}`;
+    const cached = await this.cacheService.get<PermissionConfig>(cacheKey);
     if (cached) {
       return cached;
     }
 
     // 缓存未命中，从数据库查询
     const active = await this.configRepo.findOne({
-      where: { is_active: true },
+      where: { is_active: true, business_scope: businessScope },
       order: { activated_at: 'DESC' },
     });
 
@@ -34,7 +36,7 @@ export class PermissionCenterService {
     }
 
     // 写入缓存
-    await this.cacheService.set('active_config', active.config, 3600);
+    await this.cacheService.set(cacheKey, active.config, 3600);
 
     return active.config;
   }
@@ -46,12 +48,14 @@ export class PermissionCenterService {
     config: PermissionConfig,
     createdBy: string,
     description?: string,
+    businessScope: BusinessScope = BusinessScope.BEILUN,
   ): Promise<PermissionConfigVersionEntity> {
     const version = this.configRepo.create({
       version: config.version,
       config,
       created_by: createdBy,
       description,
+      business_scope: businessScope,
       is_active: false,
     });
 

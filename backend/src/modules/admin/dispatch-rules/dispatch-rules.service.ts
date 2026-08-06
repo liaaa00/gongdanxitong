@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 import { canHandleModule, getRequiredModuleHandlerRoles } from 'src/common/auth/role-permissions';
-import { DispatchedOrder, DispatchedOrderStatus, DispatchRule, DispatchStrategy, ModuleHandler, OrderType, User, WorkOrderModuleConfig } from 'src/entities';
+import { BusinessScope, DispatchedOrder, DispatchedOrderStatus, DispatchRule, DispatchStrategy, ModuleHandler, OrderType, User, WorkOrderModuleConfig } from 'src/entities';
 import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 import { toPageResult } from 'src/common/types/pagination.types';
 import { AstValidator } from 'src/modules/dispatch/ast.validator';
@@ -29,6 +29,7 @@ interface SaveDispatchRuleInput {
   dispatchStrategy: DispatchStrategy;
   priority: number;
   isActive?: boolean;
+  businessScope?: BusinessScope;
 }
 
 export interface DispatchConfigPerson {
@@ -50,6 +51,7 @@ export interface SaveModuleDispatchConfigInput {
   slaReminderBeforeHours?: number | null;
   isActive: boolean;
   changeReason?: string;
+  businessScope?: BusinessScope;
 }
 
 @Injectable()
@@ -66,11 +68,13 @@ export class DispatchRulesService {
     private readonly dispatchEngine: DispatchEngineService,
   ) {}
 
-  async getList(query: PaginationQueryDto & { orderType?: OrderType; isActive?: boolean }) {
+  async getList(query: PaginationQueryDto & { orderType?: OrderType; isActive?: boolean; businessScope?: BusinessScope }) {
     const page = query.page ?? 1;
+    const businessScope = query.businessScope ?? BusinessScope.BEILUN;
     const pageSize = query.pageSize ?? 20;
 
     const qb = this.repository.createQueryBuilder('rule');
+    qb.andWhere('rule.business_scope = :businessScope', { businessScope });
 
     if (query.orderType) {
       qb.andWhere('rule.orderType = :orderType', { orderType: query.orderType });
@@ -94,14 +98,14 @@ export class DispatchRulesService {
     return toPageResult(page, pageSize, total, rows);
   }
 
-  async getDispatchConfig(): Promise<DispatchConfigResponse> {
+  async getDispatchConfig(businessScope: BusinessScope = BusinessScope.BEILUN): Promise<DispatchConfigResponse> {
     const [handlers, moduleConfigs] = await Promise.all([
       this.moduleHandlerRepository.find({
-        where: { isActive: true, isBackup: false },
+        where: { businessScope, isActive: true, isBackup: false },
         relations: { handler: { userRoles: { role: true } } },
         order: { moduleCode: 'ASC', weight: 'DESC', id: 'ASC' },
       }),
-      this.moduleConfigRepository.find({ order: { displayOrder: 'ASC', moduleCode: 'ASC' } }),
+      this.moduleConfigRepository.find({ where: { businessScope }, order: { displayOrder: 'ASC', moduleCode: 'ASC' } }),
     ]);
 
     const handlerIds = Array.from(new Set(handlers.map((handler) => handler.handlerId)));
@@ -189,9 +193,10 @@ export class DispatchRulesService {
       throw new BadRequestException('共同负责人不能重复');
     }
 
+    const businessScope = input.businessScope ?? BusinessScope.BEILUN;
     return this.dataSource.transaction(async (manager) => {
       const moduleConfig = await manager.findOne(WorkOrderModuleConfig, {
-        where: { moduleCode },
+        where: { moduleCode, businessScope },
         lock: { mode: 'pessimistic_write' },
       });
       if (!moduleConfig) {
@@ -199,7 +204,7 @@ export class DispatchRulesService {
       }
 
       const users = await manager.find(User, {
-        where: { id: In(handlerIds), isActive: true },
+        where: { id: In(handlerIds), businessScope, isActive: true },
         relations: { userRoles: { role: true } },
       });
       if (users.length !== handlerIds.length) {
@@ -215,7 +220,7 @@ export class DispatchRulesService {
         }
       }
 
-      const existing = await manager.find(ModuleHandler, { where: { moduleCode } });
+      const existing = await manager.find(ModuleHandler, { where: { moduleCode, businessScope } });
       const selected = new Set(handlerIds);
       for (const row of existing) {
         if (!selected.has(row.handlerId)) {
@@ -226,7 +231,7 @@ export class DispatchRulesService {
       for (let index = 0; index < handlerIds.length; index += 1) {
         const handlerId = handlerIds[index];
         const row = existing.find((item) => item.handlerId === handlerId)
-          ?? manager.create(ModuleHandler, { moduleCode, handlerId });
+          ?? manager.create(ModuleHandler, { moduleCode, handlerId, businessScope });
         row.weight = handlerIds.length - index;
         row.isBackup = false;
         row.isActive = true;
@@ -252,8 +257,8 @@ export class DispatchRulesService {
     });
   }
 
-  async getById(id: string): Promise<DispatchRule> {
-    const row = await this.repository.findOne({ where: { id } });
+  async getById(id: string, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<DispatchRule> {
+    const row = await this.repository.findOne({ where: { id, businessScope } });
     if (!row) {
       throw new NotFoundException('派发规则未找到');
     }
@@ -263,8 +268,10 @@ export class DispatchRulesService {
 
   async create(input: SaveDispatchRuleInput): Promise<DispatchRule> {
     this.astValidator.validate(input.triggerConditions);
+    const businessScope = input.businessScope ?? BusinessScope.BEILUN;
     const entity = this.repository.create({
       ...this.normalizeInput(input),
+      businessScope,
       triggerConditions: input.triggerConditions as Record<string, unknown> | null,
       isActive: input.isActive ?? true,
     });
@@ -273,7 +280,8 @@ export class DispatchRulesService {
   }
 
   async update(id: string, input: Partial<SaveDispatchRuleInput>): Promise<DispatchRule> {
-    const row = await this.getById(id);
+    const businessScope = input.businessScope ?? BusinessScope.BEILUN;
+    const row = await this.getById(id, businessScope);
 
     if (input.triggerConditions !== undefined) {
       this.astValidator.validate(input.triggerConditions);
@@ -285,8 +293,8 @@ export class DispatchRulesService {
     return this.repository.save(row);
   }
 
-  async softDelete(id: string): Promise<{ success: boolean }> {
-    const row = await this.getById(id);
+  async softDelete(id: string, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<{ success: boolean }> {
+    const row = await this.getById(id, businessScope);
     row.isActive = false;
     await this.repository.save(row);
     return { success: true };
@@ -318,6 +326,7 @@ export class DispatchRulesService {
     orderType: OrderType;
     fields: Record<string, unknown>;
     ruleIds?: string[];
+    businessScope?: BusinessScope;
   }) {
     return this.dispatchEngine.evaluate(input);
   }

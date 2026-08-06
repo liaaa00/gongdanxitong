@@ -476,6 +476,7 @@ const mockWorkOrders: WorkOrderItem[] = loadMockWorkOrders();
 // 入职导入模板排除：办理岗在子单完成时填写的反馈字段，不进业务员发起的导入表。
 // 注意：contract_template（劳动合同模板）是业务员发起阶段字段，必须保留在模板中。
 const ONBOARDING_IMPORT_TEMPLATE_EXCLUDED_FIELD_CODES = new Set([
+  'postal_code',
   'contract_feedback',
   'onboarding_feedback',
   'data_entry_feedback',
@@ -537,6 +538,7 @@ const AVAILABLE_FIELDS_MOCK = [
   { field_code: 'social_base', field_name: '社保基数', is_required: true },
   { field_code: 'fund_base', field_name: '公积金基数', is_required: true },
   { field_code: 'fund_ratio', field_name: '公积金比例', is_required: true },
+  { field_code: 'bank_location', field_name: '开户地' },
   { field_code: 'bank_name', field_name: '开户银行信息' },
   { field_code: 'bank_account', field_name: '银行借记卡帐号' },
   { field_code: 'remark', field_name: '备注' },
@@ -1248,6 +1250,7 @@ const HEADER_SUGGESTIONS: Record<string, { code: string; name: string; confidenc
   '社保基数': { code: 'social_base', name: '社保基数', confidence: 0.97 },
   '公积金基数': { code: 'fund_base', name: '公积金基数', confidence: 0.97 },
   '公积金比例': { code: 'fund_ratio', name: '公积金比例', confidence: 0.95 },
+  '开户地': { code: 'bank_location', name: '开户地', confidence: 0.95 },
   '开户银行信息': { code: 'bank_name', name: '开户银行信息', confidence: 0.95 },
   '开户银行': { code: 'bank_name', name: '开户银行信息', confidence: 0.9 },
   '银行借记卡帐号': { code: 'bank_account', name: '银行借记卡帐号', confidence: 0.95 },
@@ -1259,6 +1262,8 @@ const HEADER_SUGGESTIONS: Record<string, { code: string; name: string; confidenc
   '是否企服发起劳动合同': { code: 'need_company_contract', name: '是否企服发起劳动合同', confidence: 0.95 },
   '是否签订劳动合同': { code: 'need_company_contract', name: '是否企服发起劳动合同', confidence: 0.88 },
   '劳动合同主体': { code: 'contract_subject', name: '劳动合同主体', confidence: 0.95 },
+  '劳动合同主体注册地': { code: 'company_address', name: '甲方住所', confidence: 0.95 },
+  '甲方住所': { code: 'company_address', name: '甲方住所', confidence: 0.95 },
   '劳动合同模板': { code: 'contract_template', name: '劳动合同模板', confidence: 0.95 },
   '劳动合同签署是否需要催办员工': { code: 'contract_urge', name: '劳动合同签署是否需要催办员工', confidence: 0.95 },
   '劳动合同新签反馈': { code: 'contract_feedback', name: '劳动合同新签反馈', confidence: 0.95 },

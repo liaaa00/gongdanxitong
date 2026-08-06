@@ -34,7 +34,8 @@ import {
   type InServiceOrderKind,
   type InServiceProcessType,
 } from '@/constants/inService';
-import type { InServiceOrderPayload } from '@/services/inServiceOrders';
+import { getRenewalHistory, type InServiceOrderPayload, type RenewalHistoryResult } from '@/services/inServiceOrders';
+import { getContractSubjects, type ContractSubjectItem } from '@/services/contractSubjects';
 
 export type InServiceOrderFormValues = InServiceOrderPayload;
 
@@ -99,25 +100,9 @@ const RENEWAL_CONTRACT_FIELD_CODES = [
 ] as const;
 
 const RENEWAL_ALWAYS_REQUIRED = new Set([
-  'id_card_type',
-  'mobile',
-  'position',
-  'position_type',
   'contract_term_type',
   'contract_start_date',
-  'work_city',
-  'work_hour_system',
-  'salary_form',
   'base_salary',
-  'payroll_cycle',
-  'payroll_date',
-  'current_address',
-  'household_address',
-  'need_esign',
-  'contract_subject',
-  'project_name',
-  'work_arrangement',
-  'contract_template',
 ]);
 
 export const RENEWAL_SIGNING_METHOD = '续签';
@@ -150,12 +135,15 @@ export function buildRenewalConfiguredFields(
     ...RENEWAL_CONTRACT_FIELD_CODES.map((code) => onboardingByCode.get(code)),
   ]
     .filter((field): field is ImportTemplateFieldItem => Boolean(field))
-    .map((field, index) => ({
-      ...field,
-      is_required: RENEWAL_ALWAYS_REQUIRED.has(field.field_code) || field.is_required,
-      default_required: RENEWAL_ALWAYS_REQUIRED.has(field.field_code) || field.default_required,
-      display_order: index + 1,
-    }));
+    .map((field, index) => {
+      const positionLocked = field.field_code === 'position' || field.field_code === 'position_type';
+      return {
+        ...field,
+        is_required: !positionLocked && RENEWAL_ALWAYS_REQUIRED.has(field.field_code),
+        default_required: !positionLocked && RENEWAL_ALWAYS_REQUIRED.has(field.field_code),
+        display_order: index + 1,
+      };
+    });
 }
 
 export function normalizeRenewalExtraData(
@@ -274,6 +262,9 @@ export default function InServiceOrderForm({
   const [departments, setDepartments] = useState<DepartmentItem[]>([]);
   const [optionsLoaded, setOptionsLoaded] = useState(false);
   const [renewalConfiguredFields, setRenewalConfiguredFields] = useState<ImportTemplateFieldItem[]>([]);
+  const [contractSubjects, setContractSubjects] = useState<ContractSubjectItem[]>([]);
+  const [renewalHistory, setRenewalHistory] = useState<RenewalHistoryResult | null>(null);
+  const [renewalHistoryLoading, setRenewalHistoryLoading] = useState(false);
   const effectiveKind = orderKind
     ?? initialValues?.orderKind
     ?? IN_SERVICE_ORDER_KINDS.SINGLE_BUSINESS;
@@ -281,6 +272,8 @@ export default function InServiceOrderForm({
   const processType = Form.useWatch('processType', form) as InServiceProcessType | undefined;
   const certificateType = Form.useWatch(['extraData', 'certificateType'], form) as string | undefined;
   const watchedExtraData = Form.useWatch('extraData', form) as Record<string, unknown> | undefined;
+  const customerId = Form.useWatch('customerId', form) as string | undefined;
+  const idCardNo = Form.useWatch('idCardNo', form) as string | undefined;
 
   useEffect(() => {
     Promise.all([getCustomers({ page: 1, pageSize: 100 }), getDepartments()])
@@ -318,15 +311,44 @@ export default function InServiceOrderForm({
     Promise.all([
       getCreateWorkOrderFields('renewal'),
       getCreateWorkOrderFields('onboarding'),
+      getContractSubjects(),
     ])
-      .then(([renewalFields, onboardingFields]) => {
+      .then(([renewalFields, onboardingFields, subjects]) => {
         setRenewalConfiguredFields(buildRenewalConfiguredFields(renewalFields, onboardingFields));
+        setContractSubjects(subjects);
       })
       .catch(() => {
         setRenewalConfiguredFields([]);
         message.warning('续签字段配置加载失败，请刷新后重试');
       });
   }, [isRenewal, message]);
+
+  useEffect(() => {
+    if (!isRenewal || !customerId || !idCardNo?.trim()) {
+      setRenewalHistory(null);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setRenewalHistoryLoading(true);
+      getRenewalHistory(customerId, idCardNo.trim())
+        .then((result) => {
+          setRenewalHistory(result);
+          if (!result.found) return;
+          const currentExtraData = form.getFieldValue('extraData') || {};
+          const currentEmployeeName = form.getFieldValue('employeeName');
+          form.setFieldsValue({
+            employeeName: currentEmployeeName || result.employeeName || undefined,
+            extraData: { ...result.extraData, ...currentExtraData },
+          });
+        })
+        .catch(() => {
+          setRenewalHistory(null);
+          message.warning('员工历史数据查询失败，请检查客户和证件号');
+        })
+        .finally(() => setRenewalHistoryLoading(false));
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [customerId, form, idCardNo, isRenewal, message]);
 
   const renewalFieldRules = (field: ImportTemplateFieldItem) => {
     const rules: Array<Record<string, unknown>> = [];
@@ -344,13 +366,41 @@ export default function InServiceOrderForm({
 
   const renderRenewalConfiguredField = (field: ImportTemplateFieldItem) => {
     const name = ['extraData', field.field_code];
+    const positionLocked = field.field_code === 'position' || field.field_code === 'position_type';
+    const addressLocked = field.field_code === 'company_address' && Boolean(watchedExtraData?.contract_subject);
     const commonProps = {
       name,
       label: field.field_name,
       rules: renewalFieldRules(field),
-      required: isRenewalFieldRequired(field, watchedExtraData),
+      required: !positionLocked && isRenewalFieldRequired(field, watchedExtraData),
       tooltip: field.help_text || undefined,
     };
+    if (field.field_code === 'contract_subject' && contractSubjects.length > 0) {
+      return (
+        <Form.Item {...commonProps}>
+          <Select
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            placeholder="请选择劳动合同主体"
+            options={contractSubjects.map((subject) => ({
+              value: subject.subjectName,
+              label: `${subject.subjectName}（${subject.city}）`,
+            }))}
+            onChange={(value) => {
+              const selected = contractSubjects.find((subject) => subject.subjectName === value);
+              form.setFieldsValue({
+                extraData: {
+                  ...(form.getFieldValue('extraData') || {}),
+                  contract_subject: value,
+                  company_address: selected?.registeredAddress || undefined,
+                },
+              });
+            }}
+          />
+        </Form.Item>
+      );
+    }
     if (field.field_type === 'date') {
       return (
         <Form.Item {...commonProps} getValueProps={dateValueProps} normalize={normalizeDate}>
@@ -387,7 +437,11 @@ export default function InServiceOrderForm({
     }
     return (
       <Form.Item {...commonProps}>
-        <Input maxLength={500} placeholder={field.placeholder || `请输入${field.field_name}`} />
+        <Input
+          maxLength={500}
+          disabled={positionLocked || addressLocked}
+          placeholder={field.placeholder || `请输入${field.field_name}`}
+        />
       </Form.Item>
     );
   };
@@ -555,6 +609,8 @@ export default function InServiceOrderForm({
               </Form.Item>
             </Col>
           </Row>
+          {renewalHistoryLoading ? <Alert type="info" showIcon message="正在查询员工历史数据" style={{ marginBottom: 16 }} /> : null}
+          {renewalHistory?.warning ? <Alert type="warning" showIcon message="无固定期限合同风险提示" description={renewalHistory.warning} style={{ marginBottom: 16 }} /> : null}
           {renewalConfiguredFields.length === 0 ? (
             <Alert
               type="warning"

@@ -6,6 +6,7 @@ import {
   DispatchModuleCode,
   DispatchStrategy,
   ModuleHandler,
+  BusinessScope,
   ModuleHandlerDelegation,
 } from 'src/entities';
 import { isValidProvince } from 'src/common/constants/provinces';
@@ -30,7 +31,8 @@ export class HandlerPickerService {
     strategy: DispatchStrategy,
     moduleCode: string,
     manager?: EntityManager,
-    context?: { province?: string; mappingSource?: 'sheet4' | 'sheet5' },
+    context?: { province?: string; city?: string; mappingSource?: 'sheet4' | 'sheet5' },
+    businessScope: BusinessScope = BusinessScope.BEILUN,
   ): Promise<string | null> {
     const moduleHandlerRepository = manager?.getRepository(ModuleHandler) ?? this.moduleHandlerRepository;
     const dispatchedOrderRepository = manager?.getRepository(DispatchedOrder) ?? this.dispatchedOrderRepository;
@@ -42,8 +44,9 @@ export class HandlerPickerService {
     if (context?.mappingSource) {
       return this.pickProvinceMapping(
         moduleCode,
-        { province: context.province, mappingSource: context.mappingSource },
+        { province: context.province, city: context.city, mappingSource: context.mappingSource },
         moduleHandlerRepository,
+        businessScope,
       );
     }
 
@@ -59,6 +62,7 @@ export class HandlerPickerService {
       moduleCode,
       moduleHandlerRepository,
       delegationRepository,
+      businessScope,
     );
     if (strategy === DispatchStrategy.FIXED) {
       return this.pickFixed(moduleCode, candidates);
@@ -71,13 +75,15 @@ export class HandlerPickerService {
       candidates,
       moduleHandlerRepository,
       delegationRepository,
+      businessScope,
     );
   }
 
   private async pickProvinceMapping(
     moduleCode: string,
-    context: { province?: string; mappingSource: 'sheet4' | 'sheet5' },
+    context: { province?: string; city?: string; mappingSource: 'sheet4' | 'sheet5' },
     repository: Repository<ModuleHandler>,
+    businessScope: BusinessScope,
   ): Promise<string | null> {
     const expectedModuleCode = context.mappingSource === 'sheet4'
       ? DispatchModuleCode.IN_SERVICE_SINGLE_BUSINESS
@@ -88,9 +94,12 @@ export class HandlerPickerService {
       return null;
     }
 
-    const namespacedModuleCode = `${moduleCode}__${province}`;
+    const city = province === '福建' && context.city?.trim().replace(/市$/, '').startsWith('厦门')
+      ? '厦门'
+      : null;
+    const namespacedModuleCode = [moduleCode, province, city].filter(Boolean).join('__');
     const candidates = (await repository.find({
-      where: { moduleCode: namespacedModuleCode, isActive: true },
+      where: { moduleCode: namespacedModuleCode, businessScope, isActive: true },
       relations: { handler: true },
       order: { weight: 'DESC', handlerId: 'ASC' },
     })).filter((candidate) => this.isHandlerActive(candidate) && !candidate.isBackup);
@@ -177,6 +186,7 @@ export class HandlerPickerService {
     initialCandidates: ModuleHandler[],
     repository: Repository<ModuleHandler>,
     delegationRepository?: Repository<ModuleHandlerDelegation>,
+    businessScope: BusinessScope = BusinessScope.BEILUN,
   ): Promise<string | null> {
     let candidates = initialCandidates.filter((candidate) => !candidate.isBackup);
     if (candidates.length === 0) {
@@ -201,6 +211,7 @@ export class HandlerPickerService {
         moduleCode,
         repository,
         delegationRepository,
+        businessScope,
       )).filter((candidate) => !candidate.isBackup);
     }
 
@@ -212,9 +223,10 @@ export class HandlerPickerService {
     moduleCode: string,
     repository: Repository<ModuleHandler>,
     delegationRepository?: Repository<ModuleHandlerDelegation>,
+    businessScope: BusinessScope = BusinessScope.BEILUN,
   ): Promise<ModuleHandler[]> {
     const configured = await repository.find({
-      where: { moduleCode, isActive: true },
+      where: { moduleCode, businessScope, isActive: true },
       relations: { handler: true },
       order: { handlerId: 'ASC' },
     });
@@ -226,6 +238,7 @@ export class HandlerPickerService {
     const delegations = await delegationRepository.createQueryBuilder('delegation')
       .leftJoinAndSelect('delegation.delegateHandler', 'delegateHandler')
       .where('delegation.module_code = :moduleCode', { moduleCode })
+      .andWhere('delegation.business_scope = :businessScope', { businessScope })
       .andWhere('delegation.is_active = true')
       .andWhere('delegation.starts_at <= :now', { now })
       .andWhere('delegation.ends_at > :now', { now })

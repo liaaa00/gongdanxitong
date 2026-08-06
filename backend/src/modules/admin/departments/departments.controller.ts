@@ -77,7 +77,7 @@ class MoveDepartmentDto {
   sortOrder?: number;
 }
 
-@Roles('admin')
+@Roles('admin', 'biz_member', 'business_group_member', 'biz_leader', 'business_group_leader', 'biz_manager', 'business_owner')
 @Controller('admin/departments')
 @UseInterceptors(AuditInterceptor)
 export class DepartmentsController {
@@ -89,24 +89,28 @@ export class DepartmentsController {
   }
 
   @Post()
+  @Roles('admin')
   @Audit('departments', 'create')
   create(@Body() payload: SaveDepartmentDto) {
     return this.service.create(payload);
   }
 
   @Put(':id')
+  @Roles('admin')
   @Audit('departments', 'update')
   update(@Param('id') id: string, @Body() payload: UpdateDepartmentDto) {
     return this.service.update(id, payload);
   }
 
   @Delete(':id')
+  @Roles('admin')
   @Audit('departments', 'delete')
   remove(@Param('id') id: string) {
     return this.service.remove(id);
   }
 
   @Post(':id/move')
+  @Roles('admin')
   @Audit('departments', 'move')
   move(@Param('id') id: string, @Body() payload: MoveDepartmentDto) {
     return this.service.move(id, payload);

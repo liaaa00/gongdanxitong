@@ -1,5 +1,5 @@
 import { DataSource } from 'typeorm';
-import { ModuleHandler, User } from 'src/entities';
+import { BusinessScope, ModuleHandler, User } from 'src/entities';
 
 const moduleHandlerSeeds: Array<{
   moduleCode: string;
@@ -13,13 +13,11 @@ const moduleHandlerSeeds: Array<{
   { moduleCode: 'renewal_contract', username: 'yangchun', weight: 10, isBackup: false },
   { moduleCode: 'renewal_contract', username: 'jianglu', weight: 1, isBackup: true },
 
-  // 标准证明：毛雅妮主办，江璐备份；负责人仍可在后台调整。
-  { moduleCode: 'in_service_certificate', username: 'maoyani', weight: 10, isBackup: false },
-  { moduleCode: 'in_service_certificate', username: 'jianglu', weight: 1, isBackup: true },
+  // 在职证明改走 9 名福保专员的省市映射，不再保留固定人员。
 
-  // 离职证明：杨纯主办，江璐备份（双人派单）。
+  // 离职证明共同池：江璐、杨纯均可看到未认领工单，先接单者锁定办理。
   { moduleCode: 'resignation_cert', username: 'yangchun', weight: 10, isBackup: false },
-  { moduleCode: 'resignation_cert', username: 'jianglu', weight: 1, isBackup: true },
+  { moduleCode: 'resignation_cert', username: 'jianglu', weight: 10, isBackup: false },
 
   // 入离职联系/材料收集：毛雅妮主办，江璐为共享负责人/备份；江璐可看到毛雅妮联系类合集。
   { moduleCode: 'onboarding_contact', username: 'maoyani', weight: 10, isBackup: false },
@@ -37,6 +35,7 @@ const moduleHandlerSeeds: Array<{
 ];
 
 const managedModules = Array.from(new Set(moduleHandlerSeeds.map((seed) => seed.moduleCode)));
+const strictlyManagedModules = ['resignation_cert', 'in_service_certificate'];
 const deprecatedModules = [
   'social_security',
   'onboarding_social_insurance',
@@ -54,10 +53,18 @@ export async function seedModuleHandlers(dataSource: DataSource): Promise<void> 
       continue;
     }
 
-    // Existing module handler settings are preserved.
-
-    const existed = await moduleHandlerRepo.findOne({ where: { moduleCode: seed.moduleCode, handlerId: user.id } });
-    if (existed) continue;
+    const businessScope = user.businessScope ?? BusinessScope.BEILUN;
+    activeHandlerKeys.add(`${seed.moduleCode}:${user.id}:${businessScope}`);
+    const existed = await moduleHandlerRepo.findOne({ where: { moduleCode: seed.moduleCode, handlerId: user.id, businessScope } });
+    if (existed) {
+      if (existed.weight !== seed.weight || existed.isBackup !== seed.isBackup || !existed.isActive) {
+        existed.weight = seed.weight;
+        existed.isBackup = seed.isBackup;
+        existed.isActive = true;
+        await moduleHandlerRepo.save(existed);
+      }
+      continue;
+    }
 
     await moduleHandlerRepo.save(moduleHandlerRepo.create({
       moduleCode: seed.moduleCode,
@@ -65,12 +72,22 @@ export async function seedModuleHandlers(dataSource: DataSource): Promise<void> 
       weight: seed.weight,
       isBackup: seed.isBackup,
       isActive: true,
+      businessScope,
     }));
   }
 
-  void activeHandlerKeys;
+  for (const moduleCode of strictlyManagedModules) {
+    const rows = await moduleHandlerRepo.find({ where: { moduleCode, businessScope: BusinessScope.BEILUN } });
+    for (const row of rows) {
+      const shouldBeActive = activeHandlerKeys.has(`${moduleCode}:${row.handlerId}:${BusinessScope.BEILUN}`);
+      if (row.isActive !== shouldBeActive) {
+        row.isActive = shouldBeActive;
+        await moduleHandlerRepo.save(row);
+      }
+    }
+  }
+
   void managedModules;
   void deprecatedModules;
-  // Non-destructive seed: do not deactivate existing module handlers here.
-  // Operators can manage handlers from the admin console.
+  // 其他模块保留后台人工调整；仅最新业务明确指定的证明模块做精确收敛。
 }

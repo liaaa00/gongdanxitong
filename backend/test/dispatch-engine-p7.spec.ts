@@ -78,7 +78,7 @@ describe('P7 DispatchEngine business routing', () => {
     const result = await service.evaluateDetailed(makeWorkOrder(OrderType.BENEFIT, { benefit_type: 'medical' }));
 
     expect(repo.find).toHaveBeenCalledWith(expect.objectContaining({
-      where: { orderType: OrderType.BENEFIT, isActive: true },
+      where: { orderType: OrderType.BENEFIT, isActive: true, businessScope: 'beilun' },
     }));
     expect(result.childrenToCreate.map((item) => item.moduleCode)).toEqual(['benefit_apply']);
   });

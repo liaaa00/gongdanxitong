@@ -3,6 +3,7 @@ export * from './branch.entity';
 export * from './certificate-type.entity';
 export * from './customer-assignee.entity';
 export * from './customer.entity';
+export * from './contract-subject.entity';
 export * from './department.entity';
 export * from './detail-view-template.entity';
 export * from './dispatch-rule.entity';

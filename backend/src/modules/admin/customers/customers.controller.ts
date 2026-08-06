@@ -70,7 +70,7 @@ class ToggleCustomerDto {
   isActive!: boolean;
 }
 
-@Roles('admin')
+@Roles('admin', 'biz_member', 'business_group_member', 'biz_leader', 'business_group_leader', 'biz_manager', 'business_owner')
 @Controller('admin/customers')
 @UseInterceptors(AuditInterceptor)
 export class CustomersController {
@@ -82,6 +82,7 @@ export class CustomersController {
   }
 
   @Post()
+  @Roles('admin')
   @Audit('customers', 'create')
   create(@Body() payload: SaveCustomerDto) {
     return this.service.create(payload);
@@ -93,18 +94,21 @@ export class CustomersController {
   }
 
   @Put(':id')
+  @Roles('admin')
   @Audit('customers', 'update')
   update(@Param('id') id: string, @Body() payload: Partial<SaveCustomerDto>) {
     return this.service.update(id, payload);
   }
 
   @Delete(':id')
+  @Roles('admin')
   @Audit('customers', 'delete')
   remove(@Param('id') id: string) {
     return this.service.remove(id);
   }
 
   @Post(':id/toggle')
+  @Roles('admin')
   @Audit('customers', 'toggle')
   toggle(@Param('id') id: string, @Body() payload: ToggleCustomerDto) {
     return this.service.toggle(id, payload.isActive);

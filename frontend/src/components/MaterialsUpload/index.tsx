@@ -25,7 +25,7 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
 
 interface MaterialsUploadProps {
   workOrderId: string;
-  bizPurpose: 'benefit_material' | 'resignation_cert' | 'resignation_material' | 'renewal_contract';
+  bizPurpose: 'benefit_material' | 'onboarding_material' | 'resignation_cert' | 'resignation_material' | 'renewal_contract';
 }
 
 // 提交前暂存能力：workOrderId 为空时选中的文件先本地缓存，
@@ -57,7 +57,11 @@ const MaterialsUpload = forwardRef<MaterialsUploadHandle, MaterialsUploadProps>(
   const [fileList, setFileList] = useState<UploadFile[]>([]);
   const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([]);
 
-  const title = bizPurpose === 'benefit_material' ? '申报材料' : '离职材料收集';
+  const title = bizPurpose === 'benefit_material'
+    ? '申报材料'
+    : bizPurpose === 'onboarding_material'
+      ? '入职材料'
+      : '离职材料收集';
 
   const fetchAttachments = useCallback(async () => {
     if (!workOrderId) return;

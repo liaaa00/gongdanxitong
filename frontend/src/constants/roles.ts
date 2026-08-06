@@ -20,6 +20,7 @@ export const ROLE = {
   LABOR_CONTRACT_MEMBER: 'labor_contract_member',
   ONBOARDING_RESIGNATION_MEMBER: 'onboarding_resignation_member',
   SOCIAL_INSURANCE_SPECIALIST: 'social_insurance_specialist',
+  WELFARE_SPECIALIST: 'welfare_specialist',
 } as const;
 
 export type CanonicalRole = (typeof ROLE)[keyof typeof ROLE];
@@ -46,6 +47,7 @@ const BACKEND_TO_CANONICAL: Record<string, CanonicalRole> = {
   labor_contract_member: ROLE.LABOR_CONTRACT_MEMBER,
   onboarding_resignation_member: ROLE.ONBOARDING_RESIGNATION_MEMBER,
   social_insurance_specialist: ROLE.SOCIAL_INSURANCE_SPECIALIST,
+  welfare_specialist: ROLE.WELFARE_SPECIALIST,
 };
 
 export function canonicalRoleCode(raw: string | undefined | null): string {

@@ -8,6 +8,7 @@ import {
 import { Branch } from './branch.entity';
 import { CustomerAssignee } from './customer-assignee.entity';
 import { WorkOrder } from './work-order.entity';
+import { BusinessScope } from './enums';
 
 @Entity({ name: 'customers' })
 export class Customer {
@@ -19,6 +20,9 @@ export class Customer {
 
   @Column({ name: 'customer_name', type: 'varchar', length: 128 })
   customerName!: string;
+
+  @Column({ name: 'business_scope', type: 'varchar', length: 32, default: BusinessScope.BEILUN })
+  businessScope!: BusinessScope;
 
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive!: boolean;

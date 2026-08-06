@@ -134,15 +134,15 @@ const AdminFields: React.FC = () => {
 
   return (
     <PageContainer header={{ title: '表单字段管理' }} extra={[
-      <Select key=”ot” style={{ width: 140 }} value={filterType} onChange={(v) => { setFilterType(v); }} options={ORDER_OPT} placeholder=”适用工单” getPopupContainer={getSelectPopupContainer} />,
-      <Select key=”sc” style={{ width: 140 }} value={filterSource} onChange={(v) => { setFilterSource(v); }} options={SOURCE_CATEGORY_OPT} placeholder=”谁来填写” getPopupContainer={getSelectPopupContainer} />,
-      <Select key=”ss” style={{ width: 140 }} value={filterScope} onChange={(v) => { setFilterScope(v); }} options={SUB_TICKET_SCOPE_OPT} placeholder=”显示环节” getPopupContainer={getSelectPopupContainer} />,
-      <Select key=”cg” style={{ width: 160 }} value={filterGroup} onChange={(v) => { setFilterGroup(v); }} options={COLLECTION_GROUP_OPT} placeholder=”表单分组” getPopupContainer={getSelectPopupContainer} />,
-      <Select key=”ti” style={{ width: 140 }} value={filterTemplateInclusion} onChange={(v) => { setFilterTemplateInclusion(v); }} options={TEMPLATE_INCLUSION_OPT} placeholder=”模板包含” getPopupContainer={getSelectPopupContainer} />,
-      <Button key=”add” type=”primary” icon={<PlusOutlined />}
+      <Select key="ot" style={{ width: 140 }} value={filterType} onChange={(v) => { setFilterType(v); }} options={ORDER_OPT} placeholder="适用工单" getPopupContainer={getSelectPopupContainer} />,
+      <Select key="sc" style={{ width: 140 }} value={filterSource} onChange={(v) => { setFilterSource(v); }} options={SOURCE_CATEGORY_OPT} placeholder="谁来填写" getPopupContainer={getSelectPopupContainer} />,
+      <Select key="ss" style={{ width: 140 }} value={filterScope} onChange={(v) => { setFilterScope(v); }} options={SUB_TICKET_SCOPE_OPT} placeholder="显示环节" getPopupContainer={getSelectPopupContainer} />,
+      <Select key="cg" style={{ width: 160 }} value={filterGroup} onChange={(v) => { setFilterGroup(v); }} options={COLLECTION_GROUP_OPT} placeholder="表单分组" getPopupContainer={getSelectPopupContainer} />,
+      <Select key="ti" style={{ width: 140 }} value={filterTemplateInclusion} onChange={(v) => { setFilterTemplateInclusion(v); }} options={TEMPLATE_INCLUSION_OPT} placeholder="模板包含" getPopupContainer={getSelectPopupContainer} />,
+      <Button key="add" type="primary" icon={<PlusOutlined />}
         onClick={() => { setEditing(null); form.resetFields(); setOpen(true); }}>新增表单字段</Button>,
     ]}>
-      <Alert style={{ marginBottom: 12 }} type=”info” showIcon message=”这里维护工单表单里会出现哪些字段，例如员工姓名、身份证号、合同开始日期。字段是否给某个角色填写，到”字段填写权限”里设置。标准字段包含在Excel导入模板中，可选字段需要业务员手动添加列。” />
+      <Alert style={{ marginBottom: 12 }} type="info" showIcon message="这里维护工单表单里会出现哪些字段，例如员工姓名、身份证号、合同开始日期。字段是否给某个角色填写，到“字段填写权限”里设置。标准字段包含在Excel导入模板中，可选字段需要业务员手动添加列。" />
       <Table rowKey="id" loading={loading} dataSource={data} pagination={{ pageSize: 20 }}
         columns={[
           { title: '系统标识', dataIndex: 'field_code', width: 180 },

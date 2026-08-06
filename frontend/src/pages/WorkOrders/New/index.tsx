@@ -168,13 +168,11 @@ const WorkOrdersNew: React.FC = () => {
         }
       }
       const result = await createWorkOrder(buildPayload(values));
-      if (orderType === 'resignation') {
-        setCreatedWorkOrderId(result.id as string);
-        try {
-          await materialsRef.current?.uploadStaged(result.id as string);
-        } catch {
-          message.error('部分附件上传失败，请在工单详情页重试');
-        }
+      setCreatedWorkOrderId(result.id as string);
+      try {
+        await materialsRef.current?.uploadStaged(result.id as string);
+      } catch {
+        message.error('部分附件上传失败，请在工单详情页重试');
       }
       showSplitResult(result);
     } catch (err) {
@@ -227,11 +225,13 @@ const WorkOrdersNew: React.FC = () => {
         </Space>
       </Card>
 
-      {orderType === 'resignation' && (
-        <Card title="附件上传（可选，可在提交前选择，提交后自动上传）" style={{ marginTop: 16 }}>
-          <MaterialsUpload ref={materialsRef} workOrderId={createdWorkOrderId || ''} bizPurpose="resignation_material" />
-        </Card>
-      )}
+      <Card title="附件上传（可选，可在提交前选择，提交后自动上传）" style={{ marginTop: 16 }}>
+        <MaterialsUpload
+          ref={materialsRef}
+          workOrderId={createdWorkOrderId || ''}
+          bizPurpose={orderType === 'onboarding' ? 'onboarding_material' : 'resignation_material'}
+        />
+      </Card>
     </PageContainer>
   );
 };

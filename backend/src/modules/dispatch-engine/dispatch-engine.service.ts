@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
 import {
   DispatchModuleCode,
+  BusinessScope,
   DispatchRule,
   DispatchStrategy,
   ModuleHandler,
@@ -45,10 +46,11 @@ export class DispatchEngineService {
   }
 
   async evaluateDetailed(workOrder: WorkOrder, manager?: EntityManager): Promise<DispatchEvaluationResult> {
+    const businessScope = this.resolveBusinessScope(workOrder);
     workOrder.extraData = this.normalizeOnboardingDispatchFlags(workOrder.extraData ?? {});
     const dispatchRuleRepository = manager?.getRepository(DispatchRule) ?? this.dispatchRuleRepository;
     const rules = await dispatchRuleRepository.find({
-      where: { orderType: workOrder.orderType as OrderType, isActive: true },
+      where: { orderType: workOrder.orderType as OrderType, businessScope, isActive: true },
       order: { priority: 'ASC', createdAt: 'ASC' },
     });
 
@@ -109,9 +111,11 @@ export class DispatchEngineService {
         rule.dispatchStrategy,
         manager,
         provinceDispatchContext,
+        businessScope,
       );
       const visibleFields = await this.fieldPermissionService.getVisibleFieldsForScenario(
         `dispatched:${moduleCode}`,
+        businessScope,
       );
       visibleFieldsByModule.set(moduleCode, visibleFields);
       childrenToCreate.push({
@@ -129,7 +133,7 @@ export class DispatchEngineService {
       await this.ensureOnboardingSplitChildren(workOrder, childrenToCreate, manager);
     }
 
-    await this.applyModuleConfig(childrenToCreate, workOrder.extraData ?? {}, manager);
+    await this.applyModuleConfig(childrenToCreate, workOrder.extraData ?? {}, manager, businessScope);
 
     childrenToCreate.sort((left, right) => {
       const leftRule = rules.find((item) => item.id === left.ruleId);
@@ -143,12 +147,12 @@ export class DispatchEngineService {
     };
   }
 
-  private async applyModuleConfig(childrenToCreate: ChildToCreate[], extraData: Record<string, unknown>, manager?: EntityManager): Promise<void> {
+  private async applyModuleConfig(childrenToCreate: ChildToCreate[], extraData: Record<string, unknown>, manager: EntityManager | undefined, businessScope: BusinessScope): Promise<void> {
     const moduleCodes = Array.from(new Set(childrenToCreate.map((child) => child.moduleCode).filter(Boolean)));
     if (moduleCodes.length === 0) return;
 
     const moduleConfigRepository = manager?.getRepository(WorkOrderModuleConfig) ?? this.moduleConfigRepository;
-    const configs = await moduleConfigRepository.find({ where: moduleCodes.map((moduleCode) => ({ moduleCode })) });
+    const configs = await moduleConfigRepository.find({ where: moduleCodes.map((moduleCode) => ({ moduleCode, businessScope })) });
     const configByModule = new Map(configs.map((config) => [config.moduleCode, config]));
     const base = new Date();
 
@@ -163,6 +167,7 @@ export class DispatchEngineService {
         config?.dispatchStrategy ?? DispatchStrategy.TEAM_CLAIM,
         manager,
         child.provinceDispatchContext,
+        businessScope,
       );
       child.dispatchStrategy = config?.dispatchStrategy ?? DispatchStrategy.TEAM_CLAIM;
 
@@ -203,23 +208,24 @@ export class DispatchEngineService {
     strategy: DispatchStrategy,
     manager?: EntityManager,
     context?: ProvinceDispatchContext,
+    businessScope: BusinessScope = BusinessScope.BEILUN,
   ): Promise<string | null> {
     if (context) {
       return this.handlerPicker.pick(strategy, moduleCode, manager, {
         province: context.province,
         mappingSource: context.mappingSource,
-      });
+      }, businessScope);
     }
 
     const repository = manager?.getRepository(ModuleHandler) ?? this.moduleHandlerRepository;
     const activeHandlers = (await repository.find({
-      where: { moduleCode, isActive: true, isBackup: false },
+      where: { moduleCode, businessScope, isActive: true, isBackup: false },
       relations: { handler: true },
       order: { weight: 'DESC', handlerId: 'ASC' },
     })).filter((candidate) => candidate.handler?.isActive !== false);
     if (activeHandlers.length === 0) return null;
     if (activeHandlers.length === 1) return activeHandlers[0].handlerId;
-    return this.handlerPicker.pick(strategy, moduleCode, manager);
+    return this.handlerPicker.pick(strategy, moduleCode, manager, undefined, businessScope);
   }
 
   private resolveProvinceDispatchContext(
@@ -313,15 +319,16 @@ export class DispatchEngineService {
     childrenToCreate: ChildToCreate[],
     manager?: EntityManager,
   ): Promise<void> {
-    await this.ensureChild(childrenToCreate, 'data_entry', manager, 'onboarding-default-data-entry-fallback');
-    await this.ensureChild(childrenToCreate, 'social_insurance', manager, 'onboarding-default-social-insurance-fallback');
+    const businessScope = this.resolveBusinessScope(workOrder);
+    await this.ensureChild(childrenToCreate, 'data_entry', manager, 'onboarding-default-data-entry-fallback', businessScope);
+    await this.ensureChild(childrenToCreate, 'social_insurance', manager, 'onboarding-default-social-insurance-fallback', businessScope);
 
     if (this.isTruthyYes(workOrder.extraData.need_onboarding_contact)) {
-      await this.ensureChild(childrenToCreate, 'onboarding_contact', manager, 'onboarding-contact-when-needed-fallback');
+      await this.ensureChild(childrenToCreate, 'onboarding_contact', manager, 'onboarding-contact-when-needed-fallback', businessScope);
     }
 
     if (this.isTruthyYes(workOrder.extraData.need_company_contract)) {
-      await this.ensureChild(childrenToCreate, 'contract', manager, 'onboarding-contract-when-needed-fallback');
+      await this.ensureChild(childrenToCreate, 'contract', manager, 'onboarding-contract-when-needed-fallback', businessScope);
     }
   }
 
@@ -330,14 +337,16 @@ export class DispatchEngineService {
     moduleCode: string,
     manager: EntityManager | undefined,
     ruleName: string,
+    businessScope: BusinessScope,
   ): Promise<void> {
     if (childrenToCreate.some((child) => child.moduleCode === moduleCode)) {
       return;
     }
 
-    const handlerId = await this.handlerPicker.pick(DispatchStrategy.FIXED, moduleCode, manager);
+    const handlerId = await this.handlerPicker.pick(DispatchStrategy.FIXED, moduleCode, manager, undefined, businessScope);
     const visibleFields = await this.fieldPermissionService.getVisibleFieldsForScenario(
       `dispatched:${moduleCode}`,
+      businessScope,
     );
     childrenToCreate.push({
       moduleCode,
@@ -347,6 +356,13 @@ export class DispatchEngineService {
       ruleName,
       dispatchStrategy: DispatchStrategy.FIXED,
     });
+  }
+
+  private resolveBusinessScope(workOrder: WorkOrder): BusinessScope {
+    if (workOrder.businessScope) return workOrder.businessScope;
+    return [OrderType.OUT_OF_PROVINCE_INCREASE, OrderType.OUT_OF_PROVINCE_DECREASE].includes(workOrder.orderType as OrderType)
+      ? BusinessScope.OUT_OF_PROVINCE
+      : BusinessScope.BEILUN;
   }
 
   private isTruthyYes(value: unknown): boolean {

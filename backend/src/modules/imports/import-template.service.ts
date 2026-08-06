@@ -1,5 +1,6 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { Workbook, Worksheet } from 'exceljs';
+import * as JSZip from 'jszip';
 import { businessException } from 'src/common/exceptions/business-exception';
 import { FieldConfig, FieldType, OrderType } from 'src/entities';
 import { ImportTemplateConfigService, ImportTemplateFieldView } from './import-template-config.service';
@@ -18,23 +19,23 @@ type TemplateField = FieldConfig & {
 const MAIN_SHEET_NAME = '当前字段配置';
 const OPTIONS_SHEET_NAME = '__options';
 
-// 客户必填12字段（标黄），在导入模板中排在前12列（A-L，即Excel的B-M列）
-const CUSTOMER_REQUIRED_FIELD_CODES = new Set<string>([
-  'customer_name',       // 客户名称
-  'employee_name',       // 姓名
-  'id_card_type',        // 证件类型
-  'id_card_no',          // 证件号码
-  'mobile',              // 移动电话
-  'position',            // 岗位
-  'contract_start_date', // 合同开始日期
-  'work_city',           // 工作城市
-  'base_salary',         // 基本工资
-  'social_location',     // 参保地
-  'bank_account',        // 银行借记卡帐号
-  'bank_name',           // 开户银行信息
-]);
+const ONBOARDING_CUSTOMER_FIELD_COUNT = 30;
+const ONBOARDING_ASSISTED_FIELD_COUNT = 9;
+const ONBOARDING_COLUMN_WIDTHS: Partial<Record<string, number>> = {
+  other_salary: 21.7272727272727,
+  bank_name: 18.5454545454545,
+  bank_account: 18.4545454545455,
+  contract_subject: 18.3636363636364,
+  company_address: 20.6363636363636,
+  project_name: 27.7272727272727,
+  work_arrangement: 26.8181818181818,
+};
 const LABEL_COLUMN_WIDTH = 12;
 const DATA_VALIDATION_ROWS = 500;
+const FONT_ELEMENT_ORDER = [
+  'b', 'i', 'u', 'strike', 'outline', 'shadow', 'condense', 'extend',
+  'sz', 'color', 'name', 'family', 'charset', 'vertAlign', 'scheme',
+];
 
 @Injectable()
 export class ImportTemplateService {
@@ -52,14 +53,15 @@ export class ImportTemplateService {
     const optionsSheet = workbook.addWorksheet(OPTIONS_SHEET_NAME);
     optionsSheet.state = 'veryHidden';
 
-    this.writeHeaderAndMetaRows(sheet, fields);
+    this.writeHeaderAndMetaRows(sheet, fields, orderType);
     if (orderType === OrderType.RESIGNATION) {
       this.writeAttachmentHintColumn(sheet, fields.length);
     }
     this.applyColumnWidths(sheet, fields);
-    this.applyDropdownValidations(sheet, optionsSheet, fields);
+    this.applyDropdownValidations(sheet, optionsSheet, fields, orderType);
 
-    const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+    const rawBuffer = Buffer.from(await workbook.xlsx.writeBuffer());
+    const buffer = await this.normalizeFontElementOrder(rawBuffer);
     return { buffer, fieldCount: fields.length, fileName: this.buildFileName(orderType) };
   }
 
@@ -89,12 +91,16 @@ export class ImportTemplateService {
     } as TemplateField;
   }
 
-  private writeHeaderAndMetaRows(sheet: Worksheet, fields: TemplateField[]): void {
-    const headerRow = sheet.getRow(1);
-    const requiredRow = sheet.getRow(2);
-    const requirementRow = sheet.getRow(3);
-    const exampleRow = sheet.getRow(4);
+  private writeHeaderAndMetaRows(sheet: Worksheet, fields: TemplateField[], orderType: OrderType): void {
+    const isOnboarding = orderType === OrderType.ONBOARDING;
+    const headerRow = sheet.getRow(isOnboarding ? 2 : 1);
+    const requiredRow = sheet.getRow(isOnboarding ? 3 : 2);
+    const requirementRow = sheet.getRow(isOnboarding ? 4 : 3);
+    const exampleRow = sheet.getRow(isOnboarding ? 5 : 4);
 
+    if (isOnboarding) {
+      this.writeOnboardingInstructionRow(sheet);
+    }
     headerRow.getCell(1).value = '字段名';
     requiredRow.getCell(1).value = '是否必填';
     requirementRow.getCell(1).value = '填写要求';
@@ -104,19 +110,38 @@ export class ImportTemplateService {
       const col = index + 2;
       const headerCell = headerRow.getCell(col);
       headerCell.value = this.headerName(field);
-      const shouldHighlight = this.shouldHighlightHeader(field);
-      if (shouldHighlight) {
+      if (isOnboarding && index < ONBOARDING_CUSTOMER_FIELD_COUNT) {
         headerCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
+      } else if (
+        isOnboarding
+        && index < ONBOARDING_CUSTOMER_FIELD_COUNT + ONBOARDING_ASSISTED_FIELD_COUNT
+      ) {
+        headerCell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { theme: 9, tint: 0.6 } as unknown as { theme: number },
+        };
       }
       requiredRow.getCell(col).value = this.requiredText(field);
       requirementRow.getCell(col).value = this.buildRequirement(field);
       exampleRow.getCell(col).value = this.buildExample(field);
     });
 
-    headerRow.font = { bold: true };
-    requiredRow.font = { color: { argb: 'FFB00020' } };
-    requirementRow.font = { italic: true, color: { argb: 'FF666666' } };
-    exampleRow.font = { color: { argb: 'FF999999' } };
+    headerRow.font = { bold: true, size: 11, name: '宋体', charset: 134, scheme: 'minor' };
+    requiredRow.font = { size: 11, name: '宋体', charset: 134, scheme: 'minor', color: { argb: 'FFB00020' } };
+    requirementRow.font = { italic: true, size: 11, name: '宋体', charset: 134, scheme: 'minor', color: { argb: 'FF666666' } };
+    exampleRow.font = { size: 11, name: '宋体', charset: 134, scheme: 'minor', color: { argb: 'FF999999' } };
+  }
+
+  private writeOnboardingInstructionRow(sheet: Worksheet): void {
+    const instructionFont = { bold: true, italic: true, size: 11, name: '宋体', charset: 134, scheme: 'minor' as const };
+    sheet.getCell('A1').value = '填表说明：';
+    sheet.getCell('B1').value = 'B-AE列为客户必须填写';
+    sheet.getCell('AF1').value = 'AF-AN列为客户填写或外服入职联系收集';
+    sheet.getCell('AO1').value = 'AO-BI列为外服客户经理填写';
+    for (const address of ['A1', 'B1', 'AF1', 'AO1']) {
+      sheet.getCell(address).font = instructionFont;
+    }
   }
 
   // 离职模板追加一列「附件」提示：字段占 2..fieldCount+1，提示列落在 fieldCount+2。
@@ -148,11 +173,6 @@ export class ImportTemplateService {
     return '非必填';
   }
 
-  // 入职模板：只标黄客户必填的12个核心字段，其余员工数据与业务判断字段均不标黄
-  private shouldHighlightHeader(field: TemplateField): boolean {
-    return field.orderType === OrderType.ONBOARDING
-      && CUSTOMER_REQUIRED_FIELD_CODES.has(field.fieldCode);
-  }
 
   private buildRequirement(field: TemplateField): string {
     const parts: string[] = [];
@@ -173,6 +193,8 @@ export class ImportTemplateService {
   }
 
   private buildExample(field: TemplateField): string | number {
+    if (field.fieldCode === 'base_salary' || field.fieldCode === 'probation_salary') return 1000;
+    if (field.fieldCode === 'other_salary') return '绩效工资5000+岗位津贴2000';
     if (field.fieldType === FieldType.DROPDOWN && field.dropdownOptions?.length) {
       return field.dropdownOptions[0];
     }
@@ -193,12 +215,21 @@ export class ImportTemplateService {
     sheet.getColumn(1).width = LABEL_COLUMN_WIDTH;
     fields.forEach((field, index) => {
       const header = this.headerName(field);
-      sheet.getColumn(index + 2).width = Math.max(12, Math.min(28, header.length + 4));
+      sheet.getColumn(index + 2).width = ONBOARDING_COLUMN_WIDTHS[field.fieldCode]
+        ?? Math.max(12, Math.min(28, header.length + 4));
     });
   }
 
-  // 每个下拉字段在隐藏 sheet 写一列选项，主表数据区(第5行起)用列表校验引用该区域。
-  private applyDropdownValidations(sheet: Worksheet, optionsSheet: Worksheet, fields: TemplateField[]): void {
+  private applyDropdownValidations(
+    sheet: Worksheet,
+    optionsSheet: Worksheet,
+    fields: TemplateField[],
+    orderType: OrderType,
+  ): void {
+    const dataStartRow = orderType === OrderType.ONBOARDING ? 6 : 5;
+    const validations = (sheet as Worksheet & {
+      dataValidations: { add: (address: string, validation: NonNullable<ReturnType<Worksheet['getCell']>['dataValidation']>) => void };
+    }).dataValidations;
     let optionColIndex = 0;
     fields.forEach((field, index) => {
       if (field.fieldType !== FieldType.DROPDOWN || !field.dropdownOptions?.length) {
@@ -212,17 +243,48 @@ export class ImportTemplateService {
       const range = `$${optionColLetter}$1:$${optionColLetter}$${field.dropdownOptions.length}`;
       const formula = `=${OPTIONS_SHEET_NAME}!${range}`;
       const dataColLetter = this.columnLetter(index + 2);
-      for (let rowNo = 5; rowNo < 5 + DATA_VALIDATION_ROWS; rowNo += 1) {
-        sheet.getCell(`${dataColLetter}${rowNo}`).dataValidation = {
-          type: 'list',
-          allowBlank: !this.isRequired(field),
-          formulae: [formula],
-          showErrorMessage: true,
-          errorStyle: 'warning',
-          error: `请选择：${field.dropdownOptions.join('/')}`,
-        };
-      }
+      const validationRange = `${dataColLetter}${dataStartRow}:${dataColLetter}${dataStartRow + DATA_VALIDATION_ROWS - 1}`;
+      validations.add(validationRange, {
+        type: 'list',
+        allowBlank: !this.isRequired(field),
+        formulae: [formula],
+        showErrorMessage: true,
+        errorStyle: 'warning',
+        error: `请选择：${field.dropdownOptions.join('/')}`,
+      });
     });
+  }
+
+  private async normalizeFontElementOrder(buffer: Buffer): Promise<Buffer> {
+    const zip = await JSZip.loadAsync(buffer);
+    const stylesFile = zip.file('xl/styles.xml');
+    if (!stylesFile) return buffer;
+
+    const stylesXml = await stylesFile.async('string');
+    const normalizedXml = stylesXml.replace(/<font>([\s\S]*?)<\/font>/g, (fontXml, content: string) => {
+      const children = Array.from(content.matchAll(/<([A-Za-z]+)\b[^>]*\/>/g));
+      const unmatched = content.replace(/<([A-Za-z]+)\b[^>]*\/>/g, '').trim();
+      if (unmatched || children.length === 0) return fontXml;
+
+      const sorted = children
+        .map((match, index) => ({
+          xml: match[0],
+          index,
+          order: FONT_ELEMENT_ORDER.indexOf(match[1]),
+        }))
+        .sort((left, right) => {
+          const leftOrder = left.order < 0 ? FONT_ELEMENT_ORDER.length : left.order;
+          const rightOrder = right.order < 0 ? FONT_ELEMENT_ORDER.length : right.order;
+          return leftOrder - rightOrder || left.index - right.index;
+        })
+        .map((item) => item.xml)
+        .join('');
+      return `<font>${sorted}</font>`;
+    });
+    if (normalizedXml === stylesXml) return buffer;
+
+    zip.file('xl/styles.xml', normalizedXml);
+    return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
   }
 
   private columnLetter(index: number): string {

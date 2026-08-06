@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import { FieldConfig, FieldPermission, FieldPermissionMode, Role, UserRole } from 'src/entities';
+import { BusinessScope, FieldConfig, FieldPermission, FieldPermissionMode, Role, UserRole } from 'src/entities';
 import { AstEvalTrace } from 'src/modules/dispatch-engine/dispatch-engine.types';
 
 export type FieldPermissionMap = Map<string, FieldPermissionMode>;
@@ -90,12 +90,17 @@ export class FieldPermissionService {
     return this.mergePermissionRows(activeFields, rows);
   }
 
-  async getVisibleFieldsForScenario(scenario: string): Promise<string[]> {
+  async getVisibleFieldsForScenario(
+    scenario: string,
+    businessScope: BusinessScope = BusinessScope.BEILUN,
+  ): Promise<string[]> {
     const activeFields = await this.fieldConfigRepository.find({
       where: { isActive: true },
       order: { displayOrder: 'ASC' },
     });
-    const rows = await this.fieldPermissionRepository.find({ where: { scenario: In(expandScenarioAliases(scenario)) } });
+    const rows = await this.fieldPermissionRepository.find({
+      where: { scenario: In(expandScenarioAliases(scenario)), businessScope },
+    });
     const merged = this.mergePermissionRows(activeFields, rows);
     return activeFields
       .filter((field) => (merged.get(field.fieldCode) ?? FieldPermissionMode.HIDDEN) !== FieldPermissionMode.HIDDEN)

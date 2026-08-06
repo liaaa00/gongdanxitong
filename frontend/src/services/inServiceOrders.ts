@@ -335,6 +335,39 @@ export async function getInServiceOrder(id: string): Promise<InServiceOrder> {
   return normalizeInServiceOrder(await request.get('/in-service-orders/' + id) as RawRecord);
 }
 
+export interface RenewalHistoryResult {
+  found: boolean;
+  source: 'onboarding' | 'renewal' | null;
+  orderId: string | null;
+  orderNo: string | null;
+  employeeName: string | null;
+  idCardNo: string | null;
+  extraData: Record<string, unknown>;
+  fixedTermCount: number;
+  fixedTermRisk: boolean;
+  warning: string | null;
+}
+
+export async function getRenewalHistory(customerId: string, idCardNo: string): Promise<RenewalHistoryResult> {
+  if (isMockMode) {
+    return mockDelay({
+      found: false,
+      source: null,
+      orderId: null,
+      orderNo: null,
+      employeeName: null,
+      idCardNo,
+      extraData: {},
+      fixedTermCount: 0,
+      fixedTermRisk: false,
+      warning: null,
+    });
+  }
+  return request.get('/in-service-orders/renewal/history', {
+    params: { customerId, idCardNo },
+  }) as Promise<RenewalHistoryResult>;
+}
+
 export async function createInServiceOrder(payload: InServiceOrderPayload): Promise<InServiceOrder> {
   if (isMockMode) {
     const orders = readMockOrders();

@@ -49,7 +49,7 @@ const fields = [
   field({ fieldCode: 'household_type', fieldName: '户籍性质', fieldType: FieldType.DROPDOWN, dropdownOptions: ['农业', '非农业'] }),
   field({ fieldCode: 'need_onboarding_contact', fieldName: '入职材料是否需要集约收集', fieldType: FieldType.DROPDOWN, isRequired: true, defaultRequired: true, dropdownOptions: ['是', '否'] }),
   field({ fieldCode: 'current_address', fieldName: '现住地址', conditionalRequired: { field: 'need_onboarding_contact', op: 'EQ', value: '否' } }),
-  field({ fieldCode: 'feedback_deadline', fieldName: '反馈截止日期', fieldType: FieldType.DATE, conditionalRequired: needsOnboardingContact }),
+  field({ fieldCode: 'feedback_deadline', fieldName: '反馈截止日期', fieldType: FieldType.DATE }),
   field({ fieldCode: 'is_common_template', fieldName: '是否为通用模板', fieldType: FieldType.DROPDOWN, dropdownOptions: ['是', '否'], conditionalRequired: needsOnboardingContact }),
   field({ fieldCode: 'template_name', fieldName: '模板名称', conditionalRequired: needsOnboardingContactAndCommonTemplate }),
   field({ fieldCode: 'special_remark', fieldName: '特殊备注', fieldType: FieldType.TEXT, isRequired: false, defaultRequired: false }),
@@ -63,7 +63,7 @@ const mapping: MappingItemInput[] = [
   { header: '合同主体', fieldCode: 'contract_subject' },
   { header: '是否电子签', fieldCode: 'need_esign' },
   { header: '电子签平台', fieldCode: 'esign_platform' },
-  { header: '甲方住所', fieldCode: 'company_address' },
+  { header: '劳动合同主体注册地', fieldCode: 'company_address' },
   { header: '其他工资', fieldCode: 'other_salary' },
   { header: '试用期其他工资', fieldCode: 'probation_other_salary' },
   { header: '户籍地址', fieldCode: 'household_address' },
@@ -145,7 +145,7 @@ describe('ImportFieldValidationService scenarios', () => {
     expect(result.errors).toHaveLength(0);
   });
 
-  it('requires feedback_deadline and is_common_template when need_onboarding_contact is yes', async () => {
+  it('keeps feedback_deadline optional but requires is_common_template when onboarding contact is yes', async () => {
     const result = await service.validateRow({
       rowNo: 4,
       raw: validRow({
@@ -159,10 +159,8 @@ describe('ImportFieldValidationService scenarios', () => {
     });
 
     expect(result.ok).toBe(false);
-    expect(result.errors).toEqual(expect.arrayContaining([
-      expect.objectContaining({ fieldCode: 'feedback_deadline', reason: 'required' }),
-      expect.objectContaining({ fieldCode: 'is_common_template', reason: 'required' }),
-    ]));
+    expect(result.errors).toContainEqual(expect.objectContaining({ fieldCode: 'is_common_template', reason: 'required' }));
+    expect(result.errors).not.toContainEqual(expect.objectContaining({ fieldCode: 'feedback_deadline' }));
     expect(result.errors).not.toContainEqual(expect.objectContaining({ fieldCode: 'template_name' }));
   });
 
@@ -291,17 +289,17 @@ describe('ImportFieldValidationService scenarios', () => {
     expect(result.normalized.probation_other_salary).toBe('试用期补贴按公司制度');
   });
 
-  it('preserves base and probation salary text during onboarding import', async () => {
+  it('normalizes base and probation salary as numbers during onboarding import', async () => {
     const salaryFields = [
       ...fields,
-      field({ fieldCode: 'base_salary', fieldName: '基本工资', fieldType: FieldType.TEXT, isRequired: true, defaultRequired: true }),
-      field({ fieldCode: 'probation_salary', fieldName: '试用期工资', fieldType: FieldType.TEXT }),
+      field({ fieldCode: 'base_salary', fieldName: '基本工资', fieldType: FieldType.NUMBER, isRequired: true, defaultRequired: true }),
+      field({ fieldCode: 'probation_salary', fieldName: '试用期工资', fieldType: FieldType.NUMBER }),
     ];
     const result = await service.validateRow({
       rowNo: 13,
       raw: validRow({
-        基本工资: '¥2,600.00',
-        试用期工资: '按基本工资80%',
+        基本工资: '2600.50',
+        试用期工资: '2080',
       }),
       mapping: [
         ...mapping,
@@ -312,8 +310,8 @@ describe('ImportFieldValidationService scenarios', () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(result.normalized.base_salary).toBe('¥2,600.00');
-    expect(result.normalized.probation_salary).toBe('按基本工资80%');
+    expect(result.normalized.base_salary).toBe(2600.5);
+    expect(result.normalized.probation_salary).toBe(2080);
   });
 
   it('unwraps quoted spreadsheet contact values during import', async () => {
@@ -332,7 +330,7 @@ describe('ImportFieldValidationService scenarios', () => {
     const result = await service.validateRow({
       rowNo: 13,
       raw: {
-        ...validRow({ 姓名: '速创平台', 是否签合同: '是', 合同主体: '北仑', 是否电子签: '1.是', 电子签平台: '速创', 甲方住所: '' }),
+        ...validRow({ 姓名: '速创平台', 是否签合同: '是', 合同主体: '北仑', 是否电子签: '1.是', 电子签平台: '速创', 劳动合同主体注册地: '' }),
         '劳动合同模板（标准模板/ 特殊模板）': '标准模板',
       },
       mapping: [...mapping, { header: '劳动合同模板', fieldCode: 'contract_template' }],
@@ -347,7 +345,7 @@ describe('ImportFieldValidationService scenarios', () => {
     const result = await service.validateRow({
       rowNo: 14,
       raw: {
-        ...validRow({ 姓名: 'E签宝平台', 是否签合同: '是', 合同主体: '北仑', 是否电子签: '1.是', 电子签平台: 'E签宝', 甲方住所: '' }),
+        ...validRow({ 姓名: 'E签宝平台', 是否签合同: '是', 合同主体: '北仑', 是否电子签: '1.是', 电子签平台: 'E签宝', 劳动合同主体注册地: '' }),
         '劳动合同模板（标准模板/ 特殊模板）': '标准模板',
       },
       mapping: [...mapping, { header: '劳动合同模板', fieldCode: 'contract_template' }],
@@ -358,33 +356,33 @@ describe('ImportFieldValidationService scenarios', () => {
     expect(result.errors).toContainEqual(expect.objectContaining({ fieldCode: 'company_address', reason: 'required' }));
   });
 
-  it('derives gender, birth date, age and probation end date during validation', async () => {
+  it('derives gender, birth date and age when the spreadsheet omits those columns', async () => {
+    const inputFields = fields.filter((item) => !['gender', 'birth_date', 'age'].includes(item.fieldCode));
+    const inputMapping = mapping.filter((item) => !['gender', 'birth_date', 'age'].includes(item.fieldCode));
     const derivedFields = [
-      ...fields,
+      ...inputFields,
       field({ fieldCode: 'probation_start_date', fieldName: '试用期开始日期', fieldType: FieldType.DATE }),
       field({ fieldCode: 'probation_months', fieldName: '试用期（月）', conditionalRequired: { field: 'probation_start_date', op: 'EXISTS' } }),
       field({ fieldCode: 'probation_end_date', fieldName: '试用期结束日期', fieldType: FieldType.DATE, conditionalRequired: { field: 'probation_start_date', op: 'EXISTS' } }),
-      field({ fieldCode: 'probation_salary', fieldName: '试用期工资', fieldType: FieldType.TEXT, conditionalRequired: { field: 'probation_start_date', op: 'EXISTS' } }),
-      field({ fieldCode: 'birth_date', fieldName: '出生日期', fieldType: FieldType.DATE }),
-      field({ fieldCode: 'age', fieldName: '年龄', fieldType: FieldType.NUMBER }),
+      field({ fieldCode: 'probation_salary', fieldName: '试用期工资', fieldType: FieldType.NUMBER, conditionalRequired: { field: 'probation_start_date', op: 'EXISTS' } }),
     ];
+    const raw = validRow({
+      姓名: '派生字段',
+      身份证号: '330106199001011237',
+      试用期开始日期: '2026-06-01',
+      '试用期（月）': '3',
+      试用期工资: '8000',
+    });
+    delete raw.性别;
     const result = await service.validateRow({
       rowNo: 12,
-      raw: validRow({
-        姓名: '派生字段',
-        身份证号: '330106199001011237',
-        试用期开始日期: '2026-06-01',
-        '试用期（月）': '3',
-        试用期工资: '8000',
-      }),
+      raw,
       mapping: [
-        ...mapping,
+        ...inputMapping,
         { header: '试用期开始日期', fieldCode: 'probation_start_date' },
         { header: '试用期（月）', fieldCode: 'probation_months' },
         { header: '试用期结束日期', fieldCode: 'probation_end_date' },
         { header: '试用期工资', fieldCode: 'probation_salary' },
-        { header: '出生日期', fieldCode: 'birth_date' },
-        { header: '年龄', fieldCode: 'age' },
       ],
       fields: derivedFields,
     });
@@ -396,7 +394,7 @@ describe('ImportFieldValidationService scenarios', () => {
       probation_end_date: '2026-08-31',
     });
     expect(typeof result.normalized.age).toBe('number');
-    expect(result.normalized.probation_salary).toBe('8000');
+    expect(result.normalized.probation_salary).toBe(8000);
   });
 
   it('requires probation month, derived end date and salary when probation start date exists', async () => {
@@ -405,7 +403,7 @@ describe('ImportFieldValidationService scenarios', () => {
       field({ fieldCode: 'probation_start_date', fieldName: '试用期开始日期', fieldType: FieldType.DATE }),
       field({ fieldCode: 'probation_months', fieldName: '试用期（月）', conditionalRequired: { field: 'probation_start_date', op: 'EXISTS' } }),
       field({ fieldCode: 'probation_end_date', fieldName: '试用期结束日期', fieldType: FieldType.DATE, conditionalRequired: { field: 'probation_start_date', op: 'EXISTS' } }),
-      field({ fieldCode: 'probation_salary', fieldName: '试用期工资', fieldType: FieldType.TEXT, conditionalRequired: { field: 'probation_start_date', op: 'EXISTS' } }),
+      field({ fieldCode: 'probation_salary', fieldName: '试用期工资', fieldType: FieldType.NUMBER, conditionalRequired: { field: 'probation_start_date', op: 'EXISTS' } }),
     ];
     const result = await service.validateRow({
       rowNo: 13,

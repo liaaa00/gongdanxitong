@@ -8,7 +8,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { DispatchStrategy } from './enums';
+import { BusinessScope, DispatchStrategy } from './enums';
 
 @Entity({ name: 'work_order_modules' })
 export class WorkOrderModuleConfig {
@@ -17,6 +17,14 @@ export class WorkOrderModuleConfig {
 
   @Column({ name: 'module_code', type: 'varchar', length: 64, unique: true })
   moduleCode!: string;
+
+  @Column({
+    name: 'business_scope',
+    type: 'varchar',
+    length: 32,
+    default: BusinessScope.BEILUN,
+  })
+  businessScope!: BusinessScope;
 
   @Column({ name: 'module_name', type: 'varchar', length: 128 })
   moduleName!: string;

@@ -29,9 +29,9 @@ describe('resignation certificate result writeback', () => {
     const exportTemplatesService = {} as any;
     const service = new InServiceOrdersService(
       repository,
+      workOrderRepository,
       handlerPicker,
       exportTemplatesService,
-      workOrderRepository,
     );
 
     await service.complete(

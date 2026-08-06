@@ -26,6 +26,8 @@ interface FieldSeed {
   businessContext: OrderType[];
   conditionalRequired?: ConditionalRequired;
   collectionGroup?: string;
+  /** 是否包含在导入模板中（默认 true，已从模板移除的字段设为 false） */
+  isIncludedInTemplate?: boolean;
 }
 
 const ONBOARDING = OrderType.ONBOARDING;
@@ -59,7 +61,8 @@ const onboardingCollectionGroups: Record<string, string> = Object.fromEntries([
   ].map((code) => [code, '合同与用工信息']),
   ...[
     'salary_form', 'base_salary', 'other_salary', 'probation_salary', 'probation_other_salary',
-    'payroll_cycle', 'payroll_date', 'need_company_payroll', 'payroll_location', 'bank_name', 'bank_account',
+    'payroll_cycle', 'payroll_date', 'need_company_payroll', 'payroll_location',
+    'bank_location', 'bank_name', 'bank_account',
   ].map((code) => [code, '薪资与发薪信息']),
   ...[
     'social_location', 'start_month', 'social_base', 'fund_base', 'fund_ratio', 'social_urge',
@@ -76,8 +79,9 @@ const onboardingCollectionGroups: Record<string, string> = Object.fromEntries([
 ]);
 
 /* =========================================================================
- * 入职（ONBOARDING）63 字段 —— 按《浙江企服服务外包增员信息表》权威模板逐列对齐
- *   列序、字段名、必填、下拉选项、条件必填均以该 Excel 为准（杭州 sheet）。
+ * 入职（ONBOARDING）系统字段全集。
+ *   Excel 输入列由 seed-import-template-fields.ts 单独维护；性别、出生日期、年龄等
+ *   系统字段不出现在模板中，但会在导入后由身份证号派生并用于系统展示。
  *   对公共字段（customer_name / customer_code / employee_name / id_card_no /
  *   mobile / position / email / gender）保留多业务域 businessContext。
  *   注：work_cycle（工作制周期）模板已移除，相关停用见 seedFields 末尾退役逻辑。
@@ -97,28 +101,28 @@ const onboardingFields: FieldSeed[] = [
   { code: 'household_type',         name: '户籍性质',     type: FieldType.DROPDOWN, required: false, defaultRequired: false, options: ['本地城镇', '本地农村', '外地城市', '外地农村'], orderType: ONBOARDING, businessContext: [ONBOARDING, ...OUT_OF_PROVINCE_BIZ] },
   { code: 'ethnicity',              name: '民族',         type: FieldType.TEXT,     required: false, defaultRequired: false, orderType: ONBOARDING, businessContext: [ONBOARDING, ...OUT_OF_PROVINCE_BIZ] },
   { code: 'education',              name: '学历',         type: FieldType.DROPDOWN, required: false, defaultRequired: false, options: ['初中及以下', '高中/职高/中专', '大专', '大学本科', '硕士', '博士及以上'], orderType: ONBOARDING, businessContext: [ONBOARDING, ...OUT_OF_PROVINCE_BIZ] },
-  { code: 'graduation_school',      name: '毕业院校',     type: FieldType.TEXT,     required: false, defaultRequired: false, helpText: '厦门社保增员时由客户填写或入职联系补充，学历材料通过附件上传。', orderType: ONBOARDING, businessContext: [ONBOARDING] },
-  { code: 'major',                  name: '专业',         type: FieldType.TEXT,     required: false, defaultRequired: false, helpText: '厦门社保增员时由客户填写或入职联系补充。', orderType: ONBOARDING, businessContext: [ONBOARDING] },
-  { code: 'graduation_date',        name: '毕业时间',     type: FieldType.DATE,     required: false, defaultRequired: false, helpText: '厦门社保增员时由客户填写或入职联系补充，标准格式：年-月-日。', orderType: ONBOARDING, businessContext: [ONBOARDING] },
+  { code: 'graduation_school',      name: '毕业院校',     type: FieldType.TEXT,     required: false, defaultRequired: false, helpText: '厦门社保增员时由客户填写或入职联系补充，学历材料通过附件上传。', orderType: ONBOARDING, businessContext: [ONBOARDING], isIncludedInTemplate: false },
+  { code: 'major',                  name: '专业',         type: FieldType.TEXT,     required: false, defaultRequired: false, helpText: '厦门社保增员时由客户填写或入职联系补充。', orderType: ONBOARDING, businessContext: [ONBOARDING], isIncludedInTemplate: false },
+  { code: 'graduation_date',        name: '毕业时间',     type: FieldType.DATE,     required: false, defaultRequired: false, helpText: '厦门社保增员时由客户填写或入职联系补充，标准格式：年-月-日。', orderType: ONBOARDING, businessContext: [ONBOARDING], isIncludedInTemplate: false },
   { code: 'marital_status',         name: '婚姻状况',     type: FieldType.DROPDOWN, required: false, defaultRequired: false, options: ['已婚', '未婚'], orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'mobile',                 name: '移动电话',     type: FieldType.PHONE,    required: true,  defaultRequired: true,  regex: '^1[3-9]\\d{9}$', msg: '手机号格式不正确', orderType: ONBOARDING, businessContext: ALL_BIZ },
   { code: 'email',                  name: '电子邮件',     type: FieldType.EMAIL,    required: false, defaultRequired: false, regex: '^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$', msg: '邮箱格式不正确', orderType: ONBOARDING, businessContext: ON_RENEWAL_RESIGNATION },
   { code: 'current_address',        name: '现住地址',     type: FieldType.TEXT,     required: false, defaultRequired: false, helpText: '入职材料不需要集约收集时必填。格式：X省X市X区X路X号X室。', conditionalRequired: conditionEq('need_onboarding_contact', '否'), orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'household_address',      name: '户籍地址',     type: FieldType.TEXT,     required: true,  defaultRequired: true,  helpText: '格式：X省X市X区X路X号X室。', orderType: ONBOARDING, businessContext: [ONBOARDING, ...OUT_OF_PROVINCE_BIZ] },
-  { code: 'postal_code',            name: '邮编',         type: FieldType.TEXT,     required: false, defaultRequired: false, orderType: ONBOARDING, businessContext: [ONBOARDING] },
+  { code: 'postal_code',            name: '邮编',         type: FieldType.TEXT,     required: false, defaultRequired: false, orderType: ONBOARDING, businessContext: [ONBOARDING], isIncludedInTemplate: false },
   { code: 'contract_term_type',     name: '合同期限形式', type: FieldType.DROPDOWN, required: true,  defaultRequired: true,  options: ['固定期限', '无固定期限', '任务期限'], orderType: ONBOARDING, businessContext: [ONBOARDING] },
-  { code: 'contract_term',          name: '合同期限',     type: FieldType.TEXT,     required: false, defaultRequired: false, helpText: '固定期限时必填，如3年。', conditionalRequired: conditionNotEq('contract_term_type', '无固定期限'), orderType: ONBOARDING, businessContext: [ONBOARDING] },
+  { code: 'contract_term',          name: '合同期限',     type: FieldType.TEXT,     required: true,  defaultRequired: true,  orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'contract_start_date',    name: '合同开始日期', type: FieldType.DATE,     required: true,  defaultRequired: true,  helpText: '不可早于商务合同起始时间。标准格式：年-月-日。', orderType: ONBOARDING, businessContext: [ONBOARDING, ...OUT_OF_PROVINCE_BIZ] },
-  { code: 'contract_end_date',      name: '合同终止日期', type: FieldType.DATE,     required: false, defaultRequired: false, helpText: '标准格式：年-月-日。', conditionalRequired: conditionNotEq('contract_term_type', '无固定期限'), orderType: ONBOARDING, businessContext: [ONBOARDING, ...OUT_OF_PROVINCE_BIZ] },
+  { code: 'contract_end_date',      name: '合同终止日期', type: FieldType.DATE,     required: true,  defaultRequired: true,  helpText: '标准格式：年-月-日。', orderType: ONBOARDING, businessContext: [ONBOARDING, ...OUT_OF_PROVINCE_BIZ] },
   { code: 'probation_start_date',   name: '试用期开始日期', type: FieldType.DATE,   required: false, defaultRequired: false, helpText: '填写后，试用期（月）、试用期结束日期和试用期工资必填。标准格式：年-月-日。', orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'probation_months',       name: '试用期（月）', type: FieldType.TEXT,     required: false, defaultRequired: false, helpText: '格式为整数。', conditionalRequired: conditionExists('probation_start_date'), orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'probation_end_date',     name: '试用期结束日期', type: FieldType.DATE,   required: false, defaultRequired: false, helpText: '根据试用期开始日期和试用期（月）公式计算得出。标准格式：年-月-日。', conditionalRequired: conditionExists('probation_start_date'), orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'work_city',              name: '工作城市',     type: FieldType.TEXT,     required: true,  defaultRequired: true,  orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'work_hour_system',       name: '工时制',       type: FieldType.DROPDOWN, required: true,  defaultRequired: true,  options: ['标准工时制', '综合工时制', '不定时工时制'], orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'salary_form',            name: '工资形式',     type: FieldType.DROPDOWN, required: true,  defaultRequired: true,  options: ['按月'], orderType: ONBOARDING, businessContext: [ONBOARDING] },
-  { code: 'base_salary',            name: '基本工资',     type: FieldType.TEXT,     required: true,  defaultRequired: true,  helpText: '可填写数字、货币格式或文字说明。', orderType: ONBOARDING, businessContext: [ONBOARDING] },
+  { code: 'base_salary',            name: '基本工资',     type: FieldType.NUMBER,   required: true,  defaultRequired: true,  helpText: '数字格式：保留小数点后两位。', orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'other_salary',           name: '其他工资',     type: FieldType.TEXT,     required: false, defaultRequired: false, helpText: '可填写文字说明，如可填写数字加文字。', orderType: ONBOARDING, businessContext: [ONBOARDING] },
-  { code: 'probation_salary',       name: '试用期工资',   type: FieldType.TEXT,     required: false, defaultRequired: false, helpText: '可填写数字、货币格式或文字说明。', conditionalRequired: conditionExists('probation_start_date'), orderType: ONBOARDING, businessContext: [ONBOARDING] },
+  { code: 'probation_salary',       name: '试用期工资',   type: FieldType.NUMBER,   required: false, defaultRequired: false, helpText: '数字格式：保留小数点后两位。', conditionalRequired: conditionExists('probation_start_date'), orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'probation_other_salary', name: '试用期其他工资', type: FieldType.TEXT, required: false, defaultRequired: false, helpText: '可填写文字说明，如可填写数字加文字。', orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'payroll_cycle',          name: '发薪周期',     type: FieldType.DROPDOWN, required: true,  defaultRequired: true,  options: ['当月', '次月'], orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'payroll_date',           name: '发薪日期',     type: FieldType.TEXT,     required: true,  defaultRequired: true,  helpText: '整数。', orderType: ONBOARDING, businessContext: [ONBOARDING] },
@@ -131,6 +135,7 @@ const onboardingFields: FieldSeed[] = [
   { code: 'social_insurance_remark', name: '社保公积金办理备注', type: FieldType.TEXT, required: false, defaultRequired: false, orderType: ONBOARDING, businessContext: [ONBOARDING, RESIGNATION] },
   { code: 'medical_insurance_result', name: '医保是否办结', type: FieldType.DROPDOWN, required: false, defaultRequired: false, options: ['是', '否'], orderType: ONBOARDING, businessContext: [ONBOARDING, RESIGNATION] },
   { code: 'housing_fund_result', name: '公积金是否办结', type: FieldType.DROPDOWN, required: false, defaultRequired: false, options: ['是', '否'], orderType: ONBOARDING, businessContext: [ONBOARDING, RESIGNATION] },
+  { code: 'bank_location',          name: '开户地',       type: FieldType.TEXT,     required: false, defaultRequired: false, helpText: '城市的名字（待确认）', orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'bank_name',              name: '开户银行信息', type: FieldType.TEXT,     required: false, defaultRequired: false, orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'bank_account',           name: '银行借记卡帐号', type: FieldType.TEXT,   required: false, defaultRequired: false, orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'remark',                 name: '备注',         type: FieldType.TEXT,     required: false, defaultRequired: false, orderType: ONBOARDING, businessContext: [ONBOARDING] },
@@ -140,13 +145,13 @@ const onboardingFields: FieldSeed[] = [
   { code: 'need_esign',             name: '是否电子签',   type: FieldType.DROPDOWN, required: false, defaultRequired: false, options: ['1.是', '2.否'], conditionalRequired: conditionEq('need_company_contract', '是'), orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'esign_platform',         name: '电子签平台',   type: FieldType.DROPDOWN, required: false, defaultRequired: false, options: ['速创', 'E签宝'], conditionalRequired: conditionEq('need_esign', '1.是'), orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'contract_subject',       name: '劳动合同主体', type: FieldType.TEXT,     required: false, defaultRequired: false, helpText: '需要填写标准的合同签订主体名称。', conditionalRequired: conditionEq('need_company_contract', '是'), orderType: ONBOARDING, businessContext: [ONBOARDING] },
-  { code: 'company_address',        name: '甲方住所',     type: FieldType.TEXT,     required: false, defaultRequired: false, helpText: '电子签平台为速创时非必填；电子签平台为E签宝时必填。', conditionalRequired: conditionEq('esign_platform', 'E签宝'), orderType: ONBOARDING, businessContext: [ONBOARDING] },
+  { code: 'company_address',        name: '劳动合同主体注册地', type: FieldType.TEXT, required: false, defaultRequired: false, helpText: '由劳动合同主体自动带出；电子签平台为E签宝时必填。', conditionalRequired: conditionEq('esign_platform', 'E签宝'), orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'project_name',           name: '项目名称',     type: FieldType.TEXT,     required: false, defaultRequired: false, conditionalRequired: conditionEq('need_company_contract', '是'), orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'work_arrangement',       name: '安排或调整工作的情况', type: FieldType.TEXT, required: false, defaultRequired: false, orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'contract_template',      name: '劳动合同模板（标准模板/特殊模板）', type: FieldType.TEXT, required: false, defaultRequired: false, helpText: '特殊模板需要写明具体是哪个特殊模板。', conditionalRequired: conditionEq('need_company_contract', '是'), orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'need_contract_urge',     name: '劳动合同签署是否需要催办员工', type: FieldType.DROPDOWN, required: false, defaultRequired: false, options: ['是', '否'], conditionalRequired: conditionEq('need_company_contract', '是'), orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'need_onboarding_contact', name: '入职材料是否需要集约收集', type: FieldType.DROPDOWN, required: true,  defaultRequired: true,  options: ['是', '否'], helpText: '选择“是”时拆分入职联系工单。', orderType: ONBOARDING, businessContext: [ONBOARDING] },
-  { code: 'feedback_deadline',      name: '反馈截止日期', type: FieldType.DATE,     required: false, defaultRequired: false, helpText: '标准格式：年-月-日。', conditionalRequired: conditionEq('need_onboarding_contact', '是'), orderType: ONBOARDING, businessContext: [ONBOARDING, RESIGNATION] },
+  { code: 'feedback_deadline',      name: '反馈截止日期', type: FieldType.DATE,     required: false, defaultRequired: false, helpText: '标准格式：年-月-日。', orderType: ONBOARDING, businessContext: [ONBOARDING, RESIGNATION] },
   { code: 'is_common_template',     name: '是否为通用模板', type: FieldType.DROPDOWN, required: false, defaultRequired: false, options: ['是', '否'], conditionalRequired: conditionEq('need_onboarding_contact', '是'), orderType: ONBOARDING, businessContext: [ONBOARDING, RESIGNATION] },
   { code: 'template_name',          name: '模板名称',     type: FieldType.TEXT,     required: false, defaultRequired: false, conditionalRequired: conditionAnd(conditionEq('need_onboarding_contact', '是'), conditionEq('is_common_template', '否')), orderType: ONBOARDING, businessContext: [ONBOARDING, RESIGNATION] },
   { code: 'need_company_payroll',   name: '是否企服发薪', type: FieldType.DROPDOWN, required: true,  defaultRequired: true,  options: ['是', '否'], orderType: ONBOARDING, businessContext: [ONBOARDING] },
@@ -303,6 +308,7 @@ export async function seedFields(dataSource: DataSource): Promise<void> {
         orderType: seed.orderType,
         businessContext: seed.businessContext,
         conditionalRequired: seed.conditionalRequired ?? null,
+        isIncludedInTemplate: seed.isIncludedInTemplate ?? true,
         isActive: true,
       });
       await repository.save(existed);
@@ -327,6 +333,7 @@ export async function seedFields(dataSource: DataSource): Promise<void> {
         orderType: seed.orderType,
         businessContext: seed.businessContext,
         conditionalRequired: seed.conditionalRequired ?? null,
+        isIncludedInTemplate: seed.isIncludedInTemplate ?? true,
         displayOrder: i + 1,
         isActive: true,
       }),

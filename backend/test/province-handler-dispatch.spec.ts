@@ -262,7 +262,7 @@ describe("province handler contract", () => {
     ).resolves.toBe("legacy-high");
     expect(repository.find).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { moduleCode: "renewal_contract", isActive: true },
+        where: { moduleCode: "renewal_contract", isActive: true, businessScope: "beilun" },
       }),
     );
   });
@@ -300,6 +300,7 @@ describe("province dispatch engine integration", () => {
         province: "福建",
         mappingSource: "sheet4",
       }),
+      "beilun",
     );
   });
 
@@ -337,6 +338,7 @@ describe("province dispatch engine integration", () => {
         province: "广东",
         mappingSource: "sheet5",
       }),
+      "out_of_province",
     );
   });
 });

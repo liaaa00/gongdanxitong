@@ -32,6 +32,8 @@ import {
   InServiceOrderKind,
   InServiceOrderStatus,
   OrderType,
+  WorkOrder,
+  WorkOrderStatus,
   ProcessType,
   RequirementType,
 } from 'src/entities';
@@ -101,6 +103,8 @@ export class InServiceOrdersService {
   constructor(
     @InjectRepository(InServiceOrder)
     private readonly repository: Repository<InServiceOrder>,
+    @InjectRepository(WorkOrder)
+    private readonly workOrderRepository: Repository<WorkOrder>,
     private readonly handlerPicker: HandlerPickerService,
     private readonly exportTemplatesService: ExportTemplatesService,
   ) {}
@@ -113,6 +117,9 @@ export class InServiceOrdersService {
     const orderKind = dto.orderKind ?? InServiceOrderKind.SINGLE_BUSINESS;
     const businessScope = this.resolveCreateBusinessScope(orderKind, dto.businessScope, user);
     this.validateKindPayload(orderKind, dto);
+    if (orderKind === InServiceOrderKind.CONTRACT_RENEWAL) {
+      await this.assertRenewalSalary(dto.customerId, dto.idCardNo, dto.extraData ?? {});
+    }
 
     const handlerId = await this.pickHandler(
       orderKind,
@@ -221,6 +228,108 @@ export class InServiceOrdersService {
       page: query.page,
       pageSize: query.pageSize,
     };
+  }
+
+  async getRenewalHistory(customerId: string, idCardNo: string) {
+    const normalizedCustomerId = customerId?.trim();
+    const normalizedIdCardNo = idCardNo?.trim();
+    if (!normalizedCustomerId || !normalizedIdCardNo) {
+      return {
+        found: false,
+        source: null,
+        orderId: null,
+        orderNo: null,
+        employeeName: null,
+        idCardNo: normalizedIdCardNo || null,
+        extraData: {},
+        fixedTermCount: 0,
+        fixedTermRisk: false,
+        warning: null,
+      };
+    }
+
+    const [onboardingOrders, renewalOrders] = await Promise.all([
+      this.workOrderRepository.find({
+        where: {
+          customerId: normalizedCustomerId,
+          employeeIdCard: normalizedIdCardNo,
+          orderType: OrderType.ONBOARDING,
+        },
+        order: { createdAt: 'DESC' },
+        take: 30,
+      }),
+      this.repository.find({
+        where: {
+          customerId: normalizedCustomerId,
+          idCardNo: normalizedIdCardNo,
+          orderKind: InServiceOrderKind.CONTRACT_RENEWAL,
+        },
+        order: { createdAt: 'DESC' },
+        take: 30,
+      }),
+    ]);
+    const history = [
+      ...onboardingOrders
+        .filter((order) => order.status !== WorkOrderStatus.DRAFT)
+        .map((order) => ({
+          source: 'onboarding' as const,
+          orderId: order.id,
+          orderNo: order.orderNo,
+          employeeName: order.employeeName,
+          idCardNo: order.employeeIdCard,
+          extraData: order.extraData ?? {},
+          createdAt: order.createdAt,
+        })),
+      ...renewalOrders.map((order) => ({
+        source: 'renewal' as const,
+        orderId: order.id,
+        orderNo: order.orderNo,
+        employeeName: order.employeeName,
+        idCardNo: order.idCardNo,
+        extraData: order.extraData ?? {},
+        createdAt: order.createdAt,
+      })),
+    ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    const fixedTermCount = history.filter((item) => {
+      const termType = item.extraData.contract_term_type ?? item.extraData.renewal_term_type;
+      return termType && String(termType) !== '无固定期限';
+    }).length;
+    const latest = history[0];
+    return {
+      found: Boolean(latest),
+      source: latest?.source ?? null,
+      orderId: latest?.orderId ?? null,
+      orderNo: latest?.orderNo ?? null,
+      employeeName: latest?.employeeName ?? null,
+      idCardNo: latest?.idCardNo ?? normalizedIdCardNo,
+      extraData: latest?.extraData ?? {},
+      fixedTermCount,
+      fixedTermRisk: fixedTermCount >= 2,
+      warning: fixedTermCount >= 2
+        ? '该员工已有两次或以上固定期限合同记录，续签前请确认是否应签订无固定期限合同。'
+        : null,
+    };
+  }
+
+  private async assertRenewalSalary(
+    customerId: string,
+    idCardNo: string | undefined,
+    extraData: Record<string, unknown>,
+  ): Promise<void> {
+    const submittedSalary = this.parseSalary(extraData.base_salary ?? extraData.renewal_base_salary);
+    if (submittedSalary === null || submittedSalary <= 0) {
+      throw businessException(4811, HttpStatus.BAD_REQUEST, '续签基本工资必须为大于 0 的数字');
+    }
+    void customerId;
+    void idCardNo;
+  }
+
+  private parseSalary(value: unknown): number | null {
+    if (value === undefined || value === null) return null;
+    const normalized = String(value).replace(/[^0-9.-]/g, '');
+    if (!normalized) return null;
+    const result = Number(normalized);
+    return Number.isFinite(result) ? result : null;
   }
 
   async getInjuryWarning(idCardNo: string): Promise<{ hasInjuryRecord: boolean; message: string | null }> {
@@ -512,7 +621,29 @@ export class InServiceOrdersService {
     order.completionRemark = dto.remark?.trim() || null;
     order.attachments = this.mergeAttachments(order.attachments, dto.attachments);
     order.completedAt = new Date();
-    return this.saveAndRespond(order);
+    const response = await this.saveAndRespond(order);
+    await this.writeBackResignationCertificateResult(order);
+    return response;
+  }
+
+  private async writeBackResignationCertificateResult(order: InServiceOrder): Promise<void> {
+    if (order.orderKind !== InServiceOrderKind.RESIGNATION_CERTIFICATE) return;
+    const sourceId = order.extraData?.source_work_order_id;
+    if (typeof sourceId !== 'string' || !sourceId.trim()) return;
+    const source = await this.workOrderRepository.findOne({ where: { id: sourceId } });
+    if (!source) return;
+    const sourceExtraData = source.extraData ?? {};
+    const oldAttachments = Array.isArray(sourceExtraData.resignation_cert_attachments)
+      ? sourceExtraData.resignation_cert_attachments.filter((value): value is string => typeof value === 'string')
+      : [];
+    source.extraData = {
+      ...sourceExtraData,
+      resignation_cert_status: '已开具',
+      resignation_cert_result: order.completionRemark,
+      resignation_cert_attachments: Array.from(new Set([...oldAttachments, ...(order.attachments ?? [])])),
+      resignation_cert_completed_at: (order.completedAt ?? new Date()).toISOString(),
+    };
+    await this.workOrderRepository.save(source);
   }
 
   async fail(
@@ -759,6 +890,10 @@ export class InServiceOrdersService {
       const contractTermType = String(
         extraData.contract_term_type ?? extraData.renewal_term_type ?? '',
       );
+      const baseSalary = extraData.base_salary ?? extraData.renewal_base_salary;
+      if (baseSalary === undefined || baseSalary === null || String(baseSalary).trim() === '') {
+        throw businessException(4811, HttpStatus.BAD_REQUEST, '续签基本工资不能为空');
+      }
       if (!contractStartDate || (contractTermType !== '无固定期限' && !contractEndDate)) {
         throw businessException(
           4811,

@@ -50,7 +50,7 @@ describe('可选字段模板生成测试', () => {
       expect(mainSheet).toBeDefined();
       if (!mainSheet) return;
 
-      const headerRow = mainSheet.getRow(1);
+      const headerRow = mainSheet.getRow(2);
       const headers = [];
       for (let col = 2; col <= mockStandardFields.length + 1; col++) {
         headers.push(headerRow.getCell(col).value);

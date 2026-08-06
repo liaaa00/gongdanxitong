@@ -5,6 +5,7 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import { BusinessScope } from './enums';
 import { User } from './user.entity';
 
 @Entity({ name: 'module_handlers' })
@@ -14,6 +15,9 @@ export class ModuleHandler {
 
   @Column({ name: 'module_code', type: 'varchar', length: 64 })
   moduleCode!: string;
+
+  @Column({ name: 'business_scope', type: 'varchar', length: 32, default: BusinessScope.BEILUN })
+  businessScope!: BusinessScope;
 
   @Column({ name: 'handler_id', type: 'uuid' })
   handlerId!: string;

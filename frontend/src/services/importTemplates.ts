@@ -22,6 +22,7 @@ export interface SaveImportTemplateFieldItem {
 }
 
 const ONBOARDING_EXCLUDED = new Set([
+  'postal_code',
   'contract_feedback',
   'onboarding_feedback',
   'data_entry_feedback',

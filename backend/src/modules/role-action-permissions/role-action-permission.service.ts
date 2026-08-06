@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { SystemSetting } from 'src/entities';
+import { BusinessScope, SystemSetting } from 'src/entities';
 
 export const ROLE_ACTION_PERMISSION_SETTING_KEY = 'roleActionPermissions.v1';
 
@@ -182,27 +182,27 @@ export class RoleActionPermissionService {
     private readonly settingsRepo: Repository<SystemSetting>,
   ) {}
 
-  async getMatrix(): Promise<RoleActionPermissionMatrix> {
-    const stored = await this.readStoredMatrix();
+  async getMatrix(businessScope: BusinessScope = BusinessScope.BEILUN): Promise<RoleActionPermissionMatrix> {
+    const stored = await this.readStoredMatrix(businessScope);
     return { ...DEFAULT_ROLE_ACTION_PERMISSIONS, ...stored };
   }
 
-  async updateMatrix(matrix: RoleActionPermissionMatrix): Promise<RoleActionPermissionMatrix> {
+  async updateMatrix(matrix: RoleActionPermissionMatrix, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<RoleActionPermissionMatrix> {
     const normalized = this.normalizeMatrix(matrix);
     const merged = { ...DEFAULT_ROLE_ACTION_PERMISSIONS, ...normalized };
-    await this.saveStoredMatrix(merged);
+    await this.saveStoredMatrix(merged, businessScope);
     return merged;
   }
 
-  async setRolePermissions(roleCode: string, actions: string[]): Promise<RoleActionPermissionMatrix> {
-    const matrix = await this.getMatrix();
+  async setRolePermissions(roleCode: string, actions: string[], businessScope: BusinessScope = BusinessScope.BEILUN): Promise<RoleActionPermissionMatrix> {
+    const matrix = await this.getMatrix(businessScope);
     matrix[roleCode] = this.normalizeActions(actions);
-    await this.saveStoredMatrix(matrix);
+    await this.saveStoredMatrix(matrix, businessScope);
     return matrix;
   }
 
-  async getAllowedActionsForRoles(roleCodes: readonly string[]): Promise<RoleActionCode[]> {
-    const matrix = await this.getMatrix();
+  async getAllowedActionsForRoles(roleCodes: readonly string[], businessScope: BusinessScope = BusinessScope.BEILUN): Promise<RoleActionCode[]> {
+    const matrix = await this.getMatrix(businessScope);
     const allowed = new Set<RoleActionCode>();
     for (const roleCode of roleCodes) {
       const actions = matrix[roleCode] || [];
@@ -211,10 +211,10 @@ export class RoleActionPermissionService {
     return Array.from(allowed);
   }
 
-  async hasAnyRoleAction(roleCodes: readonly string[], action: string): Promise<boolean> {
+  async hasAnyRoleAction(roleCodes: readonly string[], action: string, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<boolean> {
     if (roleCodes.includes('admin')) return true;
     if (!ROLE_ACTIONS.includes(action as RoleActionCode)) return false;
-    const allowed = await this.getAllowedActionsForRoles(roleCodes);
+    const allowed = await this.getAllowedActionsForRoles(roleCodes, businessScope);
     return allowed.includes(action as RoleActionCode);
   }
 
@@ -268,9 +268,9 @@ export class RoleActionPermissionService {
     ];
   }
 
-  private async readStoredMatrix(): Promise<RoleActionPermissionMatrix> {
+  private async readStoredMatrix(businessScope: BusinessScope): Promise<RoleActionPermissionMatrix> {
     try {
-      const row = await this.settingsRepo.findOne({ where: { key: ROLE_ACTION_PERMISSION_SETTING_KEY } });
+      const row = await this.settingsRepo.findOne({ where: { key: this.settingKey(businessScope) } });
       if (!row) return {};
       const parsed = JSON.parse(row.value) as StoredRoleActionPermissions;
       return this.normalizeMatrix(parsed.roles || {});
@@ -281,16 +281,21 @@ export class RoleActionPermissionService {
     }
   }
 
-  private async saveStoredMatrix(matrix: RoleActionPermissionMatrix): Promise<void> {
+  private async saveStoredMatrix(matrix: RoleActionPermissionMatrix, businessScope: BusinessScope): Promise<void> {
     const value = JSON.stringify({ roles: this.normalizeMatrix(matrix) });
-    const row = await this.settingsRepo.findOne({ where: { key: ROLE_ACTION_PERMISSION_SETTING_KEY } });
+    const key = this.settingKey(businessScope);
+    const row = await this.settingsRepo.findOne({ where: { key } });
     if (row) {
       row.value = value;
       row.isEncrypted = false;
       await this.settingsRepo.save(row);
       return;
     }
-    await this.settingsRepo.save(this.settingsRepo.create({ key: ROLE_ACTION_PERMISSION_SETTING_KEY, value, isEncrypted: false }));
+    await this.settingsRepo.save(this.settingsRepo.create({ key, value, isEncrypted: false }));
+  }
+
+  private settingKey(businessScope: BusinessScope): string {
+    return `${ROLE_ACTION_PERMISSION_SETTING_KEY}.${businessScope}`;
   }
 
   private normalizeMatrix(matrix: Record<string, string[]>): RoleActionPermissionMatrix {

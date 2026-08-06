@@ -6,6 +6,7 @@ import {
   Index,
 } from 'typeorm';
 import { PermissionConfig } from '../types/permission-config.types';
+import { BusinessScope } from 'src/entities';
 
 @Entity('permission_config_versions')
 export class PermissionConfigVersionEntity {
@@ -18,6 +19,9 @@ export class PermissionConfigVersionEntity {
 
   @Column({ type: 'jsonb' })
   config!: PermissionConfig;
+
+  @Column({ name: 'business_scope', type: 'varchar', length: 32, default: BusinessScope.BEILUN })
+  business_scope!: BusinessScope;
 
   @Column({ type: 'boolean', default: false })
   @Index()

@@ -1,6 +1,6 @@
 import * as bcrypt from 'bcrypt';
 import { DataSource } from 'typeorm';
-import { Department, Role, User, UserRole } from 'src/entities';
+import { BusinessScope, Department, Role, User, UserRole } from 'src/entities';
 
 interface UserRoleSeed {
   roleCode: string;
@@ -11,8 +11,9 @@ interface UserRoleSeed {
 interface UserSeed {
   username: string;
   realName: string;
-  email: string;
-  phone: string;
+  email: string | null;
+  phone: string | null;
+  businessScope?: BusinessScope;
   roles: UserRoleSeed[];
 }
 
@@ -151,6 +152,17 @@ const userSeeds: UserSeed[] = [
     ],
   },
 
+  // 浙江自签团队福保专员：联系方式由管理员首次登录后补充，账号首次登录必须改密。
+  { username: 'chenli', realName: '陈丽', email: null, phone: null, businessScope: BusinessScope.OUT_OF_PROVINCE, roles: [{ roleCode: 'welfare_specialist', departmentCode: 'WELFARE_SECURITY', isPrimary: true }] },
+  { username: 'yangyi', realName: '杨易', email: null, phone: null, businessScope: BusinessScope.OUT_OF_PROVINCE, roles: [{ roleCode: 'welfare_specialist', departmentCode: 'WELFARE_SECURITY', isPrimary: true }] },
+  { username: 'daijunxiang', realName: '戴俊祥', email: null, phone: null, businessScope: BusinessScope.OUT_OF_PROVINCE, roles: [{ roleCode: 'welfare_specialist', departmentCode: 'WELFARE_SECURITY', isPrimary: true }] },
+  { username: 'zhumin', realName: '朱敏', email: null, phone: null, businessScope: BusinessScope.OUT_OF_PROVINCE, roles: [{ roleCode: 'welfare_specialist', departmentCode: 'WELFARE_SECURITY', isPrimary: true }] },
+  { username: 'fangzhiying', realName: '方志英', email: null, phone: null, businessScope: BusinessScope.OUT_OF_PROVINCE, roles: [{ roleCode: 'welfare_specialist', departmentCode: 'WELFARE_SECURITY', isPrimary: true }] },
+  { username: 'heyitian', realName: '何依恬', email: null, phone: null, businessScope: BusinessScope.OUT_OF_PROVINCE, roles: [{ roleCode: 'welfare_specialist', departmentCode: 'WELFARE_SECURITY', isPrimary: true }] },
+  { username: 'xuxiaofen', realName: '徐晓芬', email: null, phone: null, businessScope: BusinessScope.OUT_OF_PROVINCE, roles: [{ roleCode: 'welfare_specialist', departmentCode: 'WELFARE_SECURITY', isPrimary: true }] },
+  { username: 'yangxiaohan', realName: '羊晓焓', email: null, phone: null, businessScope: BusinessScope.OUT_OF_PROVINCE, roles: [{ roleCode: 'welfare_specialist', departmentCode: 'WELFARE_SECURITY', isPrimary: true }] },
+  { username: 'yangjie', realName: '杨杰', email: null, phone: null, businessScope: BusinessScope.OUT_OF_PROVINCE, roles: [{ roleCode: 'welfare_specialist', departmentCode: 'WELFARE_SECURITY', isPrimary: true }] },
+
   // Backward-compatible demo/service accounts kept active but not counted as the real org.
   { username: 'admin', realName: '系统管理员（兼容账号）', email: 'admin@example.com', phone: '13800000901', roles: [{ roleCode: 'admin', departmentCode: 'SYSTEM_ADMIN', isPrimary: true }] },
   { username: 'contractsup01', realName: '合同主管（兼容账号）', email: 'contractsup01@example.com', phone: '13800000902', roles: [{ roleCode: 'shared_leader', departmentCode: 'SHARED_TEAM', isPrimary: true }, { roleCode: 'contract_specialist', departmentCode: 'SHARED_CONTRACT' }] },
@@ -172,7 +184,7 @@ export async function seedUsers(dataSource: DataSource): Promise<void> {
 
   for (const seed of userSeeds) {
     let user = await userRepository.findOne({ where: { username: seed.username } });
-    if (!user) {
+    if (!user && seed.email) {
       user = await userRepository.findOne({ where: { email: seed.email } });
     }
     if (!user) {
@@ -181,12 +193,18 @@ export async function seedUsers(dataSource: DataSource): Promise<void> {
         realName: seed.realName,
         email: seed.email,
         phone: seed.phone,
+        businessScope: seed.businessScope ?? BusinessScope.BEILUN,
         passwordHash: hashed,
         avatarUrl: null,
         isActive: true,
         mustChangePassword: true,
         passwordUpdatedAt: null,
       }));
+    }
+
+    if (seed.businessScope && user.businessScope !== seed.businessScope) {
+      user.businessScope = seed.businessScope;
+      user = await userRepository.save(user);
     }
 
     for (const relation of seed.roles) {

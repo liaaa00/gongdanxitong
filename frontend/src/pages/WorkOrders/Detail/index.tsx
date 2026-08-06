@@ -181,9 +181,12 @@ const WorkOrdersDetail: React.FC = () => {
           })}
         </Space>
 
-        {/* 离职材料附件（附件挂在主工单 id 上，bizPurpose=resignation_material） */}
-        {isResignationOrder && id && (
-          <MaterialsUpload workOrderId={id} bizPurpose="resignation_material" />
+        {/* 入离职附件均挂在主工单上，按 bizPurpose 隔离。 */}
+        {id && (currentOrderType === 'onboarding' || isResignationOrder) && (
+          <MaterialsUpload
+            workOrderId={id}
+            bizPurpose={currentOrderType === 'onboarding' ? 'onboarding_material' : 'resignation_material'}
+          />
         )}
       </Space>
     </PageContainer>

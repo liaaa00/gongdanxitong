@@ -1,4 +1,4 @@
-import { FieldConfig, FieldType, ImportTemplateField, OrderType } from 'src/entities';
+import { BusinessScope, FieldConfig, FieldType, ImportTemplateField, OrderType } from 'src/entities';
 import { ImportTemplateConfigService } from 'src/modules/imports/import-template-config.service';
 
 function field(overrides: Partial<FieldConfig>): FieldConfig {
@@ -30,6 +30,7 @@ function templateField(overrides: Partial<ImportTemplateField>): ImportTemplateF
     orderType: overrides.orderType ?? OrderType.ONBOARDING,
     fieldCode: overrides.fieldCode ?? 'employee_name',
     field: undefined as never,
+    businessScope: overrides.businessScope ?? BusinessScope.BEILUN,
     displayOrder: overrides.displayOrder ?? 1,
     headerAlias: overrides.headerAlias ?? null,
     isRequiredOverride: overrides.isRequiredOverride ?? null,
@@ -98,6 +99,7 @@ describe('ImportTemplateConfigService', () => {
 
     expect(list.map((item) => item.fieldCode)).toEqual(['employee_name', 'contract_template', 'feedback_deadline', 'template_name']);
     expect(list.find((item) => item.fieldCode === 'contract_template')?.conditionalRequired).toEqual({ field: 'need_company_contract', op: 'EQ', value: '1.是' });
+    expect(list.find((item) => item.fieldCode === 'feedback_deadline')?.conditionalRequired).toBeNull();
     expect(list.every((item) => item.source === 'fallback')).toBe(true);
   });
 

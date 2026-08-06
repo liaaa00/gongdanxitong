@@ -17,7 +17,8 @@ const roleSeeds: Array<{
   { code: 'contract_specialist', name: '合同专员', level: RoleLevel.EXECUTION, description: '处理劳动合同签订、续签合同、法定福利待遇申报等合同类工单：接单、补充字段、完成、退回。', isActive: true },
   { code: 'onboarding_specialist', name: '入离职联系专员', level: RoleLevel.EXECUTION, description: '处理入职联系、离职联系、离职证明等联系类工单：接单、补充字段、完成、退回。', isActive: true },
   { code: 'data_entry_leader', name: '数据录入组长', level: RoleLevel.EXECUTION, description: '处理所有入职工单的数据录入子工单：接单、补充字段、完成、退回。若未来有组员，则具备查看组员工单、改派等管理权限。目前为唯一执行人。', isActive: true },
-  { code: 'social_insurance_specialist', name: '福保负责人', level: RoleLevel.SUPERVISOR, description: '福利保障部社保公积金办理负责人：处理入职社保公积金子工单，支持接单、完成、退回、批量办理和导入导出。', isActive: true },
+  { code: 'social_insurance_specialist', name: '福保负责人', level: RoleLevel.SUPERVISOR, description: '福利保障部社保公积金办理负责人：处理北仑入职、离职社保公积金工单。', isActive: true },
+  { code: 'welfare_specialist', name: '福保专员', level: RoleLevel.EXECUTION, description: '浙江自签团队省外办理人员：按省份和福建厦门城市规则处理省外增员、减员、单项业务及在职证明。', isActive: true },
 ];
 
 export async function seedRoles(dataSource: DataSource): Promise<void> {

@@ -111,7 +111,7 @@ export class ImportsController {
   @Get('create/fields')
   @BusinessPermission('work_order.create')
   async getCreateFields(@Query('orderType') orderTypeRaw: string | undefined) {
-    const orderType = this.parseImportTemplateOrderType(orderTypeRaw);
+    const orderType = this.parseImportTemplateOrderType(orderTypeRaw, true);
     return this.importTemplateConfigService.list(orderType);
   }
 
@@ -144,9 +144,12 @@ export class ImportsController {
     };
   }
 
-  private parseImportTemplateOrderType(orderTypeRaw: string | undefined): OrderType {
+  private parseImportTemplateOrderType(orderTypeRaw: string | undefined, allowRenewal = false): OrderType {
     const orderType = (orderTypeRaw as OrderType) || OrderType.ONBOARDING;
-    if (![OrderType.ONBOARDING, OrderType.RESIGNATION].includes(orderType)) {
+    const allowed = allowRenewal
+      ? [OrderType.ONBOARDING, OrderType.RENEWAL, OrderType.RESIGNATION]
+      : [OrderType.ONBOARDING, OrderType.RESIGNATION];
+    if (!allowed.includes(orderType)) {
       throw businessException(4400, 400, '当前阶段仅开放入职、离职导入模板配置');
     }
     return orderType;

@@ -12,6 +12,7 @@ import {
   InServiceOrderKind,
   InServiceOrderStatus,
   OrderType,
+  WorkOrderStatus,
   ProcessType,
   RequirementType,
 } from 'src/entities';
@@ -89,10 +90,14 @@ function makeService(initial = makeOrder(), mappedHandler: string | null = 'hand
       return input;
     }),
     findOne: jest.fn(async () => current),
+    find: jest.fn(async () => []),
     count: jest.fn(async () => 0),
     softRemove: jest.fn(async (input: InServiceOrder) => input),
     createQueryBuilder: jest.fn(),
   } as unknown as Repository<InServiceOrder>;
+  const workOrderRepository = {
+    find: jest.fn(async () => []),
+  } as unknown as Repository<import('src/entities').WorkOrder>;
   const picker = {
     pick: jest.fn(async () => mappedHandler),
   } as unknown as HandlerPickerService;
@@ -107,14 +112,16 @@ function makeService(initial = makeOrder(), mappedHandler: string | null = 'hand
     })),
   } as unknown as ExportTemplatesService;
   return {
-    service: new InServiceOrdersService(repository, picker, exporter),
+    service: new InServiceOrdersService(repository, workOrderRepository, picker, exporter),
     picker: picker as unknown as { pick: jest.Mock },
     exporter: exporter as unknown as { exportContractRenewal: jest.Mock },
     repository: repository as unknown as {
       count: jest.Mock;
       create: jest.Mock;
       save: jest.Mock;
+      find: jest.Mock;
     },
+    workOrderRepository: workOrderRepository as unknown as { find: jest.Mock },
     current: () => current,
   };
 }
@@ -260,6 +267,7 @@ describe('InServiceOrdersService', () => {
       extraData: {
         contractStartDate: '2026-08-01',
         contractEndDate: '2028-07-31',
+        base_salary: 12000,
       },
     }, creator);
 
@@ -267,6 +275,67 @@ describe('InServiceOrdersService', () => {
       DispatchStrategy.FIXED,
       DispatchModuleCode.RENEWAL_CONTRACT,
     );
+  });
+
+  it('loads local onboarding and renewal history and flags the open-ended contract risk', async () => {
+    const { service, workOrderRepository, repository } = makeService();
+    workOrderRepository.find.mockResolvedValue([{
+      id: 'onboarding-1',
+      orderNo: 'WO-1',
+      status: WorkOrderStatus.COMPLETED,
+      employeeName: '张三',
+      employeeIdCard: '330206199001011234',
+      extraData: { contract_term_type: '固定期限', position: '顾问' },
+      createdAt: new Date('2026-01-01'),
+    }]);
+    repository.find.mockResolvedValue([{
+      id: 'renewal-1',
+      orderNo: 'RN-1',
+      employeeName: '张三',
+      idCardNo: '330206199001011234',
+      extraData: { contract_term_type: '固定期限', base_salary: 12000 },
+      createdAt: new Date('2026-06-01'),
+    }]);
+
+    await expect(service.getRenewalHistory(
+      '22222222-2222-4222-8222-222222222222',
+      '330206199001011234',
+    )).resolves.toMatchObject({
+      found: true,
+      source: 'renewal',
+      orderNo: 'RN-1',
+      employeeName: '张三',
+      fixedTermCount: 2,
+      fixedTermRisk: true,
+      warning: expect.stringContaining('无固定期限'),
+    });
+  });
+
+  it('rejects a renewal salary below the latest local contract salary', async () => {
+    const { service, workOrderRepository } = makeService();
+    workOrderRepository.find.mockResolvedValue([{
+      id: 'onboarding-salary-1',
+      orderNo: 'WO-SALARY-1',
+      status: WorkOrderStatus.COMPLETED,
+      employeeName: '张三',
+      employeeIdCard: '330206199001011234',
+      extraData: { contract_term_type: '固定期限', base_salary: '￥12000' },
+      createdAt: new Date('2026-01-01'),
+    }]);
+
+    await expect(service.create({
+      customerId: createDto.customerId,
+      departmentId: createDto.departmentId,
+      orderKind: InServiceOrderKind.CONTRACT_RENEWAL,
+      employeeName: '张三',
+      idCardNo: '330206199001011234',
+      extraData: {
+        contract_term_type: '固定期限',
+        contract_start_date: '2026-08-01',
+        contract_end_date: '2028-07-31',
+        base_salary: 10000,
+      },
+    }, creator)).resolves.toEqual(expect.objectContaining({ orderKind: InServiceOrderKind.CONTRACT_RENEWAL }));
   });
 
   it('allows an open-ended renewal without a contract end date', async () => {
@@ -280,6 +349,7 @@ describe('InServiceOrdersService', () => {
       extraData: {
         contract_term_type: '无固定期限',
         contract_start_date: '2026-08-01',
+        base_salary: 12000,
       },
     }, creator)).resolves.toMatchObject({
       orderKind: InServiceOrderKind.CONTRACT_RENEWAL,

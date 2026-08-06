@@ -4,7 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { AxiosError } from 'axios';
 import { lastValueFrom, timeout } from 'rxjs';
 import { Repository } from 'typeorm';
-import { SystemSetting } from 'src/entities';
+import { BusinessScope, SystemSetting } from 'src/entities';
 import { decryptSecret, encryptSecret, maskSecret } from 'src/common/crypto/aes.util';
 import { TestAiSettingsDto, UpdateAiSettingsDto } from './dto/update-ai-settings.dto';
 
@@ -53,7 +53,7 @@ interface StoredReadResult {
 @Injectable()
 export class AiSettingsService {
   private readonly logger = new Logger(AiSettingsService.name);
-  private cached: { result: StoredReadResult; expiresAt: number } | null = null;
+  private cached = new Map<BusinessScope, { result: StoredReadResult; expiresAt: number }>();
 
   constructor(
     @InjectRepository(SystemSetting)
@@ -61,8 +61,8 @@ export class AiSettingsService {
     private readonly httpService: HttpService,
   ) {}
 
-  async getConfigPublic(): Promise<AiConfigPublic> {
-    const read = await this.readStored();
+  async getConfigPublic(businessScope: BusinessScope = BusinessScope.BEILUN): Promise<AiConfigPublic> {
+    const read = await this.readStored(businessScope);
     if (!read.decryptOk) {
       return {
         provider: 'openai',
@@ -86,13 +86,13 @@ export class AiSettingsService {
     };
   }
 
-  async getConfigInternal(): Promise<AiConfigStored | null> {
-    const read = await this.readStored();
+  async getConfigInternal(businessScope: BusinessScope = BusinessScope.BEILUN): Promise<AiConfigStored | null> {
+    const read = await this.readStored(businessScope);
     return read.decryptOk && read.value ? this.normalizeConfig(read.value) : null;
   }
 
-  async updateConfig(dto: UpdateAiSettingsDto): Promise<AiConfigPublic> {
-    const existingRead = await this.readStored();
+  async updateConfig(dto: UpdateAiSettingsDto, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<AiConfigPublic> {
+    const existingRead = await this.readStored(businessScope);
     if (!existingRead.decryptOk) {
       throw new BadRequestException('现有加密配置无法解密，无法更新 AI 设置；请重新设置 API 密钥');
     }
@@ -112,26 +112,27 @@ export class AiSettingsService {
     this.assertValidBaseUrl(next.baseUrl);
 
     const encryptedValue = encryptSecret(JSON.stringify(next));
-    const row = await this.settingsRepo.findOne({ where: { key: SETTING_KEY } });
+    const key = this.settingKey(businessScope);
+    const row = await this.settingsRepo.findOne({ where: { key } });
     if (row) {
       row.value = encryptedValue;
       row.isEncrypted = true;
       await this.settingsRepo.save(row);
     } else {
       const entity = this.settingsRepo.create({
-        key: SETTING_KEY,
+        key,
         value: encryptedValue,
         isEncrypted: true,
       });
       await this.settingsRepo.save(entity);
     }
 
-    this.invalidateCache();
-    return this.getConfigPublic();
+    this.invalidateCache(businessScope);
+    return this.getConfigPublic(businessScope);
   }
 
-  async testConnection(dto: TestAiSettingsDto = {}): Promise<AiSettingsTestResult> {
-    const stored = await this.getConfigInternal();
+  async testConnection(dto: TestAiSettingsDto = {}, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<AiSettingsTestResult> {
+    const stored = await this.getConfigInternal(businessScope);
     const apiKey = (dto.apiKey ?? dto.api_key ?? stored?.apiKey ?? '').trim();
     const baseUrl = (dto.baseUrl ?? dto.base_url ?? stored?.baseUrl ?? '').trim();
     const model = (dto.model ?? stored?.model ?? '').trim();
@@ -165,8 +166,9 @@ export class AiSettingsService {
     }
   }
 
-  invalidateCache(): void {
-    this.cached = null;
+  invalidateCache(businessScope?: BusinessScope): void {
+    if (businessScope) this.cached.delete(businessScope);
+    else this.cached.clear();
   }
 
   private assertValidBaseUrl(baseUrl: string): void {
@@ -197,15 +199,16 @@ export class AiSettingsService {
     };
   }
 
-  private async readStored(): Promise<StoredReadResult> {
+  private async readStored(businessScope: BusinessScope): Promise<StoredReadResult> {
     const now = Date.now();
-    if (this.cached && this.cached.expiresAt > now) {
-      return this.cached.result;
+    const cached = this.cached.get(businessScope);
+    if (cached && cached.expiresAt > now) {
+      return cached.result;
     }
 
     const result: StoredReadResult = { value: null, decryptOk: true };
     try {
-      const row = await this.settingsRepo.findOne({ where: { key: SETTING_KEY } });
+      const row = await this.settingsRepo.findOne({ where: { key: this.settingKey(businessScope) } });
       if (row) {
         const plaintext = row.isEncrypted ? decryptSecret(row.value) : row.value;
         const parsed = JSON.parse(plaintext) as AiConfigStored;
@@ -221,8 +224,12 @@ export class AiSettingsService {
       result.error = message;
     }
 
-    this.cached = { result, expiresAt: now + CACHE_TTL_MS };
+    this.cached.set(businessScope, { result, expiresAt: now + CACHE_TTL_MS });
     return result;
+  }
+
+  private settingKey(businessScope: BusinessScope): string {
+    return `${SETTING_KEY}.${businessScope}`;
   }
 
   private classifyConnectionError(error: unknown): AiFallbackReason {

@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AppConfig } from 'src/config/configuration';
-import { SystemSetting } from 'src/entities';
+import { BusinessScope, SystemSetting } from 'src/entities';
 import { UpdateOperationLogRetentionDto } from './dto/update-operation-log-retention.dto';
 
 export const OPERATION_LOG_RETENTION_SETTING_KEY = 'operationLog.retentionDays';
@@ -25,14 +25,15 @@ export class SystemSettingsService {
     private readonly configService: ConfigService<AppConfig, true>,
   ) {}
 
-  async getOperationLogRetention(): Promise<{ days: number }> {
-    const storedDays = await this.readStoredOperationLogRetentionDays();
+  async getOperationLogRetention(businessScope: BusinessScope = BusinessScope.BEILUN): Promise<{ days: number }> {
+    const storedDays = await this.readStoredOperationLogRetentionDays(businessScope);
     return { days: storedDays ?? this.resolveEnvRetentionDays() };
   }
 
-  async updateOperationLogRetention(dto: UpdateOperationLogRetentionDto): Promise<{ days: number }> {
+  async updateOperationLogRetention(dto: UpdateOperationLogRetentionDto, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<{ days: number }> {
     const value = JSON.stringify({ days: dto.days });
-    const row = await this.settingsRepo.findOne({ where: { key: OPERATION_LOG_RETENTION_SETTING_KEY } });
+    const key = this.settingKey(businessScope);
+    const row = await this.settingsRepo.findOne({ where: { key } });
 
     if (row) {
       row.value = value;
@@ -41,7 +42,7 @@ export class SystemSettingsService {
     } else {
       await this.settingsRepo.save(
         this.settingsRepo.create({
-          key: OPERATION_LOG_RETENTION_SETTING_KEY,
+          key,
           value,
           isEncrypted: false,
         }),
@@ -51,9 +52,9 @@ export class SystemSettingsService {
     return { days: dto.days };
   }
 
-  private async readStoredOperationLogRetentionDays(): Promise<number | null> {
+  private async readStoredOperationLogRetentionDays(businessScope: BusinessScope): Promise<number | null> {
     try {
-      const row = await this.settingsRepo.findOne({ where: { key: OPERATION_LOG_RETENTION_SETTING_KEY } });
+      const row = await this.settingsRepo.findOne({ where: { key: this.settingKey(businessScope) } });
       if (!row) return null;
 
       const parsed = JSON.parse(row.value) as OperationLogRetentionStoredValue;
@@ -64,6 +65,10 @@ export class SystemSettingsService {
       this.logger.warn(`Failed to load operation log retention setting from system_settings: ${message}`);
       return null;
     }
+  }
+
+  private settingKey(businessScope: BusinessScope): string {
+    return `${OPERATION_LOG_RETENTION_SETTING_KEY}.${businessScope}`;
   }
 
   private resolveEnvRetentionDays(): number {

@@ -94,6 +94,7 @@ const HEADER_ALIASES: Record<string, string[]> = {
   social_base: ['社保基数', '社会保险基数', '社保缴费基数'],
   fund_base: ['公积金基数', '住房公积金基数', '公积金缴费基数'],
   fund_ratio: ['公积金比例', '住房公积金比例', '公积金缴纳比例'],
+  bank_location: ['开户地', '银行开户地', '开户地区'],
   bank_name: ['开户银行信息', '开户银行', '银行名称', '开户行', '开户行名称'],
   bank_account: ['银行借记卡账号', '银行账号', '银行卡号', '银行卡账号', '工资卡号'],
   remark: ['备注', '说明', '普通备注'],
@@ -120,7 +121,7 @@ const HEADER_ALIASES: Record<string, string[]> = {
   probation_other_salary: ['试用期其他工资', '试用期其它工资', '试用期补贴', '试用期津贴'],
   need_esign: ['是否电子签', '是否电子签署', '是否需要电子签', '电子签'],
   esign_platform: ['电子签平台', '电子签署平台', '电签平台', '签署平台'],
-  company_address: ['甲方住所', '甲方地址', '甲方注册地址', '公司住所', '用人单位住所'],
+  company_address: ['劳动合同主体注册地', '甲方住所', '甲方地址', '甲方注册地址', '公司住所', '用人单位住所'],
   project_name: ['项目名称', '项目', '所属项目'],
   work_arrangement: ['安排或调整工作的情况', '工作安排', '安排或调整工作', '可调整工作地点', '工作调整情况'],
   feedback_deadline: ['反馈截止日期', '需要反馈截止日期', '反馈截止时间', '反馈期限'],
@@ -223,7 +224,7 @@ export class ImportFieldValidationService {
     return fields
       .filter((field) => !ONBOARDING_IMPORT_EXCLUDED_FIELDS.has(field.fieldCode))
       .map((field) => {
-                if (field.fieldCode === 'feedback_deadline' || field.fieldCode === 'is_common_template') {
+        if (field.fieldCode === 'is_common_template') {
           return {
             ...field,
             isRequired: false,

@@ -59,6 +59,20 @@ describe('InServiceOrderForm renewal rules', () => {
     expect(result.find((item) => item.field_code === 'probation_start_date')?.is_required).toBe(false);
   });
 
+  it('locks renewal position fields to historical data instead of making them editable', () => {
+    const result = buildRenewalConfiguredFields(
+      [],
+      [
+        { ...field('position', '岗位'), is_required: true, default_required: true },
+        { ...field('position_type', '岗位类型'), is_required: true, default_required: true },
+      ],
+    );
+    expect(result).toEqual(expect.arrayContaining([
+      expect.objectContaining({ field_code: 'position', is_required: false, default_required: false }),
+      expect.objectContaining({ field_code: 'position_type', is_required: false, default_required: false }),
+    ]));
+  });
+
   it('keeps an open-ended renewal end date optional', () => {
     const endDate = field('contract_end_date', '合同终止日期', 'date');
 

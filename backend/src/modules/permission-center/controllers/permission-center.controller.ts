@@ -24,7 +24,6 @@ export class PermissionCenterController {
   ) {}
 
   @Get('config')
-  @Roles('admin')
   async getActiveConfig() {
     return this.service.getActiveConfig();
   }

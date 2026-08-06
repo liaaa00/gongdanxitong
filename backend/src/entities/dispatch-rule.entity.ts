@@ -8,7 +8,7 @@ import {
 } from 'typeorm';
 import { Customer } from './customer.entity';
 import { Department } from './department.entity';
-import { DispatchStrategy, OrderType } from './enums';
+import { BusinessScope, DispatchStrategy, OrderType } from './enums';
 import { User } from './user.entity';
 
 @Entity({ name: 'dispatch_rules' })
@@ -18,6 +18,9 @@ export class DispatchRule {
 
   @Column({ name: 'rule_name', type: 'varchar', length: 128 })
   ruleName!: string;
+
+  @Column({ name: 'business_scope', type: 'varchar', length: 32, default: BusinessScope.BEILUN })
+  businessScope!: BusinessScope;
 
   @Column({
     name: 'order_type',
