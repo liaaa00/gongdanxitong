@@ -131,7 +131,17 @@ Assert-Path $backendPath 'Backend directory'
 Assert-Path $frontendPath 'Frontend directory'
 Assert-Path $nodeDir 'Node.js directory'
 
-Write-Step '[1/7] Stop old project Node processes and free ports 3000/5173...'
+$sourceBranch = (& git -C $rootPath branch --show-current 2>$null | Select-Object -First 1)
+$sourceCommit = (& git -C $rootPath rev-parse --short HEAD 2>$null | Select-Object -First 1)
+if (-not $sourceBranch) { $sourceBranch = 'unknown' }
+if (-not $sourceCommit) { $sourceCommit = 'unknown' }
+$sourceChanges = @(& git -C $rootPath status --porcelain --untracked-files=no -- backend/src backend/test frontend/src backend/package.json frontend/package.json '快速启动.ps1' 2>$null)
+$sourceState = if ($sourceChanges.Count -gt 0) { 'modified' } else { 'clean' }
+Write-Host "Source branch: $sourceBranch" -ForegroundColor Cyan
+Write-Host "Source commit: $sourceCommit" -ForegroundColor Cyan
+Write-Host "Business source: $sourceState" -ForegroundColor Cyan
+
+Write-Step '[1/8] Stop old project Node processes and free ports 3000/5173...'
 Stop-ProjectNodeProcesses
 if (Test-PortListen $backendPort) { throw 'Port 3000 is still listening after cleanup' }
 if (Test-PortListen $frontendPort) { throw 'Port 5173 is still listening after cleanup' }
@@ -186,14 +196,16 @@ $frontendErr = Join-Path $rootPath 'frontend-run.err.log'
 $viteJs = Join-Path $frontendPath 'node_modules\vite\bin\vite.js'
 Assert-Path $viteJs 'Vite CLI'
 Remove-Item Env:VITE_API_BASE_URL -ErrorAction SilentlyContinue
-$frontendProcess = Start-Process -FilePath (Join-Path $nodeDir 'node.exe') -ArgumentList @($viteJs, '--host', '0.0.0.0', '--port', [string]$frontendPort) -WorkingDirectory $frontendPath -PassThru -WindowStyle Hidden -RedirectStandardOutput $frontendOut -RedirectStandardError $frontendErr
+$frontendProcess = Start-Process -FilePath (Join-Path $nodeDir 'node.exe') -ArgumentList @($viteJs, '--host', '0.0.0.0', '--port', [string]$frontendPort, '--force') -WorkingDirectory $frontendPath -PassThru -WindowStyle Hidden -RedirectStandardOutput $frontendOut -RedirectStandardError $frontendErr
 Start-Sleep -Seconds 3
 $frontendPid = Assert-ServiceReady $frontendPort "http://127.0.0.1:$frontendPort" 'Frontend'
 Write-Host "  Frontend OK. PID=$frontendPid StartedPID=$($frontendProcess.Id) URL=http://127.0.0.1:$frontendPort" -ForegroundColor Green
 
 Write-Step '[8/8] Print access URLs...'
 $localIP = Get-LanIP
-if (-not $NoBrowser) { Start-Process "http://localhost:$frontendPort" }
+$launchToken = "${sourceCommit}-$(Get-Date -Format 'yyyyMMddHHmmss')"
+$launchUrl = "http://localhost:$frontendPort/?source=$([uri]::EscapeDataString($launchToken))"
+if (-not $NoBrowser) { Start-Process $launchUrl }
 Write-Host "`nSTARTED SUCCESSFULLY" -ForegroundColor Green
 Write-Host "Backend PID: $backendPid" -ForegroundColor Green
 Write-Host "Frontend PID: $frontendPid" -ForegroundColor Green
