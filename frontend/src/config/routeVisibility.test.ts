@@ -32,6 +32,34 @@ describe('routeVisibility admin-only configuration routes', () => {
     expect(canAccessPath('/work-orders', roles(['business_group_member']))).toBe(true);
   });
 
+  it('keeps retired my-work aggregate routes disabled for every role and dynamic permission', () => {
+    const adminRoles = roles([ROLE.ADMIN]);
+    const retiredPaths = [
+      '/my-work/initiated',
+      '/my-work/returned',
+      '/my-work/pending',
+      '/my-work/done',
+      '/my-work/team',
+      '/my-work/history',
+      '/my-dispatched',
+      '/team-dispatched',
+      '/dispatched-orders',
+      '/work-order-pool',
+    ];
+
+    setDynamicPermissionConfig({
+      version: 'retired-my-work-test',
+      roles: [],
+      routePermissions: retiredPaths.map((path) => ({ path, allowedRoles: ['admin'] })),
+      fieldPermissions: [],
+    });
+
+    for (const path of retiredPaths) {
+      expect(canAccessPath(path, adminRoles, ['*']), path).toBe(false);
+    }
+    expect(canAccessPath('/my-dispatched/child-1', adminRoles, ['*'])).toBe(true);
+  });
+
   it('allows admin to access field/workflow/export/portal configuration routes', () => {
     const adminRoles = roles([ROLE.ADMIN]);
     expect(canAccessPath('/admin/fields', adminRoles)).toBe(true);

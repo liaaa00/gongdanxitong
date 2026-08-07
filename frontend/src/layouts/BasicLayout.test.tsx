@@ -205,12 +205,16 @@ describe('BasicLayout menu visibility', () => {
     window.localStorage.setItem('business_scope_v1', 'beilun');
     mockUserState.user = mockUserState.makeUser(['business_group_member'], 'out_of_province');
 
-    const businessView = renderLayout(['/out-of-province']);
-    expect(menuText()).toContain('浙江自签业务');
-    expect(menuText()).toContain('省外增员');
-    expect(menuText()).toContain('省外减员');
+    const businessView = renderLayout(['/out-of-province/increase']);
+    expect(menuText()).not.toContain('浙江自签业务');
+    expect(menuText()).toContain('入职管理');
+    expect(menuText()).toContain('社保公积金增员');
+    expect(menuText()).toContain('离职管理');
+    expect(menuText()).toContain('社保公积金减员');
+    expect(menuText()).toContain('在职管理');
     expect(menuText()).toContain('单项业务办理');
-    expect(menuText()).not.toContain('入职管理');
+    expect(menuText()).not.toContain('增减员批量导入');
+    expect(menuText()).not.toContain('我的工单');
     expect(screen.getByText('浙江自签')).toBeInTheDocument();
     expect(screen.queryByText('北仑')).not.toBeInTheDocument();
     expect(screen.queryByText('省外')).not.toBeInTheDocument();
@@ -232,7 +236,10 @@ describe('BasicLayout menu visibility', () => {
 
     expect(window.localStorage.getItem('business_scope_v1')).toBe('out_of_province');
     expect(mockNavigate).toHaveBeenLastCalledWith('/out-of-province/increase');
-    expect(menuText()).toContain('浙江自签业务');
+    expect(menuText()).toContain('入职管理');
+    expect(menuText()).toContain('离职管理');
+    expect(menuText()).toContain('在职管理');
+    expect(menuText()).not.toContain('我的工单');
   });
 
   it('selects onboarding and offboarding main work-order menu entries by orderType query', () => {
@@ -310,17 +317,20 @@ describe('BasicLayout menu visibility', () => {
     }
   });
 
-  it('falls back to menu default path when last path is illegal or forbidden for current role', () => {
+  it('does not render the retired my-work menu even when an admin has an old recent path', () => {
     mockUserState.user = mockUserState.makeUser(['admin']);
     window.localStorage.setItem('menu_recent_paths_v1', JSON.stringify({ 'my-work-team': '/work-orders/wo-1' }));
 
     renderLayout(['/dashboard']);
 
-    fireEvent.click(screen.getByRole('button', { name: '团队工单' }));
-
-    expect(mockNavigate).toHaveBeenLastCalledWith('/my-work/team');
-    const recentPaths = JSON.parse(window.localStorage.getItem('menu_recent_paths_v1') || '{}') as Record<string, string>;
-    expect(recentPaths['my-work-team']).toBeUndefined();
+    expect(screen.queryByRole('button', { name: '我的工单' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '团队工单' })).not.toBeInTheDocument();
+    expect(menuText()).not.toContain('我发起的');
+    expect(menuText()).not.toContain('我的退回');
+    expect(menuText()).not.toContain('我的待办');
+    expect(menuText()).not.toContain('我的已办');
+    expect(menuText()).not.toContain('历史工单');
+    expect(mockNavigate).not.toHaveBeenCalledWith('/my-work/team');
   });
 
   it('does not render a duplicate standalone change-password button in top actions', () => {

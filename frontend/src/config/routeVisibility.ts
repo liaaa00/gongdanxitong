@@ -90,13 +90,13 @@ const OFFBOARDING_ROLES = [
   ROLE.DATA_ENTRY_LEADER,
 ] as const satisfies readonly CanonicalRole[];
 
-// 我的工单入口整体仅管理员可见；普通角色通过入职/离职模块入口处理自己的子工单。
-const MY_WORK_ADMIN_ONLY_ROLES = [ROLE.ADMIN] as const satisfies readonly CanonicalRole[];
+// 我的工单聚合入口已废除；子工单从各业务模块或消息通知进入。
+const RETIRED_MY_WORK_ROLES = [] as const satisfies readonly CanonicalRole[];
 
-const INITIATED_WORK_ROLES = MY_WORK_ADMIN_ONLY_ROLES;
-const RETURNED_WORK_ROLES = MY_WORK_ADMIN_ONLY_ROLES;
-const PENDING_WORK_ROLES = MY_WORK_ADMIN_ONLY_ROLES;
-const DONE_WORK_ROLES = MY_WORK_ADMIN_ONLY_ROLES;
+const INITIATED_WORK_ROLES = RETIRED_MY_WORK_ROLES;
+const RETURNED_WORK_ROLES = RETIRED_MY_WORK_ROLES;
+const PENDING_WORK_ROLES = RETIRED_MY_WORK_ROLES;
+const DONE_WORK_ROLES = RETIRED_MY_WORK_ROLES;
 
 const NOTIFICATION_ROLES = [
   ROLE.ADMIN,
@@ -109,8 +109,8 @@ const NOTIFICATION_ROLES = [
   ROLE.SOCIAL_INSURANCE_SPECIALIST,
 ] as const satisfies readonly CanonicalRole[];
 
-const TEAM_WORK_ROLES = MY_WORK_ADMIN_ONLY_ROLES;
-const HISTORY_WORK_ROLES = MY_WORK_ADMIN_ONLY_ROLES;
+const TEAM_WORK_ROLES = RETIRED_MY_WORK_ROLES;
+const HISTORY_WORK_ROLES = RETIRED_MY_WORK_ROLES;
 
 const DISPATCHED_DETAIL_ROLES = [
   ROLE.ADMIN,
@@ -329,6 +329,15 @@ function normalizePath(pathname: string): string {
   return pure;
 }
 
+function isRetiredMyWorkPath(pathname: string): boolean {
+  const path = normalizePath(pathname);
+  return path.startsWith('/my-work/')
+    || path === '/my-dispatched'
+    || path === '/team-dispatched'
+    || path === '/dispatched-orders'
+    || path === '/work-order-pool';
+}
+
 export function resolveVisibilityRoute(pathname: string): VisibilityRoute | null {
   const path = normalizePath(pathname);
 
@@ -416,6 +425,7 @@ function hasDynamicPermissionForPath(pathname: string, permissions?: string[], u
 }
 
 export function canAccessPath(pathname: string, userRoles: { code?: string }[] | undefined, permissions?: string[]): boolean {
+  if (isRetiredMyWorkPath(pathname)) return false;
   const dynamicRoute = resolveDynamicRoute(pathname);
   if (dynamicRoute) {
     // Frozen phase-one routes remain inaccessible even if an accidental dynamic
