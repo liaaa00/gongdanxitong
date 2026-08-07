@@ -1,5 +1,8 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Post, Query } from '@nestjs/common';
 import { BusinessPermission } from 'src/common/decorators/business-permission.decorator';
+import { CurrentUser } from 'src/common/decorators/current-user.decorator';
+import { BusinessScope } from 'src/entities';
+import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { FieldMappingDto } from './dto/field-mapping.dto';
 import { AiMappingService } from './ai-mapping.service';
 import { ImportFieldValidationService } from 'src/modules/imports/field-validation.service';
@@ -13,9 +16,10 @@ export class AiController {
 
   @Post('field-mapping')
   @BusinessPermission('work_order.import')
-  async fieldMapping(@Body() payload: FieldMappingDto) {
+  async fieldMapping(@Body() payload: FieldMappingDto, @CurrentUser() user?: JwtUserPayload, @Query('businessScope') requestedScope?: BusinessScope) {
+    const businessScope = requestedScope ?? user?.businessScope ?? BusinessScope.BEILUN;
     const candidateFields = await this.importFieldValidationService.buildCandidateFields(payload.orderType);
-    const suggestion = await this.aiMappingService.suggest(payload.orderType, payload.headers, candidateFields);
+    const suggestion = await this.aiMappingService.suggest(payload.orderType, payload.headers, candidateFields, businessScope);
     const items = payload.headers.map((header, index) => ({
       headerIndex: index,
       header,

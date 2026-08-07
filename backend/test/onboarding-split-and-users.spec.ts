@@ -1,5 +1,5 @@
 import { Repository } from 'typeorm';
-import { DispatchRule, DispatchStrategy, OrderType, RoleLevel, User, UserRole, WorkOrder } from 'src/entities';
+import { BusinessScope, DispatchRule, DispatchStrategy, OrderType, RoleLevel, User, UserRole, WorkOrder } from 'src/entities';
 import { DispatchEngineService } from 'src/modules/dispatch-engine/dispatch-engine.service';
 import { AstEvaluator } from 'src/modules/dispatch-engine/ast-evaluator';
 import { HandlerPickerService } from 'src/modules/dispatch-engine/handler-picker.service';
@@ -146,6 +146,40 @@ describe('business group seeds', () => {
 });
 
 describe('UsersService role presentation', () => {
+  it('filters the user management query by the selected business scope before pagination', async () => {
+    const qb = {
+      leftJoinAndSelect: jest.fn(),
+      distinct: jest.fn(),
+      andWhere: jest.fn(),
+      orderBy: jest.fn(),
+      skip: jest.fn(),
+      take: jest.fn(),
+      getManyAndCount: jest.fn(async () => [[], 0]),
+    };
+    qb.leftJoinAndSelect.mockReturnValue(qb);
+    qb.distinct.mockReturnValue(qb);
+    qb.andWhere.mockReturnValue(qb);
+    qb.orderBy.mockReturnValue(qb);
+    qb.skip.mockReturnValue(qb);
+    qb.take.mockReturnValue(qb);
+
+    const service = new UsersService(
+      {} as never,
+      repo<User>({ createQueryBuilder: jest.fn(() => qb) }),
+      repo() as never,
+      repo() as never,
+      repo() as never,
+      repo() as never,
+    );
+
+    await service.list({ page: 1, pageSize: 20, businessScope: BusinessScope.OUT_OF_PROVINCE });
+
+    expect(qb.andWhere).toHaveBeenCalledWith(
+      'user.businessScope = :businessScope',
+      { businessScope: BusinessScope.OUT_OF_PROVINCE },
+    );
+  });
+
   it('returns flattened real role/department fields so user page does not show no-role', async () => {
     const qb = {
       leftJoinAndSelect: jest.fn(),

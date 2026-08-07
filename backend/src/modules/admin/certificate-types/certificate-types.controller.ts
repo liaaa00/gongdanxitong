@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { BusinessScope } from 'src/entities';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
@@ -12,31 +13,31 @@ export class CertificateTypesController {
 
   @Get()
   @Roles('admin')
-  findAll() {
-    return this.certificateTypesService.findAll();
+  findAll(@Query('businessScope') businessScope?: BusinessScope) {
+    return this.certificateTypesService.findAll(businessScope);
   }
 
   @Get(':id')
   @Roles('admin')
-  findOne(@Param('id') id: string) {
-    return this.certificateTypesService.findOne(id);
+  findOne(@Param('id') id: string, @Query('businessScope') businessScope?: BusinessScope) {
+    return this.certificateTypesService.findOne(id, businessScope);
   }
 
   @Post()
   @Roles('admin')
-  create(@Body() createDto: CreateCertificateTypeDto) {
-    return this.certificateTypesService.create(createDto);
+  create(@Body() createDto: CreateCertificateTypeDto, @Query('businessScope') businessScope?: BusinessScope) {
+    return this.certificateTypesService.create({ ...createDto, businessScope: createDto.businessScope ?? businessScope });
   }
 
   @Put(':id')
   @Roles('admin')
-  update(@Param('id') id: string, @Body() updateDto: UpdateCertificateTypeDto) {
-    return this.certificateTypesService.update(id, updateDto);
+  update(@Param('id') id: string, @Body() updateDto: UpdateCertificateTypeDto, @Query('businessScope') businessScope?: BusinessScope) {
+    return this.certificateTypesService.update(id, { ...updateDto, businessScope: updateDto.businessScope ?? businessScope });
   }
 
   @Delete(':id')
   @Roles('admin')
-  remove(@Param('id') id: string) {
-    return this.certificateTypesService.remove(id);
+  remove(@Param('id') id: string, @Query('businessScope') businessScope?: BusinessScope) {
+    return this.certificateTypesService.remove(id, businessScope);
   }
 }

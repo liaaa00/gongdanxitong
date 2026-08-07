@@ -160,6 +160,8 @@ export class UsersService {
       departmentId?: string;
       isActive?: boolean;
       is_active?: boolean;
+      businessScope?: BusinessScope;
+      business_scope?: BusinessScope;
     },
   ) {
     const page = query.current ?? query.page ?? 1;
@@ -171,6 +173,11 @@ export class UsersService {
       .leftJoinAndSelect('userRole.role', 'role')
       .leftJoinAndSelect('userRole.department', 'department')
       .distinct(true);
+
+    const businessScope = query.businessScope ?? query.business_scope;
+    if (businessScope) {
+      qb.andWhere('user.businessScope = :businessScope', { businessScope });
+    }
 
     if (query.keyword) {
       qb.andWhere(
@@ -305,9 +312,9 @@ export class UsersService {
     });
   }
 
-  async detail(id: string): Promise<UserView> {
+  async detail(id: string, businessScope?: BusinessScope): Promise<UserView> {
     const user = await this.userRepository.findOne({
-      where: { id },
+      where: businessScope ? { id, businessScope } : { id },
       relations: {
         userRoles: {
           role: true,
@@ -389,8 +396,12 @@ export class UsersService {
     return this.detail(createdUserId);
   }
 
-  async update(id: string, input: UpdateUserInput): Promise<UserView> {
-    const current = await this.loadEntity(id);
+  async update(id: string, input: UpdateUserInput, businessScope?: BusinessScope): Promise<UserView> {
+    const current = await this.loadEntity(id, businessScope);
+    const requestedScope = input.businessScope ?? input.business_scope;
+    if (businessScope && requestedScope && requestedScope !== businessScope) {
+      throw new BadRequestException('不能跨账套修改用户');
+    }
 
     const nextUsername = input.username?.trim();
     const usernameChanged = Boolean(nextUsername && nextUsername !== current.username);
@@ -425,7 +436,7 @@ export class UsersService {
       email: input.email ?? current.email,
       avatarUrl: input.avatarUrl ?? input.avatar_url ?? current.avatarUrl,
       isActive: input.isActive ?? input.is_active ?? current.isActive,
-      businessScope: input.businessScope ?? input.business_scope ?? current.businessScope ?? BusinessScope.BEILUN,
+      businessScope: businessScope ?? requestedScope ?? current.businessScope ?? BusinessScope.BEILUN,
     });
 
     if (usernameChanged || isDeactivating) {
@@ -463,11 +474,11 @@ export class UsersService {
       });
     }
 
-    return this.detail(id);
+    return this.detail(id, businessScope);
   }
 
-  async disable(id: string): Promise<{ success: boolean }> {
-    const user = await this.loadEntity(id);
+  async disable(id: string, businessScope?: BusinessScope): Promise<{ success: boolean }> {
+    const user = await this.loadEntity(id, businessScope);
     await this.assertNoProcessingDispatchedOrders(id);
 
     user.isActive = false;
@@ -479,8 +490,9 @@ export class UsersService {
   async resetPassword(
     id: string,
     newPassword: string,
+    businessScope?: BusinessScope,
   ): Promise<{ success: boolean }> {
-    const user = await this.loadEntity(id);
+    const user = await this.loadEntity(id, businessScope);
 
     user.passwordHash = await bcrypt.hash(newPassword, 10);
     user.mustChangePassword = true;
@@ -491,8 +503,8 @@ export class UsersService {
     return { success: true };
   }
 
-  async forceLogout(id: string): Promise<{ success: boolean }> {
-    const user = await this.loadEntity(id);
+  async forceLogout(id: string, businessScope?: BusinessScope): Promise<{ success: boolean }> {
+    const user = await this.loadEntity(id, businessScope);
     user.authVersion = (user.authVersion ?? 0) + 1;
     await this.userRepository.save(user);
     return { success: true };
@@ -501,8 +513,9 @@ export class UsersService {
   async bindRoles(
     userId: string,
     rolesInput: UserRoleBindingInput[],
+    businessScope?: BusinessScope,
   ): Promise<UserView> {
-    await this.loadEntity(userId);
+    await this.loadEntity(userId, businessScope);
     const roles = await this.normalizeRoleBindings(rolesInput, {});
     this.validateRoleBindings(roles);
 
@@ -534,11 +547,11 @@ export class UsersService {
       }
     });
 
-    return this.detail(userId);
+    return this.detail(userId, businessScope);
   }
 
-  async unbindRole(userId: string, roleId: string): Promise<{ success: boolean }> {
-    await this.loadEntity(userId);
+  async unbindRole(userId: string, roleId: string, businessScope?: BusinessScope): Promise<{ success: boolean }> {
+    await this.loadEntity(userId, businessScope);
     const bindings = await this.userRoleRepository.find({ where: { userId } });
     const remainingRoleIds = Array.from(new Set(
       bindings.filter((binding) => binding.roleId !== roleId).map((binding) => binding.roleId),
@@ -548,8 +561,8 @@ export class UsersService {
     return { success: true };
   }
 
-  private async loadEntity(id: string): Promise<User> {
-    const user = await this.userRepository.findOne({ where: { id } });
+  private async loadEntity(id: string, businessScope?: BusinessScope): Promise<User> {
+    const user = await this.userRepository.findOne({ where: businessScope ? { id, businessScope } : { id } });
     if (!user) {
       throw new NotFoundException('用户不存在');
     }

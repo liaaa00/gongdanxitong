@@ -1,9 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { BusinessScope } from 'src/entities';
 import { PermissionConfigVersionEntity } from '../entities/permission-config-version.entity';
 import { PermissionConfig, FieldViewMode } from '../types/permission-config.types';
-import { BusinessScope } from 'src/entities';
 import { PermissionCacheService } from './permission-cache.service';
 
 @Injectable()
@@ -19,8 +19,7 @@ export class PermissionCenterService {
    */
   async getActiveConfig(businessScope: BusinessScope = BusinessScope.BEILUN): Promise<PermissionConfig> {
     // 先尝试从缓存获取
-    const cacheKey = `active_config:${businessScope}`;
-    const cached = await this.cacheService.get<PermissionConfig>(cacheKey);
+    const cached = await this.cacheService.get<PermissionConfig>(`active_config:${businessScope}`);
     if (cached) {
       return cached;
     }
@@ -36,7 +35,7 @@ export class PermissionCenterService {
     }
 
     // 写入缓存
-    await this.cacheService.set(cacheKey, active.config, 3600);
+    await this.cacheService.set(`active_config:${businessScope}`, active.config, 3600);
 
     return active.config;
   }
@@ -65,19 +64,19 @@ export class PermissionCenterService {
   /**
    * 激活指定版本的配置
    */
-  async activateVersion(versionId: string): Promise<void> {
+  async activateVersion(versionId: string, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<void> {
     // 先验证版本是否存在
-    const version = await this.configRepo.findOne({ where: { id: versionId } });
+    const version = await this.configRepo.findOne({ where: { id: versionId, business_scope: businessScope } });
     if (!version) {
       throw new NotFoundException(`Version ${versionId} not found`);
     }
 
     // 停用所有现有版本
-    await this.configRepo.update({ is_active: true }, { is_active: false });
+    await this.configRepo.update({ is_active: true, business_scope: businessScope }, { is_active: false });
 
     // 激活指定版本
     const result = await this.configRepo.update(
-      { id: versionId },
+      { id: versionId, business_scope: businessScope },
       { is_active: true, activated_at: new Date() },
     );
 
@@ -90,8 +89,8 @@ export class PermissionCenterService {
   /**
    * 按角色查询路由权限
    */
-  async getRoutePermissionsForRole(roleCode: string): Promise<string[]> {
-    const config = await this.getActiveConfig();
+  async getRoutePermissionsForRole(roleCode: string, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<string[]> {
+    const config = await this.getActiveConfig(businessScope);
     return config.routePermissions
       .filter(rp => rp.allowedRoles.includes(roleCode))
       .map(rp => rp.path);
@@ -103,8 +102,9 @@ export class PermissionCenterService {
   async getFieldPermissionsForRole(
     scenario: string,
     roleCode: string,
+    businessScope: BusinessScope = BusinessScope.BEILUN,
   ): Promise<Record<string, FieldViewMode>> {
-    const config = await this.getActiveConfig();
+    const config = await this.getActiveConfig(businessScope);
     const rule = config.fieldPermissions.find(fp => fp.scenario === scenario);
     return rule?.roleFieldRules[roleCode] || {};
   }
@@ -112,8 +112,9 @@ export class PermissionCenterService {
   /**
    * 获取所有配置版本
    */
-  async getAllVersions(): Promise<PermissionConfigVersionEntity[]> {
+  async getAllVersions(businessScope: BusinessScope = BusinessScope.BEILUN): Promise<PermissionConfigVersionEntity[]> {
     return this.configRepo.find({
+      where: { business_scope: businessScope },
       order: { created_at: 'DESC' },
     });
   }
@@ -121,8 +122,8 @@ export class PermissionCenterService {
   /**
    * 获取指定版本
    */
-  async getVersionById(id: string): Promise<PermissionConfigVersionEntity> {
-    const version = await this.configRepo.findOne({ where: { id } });
+  async getVersionById(id: string, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<PermissionConfigVersionEntity> {
+    const version = await this.configRepo.findOne({ where: { id, business_scope: businessScope } });
     if (!version) {
       throw new NotFoundException(`Version ${id} not found`);
     }

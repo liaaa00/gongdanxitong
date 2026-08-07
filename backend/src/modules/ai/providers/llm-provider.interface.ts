@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { lastValueFrom, timeout } from 'rxjs';
 import { businessException } from 'src/common/exceptions/business-exception';
 import { AiSettingsService } from 'src/modules/admin/ai-settings/ai-settings.service';
+import { BusinessScope } from 'src/entities';
 
 export interface LlmPrompt {
   system: string;
@@ -25,9 +26,9 @@ export interface ResolvedAiConfig {
 export interface LlmProvider {
   readonly name: 'openai' | 'qwen' | 'deepseek';
   readonly timeoutMs: number;
-  isAvailable(): Promise<boolean>;
-  getModelId(): Promise<string>;
-  call(prompt: LlmPrompt): Promise<LlmResult>;
+  isAvailable(businessScope?: BusinessScope): Promise<boolean>;
+  getModelId(businessScope?: BusinessScope): Promise<string>;
+  call(prompt: LlmPrompt, businessScope?: BusinessScope): Promise<LlmResult>;
 }
 
 @Injectable()
@@ -44,13 +45,13 @@ export abstract class OpenAiCompatibleProvider implements LlmProvider {
     return 30000;
   }
 
-  async getModelId(): Promise<string> {
-    const cfg = await this.resolveConfig();
+  async getModelId(businessScope: BusinessScope = BusinessScope.BEILUN): Promise<string> {
+    const cfg = await this.resolveConfig(businessScope);
     return cfg.model;
   }
 
-  protected async resolveConfig(): Promise<ResolvedAiConfig> {
-    const stored = await this.aiSettingsService?.getConfigInternal().catch(() => null);
+  protected async resolveConfig(businessScope: BusinessScope = BusinessScope.BEILUN): Promise<ResolvedAiConfig> {
+    const stored = await this.aiSettingsService?.getConfigInternal(businessScope).catch(() => null);
     if (stored && stored.apiKey) {
       return {
         provider: stored.provider,
@@ -67,13 +68,13 @@ export abstract class OpenAiCompatibleProvider implements LlmProvider {
     };
   }
 
-  async isAvailable(): Promise<boolean> {
-    const cfg = await this.resolveConfig();
+  async isAvailable(businessScope: BusinessScope = BusinessScope.BEILUN): Promise<boolean> {
+    const cfg = await this.resolveConfig(businessScope);
     return cfg.provider.toLowerCase() === this.name && cfg.apiKey.length > 0;
   }
 
-  async call(prompt: LlmPrompt): Promise<LlmResult> {
-    const cfg = await this.resolveConfig();
+  async call(prompt: LlmPrompt, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<LlmResult> {
+    const cfg = await this.resolveConfig(businessScope);
     if (cfg.provider.toLowerCase() !== this.name || cfg.apiKey.length === 0) {
       throw businessException(4500, HttpStatus.BAD_REQUEST, 'AI provider unavailable');
     }

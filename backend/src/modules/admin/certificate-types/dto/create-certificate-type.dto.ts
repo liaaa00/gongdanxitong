@@ -1,4 +1,5 @@
-import { IsString, IsOptional, IsBoolean, MaxLength } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, IsEnum, MaxLength } from 'class-validator';
+import { BusinessScope } from 'src/entities';
 
 export class CreateCertificateTypeDto {
   @IsString()
@@ -17,4 +18,8 @@ export class CreateCertificateTypeDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsEnum(BusinessScope)
+  businessScope?: BusinessScope;
 }

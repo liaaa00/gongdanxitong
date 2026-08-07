@@ -168,6 +168,10 @@ export class InServiceOrder {
   @Column({ name: 'pending_info_reason', type: 'varchar', length: 512, nullable: true })
   pendingInfoReason!: string | null;
 
+  /** 退回类型：initial_review 初审不通过，authority_review 审核退回；历史数据为 null。 */
+  @Column({ name: 'pending_return_type', type: 'varchar', length: 32, nullable: true })
+  pendingReturnType!: string | null;
+
   @Column({ name: 'completion_remark', type: 'varchar', length: 512, nullable: true })
   completionRemark!: string | null;
 

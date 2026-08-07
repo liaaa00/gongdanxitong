@@ -40,6 +40,7 @@ export class InServiceOrderResponseDto {
   attachments!: string[];
   status!: InServiceOrderStatus;
   pendingReturnStatus!: InServiceOrderStatus | null;
+  pendingReturnType!: string | null;
   transferHistory!: InServiceTransferRecord[];
   handlerId!: string | null;
   handlerName!: string | null;
@@ -95,6 +96,7 @@ export class InServiceOrderResponseDto {
       attachments: [...(order.attachments ?? [])],
       status: order.status,
       pendingReturnStatus: order.pendingReturnStatus,
+      pendingReturnType: order.pendingReturnType ?? null,
       transferHistory: [...(order.transferHistory ?? [])],
       handlerId: order.handlerId,
       handlerName: order.handler?.realName ?? null,

@@ -1,7 +1,7 @@
 import { Type } from 'class-transformer';
 import { IsDateString, IsEnum, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
-import { OrderType, WorkOrderStatus } from 'src/entities';
+import { BusinessScope, OrderType, WorkOrderStatus } from 'src/entities';
 
 export class ListWorkOrderQueryDto extends PaginationQueryDto {
   @IsOptional()
@@ -11,6 +11,10 @@ export class ListWorkOrderQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsEnum(OrderType)
   order_type?: OrderType;
+
+  @IsOptional()
+  @IsEnum(BusinessScope)
+  businessScope?: BusinessScope;
 
   @IsOptional()
   @IsEnum(WorkOrderStatus)

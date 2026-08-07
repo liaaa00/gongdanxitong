@@ -17,6 +17,11 @@ import { WorkOrderImportService } from './work-order-import.service';
 import { assertCanImportWorkOrder, WORK_ORDER_IMPORT_ORDER_TYPES } from './import-permissions';
 import { AttachmentsService } from 'src/modules/attachments/attachments.service';
 import { extractXlsxEmbeddedAttachments } from './xlsx-attachment-extractor';
+import {
+  isOutOfProvinceImportOrderType,
+  selectOutOfProvinceSheetName,
+  suggestOutOfProvinceMapping,
+} from './out-of-province-import-mapping';
 
 interface PreviewSession {
   fileId: string;
@@ -27,6 +32,7 @@ interface PreviewSession {
   previewRows: Array<Record<string, unknown>>;
   suggestion: MappingSuggestion;
   availableFields: CandidateField[];
+  sheetName?: string;
 }
 
 interface ImportFailedRow {
@@ -67,9 +73,12 @@ export class ImportJobService {
   }): Promise<ImportPreviewResult> {
     assertCanImportWorkOrder(input.user, input.orderType);
     const meta = await this.resolveImportFile(input.fileId, input.user);
-    const parsed = await this.excelParserService.parseFile(meta.filePath);
+    const sheetName = selectOutOfProvinceSheetName(input.orderType);
+    const parsed = await this.excelParserService.parseFile(meta.filePath, sheetName ? { sheetName } : {});
     const availableFields = await this.fieldValidationService.buildCandidateFields(input.orderType);
-    const rawSuggestion = await this.aiMappingService.suggest(input.orderType, parsed.headers, availableFields);
+    const rawSuggestion = isOutOfProvinceImportOrderType(input.orderType)
+      ? suggestOutOfProvinceMapping(input.orderType, parsed.headers)
+      : await this.aiMappingService.suggest(input.orderType, parsed.headers, availableFields, input.user.businessScope);
     const suggestion = this.ensureSuggestion(rawSuggestion, parsed.headers, availableFields);
     const previewRows = parsed.rows.slice(0, input.sampleRows ?? 10);
 
@@ -82,6 +91,7 @@ export class ImportJobService {
       previewRows,
       suggestion,
       availableFields,
+      sheetName,
     });
 
     return this.toPreviewResult(meta.fileId, input.orderType, parsed, previewRows, suggestion, availableFields);
@@ -104,9 +114,11 @@ export class ImportJobService {
         ? await this.resolveImportFile(session.fileId, input.user)
         : this.throwMissingFile();
 
-    const parsed = session && session.fileId === meta.fileId
+    const sheetName = selectOutOfProvinceSheetName(input.orderType);
+    const parsed = session && session.fileId === meta.fileId && session.orderType === input.orderType
       ? { headers: session.headers, rowCount: session.rowCount }
-      : await this.excelParserService.parseFile(meta.filePath).then((sheet) => ({ headers: sheet.headers, rowCount: sheet.rows.length }));
+      : await this.excelParserService.parseFile(meta.filePath, sheetName ? { sheetName } : {})
+        .then((sheet) => ({ headers: sheet.headers, rowCount: sheet.rows.length }));
 
     const job = await this.importJobRepository.save(this.importJobRepository.create({
       userId: input.user.sub,
@@ -123,6 +135,7 @@ export class ImportJobService {
         orderType: input.orderType,
         headers: parsed.headers,
         fileId: meta.fileId,
+        sheetName,
         autoSubmit: input.autoSubmit,
         defaults: input.defaults ?? {},
         jobName: input.jobName ?? null,
@@ -202,14 +215,15 @@ export class ImportJobService {
       return;
     }
 
-    const parsed = await this.excelParserService.parseFile(job.filePath);
-    await this.importJobRepository.update({ id: job.id }, { totalRows: parsed.rows.length, aiMappingRaw: { ...(job.aiMappingRaw ?? {}), headers: parsed.headers } });
-
     const orderType = this.readOrderType(job.aiMappingRaw) ?? OrderType.ONBOARDING;
     assertCanImportWorkOrder(user, orderType);
+    const sheetName = this.readSheetName(job.aiMappingRaw) ?? selectOutOfProvinceSheetName(orderType);
+    const parsed = await this.excelParserService.parseFile(job.filePath, sheetName ? { sheetName } : {});
+    await this.importJobRepository.update({ id: job.id }, { totalRows: parsed.rows.length, aiMappingRaw: { ...(job.aiMappingRaw ?? {}), headers: parsed.headers, sheetName } });
+
     const defaults = this.readDefaults(job.aiMappingRaw);
     const autoSubmit = this.readAutoSubmit(job.aiMappingRaw);
-    const mapping = this.normalizeMapping(job.fieldMapping ?? {});
+    const mapping = this.normalizeMapping(this.resolveJobMapping(orderType, parsed.headers, job.fieldMapping ?? {}));
     const fields = await this.fieldValidationService.getActiveFields(orderType);
     const fieldNameMap = new Map(fields.map((field) => [field.fieldCode, field.fieldName]));
     const failRows: ImportFailedRow[] = [];
@@ -654,6 +668,13 @@ export class ImportJobService {
       .map(([header, fieldCode]) => ({ header, fieldCode }));
   }
 
+  private resolveJobMapping(orderType: OrderType, headers: string[], mapping: Record<string, string>): Record<string, string> {
+    if (!isOutOfProvinceImportOrderType(orderType)) {
+      return mapping;
+    }
+    return { ...suggestOutOfProvinceMapping(orderType, headers).suggestion, ...mapping };
+  }
+
   private readOrderType(raw: unknown): OrderType | null {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
       return null;
@@ -662,6 +683,14 @@ export class ImportJobService {
     return WORK_ORDER_IMPORT_ORDER_TYPES.includes(value as OrderType)
       ? value as OrderType
       : null;
+  }
+
+  private readSheetName(raw: unknown): string | null {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return null;
+    }
+    const value = (raw as Record<string, unknown>).sheetName;
+    return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
   }
 
   private readDefaults(raw: unknown): Record<string, unknown> {

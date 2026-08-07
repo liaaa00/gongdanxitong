@@ -5,6 +5,7 @@ import {
   DispatchedOrder,
   DispatchedOrderStatus,
   ModuleHandler,
+  BusinessScope,
   Notification,
   OperationLog,
   User,
@@ -25,22 +26,23 @@ const OPEN_HANDOVER_STATUSES = [
 export class UserHandoverService {
   constructor(private readonly dataSource: DataSource) {}
 
-  async preview(userId: string): Promise<{
+  async preview(userId: string, businessScope?: BusinessScope): Promise<{
     user: { id: string; username: string; realName: string; isActive: boolean };
     modules: Array<{ moduleCode: string; isPrimary: boolean; openOrderCount: number }>;
     totalOpenOrders: number;
   }> {
-    const user = await this.dataSource.getRepository(User).findOne({ where: { id: userId } });
+    const user = await this.dataSource.getRepository(User).findOne({ where: businessScope ? { id: userId, businessScope } : { id: userId } });
     if (!user) throw new NotFoundException('用户不存在');
 
     const [handlers, orders] = await Promise.all([
       this.dataSource.getRepository(ModuleHandler).find({
-        where: { handlerId: userId, isActive: true },
+        where: { handlerId: userId, isActive: true, ...(businessScope ? { businessScope } : {}) },
         order: { moduleCode: 'ASC' },
       }),
       this.dataSource.getRepository(DispatchedOrder).find({
         where: { handlerId: userId, status: In(OPEN_HANDOVER_STATUSES) },
-      }),
+        relations: { parentOrder: true },
+      }).then((rows) => rows.filter((row) => !businessScope || row.parentOrder?.businessScope === businessScope)),
     ]);
     const moduleCodes = Array.from(new Set([
       ...handlers.map((row) => row.moduleCode),
@@ -62,6 +64,7 @@ export class UserHandoverService {
     userId: string,
     payload: ExecuteUserHandoverDto,
     actorId: string,
+    businessScope?: BusinessScope,
   ): Promise<{
     success: boolean;
     disabledUserId: string;
@@ -81,20 +84,20 @@ export class UserHandoverService {
 
     return this.dataSource.transaction(async (manager) => {
       const user = await manager.findOne(User, {
-        where: { id: userId },
+        where: businessScope ? { id: userId, businessScope } : { id: userId },
         lock: { mode: 'pessimistic_write' },
       });
       if (!user) throw new NotFoundException('用户不存在');
       if (!user.isActive) throw new BadRequestException('该账号已停用，无需重复交接');
 
       const [currentHandlers, openOrders, replacements] = await Promise.all([
-        manager.find(ModuleHandler, { where: { handlerId: userId, isActive: true } }),
+        manager.find(ModuleHandler, { where: { handlerId: userId, isActive: true, ...(businessScope ? { businessScope } : {}) } }),
         manager.find(DispatchedOrder, {
           where: { handlerId: userId, status: In(OPEN_HANDOVER_STATUSES) },
           relations: { parentOrder: true },
-        }),
+        }).then((rows) => rows.filter((row) => !businessScope || row.parentOrder?.businessScope === businessScope)),
         manager.find(User, {
-          where: { id: In(payload.replacementUserIds), isActive: true },
+          where: { id: In(payload.replacementUserIds), isActive: true, ...(businessScope ? { businessScope } : {}) },
           relations: { userRoles: { role: true } },
         }),
       ]);
@@ -131,9 +134,9 @@ export class UserHandoverService {
         for (let index = 0; index < eligible.length; index += 1) {
           const replacement = eligible[index];
           let row = await manager.findOne(ModuleHandler, {
-            where: { moduleCode, handlerId: replacement.id },
+            where: { moduleCode, handlerId: replacement.id, ...(businessScope ? { businessScope } : {}) },
           });
-          if (!row) row = manager.create(ModuleHandler, { moduleCode, handlerId: replacement.id });
+          if (!row) row = manager.create(ModuleHandler, { moduleCode, handlerId: replacement.id, businessScope: businessScope ?? user.businessScope ?? BusinessScope.BEILUN });
           row.isActive = true;
           row.isBackup = false;
           row.weight = eligible.length - index;

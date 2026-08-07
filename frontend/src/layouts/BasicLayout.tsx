@@ -36,6 +36,10 @@ import {
 
 const MAX_KEEP_ALIVE_PAGES = 12;
 
+export function buildKeepAliveCacheKey(businessScope: BusinessScope, pathname: string, search: string): string {
+  return `${businessScope}:${pathname}${search}`;
+}
+
 function isKeepAlivePath(pathname: string): boolean {
   if (pathname === '/' || pathname === '/login' || pathname === '/change-password' || pathname === '/403' || pathname === '/404') return false;
   // 批量导入页保活：操作到一半切走再回来不清空（页面内提供「重新开始」入口手动清空）
@@ -50,11 +54,11 @@ function isKeepAlivePath(pathname: string): boolean {
   return true;
 }
 
-const KeepAliveOutlet: React.FC = () => {
+const KeepAliveOutlet: React.FC<{ businessScope: BusinessScope }> = ({ businessScope }) => {
   const outlet = useOutlet();
   const location = useLocation();
   const navigationType = useNavigationType();
-  const cacheKey = `${location.pathname}${location.search}`;
+  const cacheKey = buildKeepAliveCacheKey(businessScope, location.pathname, location.search);
   const shouldKeepAlive = isKeepAlivePath(location.pathname);
   const [cacheKeys, setCacheKeys] = useState<string[]>(() => (shouldKeepAlive ? [cacheKey] : []));
   const cacheRef = useRef<Record<string, { outlet: React.ReactElement; location: typeof location }>>({});
@@ -496,7 +500,7 @@ function RollbackIcon() {
 const BasicLayout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, permissionConfig, logout: storeLogout, fetchUser, isLoggedIn, loading: userLoading } = useUserStore();
+  const { user, permissionConfig, permissionConfigLoading, logout: storeLogout, fetchUser, isLoggedIn, loading: userLoading } = useUserStore();
   const { message } = App.useApp();
   const [unreadCount, setUnreadCount] = useState(0);
   const [unreadBuckets, setUnreadBuckets] = useState<UnreadCountByBucket>(EMPTY_UNREAD_BUCKETS);
@@ -560,8 +564,10 @@ const BasicLayout: React.FC = () => {
 
   // 按最新 /auth/me 返回的角色、权限和账号业务线过滤菜单。
   const filteredMenu = useMemo(
-    () => filterMenuByRoles(RAW_MENU, user?.roles, user?.permissions, effectiveBusinessScope),
-    [effectiveBusinessScope, user?.permissions, user?.roles],
+    () => permissionConfigLoading
+      ? []
+      : filterMenuByRoles(RAW_MENU, user?.roles, user?.permissions, effectiveBusinessScope),
+    [effectiveBusinessScope, permissionConfigLoading, user?.permissions, user?.roles],
   );
 
   const rootSubmenuKeys = useMemo(() => {
@@ -1031,7 +1037,7 @@ const BasicLayout: React.FC = () => {
       }}
       menuHeaderRender={undefined}
     >
-      <KeepAliveOutlet />
+      <KeepAliveOutlet businessScope={effectiveBusinessScope} />
     </ProLayout>
   );
 };

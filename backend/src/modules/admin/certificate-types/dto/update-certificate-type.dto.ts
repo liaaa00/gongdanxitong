@@ -1,4 +1,5 @@
-import { IsString, IsOptional, IsBoolean, MaxLength } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, IsEnum, MaxLength } from 'class-validator';
+import { BusinessScope } from 'src/entities';
 
 export class UpdateCertificateTypeDto {
   @IsOptional()
@@ -18,4 +19,8 @@ export class UpdateCertificateTypeDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsEnum(BusinessScope)
+  businessScope?: BusinessScope;
 }

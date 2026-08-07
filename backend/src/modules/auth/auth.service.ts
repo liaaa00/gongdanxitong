@@ -41,8 +41,8 @@ export class AuthService {
     private readonly roleActionPermissionService: RoleActionPermissionService,
   ) {}
 
-  private async buildUserPermissions(roleCodes: string[]): Promise<string[]> {
-    const actions = await this.roleActionPermissionService.getAllowedActionsForRoles(roleCodes);
+  private async buildUserPermissions(roleCodes: string[], businessScope: BusinessScope): Promise<string[]> {
+    const actions = await this.roleActionPermissionService.getAllowedActionsForRoles(roleCodes, businessScope);
     return Array.from(new Set([
       ...roleCodes.map((code) => `role:${code}`),
       ...actions,
@@ -133,7 +133,7 @@ export class AuthService {
     user.lockedUntil = null;
     await this.userRepository.save(user);
 
-    const permissions = await this.buildUserPermissions(roleCodes);
+    const permissions = await this.buildUserPermissions(roleCodes, accountScope);
     const payload = this.createJwtPayload(user, roleCodes);
     const accessToken = await this.jwtService.signAsync(payload);
     const refreshToken = await this.jwtService.signAsync(payload, {
@@ -220,7 +220,7 @@ export class AuthService {
     }
 
     const roleCodes = this.getActiveRoleCodes(user);
-    const permissions = await this.buildUserPermissions(roleCodes);
+    const permissions = await this.buildUserPermissions(roleCodes, user.businessScope ?? BusinessScope.BEILUN);
     return {
       id: user.id,
       username: user.username,

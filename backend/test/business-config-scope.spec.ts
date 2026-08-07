@@ -54,6 +54,27 @@ describe('business configuration scope isolation', () => {
     }));
   });
 
+  it('activates a permission version without disabling the other business scope', async () => {
+    const configRepo = {
+      findOne: jest.fn(async () => ({ id: 'version-out', business_scope: OUT_SCOPE })),
+      update: jest.fn(async () => ({ affected: 1 })),
+    };
+    const service = new PermissionCenterService(configRepo as never, {} as never);
+
+    await service.activateVersion('version-out', OUT_SCOPE);
+
+    expect(configRepo.update).toHaveBeenNthCalledWith(
+      1,
+      { is_active: true, business_scope: OUT_SCOPE },
+      { is_active: false },
+    );
+    expect(configRepo.update).toHaveBeenNthCalledWith(
+      2,
+      { id: 'version-out', business_scope: OUT_SCOPE },
+      { is_active: true, activated_at: expect.any(Date) },
+    );
+  });
+
   it('queries permission versions and branches inside the selected scope', async () => {
     const config = { version: '1.0.0', roles: [], routePermissions: [], fieldPermissions: [] };
     const configRepo = {

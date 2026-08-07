@@ -1,11 +1,11 @@
-import { Body, Controller, Get, Post, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, UseGuards, UseInterceptors } from '@nestjs/common';
 import { Audit } from 'src/common/decorators/audit.decorator';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { AdminOnlyGuard } from 'src/common/guards/admin-only.guard';
 import { AuditInterceptor } from 'src/common/interceptors/audit.interceptor';
 import { IsArray, IsEnum, IsOptional, IsString, IsUUID, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
-import { FieldPermissionMode } from 'src/entities';
+import { BusinessScope, FieldPermissionMode } from 'src/entities';
 import { FieldPermissionService } from './field-permission.service';
 
 class BatchPermissionItemDto {
@@ -52,21 +52,21 @@ export class FieldPermissionController {
 
   @Get('matrix')
   @Roles('admin')
-  getMatrix() {
-    return this.service.getMatrix();
+  getMatrix(@Query('businessScope') businessScope?: BusinessScope) {
+    return this.service.getMatrix(businessScope);
   }
 
   @Roles('admin')
   @Post('batch')
   @Audit('field_permissions', 'batch')
-  batch(@Body() payload: BatchPermissionDto) {
-    return this.service.batchUpsert(payload.items);
+  batch(@Body() payload: BatchPermissionDto, @Query('businessScope') businessScope?: BusinessScope) {
+    return this.service.batchUpsert(payload.items, businessScope);
   }
 
   @Roles('admin')
   @Post('copy')
   @Audit('field_permissions', 'copy')
-  copy(@Body() payload: CopyPermissionDto) {
-    return this.service.copyToRoles(payload);
+  copy(@Body() payload: CopyPermissionDto, @Query('businessScope') businessScope?: BusinessScope) {
+    return this.service.copyToRoles(payload, businessScope);
   }
 }

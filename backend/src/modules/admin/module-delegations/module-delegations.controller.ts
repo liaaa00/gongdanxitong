@@ -12,6 +12,7 @@ import { Audit } from 'src/common/decorators/audit.decorator';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { AuditInterceptor } from 'src/common/interceptors/audit.interceptor';
+import { BusinessScope } from 'src/entities';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { ModuleDelegationsService } from './module-delegations.service';
 
@@ -49,19 +50,20 @@ export class ModuleDelegationsController {
   list(
     @Query('moduleCode') moduleCode?: string,
     @Query('includeInactive') includeInactive?: string,
+    @Query('businessScope') businessScope?: BusinessScope,
   ) {
-    return this.service.list(moduleCode, includeInactive === 'true');
+    return this.service.list(moduleCode, includeInactive === 'true', businessScope);
   }
 
   @Post()
   @Audit('module_delegations', 'create')
-  create(@Body() payload: CreateModuleDelegationDto, @CurrentUser() user: JwtUserPayload) {
-    return this.service.create(payload, user.sub);
+  create(@Body() payload: CreateModuleDelegationDto, @CurrentUser() user: JwtUserPayload, @Query('businessScope') businessScope?: BusinessScope) {
+    return this.service.create({ ...payload, businessScope }, user.sub);
   }
 
   @Delete(':id')
   @Audit('module_delegations', 'cancel')
-  cancel(@Param('id') id: string) {
-    return this.service.cancel(id);
+  cancel(@Param('id') id: string, @Query('businessScope') businessScope?: BusinessScope) {
+    return this.service.cancel(id, businessScope);
   }
 }

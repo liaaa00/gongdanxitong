@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { AxiosError } from 'axios';
 
-import { getFriendlyErrorMessage } from './request';
+import { getFriendlyErrorMessage, isBusinessScopeRequest } from './request';
+
+describe('request business-scope routing', () => {
+  it('adds the active scope only to scoped configuration and dashboard requests', () => {
+    expect(isBusinessScopeRequest('/dashboard/cards')).toBe(true);
+    expect(isBusinessScopeRequest('/admin/users')).toBe(true);
+    expect(isBusinessScopeRequest('/permission-center/config')).toBe(true);
+    expect(isBusinessScopeRequest('/ai/field-mapping')).toBe(true);
+    expect(isBusinessScopeRequest('/auth/login')).toBe(false);
+    expect(isBusinessScopeRequest('/notifications')).toBe(false);
+  });
+});
 
 describe('request friendly error messages', () => {
   it('uses backend 400 message instead of reporting a network timeout', () => {

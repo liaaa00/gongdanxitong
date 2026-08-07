@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { DispatchRule, DispatchStrategy } from 'src/entities';
+import { BusinessScope, DispatchRule, DispatchStrategy } from 'src/entities';
 import { HandlerPickerService } from 'src/modules/dispatch-engine/handler-picker.service';
 import { ConditionEvaluatorService } from './condition-evaluator.service';
 import { AstEvalTrace } from './types';
@@ -44,10 +44,13 @@ export class DispatchEngineService {
     orderType: string;
     fields: Record<string, unknown>;
     ruleIds?: string[];
+    businessScope?: BusinessScope;
   }): Promise<DispatchEvaluateResult> {
+    const businessScope = input.businessScope ?? BusinessScope.BEILUN;
     const qb = this.dispatchRuleRepository
       .createQueryBuilder('rule')
       .where('rule.orderType = :orderType', { orderType: input.orderType })
+      .andWhere('rule.business_scope = :businessScope', { businessScope })
       .andWhere('rule.isActive = :isActive', { isActive: true })
       .orderBy('rule.priority', 'ASC')
       .addOrderBy('rule.createdAt', 'ASC');
@@ -98,6 +101,9 @@ export class DispatchEngineService {
       const handlerId = await this.handlerPicker.pick(
         winner.dispatchStrategy as never,
         winner.targetModule,
+        undefined,
+        undefined,
+        businessScope,
       );
       winner.handlerId = handlerId;
       childrenToCreate.push({

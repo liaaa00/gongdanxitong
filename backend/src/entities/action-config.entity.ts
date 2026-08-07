@@ -8,16 +8,20 @@ import {
   Unique,
   UpdateDateColumn,
 } from 'typeorm';
+import { BusinessScope } from './enums';
 import { WorkOrderModuleConfig } from './work-order-module.entity';
 
 @Entity({ name: 'action_configs' })
-@Unique('uq_action_configs_module_action', ['moduleCode', 'actionCode'])
+@Unique('uq_action_configs_module_action_scope', ['moduleCode', 'actionCode', 'businessScope'])
 export class ActionConfig {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
   @Column({ name: 'module_code', type: 'varchar', length: 64 })
   moduleCode!: string;
+
+  @Column({ name: 'business_scope', type: 'varchar', length: 32, default: BusinessScope.BEILUN })
+  businessScope!: BusinessScope;
 
   @ManyToOne(() => WorkOrderModuleConfig, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'module_code', referencedColumnName: 'moduleCode' })

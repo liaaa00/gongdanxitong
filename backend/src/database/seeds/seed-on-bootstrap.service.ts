@@ -15,6 +15,7 @@ import { seedRoles } from './seed-roles';
 import { seedUsers } from './seed-users';
 import { ensureWorkflowRuntimeSchema } from './database-schema-guard';
 import { seedImportTemplateFields } from './seed-import-template-fields';
+import { seedInServiceWorkflows } from './seed-in-service-workflows';
 
 @Injectable()
 export class SeedOnBootstrapService implements OnApplicationBootstrap {
@@ -46,6 +47,7 @@ export class SeedOnBootstrapService implements OnApplicationBootstrap {
     await seedInServiceCategories(this.dataSource);
     await seedExportTemplates(this.dataSource);
     await seedNotificationTemplates(this.dataSource);
+    await seedInServiceWorkflows(this.dataSource);
 
     this.logger.log('Startup seed completed: roles, departments, customers, users, module handlers, module configs, rules and permissions are up to date');
   }

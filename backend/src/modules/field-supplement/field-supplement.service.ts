@@ -82,6 +82,7 @@ export class FieldSupplementService {
     const permissions = await this.fieldPermissionService.getPermissionsForUser(
       input.userId,
       `dispatched:${dispatchedOrder.moduleCode}`,
+      workOrder.businessScope,
     );
     const permission = permissions.get(input.fieldCode) ?? FieldPermissionMode.HIDDEN;
     if (permission === FieldPermissionMode.HIDDEN) {

@@ -16,11 +16,24 @@ export class ApproveInServiceOrderDto {
   handlerId?: string;
 }
 
+/**
+ * 退回类型：initial_review 为受理阶段「初审不通过」（内部材料审核不通过），
+ * authority_review 为办理阶段「审核退回」（政府部门反馈材料有问题）。
+ */
+export enum InServiceReturnType {
+  INITIAL_REVIEW = 'initial_review',
+  AUTHORITY_REVIEW = 'authority_review',
+}
+
 export class ReasonInServiceOrderDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(512)
   reason!: string;
+
+  @IsOptional()
+  @IsEnum(InServiceReturnType)
+  returnType?: InServiceReturnType;
 }
 
 export class TransferInServiceOrderDto {

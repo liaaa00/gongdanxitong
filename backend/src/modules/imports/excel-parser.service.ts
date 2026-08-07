@@ -3,8 +3,9 @@ import { Workbook, Worksheet } from 'exceljs';
 import { businessException } from 'src/common/exceptions/business-exception';
 import { ParsedAttachmentLink, ParsedSheet } from './types';
 
-interface ParseOptions {
+export interface ParseOptions {
   headerRows?: 1 | 2;
+  sheetName?: string;
 }
 
 interface HeaderDetection {
@@ -24,7 +25,7 @@ const KNOWN_FIELD_LABELS = [
   '户籍性质', '民族', '移动电话', '手机号', '电子邮件', '现住地址', '户籍地址', '邮编', '合同期限形式',
   '合同期限', '合同开始日期', '合同终止日期', '试用期开始日期', '试用期', '试用期结束日期', '工作城市',
   '工时制', '工作制周期', '工资形式', '基本工资', '其他工资', '试用期工资', '发薪周期', '发薪日期',
-  '参保机构名称', '参保地', '起始月', '社保基数', '公积金基数', '公积金比例', '开户银行信息', '银行借记卡帐号',
+  '参保地', '起始月', '社保基数', '公积金基数', '公积金比例', '开户银行信息', '银行借记卡帐号',
   '银行借记卡账号', '备注', '业务模式', '人员类型', '是否企服发起劳动合同', '劳动合同主体', '劳动合同模板',
   '劳动合同签署是否需要催办员工', '劳动合同新签反馈', '劳动合同签订反馈', '入职材料是否需要集约收集', '入职联系反馈',
   '是否企服发薪', '发薪地', '特殊备注', '增员报岗录入反馈', '数据录入反馈',
@@ -39,13 +40,24 @@ export class ExcelParserService {
   async parseBuffer(buffer: Buffer, options: ParseOptions = {}): Promise<ParsedSheet> {
     const workbook = new Workbook();
     await workbook.xlsx.load(buffer as never);
-    return this.parseWorksheet(workbook.worksheets[0], options);
+    return this.parseWorksheet(this.pickWorksheet(workbook, options), options);
   }
 
   async parseFile(filePath: string, options: ParseOptions = {}): Promise<ParsedSheet> {
     const workbook = new Workbook();
     await workbook.xlsx.readFile(filePath);
-    return this.parseWorksheet(workbook.worksheets[0], options);
+    return this.parseWorksheet(this.pickWorksheet(workbook, options), options);
+  }
+
+  private pickWorksheet(workbook: Workbook, options: ParseOptions): Worksheet | undefined {
+    if (!options.sheetName) {
+      return workbook.worksheets[0];
+    }
+    const worksheet = workbook.getWorksheet(options.sheetName);
+    if (!worksheet) {
+      throw businessException(4400, HttpStatus.BAD_REQUEST, `Excel工作表不存在：${options.sheetName}`);
+    }
+    return worksheet;
   }
 
   private parseWorksheet(worksheet: Worksheet | undefined, options: ParseOptions): ParsedSheet {

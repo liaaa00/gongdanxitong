@@ -116,6 +116,14 @@ class QueryUsersDto extends PaginationQueryDto {
   @Type(() => Boolean)
   @IsBoolean()
   is_active?: boolean;
+
+  @IsOptional()
+  @IsEnum(BusinessScope)
+  businessScope?: BusinessScope;
+
+  @IsOptional()
+  @IsEnum(BusinessScope)
+  business_scope?: BusinessScope;
 }
 
 class CreateUserDto {
@@ -302,19 +310,31 @@ export class UsersController {
   ) {}
 
   @Get()
-  list(@Query() query: QueryUsersDto) {
-    return this.service.list(query);
+  list(@Query() query: QueryUsersDto, @CurrentUser() user: JwtUserPayload) {
+    const businessScope = query.businessScope ?? query.business_scope ?? user.businessScope ?? BusinessScope.BEILUN;
+    return this.service.list({ ...query, businessScope, business_scope: businessScope });
   }
 
   @Post()
   @Audit('users', 'create')
-  create(@Body() payload: CreateUserDto) {
-    return this.service.create(payload);
+  create(
+    @Body() payload: CreateUserDto,
+    @Query('businessScope') requestedScope: BusinessScope | undefined,
+    @CurrentUser() user: JwtUserPayload,
+  ) {
+    return this.service.create({
+      ...payload,
+      businessScope: payload.businessScope ?? payload.business_scope ?? requestedScope ?? user.businessScope ?? BusinessScope.BEILUN,
+    });
   }
 
   @Get(':id/handover-preview')
-  handoverPreview(@Param('id') id: string) {
-    return this.handoverService.preview(id);
+  handoverPreview(
+    @Param('id') id: string,
+    @Query('businessScope') requestedScope: BusinessScope | undefined,
+    @CurrentUser() user: JwtUserPayload,
+  ) {
+    return this.handoverService.preview(id, requestedScope ?? user.businessScope ?? BusinessScope.BEILUN);
   }
 
   @Post(':id/handover')
@@ -322,48 +342,81 @@ export class UsersController {
     @Param('id') id: string,
     @Body() payload: ExecuteUserHandoverDto,
     @CurrentUser() user: JwtUserPayload,
+    @Query('businessScope') requestedScope: BusinessScope | undefined,
   ) {
-    return this.handoverService.execute(id, payload, user.sub);
+    return this.handoverService.execute(id, payload, user.sub, requestedScope ?? user.businessScope ?? BusinessScope.BEILUN);
   }
 
   @Get(':id')
-  detail(@Param('id') id: string) {
-    return this.service.detail(id);
+  detail(
+    @Param('id') id: string,
+    @Query('businessScope') requestedScope: BusinessScope | undefined,
+    @CurrentUser() user: JwtUserPayload,
+  ) {
+    return this.service.detail(id, requestedScope ?? user.businessScope ?? BusinessScope.BEILUN);
   }
 
   @Put(':id')
   @Audit('users', 'update')
-  update(@Param('id') id: string, @Body() payload: UpdateUserDto) {
-    return this.service.update(id, payload);
+  update(
+    @Param('id') id: string,
+    @Body() payload: UpdateUserDto,
+    @Query('businessScope') requestedScope: BusinessScope | undefined,
+    @CurrentUser() user: JwtUserPayload,
+  ) {
+    return this.service.update(id, payload, requestedScope ?? user.businessScope ?? BusinessScope.BEILUN);
   }
 
   @Delete(':id')
   @Audit('users', 'delete')
-  disable(@Param('id') id: string) {
-    return this.service.disable(id);
+  disable(
+    @Param('id') id: string,
+    @Query('businessScope') requestedScope: BusinessScope | undefined,
+    @CurrentUser() user: JwtUserPayload,
+  ) {
+    return this.service.disable(id, requestedScope ?? user.businessScope ?? BusinessScope.BEILUN);
   }
 
   @Post(':id/reset-password')
   @Audit('users', 'reset-password')
-  resetPassword(@Param('id') id: string, @Body() payload: ResetPasswordDto) {
-    return this.service.resetPassword(id, payload.newPassword);
+  resetPassword(
+    @Param('id') id: string,
+    @Body() payload: ResetPasswordDto,
+    @Query('businessScope') requestedScope: BusinessScope | undefined,
+    @CurrentUser() user: JwtUserPayload,
+  ) {
+    return this.service.resetPassword(id, payload.newPassword, requestedScope ?? user.businessScope ?? BusinessScope.BEILUN);
   }
 
   @Post(':id/force-logout')
   @Audit('users', 'force-logout')
-  forceLogout(@Param('id') id: string) {
-    return this.service.forceLogout(id);
+  forceLogout(
+    @Param('id') id: string,
+    @Query('businessScope') requestedScope: BusinessScope | undefined,
+    @CurrentUser() user: JwtUserPayload,
+  ) {
+    return this.service.forceLogout(id, requestedScope ?? user.businessScope ?? BusinessScope.BEILUN);
   }
 
   @Post(':id/roles')
   @Audit('users', 'bind-role')
-  bindRoles(@Param('id') id: string, @Body() payload: BindRolesDto) {
-    return this.service.bindRoles(id, payload.roles);
+  bindRoles(
+    @Param('id') id: string,
+    @Body() payload: BindRolesDto,
+    @Query('businessScope') requestedScope: BusinessScope | undefined,
+    @CurrentUser() user: JwtUserPayload,
+  ) {
+    return this.service.bindRoles(id, payload.roles, requestedScope ?? user.businessScope ?? BusinessScope.BEILUN);
   }
 
   @Delete(':id/roles/:roleId')
   @Audit('users', 'unbind-role')
-  unbindRole(@Param('id') id: string, @Param('roleId') roleId: string) {
-    return this.service.unbindRole(id, roleId);
+  unbindRole(
+    @Param('id') id: string,
+    @Param('roleId') roleId: string,
+    @Query('businessScope') requestedScope: BusinessScope | undefined,
+    @CurrentUser() user: JwtUserPayload,
+  ) {
+    return this.service.unbindRole(id, roleId, requestedScope ?? user.businessScope ?? BusinessScope.BEILUN);
   }
 }

@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
 import { IsBoolean, IsEnum, IsInt, IsObject, IsOptional, IsString, Min } from 'class-validator';
-import { DispatchStrategy, OrderType } from 'src/entities';
+import { BusinessScope, DispatchStrategy, OrderType } from 'src/entities';
 import { AstNode } from 'src/modules/dispatch/types';
 
 export class CreateDispatchRuleDto {
@@ -54,4 +54,8 @@ export class CreateDispatchRuleDto {
   @Type(() => Boolean)
   @IsBoolean()
   allowManualOverride?: boolean;
+
+  @IsOptional()
+  @IsEnum(BusinessScope)
+  businessScope?: BusinessScope;
 }

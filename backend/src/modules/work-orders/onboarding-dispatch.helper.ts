@@ -2,6 +2,7 @@ import { HttpStatus } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { businessException } from 'src/common/exceptions/business-exception';
 import {
+  BusinessScope,
   DispatchModuleCode,
   ExceptionModuleHandler,
   ModuleField,
@@ -72,24 +73,25 @@ export async function resolveModuleHandler(
   moduleCode: string,
   manager: TxManager,
   customerCode?: string | null,
+  businessScope: BusinessScope = BusinessScope.BEILUN,
 ): Promise<string | null> {
   const normalizedCustomerCode = typeof customerCode === 'string' ? customerCode.trim() : '';
   if (normalizedCustomerCode) {
     const exceptionRepo = manager.getRepository(ExceptionModuleHandler);
     const exception = await exceptionRepo.findOne({
-      where: { moduleCode: moduleCode as DispatchModuleCode, customerCode: normalizedCustomerCode },
+      where: { moduleCode: moduleCode as DispatchModuleCode, customerCode: normalizedCustomerCode, businessScope },
     });
     if (exception) return exception.handlerId;
   }
 
   const handlerRepo = manager.getRepository(ModuleHandler);
   const primary = await handlerRepo.findOne({
-    where: { moduleCode, isActive: true, isBackup: false },
+    where: { moduleCode, businessScope, isActive: true, isBackup: false },
     order: { weight: 'DESC' },
   });
   if (primary) return primary.handlerId;
   const backup = await handlerRepo.findOne({
-    where: { moduleCode, isActive: true },
+    where: { moduleCode, businessScope, isActive: true },
     order: { isBackup: 'ASC', weight: 'DESC' },
   });
   return backup?.handlerId ?? null;
@@ -99,11 +101,12 @@ async function resolveVisibleFields(
   moduleCode: string,
   manager: TxManager,
   fieldPermissionService: FieldPermissionService,
+  businessScope: BusinessScope,
 ): Promise<string[]> {
   try {
     const moduleFieldRepo = manager.getRepository(ModuleField);
     const rows = await moduleFieldRepo.find({
-      where: { moduleCode, isActive: true },
+      where: { moduleCode, businessScope, isActive: true },
       order: { displayOrder: 'ASC' },
     });
     if (rows.length > 0) {
@@ -112,7 +115,7 @@ async function resolveVisibleFields(
   } catch {
     // Older tests and deployments without module_fields support should keep using the permission matrix fallback.
   }
-  return fieldPermissionService.getVisibleFieldsForScenario(`dispatched:${moduleCode}`);
+  return fieldPermissionService.getVisibleFieldsForScenario(`dispatched:${moduleCode}`, businessScope);
 }
 
 export async function buildOnboardingChildren(
@@ -136,8 +139,8 @@ export async function buildOnboardingChildren(
     if (!ONBOARDING_DISPATCH_MODULE_CODES.includes(moduleCode)) {
       throw businessException(4203, HttpStatus.INTERNAL_SERVER_ERROR, `非法 module_code: ${moduleCode}`);
     }
-    const handlerId = await resolveModuleHandler(moduleCode, manager, customerCode);
-    const visibleFields = await resolveVisibleFields(moduleCode, manager, fieldPermissionService);
+    const handlerId = await resolveModuleHandler(moduleCode, manager, customerCode, workOrder.businessScope);
+    const visibleFields = await resolveVisibleFields(moduleCode, manager, fieldPermissionService, workOrder.businessScope);
     children.push({ moduleCode, handlerId, visibleFields });
   }
   children.sort((a, b) => getModuleSortOrder(a.moduleCode) - getModuleSortOrder(b.moduleCode));

@@ -1,6 +1,7 @@
 import { Reflector } from '@nestjs/core';
 import { ROLES_KEY } from 'src/common/decorators/roles.decorator';
 import { DashboardController } from 'src/modules/dashboard/dashboard.controller';
+import { BusinessScope } from 'src/entities';
 import { DashboardService } from 'src/modules/dashboard/dashboard.service';
 
 describe('DashboardService', () => {
@@ -370,6 +371,32 @@ describe('DashboardService', () => {
     expect(dataSource.query).not.toHaveBeenCalledWith(expect.stringContaining('work_orders'), expect.any(Array));
     expect(result).toMatchObject({ orderType: 'renewal', moduleCode: null });
     expect((result as { buckets: Array<{ total: number }> }).buckets.every((bucket) => bucket.total === 0)).toBe(true);
+  });
+
+  it('isolates dashboard SQL by requested scope for switchable accounts', async () => {
+    const dataSource = { query: jest.fn()
+      .mockResolvedValueOnce([{ count: 0 }])
+      .mockResolvedValueOnce([{ totalThisMonth: 0, processing: 0, completed: 0 }]) };
+    const service = new DashboardService(dataSource as never, validationStub);
+
+    await service.getDashboardCards({ sub: 'admin-1', roles: ['admin'] } as never, undefined, undefined, undefined, BusinessScope.OUT_OF_PROVINCE);
+
+    const sql = String(dataSource.query.mock.calls[1][0]);
+    expect(sql).toContain("wo.business_scope = 'out_of_province'");
+    expect(sql).toContain("io.business_scope = 'out_of_province'");
+  });
+
+  it('ignores forged scope for fixed business accounts and keeps account scope', async () => {
+    const dataSource = { query: jest.fn()
+      .mockResolvedValueOnce([{ count: 0 }])
+      .mockResolvedValueOnce([{ totalThisMonth: 0, processing: 0, completed: 0 }]) };
+    const service = new DashboardService(dataSource as never, validationStub);
+
+    await service.getDashboardCards({ sub: 'welfare-1', roles: ['business_group_member'], businessScope: BusinessScope.OUT_OF_PROVINCE } as never, undefined, undefined, undefined, BusinessScope.BEILUN);
+
+    const sql = String(dataSource.query.mock.calls[1][0]);
+    expect(sql).toContain("wo.business_scope = 'out_of_province'");
+    expect(sql).not.toContain("wo.business_scope = 'beilun'");
   });
 
   it('allows all frontend-visible leader trend roles at controller metadata level', () => {

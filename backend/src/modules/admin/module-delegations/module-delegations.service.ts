@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { canHandleModule, getRequiredModuleHandlerRoles } from 'src/common/auth/role-permissions';
-import { ModuleHandler, ModuleHandlerDelegation, User } from 'src/entities';
+import { BusinessScope, ModuleHandler, ModuleHandlerDelegation, User } from 'src/entities';
 
 export interface CreateModuleDelegationInput {
   moduleCode: string;
@@ -11,6 +11,7 @@ export interface CreateModuleDelegationInput {
   startsAt: string;
   endsAt: string;
   reason: string;
+  businessScope?: BusinessScope;
 }
 
 @Injectable()
@@ -24,9 +25,10 @@ export class ModuleDelegationsService {
     private readonly userRepository: Repository<User>,
   ) {}
 
-  list(moduleCode?: string, includeInactive = false): Promise<ModuleHandlerDelegation[]> {
+  list(moduleCode?: string, includeInactive = false, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<ModuleHandlerDelegation[]> {
     return this.repository.find({
       where: {
+        businessScope,
         ...(moduleCode ? { moduleCode } : {}),
         ...(!includeInactive ? { isActive: true } : {}),
       },
@@ -36,6 +38,7 @@ export class ModuleDelegationsService {
   }
 
   async create(input: CreateModuleDelegationInput, createdBy: string): Promise<ModuleHandlerDelegation> {
+    const businessScope = input.businessScope ?? BusinessScope.BEILUN;
     const startsAt = new Date(input.startsAt);
     const endsAt = new Date(input.endsAt);
     if (!Number.isFinite(startsAt.getTime()) || !Number.isFinite(endsAt.getTime()) || endsAt <= startsAt) {
@@ -46,13 +49,13 @@ export class ModuleDelegationsService {
     }
 
     const source = await this.handlerRepository.findOne({
-      where: { moduleCode: input.moduleCode, handlerId: input.sourceHandlerId, isActive: true },
+      where: { moduleCode: input.moduleCode, handlerId: input.sourceHandlerId, businessScope, isActive: true },
     });
     if (!source) throw new BadRequestException('原负责人未配置在该模块或已停用');
 
     if (input.delegateHandlerId) {
       const delegate = await this.userRepository.findOne({
-        where: { id: input.delegateHandlerId, isActive: true },
+        where: { id: input.delegateHandlerId, businessScope, isActive: true },
         relations: { userRoles: { role: true } },
       });
       if (!delegate) throw new BadRequestException('代理人不存在或已停用');
@@ -68,6 +71,7 @@ export class ModuleDelegationsService {
     const overlap = await this.repository.createQueryBuilder('delegation')
       .where('delegation.module_code = :moduleCode', { moduleCode: input.moduleCode })
       .andWhere('delegation.source_handler_id = :sourceHandlerId', { sourceHandlerId: input.sourceHandlerId })
+      .andWhere('delegation.business_scope = :businessScope', { businessScope })
       .andWhere('delegation.is_active = true')
       .andWhere('delegation.starts_at < :endsAt', { endsAt })
       .andWhere('delegation.ends_at > :startsAt', { startsAt })
@@ -82,12 +86,13 @@ export class ModuleDelegationsService {
       endsAt,
       reason: input.reason.trim(),
       isActive: true,
+      businessScope,
       createdBy,
     }));
   }
 
-  async cancel(id: string): Promise<{ success: boolean }> {
-    const row = await this.repository.findOne({ where: { id } });
+  async cancel(id: string, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<{ success: boolean }> {
+    const row = await this.repository.findOne({ where: { id, businessScope } });
     if (!row) throw new NotFoundException('代理记录不存在');
     row.isActive = false;
     await this.repository.save(row);

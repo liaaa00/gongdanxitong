@@ -15,7 +15,7 @@ import { Audit } from 'src/common/decorators/audit.decorator';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 import { AuditInterceptor } from 'src/common/interceptors/audit.interceptor';
-import { OrderType } from 'src/entities';
+import { BusinessScope, OrderType } from 'src/entities';
 import { CreateDispatchRuleDto } from './dto/create-dispatch-rule.dto';
 import { UpdateDispatchRuleDto } from './dto/update-dispatch-rule.dto';
 import { DispatchRulesService } from './dispatch-rules.service';
@@ -29,6 +29,10 @@ class QueryDispatchRulesDto extends PaginationQueryDto {
   @Type(() => Boolean)
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsEnum(BusinessScope)
+  businessScope?: BusinessScope;
 }
 
 
@@ -42,6 +46,10 @@ class SimulateDispatchRuleDto {
   @IsOptional()
   @IsUUID('4', { each: true })
   ruleIds?: string[];
+
+  @IsOptional()
+  @IsEnum(BusinessScope)
+  businessScope?: BusinessScope;
 }
 
 @Roles('admin')
@@ -56,26 +64,26 @@ export class DispatchRulesController {
   }
 
   @Get(':id')
-  get(@Param('id') id: string) {
-    return this.service.getById(id);
+  get(@Param('id') id: string, @Query('businessScope') businessScope?: BusinessScope) {
+    return this.service.getById(id, businessScope);
   }
 
   @Post()
   @Audit('dispatch_rules', 'create')
-  create(@Body() payload: CreateDispatchRuleDto) {
-    return this.service.create(payload);
+  create(@Body() payload: CreateDispatchRuleDto, @Query('businessScope') businessScope?: BusinessScope) {
+    return this.service.create({ ...payload, businessScope: payload.businessScope ?? businessScope });
   }
 
   @Put(':id')
   @Audit('dispatch_rules', 'update')
-  update(@Param('id') id: string, @Body() payload: UpdateDispatchRuleDto) {
-    return this.service.update(id, payload);
+  update(@Param('id') id: string, @Body() payload: UpdateDispatchRuleDto, @Query('businessScope') businessScope?: BusinessScope) {
+    return this.service.update(id, { ...payload, businessScope: payload.businessScope ?? businessScope });
   }
 
   @Delete(':id')
   @Audit('dispatch_rules', 'delete')
-  delete(@Param('id') id: string) {
-    return this.service.softDelete(id);
+  delete(@Param('id') id: string, @Query('businessScope') businessScope?: BusinessScope) {
+    return this.service.softDelete(id, businessScope);
   }
 
   @Post('simulate')

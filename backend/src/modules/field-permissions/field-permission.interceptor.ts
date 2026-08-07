@@ -2,6 +2,7 @@ import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nes
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { from, map, mergeMap, Observable } from 'rxjs';
+import { BusinessScope } from 'src/entities';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import {
   FIELD_PERMISSION_SCENARIO_KEY,
@@ -31,6 +32,9 @@ export class FieldPermissionInterceptor implements NestInterceptor {
     if (!resolver || !request.user || request.user.roles.includes('admin')) {
       return next.handle();
     }
+    const businessScope = (request.query.businessScope as BusinessScope | undefined)
+      ?? request.user.businessScope
+      ?? BusinessScope.BEILUN;
 
     if (resolver === 'dispatched:auto' && !request.params.moduleCode) {
       return next.handle().pipe(
@@ -42,6 +46,7 @@ export class FieldPermissionInterceptor implements NestInterceptor {
           const permissions = await this.fieldPermissionService.getPermissionsForUser(
             request.user!.sub,
             `dispatched:${moduleCode}`,
+            businessScope,
           );
           return this.applyPayload(payload, permissions, 0);
         }),
@@ -52,7 +57,7 @@ export class FieldPermissionInterceptor implements NestInterceptor {
 
     return from(scenarioPromise).pipe(
       mergeMap(async (scenario) => ({
-        permissions: await this.fieldPermissionService.getPermissionsForUser(request.user!.sub, scenario),
+        permissions: await this.fieldPermissionService.getPermissionsForUser(request.user!.sub, scenario, businessScope),
       })),
       mergeMap(({ permissions }) => next.handle().pipe(map((payload) => this.applyPayload(payload, permissions, 0)))),
     );

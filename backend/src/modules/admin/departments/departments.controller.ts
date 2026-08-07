@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Query,
   Param,
   Post,
   Put,
@@ -11,12 +12,16 @@ import {
 import { Type } from 'class-transformer';
 import {
   IsBoolean,
+  IsEnum,
   IsOptional,
   IsString,
   IsUUID,
   Matches,
 } from 'class-validator';
 import { Audit } from 'src/common/decorators/audit.decorator';
+import { CurrentUser } from 'src/common/decorators/current-user.decorator';
+import { BusinessScope } from 'src/entities';
+import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { AuditInterceptor } from 'src/common/interceptors/audit.interceptor';
 import { DepartmentsService } from './departments.service';
@@ -41,6 +46,10 @@ class SaveDepartmentDto {
   @Type(() => Boolean)
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsEnum(BusinessScope)
+  businessScope?: BusinessScope;
 }
 
 class UpdateDepartmentDto {
@@ -65,6 +74,10 @@ class UpdateDepartmentDto {
   @Type(() => Boolean)
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsEnum(BusinessScope)
+  businessScope?: BusinessScope;
 }
 
 class MoveDepartmentDto {
@@ -77,42 +90,40 @@ class MoveDepartmentDto {
   sortOrder?: number;
 }
 
-@Roles('admin', 'biz_member', 'business_group_member', 'biz_leader', 'business_group_leader', 'biz_manager', 'business_owner')
+@Roles('admin')
 @Controller('admin/departments')
 @UseInterceptors(AuditInterceptor)
 export class DepartmentsController {
   constructor(private readonly service: DepartmentsService) {}
 
+  // 创建入职/在职/省外工单需要读取发起部门；部门管理写操作仍仅限管理员。
   @Get()
-  tree() {
-    return this.service.getTree();
+  @Roles('admin', 'biz_manager', 'business_owner', 'biz_leader', 'business_group_leader', 'biz_member', 'business_group_member', 'salesperson')
+  tree(@Query('businessScope') requestedScope: BusinessScope | undefined, @CurrentUser() user: JwtUserPayload) {
+    return this.service.getTree(requestedScope ?? user.businessScope ?? BusinessScope.BEILUN);
   }
 
   @Post()
-  @Roles('admin')
   @Audit('departments', 'create')
-  create(@Body() payload: SaveDepartmentDto) {
-    return this.service.create(payload);
+  create(@Body() payload: SaveDepartmentDto, @Query('businessScope') requestedScope: BusinessScope | undefined, @CurrentUser() user: JwtUserPayload) {
+    return this.service.create({ ...payload, businessScope: payload.businessScope ?? requestedScope ?? user.businessScope ?? BusinessScope.BEILUN });
   }
 
   @Put(':id')
-  @Roles('admin')
   @Audit('departments', 'update')
-  update(@Param('id') id: string, @Body() payload: UpdateDepartmentDto) {
-    return this.service.update(id, payload);
+  update(@Param('id') id: string, @Body() payload: UpdateDepartmentDto, @Query('businessScope') requestedScope: BusinessScope | undefined, @CurrentUser() user: JwtUserPayload) {
+    return this.service.update(id, { ...payload, businessScope: payload.businessScope ?? requestedScope ?? user.businessScope ?? BusinessScope.BEILUN });
   }
 
   @Delete(':id')
-  @Roles('admin')
   @Audit('departments', 'delete')
-  remove(@Param('id') id: string) {
-    return this.service.remove(id);
+  remove(@Param('id') id: string, @Query('businessScope') requestedScope: BusinessScope | undefined, @CurrentUser() user: JwtUserPayload) {
+    return this.service.remove(id, requestedScope ?? user.businessScope ?? BusinessScope.BEILUN);
   }
 
   @Post(':id/move')
-  @Roles('admin')
   @Audit('departments', 'move')
-  move(@Param('id') id: string, @Body() payload: MoveDepartmentDto) {
-    return this.service.move(id, payload);
+  move(@Param('id') id: string, @Body() payload: MoveDepartmentDto, @Query('businessScope') requestedScope: BusinessScope | undefined, @CurrentUser() user: JwtUserPayload) {
+    return this.service.move(id, { ...payload, businessScope: requestedScope ?? user.businessScope ?? BusinessScope.BEILUN });
   }
 }

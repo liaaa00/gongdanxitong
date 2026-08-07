@@ -70,6 +70,11 @@ export class ListInServiceOrderQueryDto {
   @IsString()
   keyword?: string;
 
+  // 2026-08-03 用户明确要求：身份证号精确查询，与 keyword 模糊搜索分开。
+  @IsOptional()
+  @IsString()
+  idCardNo?: string;
+
   @IsOptional()
   @IsDateString()
   createdFrom?: string;

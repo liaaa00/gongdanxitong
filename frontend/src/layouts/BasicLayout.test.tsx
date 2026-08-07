@@ -2,7 +2,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useNavigate as useRouterNavigate } from 'react-router-dom';
-import BasicLayout from './BasicLayout';
+import BasicLayout, { buildKeepAliveCacheKey } from './BasicLayout';
 import { markNotificationRead } from '@/services/notifications';
 import { KEEP_ALIVE_ROUTE_ACTIVATED_EVENT } from '@/utils/listPageState';
 // Role codes are kept as literals in hoisted mocks.
@@ -60,6 +60,7 @@ const { notification, mockUserState, mockNavigate, mockRouterState } = vi.hoiste
     mockUserState: {
       makeUser,
       user: makeUser(['labor_contract_member']),
+      permissionConfigLoading: false,
     },
     notification: {
       id: 'n-layout-1',
@@ -128,6 +129,7 @@ vi.mock('@/stores/userStore', () => ({
     fetchUser: vi.fn().mockResolvedValue(undefined),
     isLoggedIn: true,
     loading: false,
+    permissionConfigLoading: mockUserState.permissionConfigLoading,
   }),
 }));
 
@@ -171,11 +173,26 @@ describe('BasicLayout menu visibility', () => {
     vi.clearAllMocks();
     window.localStorage.clear();
     mockUserState.user = mockUserState.makeUser(['labor_contract_member']);
+    mockUserState.permissionConfigLoading = false;
     mockRouterState.useRealNavigate = false;
   });
 
   afterEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('uses separate keep-alive cache keys for each business scope', () => {
+    expect(buildKeepAliveCacheKey('beilun', '/dashboard', '?month=2026-08'))
+      .not.toBe(buildKeepAliveCacheKey('out_of_province', '/dashboard', '?month=2026-08'));
+  });
+
+  it('does not render a static menu while permission configuration is loading', () => {
+    mockUserState.user = mockUserState.makeUser(['admin']);
+    mockUserState.permissionConfigLoading = true;
+
+    renderLayout(['/dashboard']);
+
+    expect(menuPaths()).toEqual([]);
   });
 
   it('shows the admin field and template configuration center with import templates only to admin', () => {

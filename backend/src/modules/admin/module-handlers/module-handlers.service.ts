@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { canHandleModule, getRequiredModuleHandlerRoles } from 'src/common/auth/role-permissions';
-import { ModuleHandler, User } from 'src/entities';
+import { BusinessScope, ModuleHandler, User } from 'src/entities';
 
 interface SaveModuleHandlerInput {
   moduleCode: string;
@@ -10,6 +10,8 @@ interface SaveModuleHandlerInput {
   weight?: number;
   isBackup?: boolean;
   isActive?: boolean;
+  businessScope?: BusinessScope;
+  business_scope?: BusinessScope;
 }
 
 @Injectable()
@@ -21,9 +23,10 @@ export class ModuleHandlersService {
     private readonly userRepository: Repository<User>,
   ) {}
 
-  async list(moduleCode?: string, isActive?: boolean): Promise<ModuleHandler[]> {
+  async list(moduleCode?: string, isActive?: boolean, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<ModuleHandler[]> {
     return this.repository.find({
       where: {
+        businessScope,
         ...(moduleCode ? { moduleCode } : {}),
         ...(typeof isActive === 'boolean' ? { isActive } : {}),
       },
@@ -33,9 +36,10 @@ export class ModuleHandlersService {
   }
 
   async create(input: SaveModuleHandlerInput): Promise<ModuleHandler> {
-    await this.assertEligible(input.moduleCode, input.handlerId);
+    const businessScope = input.businessScope ?? input.business_scope ?? BusinessScope.BEILUN;
+    await this.assertEligible(input.moduleCode, input.handlerId, businessScope);
     const existed = await this.repository.findOne({
-      where: { moduleCode: input.moduleCode, handlerId: input.handlerId },
+      where: { moduleCode: input.moduleCode, handlerId: input.handlerId, businessScope },
     });
     if (existed) {
       Object.assign(existed, {
@@ -52,19 +56,21 @@ export class ModuleHandlersService {
       weight: input.weight ?? 1,
       isBackup: input.isBackup ?? false,
       isActive: input.isActive ?? true,
+      businessScope,
     }));
   }
 
   async update(id: string, input: Partial<SaveModuleHandlerInput>): Promise<ModuleHandler> {
-    const row = await this.repository.findOne({ where: { id } });
+    const businessScope = input.businessScope ?? input.business_scope ?? BusinessScope.BEILUN;
+    const row = await this.repository.findOne({ where: { id, businessScope } });
     if (!row) {
       throw new NotFoundException('module handler 不存在');
     }
 
     const moduleCode = input.moduleCode ?? row.moduleCode;
     const handlerId = input.handlerId ?? row.handlerId;
-    await this.assertEligible(moduleCode, handlerId);
-    const duplicate = await this.repository.findOne({ where: { moduleCode, handlerId } });
+    await this.assertEligible(moduleCode, handlerId, businessScope);
+    const duplicate = await this.repository.findOne({ where: { moduleCode, handlerId, businessScope } });
     if (duplicate && duplicate.id !== id) {
       throw new BadRequestException('该用户已是此模块负责人');
     }
@@ -73,8 +79,8 @@ export class ModuleHandlersService {
     return this.repository.save(row);
   }
 
-  async remove(id: string): Promise<{ success: boolean }> {
-    const row = await this.repository.findOne({ where: { id } });
+  async remove(id: string, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<{ success: boolean }> {
+    const row = await this.repository.findOne({ where: { id, businessScope } });
     if (!row) {
       throw new NotFoundException('module handler 不存在');
     }
@@ -84,9 +90,9 @@ export class ModuleHandlersService {
     return { success: true };
   }
 
-  private async assertEligible(moduleCode: string, handlerId: string): Promise<void> {
+  private async assertEligible(moduleCode: string, handlerId: string, businessScope: BusinessScope): Promise<void> {
     const user = await this.userRepository.findOne({
-      where: { id: handlerId, isActive: true },
+      where: { id: handlerId, businessScope, isActive: true },
       relations: { userRoles: { role: true } },
     });
     if (!user) {

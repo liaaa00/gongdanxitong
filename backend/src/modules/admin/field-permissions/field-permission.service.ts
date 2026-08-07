@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
-import { FieldConfig, FieldPermission, FieldPermissionMode, Role } from 'src/entities';
+import { BusinessScope, FieldConfig, FieldPermission, FieldPermissionMode, Role } from 'src/entities';
 
 interface BatchPermissionItem {
   roleId: string;
@@ -39,12 +39,12 @@ export class FieldPermissionService {
     private readonly fieldConfigRepository: Repository<FieldConfig>,
   ) {}
 
-  async getMatrix(): Promise<{
+  async getMatrix(businessScope: BusinessScope = BusinessScope.BEILUN): Promise<{
     scenarios: string[];
     matrix: Record<string, Record<string, Record<string, FieldPermissionMode>>>;
   }> {
     const items = await this.fieldPermissionRepository.find({
-      where: FIELD_PERMISSION_MATRIX_SCENARIOS.map((scenario) => ({ scenario })),
+      where: FIELD_PERMISSION_MATRIX_SCENARIOS.map((scenario) => ({ scenario, businessScope })),
     });
     const scenarios = [...FIELD_PERMISSION_MATRIX_SCENARIOS];
     const matrix: Record<string, Record<string, Record<string, FieldPermissionMode>>> = {};
@@ -63,7 +63,7 @@ export class FieldPermissionService {
     return { scenarios, matrix };
   }
 
-  async batchUpsert(items: BatchPermissionItem[]): Promise<{ affected: number }> {
+  async batchUpsert(items: BatchPermissionItem[], businessScope: BusinessScope = BusinessScope.BEILUN): Promise<{ affected: number }> {
     return this.dataSource.transaction(async (manager) => {
       let affected = 0;
       for (const item of items) {
@@ -72,6 +72,7 @@ export class FieldPermissionService {
             roleId: item.roleId,
             scenario: item.scenario,
             fieldCode: item.fieldCode,
+            businessScope,
           },
         });
 
@@ -89,6 +90,7 @@ export class FieldPermissionService {
             scenario: item.scenario,
             fieldCode: item.fieldCode,
             permission: item.permission,
+            businessScope,
           }),
         );
         affected += 1;
@@ -102,9 +104,9 @@ export class FieldPermissionService {
     sourceRoleId: string;
     targetRoleIds: string[];
     scenarios?: string[];
-  }): Promise<{ affected: number }> {
+  }, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<{ affected: number }> {
     const sourceRows = await this.fieldPermissionRepository.find({
-      where: { roleId: input.sourceRoleId },
+      where: { roleId: input.sourceRoleId, businessScope },
     });
 
     const filtered =
@@ -121,6 +123,7 @@ export class FieldPermissionService {
               roleId: targetRoleId,
               scenario: row.scenario,
               fieldCode: row.fieldCode,
+              businessScope,
             },
           });
 
@@ -138,6 +141,7 @@ export class FieldPermissionService {
               scenario: row.scenario,
               fieldCode: row.fieldCode,
               permission: row.permission,
+              businessScope,
             }),
           );
           affected += 1;

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
+import { BusinessScope } from 'src/entities';
 import {
   FieldViewMode,
   FieldPermissionRule,
@@ -11,7 +12,7 @@ import { PermissionCenterService } from '../services/permission-center.service';
 /** A role list or an authenticated user carrying that role list. */
 export type RbacSubject =
   | readonly string[]
-  | Pick<JwtUserPayload, 'roles'>
+  | Pick<JwtUserPayload, 'roles' | 'businessScope'>
   | null
   | undefined;
 
@@ -48,7 +49,7 @@ export class RbacEngineService {
     const normalizedAction = this.normalize(action);
     if (!normalizedAction) return false;
 
-    const config = await this.loadConfig();
+    const config = await this.loadConfig(userRoles);
     if (!config) return false;
 
     const roleAliases = this.expandActiveRoleAliases(userRoles, config);
@@ -63,7 +64,7 @@ export class RbacEngineService {
 
   /** Return configured routes accessible to at least one supplied role. */
   async getAccessibleRoutes(userRoles: RbacSubject): Promise<string[]> {
-    const config = await this.loadConfig();
+    const config = await this.loadConfig(userRoles);
     if (!config) return [];
 
     const roleAliases = this.expandActiveRoleAliases(userRoles, config);
@@ -90,7 +91,7 @@ export class RbacEngineService {
     const normalizedScenario = this.normalize(scenario);
     if (!normalizedScenario) return {};
 
-    const config = await this.loadConfig();
+    const config = await this.loadConfig(userRoles);
     if (!config) return {};
 
     const roleAliases = this.expandActiveRoleAliases(userRoles, config);
@@ -114,9 +115,13 @@ export class RbacEngineService {
     return merged;
   }
 
-  private async loadConfig(): Promise<PermissionConfig | null> {
+  private async loadConfig(subject?: RbacSubject): Promise<PermissionConfig | null> {
+    const userSubject = !Array.isArray(subject) && subject && typeof subject === 'object'
+      ? subject as Pick<JwtUserPayload, 'businessScope'>
+      : null;
+    const businessScope = userSubject?.businessScope ?? BusinessScope.BEILUN;
     try {
-      return await this.permissionCenterService.getActiveConfig();
+      return await this.permissionCenterService.getActiveConfig(businessScope);
     } catch {
       return null;
     }

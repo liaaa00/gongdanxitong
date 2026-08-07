@@ -8,6 +8,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { UserRole } from './user-role.entity';
+import { BusinessScope } from './enums';
 import { WorkOrder } from './work-order.entity';
 
 @Entity({ name: 'departments' })
@@ -27,8 +28,11 @@ export class Department {
   @OneToMany(() => Department, (department) => department.parent)
   children!: Department[];
 
-  @Column({ type: 'varchar', length: 64, unique: true })
+  @Column({ type: 'varchar', length: 64 })
   code!: string;
+
+  @Column({ name: 'business_scope', type: 'varchar', length: 32, default: BusinessScope.BEILUN })
+  businessScope!: BusinessScope;
 
   @Column({ type: 'varchar', length: 128 })
   name!: string;

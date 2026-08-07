@@ -49,8 +49,8 @@ export class PermissionCacheService {
   /**
    * 清除所有权限相关缓存
    */
-  async clearPermissionCache(): Promise<void> {
-    await this.del('active_config');
-    await this.del('permission:*'); // Pattern delete
+  async clearPermissionCache(businessScope?: string): Promise<void> {
+    await this.del(businessScope ? `active_config:${businessScope}` : 'active_config');
+    await this.del(businessScope ? `permission:${businessScope}:*` : 'permission:*'); // Pattern delete
   }
 }

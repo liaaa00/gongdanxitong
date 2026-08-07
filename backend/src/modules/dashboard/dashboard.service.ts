@@ -17,6 +17,7 @@ import {
   isPhase1VisibleDispatchModule,
   resolveDispatchModuleCode,
 } from 'src/common/constants/dispatch-modules';
+import { BusinessScope } from 'src/entities';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { RoleActionPermissionService } from 'src/modules/role-action-permissions/role-action-permission.service';
 import { WorkOrderValidationService } from 'src/modules/work-orders/work-order-validation.service';
@@ -100,48 +101,49 @@ export class DashboardService {
     private readonly roleActionPermissionService?: RoleActionPermissionService,
   ) {}
 
-  async getDashboardCards(user: JwtUserPayload, requestedScope?: 'mine' | 'team', month?: string, audience?: 'business' | 'backend'): Promise<DashboardCardsDto> {
+  async getDashboardCards(user: JwtUserPayload, requestedScope?: 'mine' | 'team', month?: string, audience?: 'business' | 'backend', requestedBusinessScope?: BusinessScope): Promise<DashboardCardsDto> {
     const selectedMonth = this.resolveDashboardMonth(month);
+    const businessScope = this.resolveBusinessScope(user, requestedBusinessScope);
     const myMessages = await this.countUnreadMessages(user.sub);
 
     if (audience === 'backend') {
       const backendScope = await this.resolveBackendDashboardScope(user);
-      return { ...(await this.queryDispatchedOrderCards(user, selectedMonth, backendScope)), myMessages, scope: 'backend_module' };
+      return { ...(await this.queryDispatchedOrderCards(user, selectedMonth, backendScope, businessScope)), myMessages, scope: 'backend_module' };
     }
 
     if (requestedScope === 'mine') {
-      return { ...(await this.queryWorkOrderCards('owner', user.sub, selectedMonth)), myMessages, scope: 'mine' };
+      return { ...(await this.queryWorkOrderCards('owner', user.sub, selectedMonth, businessScope)), myMessages, scope: 'mine' };
     }
 
     if (audience !== 'business' && this.isBackendHandler(user)) {
       const backendScope = await this.resolveBackendDashboardScope(user);
-      return { ...(await this.queryDispatchedOrderCards(user, selectedMonth, backendScope)), myMessages, scope: 'backend_module' };
+      return { ...(await this.queryDispatchedOrderCards(user, selectedMonth, backendScope, businessScope)), myMessages, scope: 'backend_module' };
     }
 
     if (requestedScope === 'team' && (hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES) || hasAnyRole(user.roles, BUSINESS_LEADER_ROLES))) {
       const departmentIds = await this.workOrderValidationService.resolveUserDepartmentIds(user.sub);
       if (departmentIds.length === 0) return { ...this.emptyCards(), myMessages, scope: 'team' };
-      return { ...(await this.queryWorkOrderCards('department', departmentIds, selectedMonth)), myMessages, scope: 'team' };
+      return { ...(await this.queryWorkOrderCards('department', departmentIds, selectedMonth, businessScope)), myMessages, scope: 'team' };
     }
 
     if (hasAnyRole(user.roles, BUSINESS_LEADER_ROLES) && !hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES) && !isAdminRole(user.roles)) {
-      return { ...(await this.queryWorkOrderCards('owner', user.sub, selectedMonth)), myMessages, scope: 'mine' };
+      return { ...(await this.queryWorkOrderCards('owner', user.sub, selectedMonth, businessScope)), myMessages, scope: 'mine' };
     }
 
     if (await this.canViewAllWorkOrders(user)) {
-      return { ...(await this.queryWorkOrderCards(null, null, selectedMonth)), myMessages, scope: 'global' };
+      return { ...(await this.queryWorkOrderCards(null, null, selectedMonth, businessScope)), myMessages, scope: 'global' };
     }
 
     if (hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES)) {
       const departmentIds = await this.workOrderValidationService.resolveUserDepartmentIds(user.sub);
       if (departmentIds.length === 0) return { ...this.emptyCards(), myMessages, scope: 'team' };
-      return { ...(await this.queryWorkOrderCards('department', departmentIds, selectedMonth)), myMessages, scope: 'team' };
+      return { ...(await this.queryWorkOrderCards('department', departmentIds, selectedMonth, businessScope)), myMessages, scope: 'team' };
     }
 
-    return { ...(await this.queryWorkOrderCards('owner', user.sub, selectedMonth)), myMessages, scope: 'mine' };
+    return { ...(await this.queryWorkOrderCards('owner', user.sub, selectedMonth, businessScope)), myMessages, scope: 'mine' };
   }
 
-  async getSalespersonMetrics(userId: string): Promise<unknown> {
+  async getSalespersonMetrics(userId: string, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<unknown> {
     const rows = await this.dataSource.query(
       `
       WITH bounds AS (
@@ -163,6 +165,7 @@ export class DashboardService {
           COUNT(*) FILTER (WHERE wo.status = 'withdrawn') AS withdrawn
         FROM work_orders wo, bounds
         WHERE wo.created_by = $1
+          AND wo.business_scope = '${businessScope}'
           AND COALESCE(wo.submitted_at, wo.created_at) >= bounds.cur_start
           AND COALESCE(wo.submitted_at, wo.created_at) < bounds.cur_end
       ),
@@ -185,6 +188,7 @@ export class DashboardService {
         CROSS JOIN generate_series(b.cur_start, b.cur_end - interval '1 day', interval '1 day') d
         LEFT JOIN work_orders wo
           ON wo.created_by = $1
+         AND wo.business_scope = '${businessScope}'
          AND date_trunc('day', COALESCE(wo.submitted_at, wo.created_at) AT TIME ZONE 'Asia/Shanghai') = d
         GROUP BY d
         ORDER BY d
@@ -205,7 +209,8 @@ export class DashboardService {
     return rows[0]?.payload ?? this.emptySalesperson();
   }
 
-  async getTeamMetrics(moduleCode: string, user: JwtUserPayload): Promise<unknown> {
+  async getTeamMetrics(moduleCode: string, user: JwtUserPayload, requestedBusinessScope?: BusinessScope): Promise<unknown> {
+    const businessScope = this.resolveBusinessScope(user, requestedBusinessScope);
     const normalizedModuleCode = resolveDispatchModuleCode(moduleCode) ?? moduleCode;
     if (!isPhase1VisibleDispatchModule(normalizedModuleCode)) {
       return this.emptyTeam(normalizedModuleCode, true);
@@ -227,6 +232,7 @@ export class DashboardService {
           JOIN work_orders wo ON wo.id = d.parent_order_id
           CROSS JOIN bounds b
          WHERE d.module_code = $1
+           AND wo.business_scope = '${businessScope}'
            AND wo.order_type::text IN ('onboarding','resignation')
            AND COALESCE(d.dispatched_at, d.created_at) >= b.cur_start
            AND COALESCE(d.dispatched_at, d.created_at) < b.cur_end
@@ -287,7 +293,8 @@ export class DashboardService {
     return rows[0]?.payload ?? this.emptyTeam(normalizedModuleCode);
   }
 
-  async getManagerMetrics(user: JwtUserPayload): Promise<unknown> {
+  async getManagerMetrics(user: JwtUserPayload, requestedBusinessScope?: BusinessScope): Promise<unknown> {
+    const businessScope = this.resolveBusinessScope(user, requestedBusinessScope);
     const scope = await this.resolveDepartmentScope(user);
     if (scope.empty) {
       return this.emptyManager();
@@ -311,6 +318,7 @@ export class DashboardService {
            AND COALESCE(wo.submitted_at, wo.created_at) < b.cur_end
            AND wo.order_type::text IN ('onboarding','resignation')
            AND ($1::boolean = false OR wo.department_id = ANY($2::uuid[]))
+           AND wo.business_scope = '${businessScope}'
       ),
       module_summary AS (
         SELECT
@@ -327,6 +335,7 @@ export class DashboardService {
         WHERE COALESCE(d.dispatched_at, d.created_at) >= b.cur_start
           AND COALESCE(d.dispatched_at, d.created_at) < b.cur_end
           AND d.module_code = ANY($3::text[])
+          AND EXISTS (SELECT 1 FROM work_orders parent_wo WHERE parent_wo.id = d.parent_order_id AND parent_wo.business_scope = '${businessScope}')
           AND ($1::boolean = false OR d.parent_order_id IN (SELECT id FROM scoped_wo))
         GROUP BY d.module_code
       ),
@@ -392,7 +401,7 @@ export class DashboardService {
     return Number(rows[0]?.count ?? 0);
   }
 
-  private async queryWorkOrderCards(scope: 'owner' | 'department' | null, value: string | string[] | null, month: string): Promise<Omit<DashboardCardsDto, 'myMessages'>> {
+  private async queryWorkOrderCards(scope: 'owner' | 'department' | null, value: string | string[] | null, month: string, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<Omit<DashboardCardsDto, 'myMessages'>> {
     const rows = await this.dataSource.query(
       `
       WITH bounds AS (
@@ -406,6 +415,7 @@ export class DashboardService {
            AND ($1::text IS NULL
              OR ($1::text = 'owner' AND wo.created_by = $2::uuid)
              OR ($1::text = 'department' AND wo.department_id = ANY($3::uuid[])))
+           AND wo.business_scope = '${businessScope}'
       ), scoped_all AS (
         SELECT
           d.id,
@@ -431,6 +441,7 @@ export class DashboardService {
            AND ($1::text IS NULL
              OR ($1::text = 'owner' AND io.created_by = $2::uuid)
              OR ($1::text = 'department' AND io.department_id = ANY($3::uuid[])))
+           AND io.business_scope = '${businessScope}'
       ), scoped_month AS (
         SELECT d.*
           FROM scoped_all d
@@ -452,7 +463,7 @@ export class DashboardService {
     return this.toCardsWithoutMessages(rows[0]);
   }
 
-  private async queryDispatchedOrderCards(user: JwtUserPayload, month: string, scope?: BackendDashboardScope): Promise<Omit<DashboardCardsDto, 'myMessages'>> {
+  private async queryDispatchedOrderCards(user: JwtUserPayload, month: string, scope?: BackendDashboardScope, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<Omit<DashboardCardsDto, 'myMessages'>> {
     const backendScope = scope ?? await this.resolveBackendDashboardScope(user);
     const moduleCodes = this.filterModulesByRoleAllowList(user.roles, backendScope.modules);
     if (moduleCodes.length === 0) return this.emptyCards();
@@ -482,6 +493,7 @@ export class DashboardService {
           JOIN work_orders wo ON wo.id = d.parent_order_id
           CROSS JOIN current_role_scope rs
          WHERE wo.order_type::text IN ('onboarding','resignation')
+           AND wo.business_scope = '${businessScope}'
            AND d.module_code = ANY($3::text[])
            AND (
              d.handler_id = $1::uuid
@@ -501,6 +513,7 @@ export class DashboardService {
           FROM in_service_orders io
           CROSS JOIN current_role_scope rs
          WHERE io.deleted_at IS NULL
+           AND io.business_scope = '${businessScope}'
            AND CASE
              WHEN io.order_kind::text = 'contract_renewal' THEN 'renewal_contract'
              WHEN io.order_kind::text = 'certificate' THEN 'in_service_certificate'
@@ -607,13 +620,26 @@ export class DashboardService {
     throw new ForbiddenException(`角色无权访问管理看板（需 ${ADMIN_ROLE} / manager / leader 角色）`);
   }
 
+  private resolveBusinessScope(user: JwtUserPayload, requestedScope?: BusinessScope): BusinessScope {
+    const fixedBusinessAccount = hasAnyRole(user.roles, [
+      'biz_manager',
+      'business_owner',
+      ...BUSINESS_LEADER_ROLES,
+      'biz_member',
+      'business_group_member',
+      'salesperson',
+    ]);
+    if (fixedBusinessAccount) return user.businessScope ?? BusinessScope.BEILUN;
+    return requestedScope ?? user.businessScope ?? BusinessScope.BEILUN;
+  }
+
   private isGlobalBusinessOverview(user: JwtUserPayload): boolean {
     return isAdminRole(user.roles) || hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES);
   }
 
   private async canViewAllWorkOrders(user: JwtUserPayload): Promise<boolean> {
     if (this.isGlobalBusinessOverview(user)) return true;
-    return this.roleActionPermissionService?.hasAnyRoleAction(user.roles, 'work_order.view_all') ?? false;
+    return this.roleActionPermissionService?.hasAnyRoleAction(user.roles, 'work_order.view_all', user.businessScope) ?? false;
   }
 
   private isBackendHandler(user: JwtUserPayload): boolean {
@@ -727,12 +753,13 @@ export class DashboardService {
     return { modules: [], topCustomers: [], ratios: { totalSubmitted: 0, returnRatio: null, withdrawRatio: null, avgCloseHours: null }, trend: [] };
   }
 
-  async getOrderTypeMatrix(user: JwtUserPayload, dimension: 'orderType' | 'node' = 'orderType', requestedScope?: 'mine' | 'team', month?: string, audience?: 'business' | 'backend'): Promise<unknown> {
+  async getOrderTypeMatrix(user: JwtUserPayload, dimension: 'orderType' | 'node' = 'orderType', requestedScope?: 'mine' | 'team', month?: string, audience?: 'business' | 'backend', requestedBusinessScope?: BusinessScope): Promise<unknown> {
     const selectedMonth = this.resolveDashboardMonth(month);
+    const businessScope = this.resolveBusinessScope(user, requestedBusinessScope);
     const useBackendAudience = audience === 'backend' || (audience !== 'business' && this.isBackendHandler(user) && !this.isGlobalBusinessOverview(user));
     if (dimension === 'node' && useBackendAudience) {
       const backendScope = await this.resolveBackendDashboardScope(user);
-      return { rows: await this.queryBackendNodeMatrixRows(user, selectedMonth, backendScope) };
+      return { rows: await this.queryBackendNodeMatrixRows(user, selectedMonth, backendScope, businessScope) };
     }
 
     const scope = await this.resolveDashboardScope(user, requestedScope);
@@ -752,9 +779,9 @@ export class DashboardService {
     if (dimension === 'node') {
       if (useBackendAudience) {
         const backendScope = await this.resolveBackendDashboardScope(user);
-        return { rows: await this.queryBackendNodeMatrixRows(user, selectedMonth, backendScope) };
+        return { rows: await this.queryBackendNodeMatrixRows(user, selectedMonth, backendScope, businessScope) };
       }
-      return { rows: await this.queryNodeMatrixRows(params, selectedMonth) };
+      return { rows: await this.queryNodeMatrixRows(params, selectedMonth, businessScope) };
     }
 
     const rows = await this.dataSource.query(
@@ -780,6 +807,7 @@ export class DashboardService {
            AND ($1::boolean = false
              OR ($2::uuid[] IS NOT NULL AND array_length($2::uuid[], 1) > 0 AND wo.department_id = ANY($2::uuid[]))
              OR ($3::uuid IS NOT NULL AND wo.created_by = $3::uuid))
+           AND wo.business_scope = '${businessScope}'
       ), scoped_do AS (
         SELECT
           d.id,
@@ -810,6 +838,7 @@ export class DashboardService {
            AND ($1::boolean = false
              OR ($2::uuid[] IS NOT NULL AND array_length($2::uuid[], 1) > 0 AND io.department_id = ANY($2::uuid[]))
              OR ($3::uuid IS NOT NULL AND io.created_by = $3::uuid))
+           AND io.business_scope = '${businessScope}'
       )
       SELECT
         ot.order_type AS "orderType",
@@ -840,7 +869,7 @@ export class DashboardService {
     return { rows };
   }
 
-  private async queryBackendNodeMatrixRows(user: JwtUserPayload, month: string, scope?: BackendDashboardScope): Promise<Array<Record<string, unknown>>> {
+  private async queryBackendNodeMatrixRows(user: JwtUserPayload, month: string, scope?: BackendDashboardScope, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<Array<Record<string, unknown>>> {
     const backendScope = scope ?? await this.resolveBackendDashboardScope(user);
     const moduleCodes = this.filterModulesByRoleAllowList(user.roles, backendScope.modules);
     if (moduleCodes.length === 0) return [];
@@ -869,6 +898,7 @@ export class DashboardService {
          WHERE COALESCE(d.dispatched_at, d.created_at) >= b.cur_start
            AND COALESCE(d.dispatched_at, d.created_at) < b.cur_end
            AND wo.order_type::text IN ('onboarding','resignation')
+           AND wo.business_scope = '${businessScope}'
            AND d.module_code = ANY($3::text[])
            AND (
              d.handler_id = $1::uuid
@@ -895,6 +925,7 @@ export class DashboardService {
           CROSS JOIN bounds b
           CROSS JOIN current_role_scope rs
          WHERE io.deleted_at IS NULL
+           AND io.business_scope = '${businessScope}'
            AND io.created_at >= b.cur_start
            AND io.created_at < b.cur_end
            AND CASE
@@ -936,7 +967,7 @@ export class DashboardService {
     }));
   }
 
-  private async queryNodeMatrixRows(params: unknown[], month: string): Promise<Array<Record<string, unknown>>> {
+  private async queryNodeMatrixRows(params: unknown[], month: string, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<Array<Record<string, unknown>>> {
     const rows = await this.dataSource.query(
       `
       WITH bounds AS (
@@ -952,6 +983,7 @@ export class DashboardService {
            AND ($1::boolean = false
              OR ($2::uuid[] IS NOT NULL AND array_length($2::uuid[], 1) > 0 AND wo.department_id = ANY($2::uuid[]))
              OR ($3::uuid IS NOT NULL AND wo.created_by = $3::uuid))
+           AND wo.business_scope = '${businessScope}'
       ),
       scoped_do AS (
         SELECT d.id, d.module_code, d.status::text AS status, d.void_at
@@ -985,6 +1017,7 @@ export class DashboardService {
            AND ($1::boolean = false
              OR ($2::uuid[] IS NOT NULL AND array_length($2::uuid[], 1) > 0 AND io.department_id = ANY($2::uuid[]))
              OR ($3::uuid IS NOT NULL AND io.created_by = $3::uuid))
+           AND io.business_scope = '${businessScope}'
       )
       SELECT
         d.module_code AS "moduleCode",
@@ -1016,7 +1049,8 @@ export class DashboardService {
     }));
   }
 
-  async getLeaderTrend(orderType: string, user: JwtUserPayload, moduleCode?: string, requestedScope?: 'mine' | 'team', month?: string): Promise<unknown> {
+  async getLeaderTrend(orderType: string, user: JwtUserPayload, moduleCode?: string, requestedScope?: 'mine' | 'team', month?: string, requestedBusinessScope?: BusinessScope): Promise<unknown> {
+    const businessScope = this.resolveBusinessScope(user, requestedBusinessScope);
     const normalizedOrderType = this.normalizeLeaderTrendOrderType(orderType);
     const resolvedModuleFilter = resolveDispatchModuleCode(moduleCode) ?? null;
     const moduleFilter = resolvedModuleFilter && isPhase1VisibleDispatchModule(resolvedModuleFilter) ? resolvedModuleFilter : null;
@@ -1029,13 +1063,13 @@ export class DashboardService {
     try {
       const scope = await this.resolveDashboardScope(user, requestedScope);
       if (!scope.empty) {
-        const rows = await this.queryLeaderTrendByDashboardScope(normalizedOrderType, scope, moduleFilter, selectedMonth);
+        const rows = await this.queryLeaderTrendByDashboardScope(normalizedOrderType, scope, moduleFilter, selectedMonth, businessScope);
         return { orderType: normalizedOrderType, moduleCode: moduleFilter, buckets: this.normalizeLeaderTrendBuckets(rows) };
       }
 
       if (this.isBackendHandler(user)) {
         const backendScope = await this.resolveBackendDashboardScope(user);
-        const rows = await this.queryLeaderTrendByBackendScope(normalizedOrderType, user, backendScope, moduleFilter, selectedMonth);
+        const rows = await this.queryLeaderTrendByBackendScope(normalizedOrderType, user, backendScope, moduleFilter, selectedMonth, businessScope);
         return { orderType: normalizedOrderType, moduleCode: moduleFilter, buckets: this.normalizeLeaderTrendBuckets(rows) };
       }
 
@@ -1052,6 +1086,7 @@ export class DashboardService {
     scope: { departmentIds: string[] | null; ownerId: string | null; empty: boolean },
     moduleFilter: string | null,
     month: string,
+    businessScope: BusinessScope = BusinessScope.BEILUN,
   ): Promise<Array<Record<string, unknown>>> {
     const hasScopeFilter = scope.departmentIds !== null || scope.ownerId !== null;
     const params: unknown[] = [
@@ -1093,6 +1128,7 @@ export class DashboardService {
         FROM dispatched_orders d
         JOIN scoped_wo wo ON wo.id = d.parent_order_id
         WHERE COALESCE(d.dispatched_at, d.created_at) >= (SELECT MIN(month_start) FROM months)
+          AND wo.business_scope = '${businessScope}'
           AND d.module_code = ANY($7::text[])
           AND ($5::text IS NULL OR d.module_code = $5::text)
       )
@@ -1125,6 +1161,7 @@ export class DashboardService {
     scope: BackendDashboardScope,
     moduleFilter: string | null,
     month: string,
+    businessScope: BusinessScope = BusinessScope.BEILUN,
   ): Promise<Array<Record<string, unknown>>> {
     const visibleScopeModules = filterPhase1VisibleDispatchModules(scope.modules);
     const moduleCodes = moduleFilter
@@ -1160,6 +1197,7 @@ export class DashboardService {
         JOIN work_orders wo ON wo.id = d.parent_order_id
         WHERE wo.order_type::text = $1
           AND wo.status::text <> 'draft'
+          AND wo.business_scope = '${businessScope}'
           AND COALESCE(d.dispatched_at, d.created_at) >= (SELECT MIN(month_start) FROM months)
           AND ($4::text IS NULL OR d.module_code = $4::text)
           AND (

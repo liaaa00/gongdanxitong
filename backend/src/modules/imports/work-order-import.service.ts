@@ -10,6 +10,7 @@ import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { InServiceOrdersService } from 'src/modules/in-service-orders/in-service-orders.service';
 import { WorkOrderService } from 'src/modules/work-orders/work-order.service';
 import { applyOnboardingDerivedFields } from './import-derived-fields.util';
+import { normalizeOutOfProvinceRow } from './out-of-province-import-mapping';
 
 @Injectable()
 export class WorkOrderImportService {
@@ -79,12 +80,13 @@ export class WorkOrderImportService {
     const orderKind = orderType === OrderType.OUT_OF_PROVINCE_INCREASE
       ? InServiceOrderKind.OUT_OF_PROVINCE_INCREASE
       : InServiceOrderKind.OUT_OF_PROVINCE_DECREASE;
+    const normalized = normalizeOutOfProvinceRow(source);
     const extraData: Record<string, unknown> = {
-      ...source,
-      paymentInstitution: source.paymentInstitution ?? source.payment_institution,
-      contractStartDate: source.contractStartDate ?? source.contract_start_date,
-      contractEndDate: source.contractEndDate ?? source.contract_end_date,
-      lastWorkDate: source.lastWorkDate ?? source.last_work_date,
+      ...normalized,
+      paymentInstitution: normalized.paymentInstitution,
+      contractStartDate: normalized.contractStartDate,
+      contractEndDate: normalized.contractEndDate,
+      lastWorkDate: normalized.lastWorkDate,
     };
 
     const created = await this.inServiceOrdersService.create(
@@ -93,10 +95,10 @@ export class WorkOrderImportService {
         departmentId,
         orderKind,
         businessScope: BusinessScope.OUT_OF_PROVINCE,
-        employeeName: this.readText(source.employee_name),
-        idCardNo: this.readText(source.id_card_no),
-        province: this.readText(source.province),
-        city: this.readText(source.city),
+        employeeName: this.readText(normalized.employee_name),
+        idCardNo: this.readText(normalized.id_card_no),
+        province: this.readText(normalized.province),
+        city: this.readText(normalized.city),
         extraData,
       },
       user,

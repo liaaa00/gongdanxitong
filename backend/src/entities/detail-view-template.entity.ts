@@ -1,4 +1,5 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { BusinessScope } from './enums';
 
 @Entity('detail_view_templates')
 export class DetailViewTemplate {
@@ -10,6 +11,14 @@ export class DetailViewTemplate {
 
   @Column({ name: 'module_code', length: 50 })
   moduleCode!: string;
+
+  @Column({
+    name: 'business_scope',
+    type: 'varchar',
+    length: 32,
+    default: BusinessScope.BEILUN,
+  })
+  businessScope!: BusinessScope;
 
   @Column({ name: 'field_list', type: 'jsonb' })
   fieldList!: Array<Record<string, unknown>>;

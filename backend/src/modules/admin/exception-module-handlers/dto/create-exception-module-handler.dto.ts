@@ -1,5 +1,5 @@
-import { IsEnum, IsString, IsUUID, MaxLength } from 'class-validator';
-import { DispatchModuleCode } from 'src/entities';
+import { IsEnum, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import { BusinessScope, DispatchModuleCode } from 'src/entities';
 
 export class CreateExceptionModuleHandlerDto {
   @IsEnum(DispatchModuleCode)
@@ -11,4 +11,8 @@ export class CreateExceptionModuleHandlerDto {
 
   @IsUUID()
   handlerId!: string;
+
+  @IsOptional()
+  @IsEnum(BusinessScope)
+  businessScope?: BusinessScope;
 }

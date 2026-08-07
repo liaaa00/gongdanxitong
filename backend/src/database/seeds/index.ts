@@ -13,6 +13,7 @@ import { seedNotificationTemplates } from './seed-notification-templates';
 import { seedRoles } from './seed-roles';
 import { seedUsers } from './seed-users';
 import { seedProvinceHandlers } from './province-handler.seed';
+import { seedInServiceWorkflows } from './seed-in-service-workflows';
 
 async function runSeeds(): Promise<void> {
   await AppDataSource.initialize();
@@ -32,6 +33,7 @@ async function runSeeds(): Promise<void> {
     await seedCertificateTypes(AppDataSource);
     await seedExportTemplates(AppDataSource);
     await seedNotificationTemplates(AppDataSource);
+    await seedInServiceWorkflows(AppDataSource);
     // eslint-disable-next-line no-console
     console.log('Seed completed successfully');
   } catch (error) {

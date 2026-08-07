@@ -14,7 +14,7 @@ import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
 import { Audit } from 'src/common/decorators/audit.decorator';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { AuditInterceptor } from 'src/common/interceptors/audit.interceptor';
-import { DispatchModuleCode } from 'src/entities';
+import { BusinessScope, DispatchModuleCode } from 'src/entities';
 import { CreateExceptionModuleHandlerDto } from './dto/create-exception-module-handler.dto';
 import { UpdateExceptionModuleHandlerDto } from './dto/update-exception-module-handler.dto';
 import { ExceptionModuleHandlersService } from './exception-module-handlers.service';
@@ -28,6 +28,10 @@ class ListExceptionModuleHandlersQueryDto {
   @IsString()
   @MaxLength(64)
   customerCode?: string;
+
+  @IsOptional()
+  @IsString()
+  businessScope?: BusinessScope;
 }
 
 @Roles('admin')
@@ -43,25 +47,25 @@ export class ExceptionModuleHandlersController {
 
   @Post()
   @Audit('exception_module_handlers', 'create')
-  create(@Body() payload: CreateExceptionModuleHandlerDto) {
-    return this.service.create(payload);
+  create(@Body() payload: CreateExceptionModuleHandlerDto, @Query('businessScope') businessScope?: BusinessScope) {
+    return this.service.create({ ...payload, businessScope: payload.businessScope ?? businessScope });
   }
 
   @Patch(':id')
   @Audit('exception_module_handlers', 'update')
-  patch(@Param('id') id: string, @Body() payload: UpdateExceptionModuleHandlerDto) {
-    return this.service.update(id, payload);
+  patch(@Param('id') id: string, @Body() payload: UpdateExceptionModuleHandlerDto, @Query('businessScope') businessScope?: BusinessScope) {
+    return this.service.update(id, { ...payload, businessScope: payload.businessScope ?? businessScope });
   }
 
   @Put(':id')
   @Audit('exception_module_handlers', 'update')
-  update(@Param('id') id: string, @Body() payload: UpdateExceptionModuleHandlerDto) {
-    return this.service.update(id, payload);
+  update(@Param('id') id: string, @Body() payload: UpdateExceptionModuleHandlerDto, @Query('businessScope') businessScope?: BusinessScope) {
+    return this.service.update(id, { ...payload, businessScope: payload.businessScope ?? businessScope });
   }
 
   @Delete(':id')
   @Audit('exception_module_handlers', 'delete')
-  remove(@Param('id') id: string) {
-    return this.service.remove(id);
+  remove(@Param('id') id: string, @Query('businessScope') businessScope?: BusinessScope) {
+    return this.service.remove(id, businessScope);
   }
 }

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Put, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Get, Param, Put, Query, UseInterceptors } from '@nestjs/common';
 import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
@@ -16,7 +16,7 @@ import {
 import { Audit } from 'src/common/decorators/audit.decorator';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { AuditInterceptor } from 'src/common/interceptors/audit.interceptor';
-import { DispatchStrategy } from 'src/entities';
+import { BusinessScope, DispatchStrategy } from 'src/entities';
 import { DispatchConfigResponse, DispatchRulesService } from './dispatch-rules.service';
 
 class SaveModuleDispatchConfigDto {
@@ -58,8 +58,8 @@ export class DispatchConfigController {
   constructor(private readonly service: DispatchRulesService) {}
 
   @Get('dispatch-config')
-  getDispatchConfig(): Promise<DispatchConfigResponse> {
-    return this.service.getDispatchConfig();
+  getDispatchConfig(@Query('businessScope') businessScope?: BusinessScope): Promise<DispatchConfigResponse> {
+    return this.service.getDispatchConfig(businessScope);
   }
 
   @Put('dispatch-config/:moduleCode')
@@ -67,7 +67,8 @@ export class DispatchConfigController {
   saveModuleDispatchConfig(
     @Param('moduleCode') moduleCode: string,
     @Body() payload: SaveModuleDispatchConfigDto,
+    @Query('businessScope') businessScope?: BusinessScope,
   ) {
-    return this.service.saveModuleDispatchConfig(moduleCode, payload);
+    return this.service.saveModuleDispatchConfig(moduleCode, { ...payload, businessScope });
   }
 }

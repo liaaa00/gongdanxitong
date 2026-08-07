@@ -16,6 +16,7 @@ interface SaveBranchInput {
   isActive?: boolean;
   is_active?: boolean;
   businessScope?: BusinessScope;
+  business_scope?: BusinessScope;
 }
 
 export interface BranchView {
@@ -30,6 +31,7 @@ export interface BranchView {
   isActive: boolean;
   is_active: boolean;
   businessScope: BusinessScope;
+  business_scope: BusinessScope;
   createdAt: Date;
   created_at: Date;
   customer?: {
@@ -57,15 +59,17 @@ export class BranchesService {
       isActive?: boolean;
       is_active?: boolean;
       businessScope?: BusinessScope;
+      business_scope?: BusinessScope;
     },
   ) {
     const page = query.current ?? query.page ?? 1;
+    const businessScope = query.businessScope ?? query.business_scope ?? BusinessScope.BEILUN;
     const pageSize = query.pageSize ?? 20;
     const qb = this.repository.createQueryBuilder('branch').leftJoinAndSelect('branch.customer', 'customer');
+    qb.andWhere('branch.businessScope = :businessScope', { businessScope });
+    qb.andWhere('customer.businessScope = :businessScope', { businessScope });
     const customerId = query.customerId ?? query.customer_id;
     const isActive = query.isActive ?? query.is_active;
-    const businessScope = query.businessScope ?? BusinessScope.BEILUN;
-    qb.andWhere('branch.businessScope = :businessScope', { businessScope });
 
     if (customerId) qb.andWhere('branch.customerId = :customerId', { customerId });
     if (typeof isActive === 'boolean') qb.andWhere('branch.isActive = :isActive', { isActive });
@@ -90,13 +94,13 @@ export class BranchesService {
     );
   }
 
-  async get(id: string): Promise<BranchView> {
-    return this.toView(await this.getEntity(id));
+  async get(id: string, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<BranchView> {
+    return this.toView(await this.getEntity(id, businessScope));
   }
 
   async create(input: SaveBranchInput): Promise<BranchView> {
+    const businessScope = input.businessScope ?? input.business_scope ?? BusinessScope.BEILUN;
     const normalized = this.normalize(input, true);
-    const businessScope = normalized.businessScope ?? BusinessScope.BEILUN;
     await this.assertCustomer(normalized.customerId!, businessScope);
     const existed = await this.repository.findOne({ where: { branchCode: normalized.branchCode!, businessScope } });
     if (existed) throw new BadRequestException('商社代码已存在');
@@ -105,15 +109,15 @@ export class BranchesService {
       customerId: normalized.customerId!,
       branchCode: normalized.branchCode!,
       branchName: normalized.branchName!,
-      businessScope,
       city: normalized.city ?? null,
       isActive: normalized.isActive ?? true,
+      businessScope,
     });
     return this.toView(await this.repository.save(row));
   }
 
   async update(id: string, input: SaveBranchInput): Promise<BranchView> {
-    const businessScope = input.businessScope ?? BusinessScope.BEILUN;
+    const businessScope = input.businessScope ?? input.business_scope ?? BusinessScope.BEILUN;
     const row = await this.getEntity(id, businessScope);
     const normalized = this.normalize(input, false);
 
@@ -133,14 +137,14 @@ export class BranchesService {
     return this.toView(await this.repository.save(row));
   }
 
-  async remove(id: string): Promise<{ success: boolean }> {
-    const row = await this.getEntity(id);
+  async remove(id: string, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<{ success: boolean }> {
+    const row = await this.getEntity(id, businessScope);
     row.isActive = false;
     await this.repository.save(row);
     return { success: true };
   }
 
-  private async getEntity(id: string, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<Branch> {
+  private async getEntity(id: string, businessScope: BusinessScope): Promise<Branch> {
     const row = await this.repository.findOne({ where: { id, businessScope }, relations: { customer: true } });
     if (!row) throw new NotFoundException('商社不存在');
     return row;
@@ -154,7 +158,7 @@ export class BranchesService {
   private normalize(
     input: SaveBranchInput,
     requireAll: boolean,
-  ): { customerId?: string; branchCode?: string; branchName?: string; city?: string | null; isActive?: boolean; businessScope: BusinessScope } {
+  ): { customerId?: string; branchCode?: string; branchName?: string; city?: string | null; isActive?: boolean } {
     const customerId = input.customerId ?? input.customer_id;
     const branchCode = input.branchCode ?? input.branch_code;
     const branchName = input.branchName ?? input.branch_name;
@@ -164,7 +168,7 @@ export class BranchesService {
       throw new BadRequestException('customerId、branchCode、branchName 必填');
     }
 
-    return { customerId, branchCode, branchName, city: input.city, isActive, businessScope: input.businessScope ?? BusinessScope.BEILUN };
+    return { customerId, branchCode, branchName, city: input.city, isActive };
   }
 
   private toView(row: Branch): BranchView {
@@ -177,9 +181,10 @@ export class BranchesService {
       branchName: row.branchName,
       branch_name: row.branchName,
       city: row.city,
-      businessScope: row.businessScope,
       isActive: row.isActive,
       is_active: row.isActive,
+      businessScope: row.businessScope,
+      business_scope: row.businessScope,
       createdAt: row.createdAt,
       created_at: row.createdAt,
       ...(row.customer

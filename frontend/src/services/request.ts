@@ -1,5 +1,6 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import type { ApiResponse } from './types';
+import { readBusinessScope } from '@/utils/businessScope';
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '');
 
@@ -46,6 +47,18 @@ const request = axios.create({
   timeout: TIMEOUT_MS,
 });
 
+export function isBusinessScopeRequest(url: string): boolean {
+  return url.includes('/admin/')
+    || url.startsWith('/admin')
+    || url.startsWith('/dashboard')
+    || url.startsWith('/ai/')
+    || url.includes('/work-orders/import/')
+    || url.includes('/work-orders/create/fields')
+    || url.includes('/work-order-export-templates')
+    || url.includes('/permission-center')
+    || url.includes('/role-action-permissions');
+}
+
 request.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     const token = localStorage.getItem('token');
@@ -53,6 +66,17 @@ request.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`;
     }
     config.params = sanitizePaginationParams(config.params);
+    const url = config.url ?? '';
+    const isScopedRequest = isBusinessScopeRequest(url);
+    if (isScopedRequest) {
+      const currentScope = readBusinessScope();
+      if (config.params instanceof URLSearchParams) {
+        if (!config.params.has('businessScope')) config.params.set('businessScope', currentScope);
+      } else {
+        const params = (config.params ?? {}) as Record<string, unknown>;
+        config.params = { ...params, businessScope: params.businessScope ?? currentScope };
+      }
+    }
     return config;
   },
   (error: AxiosError) => {

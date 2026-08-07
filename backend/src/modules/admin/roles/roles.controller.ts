@@ -21,7 +21,7 @@ import { Audit } from 'src/common/decorators/audit.decorator';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 import { AuditInterceptor } from 'src/common/interceptors/audit.interceptor';
-import { RoleLevel } from 'src/entities';
+import { BusinessScope, RoleLevel } from 'src/entities';
 import { RolesService } from './roles.service';
 
 class QueryRolesDto extends PaginationQueryDto {
@@ -29,6 +29,10 @@ class QueryRolesDto extends PaginationQueryDto {
   @Type(() => Boolean)
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsEnum(BusinessScope)
+  businessScope?: BusinessScope;
 }
 
 class CreateRoleDto {

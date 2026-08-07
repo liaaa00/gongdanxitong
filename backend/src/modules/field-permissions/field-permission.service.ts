@@ -54,7 +54,7 @@ export class FieldPermissionService {
     private readonly fieldConfigRepository: Repository<FieldConfig>,
   ) {}
 
-  async getPermissionsForUser(userId: string, scenario: string): Promise<FieldPermissionMap> {
+  async getPermissionsForUser(userId: string, scenario: string, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<FieldPermissionMap> {
     const activeFields = await this.fieldConfigRepository.find({
       where: { isActive: true },
       order: { displayOrder: 'ASC' },
@@ -84,23 +84,18 @@ export class FieldPermissionService {
     const roleIds = roleRows.map((row) => row.roleId);
     const scenarioAliases = expandScenarioAliases(scenario);
     const rows = await this.fieldPermissionRepository.find({
-      where: { roleId: In(roleIds), scenario: In(scenarioAliases) },
+      where: { roleId: In(roleIds), scenario: In(scenarioAliases), businessScope },
     });
 
     return this.mergePermissionRows(activeFields, rows);
   }
 
-  async getVisibleFieldsForScenario(
-    scenario: string,
-    businessScope: BusinessScope = BusinessScope.BEILUN,
-  ): Promise<string[]> {
+  async getVisibleFieldsForScenario(scenario: string, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<string[]> {
     const activeFields = await this.fieldConfigRepository.find({
       where: { isActive: true },
       order: { displayOrder: 'ASC' },
     });
-    const rows = await this.fieldPermissionRepository.find({
-      where: { scenario: In(expandScenarioAliases(scenario)), businessScope },
-    });
+    const rows = await this.fieldPermissionRepository.find({ where: { scenario: In(expandScenarioAliases(scenario)), businessScope } });
     const merged = this.mergePermissionRows(activeFields, rows);
     return activeFields
       .filter((field) => (merged.get(field.fieldCode) ?? FieldPermissionMode.HIDDEN) !== FieldPermissionMode.HIDDEN)

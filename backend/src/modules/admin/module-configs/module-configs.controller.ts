@@ -4,7 +4,7 @@ import { IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Matches,
 import { Audit } from 'src/common/decorators/audit.decorator';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { AuditInterceptor } from 'src/common/interceptors/audit.interceptor';
-import { DispatchStrategy } from 'src/entities';
+import { BusinessScope, DispatchStrategy } from 'src/entities';
 import { ModuleConfigsService } from './module-configs.service';
 
 class SaveModuleDto {
@@ -48,6 +48,10 @@ class SaveModuleDto {
   @IsInt()
   @Min(0)
   slaReminderBeforeHours?: number | null;
+
+  @IsOptional()
+  @IsIn(['beilun', 'out_of_province'])
+  businessScope?: BusinessScope;
 
   @IsOptional()
   @Type(() => Boolean)
@@ -98,6 +102,10 @@ class SaveSupervisorDto {
   @Type(() => Boolean)
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsIn(['beilun', 'out_of_province'])
+  businessScope?: BusinessScope;
 }
 
 class SaveActionDto {
@@ -125,6 +133,10 @@ class SaveActionDto {
   @Type(() => Boolean)
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsIn(['beilun', 'out_of_province'])
+  businessScope?: BusinessScope;
 }
 
 @Roles('admin')
@@ -134,52 +146,64 @@ export class ModuleConfigsController {
   constructor(private readonly service: ModuleConfigsService) {}
 
   @Get('work-order-modules')
-  listModules(@Query('parentModuleCode') parentModuleCode?: string, @Query('isActive') isActive?: string) {
-    return this.service.listModules(parentModuleCode, isActive === undefined ? undefined : isActive === 'true');
+  listModules(
+    @Query('parentModuleCode') parentModuleCode?: string,
+    @Query('isActive') isActive?: string,
+    @Query('businessScope') businessScope?: BusinessScope,
+  ) {
+    return this.service.listModules(parentModuleCode, isActive === undefined ? undefined : isActive === 'true', businessScope);
   }
 
   @Post('work-order-modules')
   @Audit('work_order_modules', 'upsert')
-  saveModule(@Body() payload: SaveModuleDto) {
-    return this.service.saveModule(payload);
+  saveModule(@Body() payload: SaveModuleDto, @Query('businessScope') businessScope?: BusinessScope) {
+    return this.service.saveModule({ ...payload, businessScope: payload.businessScope ?? businessScope });
   }
 
   @Put('work-order-modules/:id')
   @Audit('work_order_modules', 'update')
-  updateModule(@Param('id') id: string, @Body() payload: Partial<SaveModuleDto>) {
-    return this.service.updateModule(id, payload);
+  updateModule(
+    @Param('id') id: string,
+    @Body() payload: Partial<SaveModuleDto>,
+    @Query('businessScope') businessScope?: BusinessScope,
+  ) {
+    return this.service.updateModule(id, { ...payload, businessScope: payload.businessScope ?? businessScope });
   }
 
   @Get('modules/:moduleCode/fields')
-  listModuleFields(@Param('moduleCode') moduleCode: string) {
-    return this.service.listModuleFields(moduleCode);
+  listModuleFields(@Param('moduleCode') moduleCode: string, @Query('businessScope') businessScope?: BusinessScope) {
+    return this.service.listModuleFields(moduleCode, businessScope);
   }
 
   @Put('modules/:moduleCode/fields')
   @Audit('module_fields', 'replace')
-  replaceModuleFields(@Param('moduleCode') moduleCode: string, @Body() payload: ReplaceModuleFieldsDto) {
-    return this.service.replaceModuleFields(moduleCode, payload.fields);
+  replaceModuleFields(
+    @Param('moduleCode') moduleCode: string,
+    @Body() payload: ReplaceModuleFieldsDto,
+    @Query('businessScope') businessScope?: BusinessScope,
+  ) {
+    return this.service.replaceModuleFields(moduleCode, payload.fields, businessScope);
   }
 
   @Get('module-supervisors')
-  listSupervisors(@Query('moduleCode') moduleCode?: string) {
-    return this.service.listSupervisors(moduleCode);
+  listSupervisors(@Query('moduleCode') moduleCode?: string, @Query('businessScope') businessScope?: BusinessScope) {
+    return this.service.listSupervisors(moduleCode, businessScope);
   }
 
   @Post('module-supervisors')
   @Audit('module_supervisors', 'upsert')
-  saveSupervisor(@Body() payload: SaveSupervisorDto) {
-    return this.service.saveSupervisor(payload);
+  saveSupervisor(@Body() payload: SaveSupervisorDto, @Query('businessScope') businessScope?: BusinessScope) {
+    return this.service.saveSupervisor({ ...payload, businessScope: payload.businessScope ?? businessScope });
   }
 
   @Get('action-configs')
-  listActions(@Query('moduleCode') moduleCode?: string) {
-    return this.service.listActions(moduleCode);
+  listActions(@Query('moduleCode') moduleCode?: string, @Query('businessScope') businessScope?: BusinessScope) {
+    return this.service.listActions(moduleCode, businessScope);
   }
 
   @Post('action-configs')
   @Audit('action_configs', 'upsert')
-  saveAction(@Body() payload: SaveActionDto) {
-    return this.service.saveAction(payload);
+  saveAction(@Body() payload: SaveActionDto, @Query('businessScope') businessScope?: BusinessScope) {
+    return this.service.saveAction({ ...payload, businessScope: payload.businessScope ?? businessScope });
   }
 }

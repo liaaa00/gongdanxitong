@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import { DetailViewTemplate, FieldConfig, FieldPermission, FieldPermissionMode, Role } from 'src/entities';
+import { BusinessScope, DetailViewTemplate, FieldConfig, FieldPermission, FieldPermissionMode, Role } from 'src/entities';
 import { getDetailViewFieldCodes } from './detail-view-template-fields';
 
 const CONTRACT_MODULE_CODE = 'contract';
@@ -21,25 +21,28 @@ export class DetailViewTemplatesService {
     private readonly fieldPermissionRepo: Repository<FieldPermission>,
   ) {}
 
-  async list(moduleCode?: string) {
+  async list(moduleCode?: string, businessScope?: BusinessScope) {
     const qb = this.repo.createQueryBuilder('t').orderBy('t.created_at', 'DESC');
     if (moduleCode) {
       qb.andWhere('t.module_code = :moduleCode', { moduleCode });
     }
+    if (businessScope) {
+      qb.andWhere('t.business_scope = :businessScope', { businessScope });
+    }
     return qb.getMany();
   }
 
-  async get(id: string) {
-    const item = await this.repo.findOne({ where: { id } });
+  async get(id: string, businessScope: BusinessScope = BusinessScope.BEILUN) {
+    const item = await this.repo.findOne({ where: { id, businessScope } });
     if (!item) {
       throw new NotFoundException('详情页字段配置不存在');
     }
     return item;
   }
 
-  async getActiveByModule(moduleCode: string) {
+  async getActiveByModule(moduleCode: string, businessScope?: BusinessScope) {
     return this.repo.findOne({
-      where: { moduleCode, isActive: true },
+      where: { moduleCode, ...(businessScope ? { businessScope } : {}), isActive: true },
       order: { createdAt: 'DESC' },
     });
   }
@@ -48,11 +51,12 @@ export class DetailViewTemplatesService {
     templateName: string;
     moduleCode: string;
     fieldList: Array<Record<string, unknown>>;
+    businessScope?: BusinessScope;
     isActive?: boolean;
     createdBy?: string;
   }) {
     const saved = await this.repo.save(this.repo.create(payload));
-    if (saved.moduleCode === CONTRACT_MODULE_CODE) await this.syncContractBusinessPermissions();
+    if (saved.moduleCode === CONTRACT_MODULE_CODE) await this.syncContractBusinessPermissions(saved.businessScope);
     return saved;
   }
 
@@ -62,28 +66,29 @@ export class DetailViewTemplatesService {
       templateName: string;
       moduleCode: string;
       fieldList: Array<Record<string, unknown>>;
+      businessScope: BusinessScope;
       isActive: boolean;
     }>,
   ) {
-    const item = await this.get(id);
+    const item = await this.get(id, payload.businessScope ?? BusinessScope.BEILUN);
     const previousModuleCode = item.moduleCode;
     Object.assign(item, payload);
     const saved = await this.repo.save(item);
     if (previousModuleCode === CONTRACT_MODULE_CODE || saved.moduleCode === CONTRACT_MODULE_CODE) {
-      await this.syncContractBusinessPermissions();
+      await this.syncContractBusinessPermissions(saved.businessScope);
     }
     return saved;
   }
 
-  async remove(id: string) {
-    const item = await this.get(id);
+  async remove(id: string, businessScope: BusinessScope = BusinessScope.BEILUN) {
+    const item = await this.get(id, businessScope);
     await this.repo.remove(item);
-    if (item.moduleCode === CONTRACT_MODULE_CODE) await this.syncContractBusinessPermissions();
+    if (item.moduleCode === CONTRACT_MODULE_CODE) await this.syncContractBusinessPermissions(item.businessScope);
     return { success: true };
   }
 
-  private async syncContractBusinessPermissions(): Promise<void> {
-    const template = await this.getActiveByModule(CONTRACT_MODULE_CODE);
+  private async syncContractBusinessPermissions(businessScope: BusinessScope = BusinessScope.BEILUN): Promise<void> {
+    const template = await this.getActiveByModule(CONTRACT_MODULE_CODE, businessScope);
     if (!template) return;
 
     const configuredFields = new Set(getDetailViewFieldCodes(template.fieldList));
@@ -99,8 +104,9 @@ export class DetailViewTemplatesService {
         fieldCode: field.fieldCode,
         scenario: CONTRACT_SCENARIO,
         permission: configuredFields.has(field.fieldCode) ? FieldPermissionMode.VISIBLE : FieldPermissionMode.HIDDEN,
+        businessScope,
       }))),
-      ['roleId', 'fieldCode', 'scenario'],
+      ['roleId', 'fieldCode', 'scenario', 'businessScope'],
     );
   }
 }

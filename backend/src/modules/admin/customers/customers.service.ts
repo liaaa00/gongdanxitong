@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 import { toPageResult } from 'src/common/types/pagination.types';
-import { Customer } from 'src/entities';
+import { BusinessScope, Customer } from 'src/entities';
 
 interface SaveCustomerInput {
   customerCode?: string;
@@ -12,6 +12,8 @@ interface SaveCustomerInput {
   customer_name?: string;
   isActive?: boolean;
   is_active?: boolean;
+  businessScope?: BusinessScope;
+  business_scope?: BusinessScope;
 }
 
 interface NormalizedCustomerInput {
@@ -30,6 +32,8 @@ export interface CustomerView {
   customer_name: string;
   is_active: boolean;
   created_at: Date;
+  businessScope: BusinessScope;
+  business_scope: BusinessScope;
 }
 
 @Injectable()
@@ -39,11 +43,13 @@ export class CustomersService {
     private readonly repository: Repository<Customer>,
   ) {}
 
-  async list(query: PaginationQueryDto & { isActive?: boolean; is_active?: boolean; onlyUsedInOrders?: boolean }) {
+  async list(query: PaginationQueryDto & { isActive?: boolean; is_active?: boolean; onlyUsedInOrders?: boolean; businessScope?: BusinessScope; business_scope?: BusinessScope }) {
     const page = query.page ?? 1;
+    const businessScope = query.businessScope ?? query.business_scope ?? BusinessScope.BEILUN;
     const pageSize = query.pageSize ?? 20;
 
     const qb = this.repository.createQueryBuilder('customer');
+    qb.andWhere('customer.businessScope = :businessScope', { businessScope });
 
     if (query.keyword) {
       qb.andWhere(
@@ -62,8 +68,9 @@ export class CustomersService {
         EXISTS (
           SELECT 1
           FROM work_orders wo
-          WHERE wo.customer_id = customer.id
-             OR wo.customer_code = customer.customer_code
+          WHERE (wo.customer_id = customer.id
+             OR wo.customer_code = customer.customer_code)
+            AND wo.business_scope = '${businessScope}'
         )
       `);
     }
@@ -78,13 +85,14 @@ export class CustomersService {
     return toPageResult(page, pageSize, total, rows.map((row) => this.toView(row)));
   }
 
-  async get(id: string): Promise<CustomerView> {
-    return this.toView(await this.getEntity(id));
+  async get(id: string, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<CustomerView> {
+    return this.toView(await this.getEntity(id, businessScope));
   }
 
   async create(input: SaveCustomerInput): Promise<CustomerView> {
+    const businessScope = input.businessScope ?? input.business_scope ?? BusinessScope.BEILUN;
     const normalized = this.normalizeInput(input, true);
-    const existed = await this.repository.findOne({ where: { customerCode: normalized.customerCode } });
+    const existed = await this.repository.findOne({ where: { customerCode: normalized.customerCode, businessScope } });
     if (existed) {
       throw new BadRequestException('客户编码已存在');
     }
@@ -93,18 +101,20 @@ export class CustomersService {
       customerCode: normalized.customerCode,
       customerName: normalized.customerName,
       isActive: normalized.isActive ?? true,
+      businessScope,
     });
 
     return this.toView(await this.repository.save(entity));
   }
 
   async update(id: string, input: SaveCustomerInput): Promise<CustomerView> {
-    const row = await this.getEntity(id);
+    const businessScope = input.businessScope ?? input.business_scope ?? BusinessScope.BEILUN;
+    const row = await this.getEntity(id, businessScope);
     const normalized = this.normalizeInput(input, false);
 
     if (normalized.customerCode && normalized.customerCode !== row.customerCode) {
       const codeExists = await this.repository.findOne({
-        where: { customerCode: normalized.customerCode },
+        where: { customerCode: normalized.customerCode, businessScope },
       });
       if (codeExists) {
         throw new BadRequestException('客户编码已存在');
@@ -115,21 +125,21 @@ export class CustomersService {
     return this.toView(await this.repository.save(row));
   }
 
-  async remove(id: string): Promise<{ success: boolean }> {
-    const row = await this.getEntity(id);
+  async remove(id: string, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<{ success: boolean }> {
+    const row = await this.getEntity(id, businessScope);
     row.isActive = false;
     await this.repository.save(row);
     return { success: true };
   }
 
-  async toggle(id: string, isActive: boolean): Promise<CustomerView> {
-    const row = await this.getEntity(id);
+  async toggle(id: string, isActive: boolean, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<CustomerView> {
+    const row = await this.getEntity(id, businessScope);
     row.isActive = isActive;
     return this.toView(await this.repository.save(row));
   }
 
-  private async getEntity(id: string): Promise<Customer> {
-    const row = await this.repository.findOne({ where: { id } });
+  private async getEntity(id: string, businessScope: BusinessScope): Promise<Customer> {
+    const row = await this.repository.findOne({ where: { id, businessScope } });
     if (!row) {
       throw new NotFoundException('客户不存在');
     }
@@ -164,6 +174,8 @@ export class CustomersService {
       customer_name: row.customerName,
       is_active: row.isActive,
       created_at: row.createdAt,
+      businessScope: row.businessScope,
+      business_scope: row.businessScope,
     };
   }
 }

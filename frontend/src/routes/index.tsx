@@ -3,7 +3,7 @@ import { Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { Spin } from 'antd';
 import { useUserStore } from '@/stores/userStore';
 import ErrorBoundary from '@/components/ErrorBoundary';
-import { canAccessPath } from '@/config/routeVisibility';
+import { canAccessBusinessScopePath, canAccessPath } from '@/config/routeVisibility';
 
 const LoginPage = lazy(() => import('@/pages/Login'));
 const ChangePasswordPage = lazy(() => import('@/pages/ChangePassword'));
@@ -105,6 +105,9 @@ const RoleRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   if (!user) return <Loading />;
   // Subscribe to the store field so an activated config re-evaluates the guard.
   void permissionConfig;
+  if (!canAccessBusinessScopePath(location.pathname, user.roles, user.business_scope ?? user.businessScope)) {
+    return <Navigate to="/403" replace />;
+  }
   if (!canAccessPath(location.pathname, user.roles, user.permissions)) return <Navigate to="/403" replace />;
   return <>{children}</>;
 };

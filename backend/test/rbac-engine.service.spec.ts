@@ -8,6 +8,7 @@ import {
   RequirePermission,
 } from 'src/modules/permission-center/engine/require-permission.decorator';
 import { FieldViewMode, PermissionConfig } from 'src/modules/permission-center/types/permission-config.types';
+import { BusinessScope } from 'src/entities';
 
 const config: PermissionConfig = {
   version: '1.0.0',
@@ -76,6 +77,15 @@ describe('RbacEngineService', () => {
   beforeEach(() => {
     permissionCenter = { getActiveConfig: jest.fn().mockResolvedValue(config) };
     service = new RbacEngineService(permissionCenter as unknown as PermissionCenterService);
+  });
+
+  it('loads runtime permission configuration from the authenticated business scope', async () => {
+    await service.canAccess(
+      { roles: ['reader'], businessScope: BusinessScope.OUT_OF_PROVINCE },
+      'work_order.view',
+    );
+
+    expect(permissionCenter.getActiveConfig).toHaveBeenCalledWith(BusinessScope.OUT_OF_PROVINCE);
   });
 
   it('checks actions using backend and canonical role aliases', async () => {

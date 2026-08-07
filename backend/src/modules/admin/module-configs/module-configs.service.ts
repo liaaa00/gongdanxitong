@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { ActionConfig, ModuleField, ModuleSupervisor, WorkOrderModuleConfig } from 'src/entities';
+import { ActionConfig, BusinessScope, ModuleField, ModuleSupervisor, WorkOrderModuleConfig } from 'src/entities';
 
 @Injectable()
 export class ModuleConfigsService {
@@ -16,7 +16,7 @@ export class ModuleConfigsService {
     private readonly actionRepository: Repository<ActionConfig>,
   ) {}
 
-  listModules(parentModuleCode?: string, isActive?: boolean): Promise<WorkOrderModuleConfig[]> {
+  listModules(parentModuleCode?: string, isActive?: boolean, businessScope?: BusinessScope): Promise<WorkOrderModuleConfig[]> {
     const qb = this.moduleRepository.createQueryBuilder('module');
     if (parentModuleCode !== undefined) {
       if (parentModuleCode) {
@@ -28,31 +28,36 @@ export class ModuleConfigsService {
     if (typeof isActive === 'boolean') {
       qb.andWhere('module.is_active = :isActive', { isActive });
     }
+    if (businessScope) {
+      qb.andWhere('module.business_scope = :businessScope', { businessScope });
+    }
     return qb.orderBy('module.display_order', 'ASC').addOrderBy('module.module_code', 'ASC').getMany();
   }
 
   async saveModule(input: Partial<WorkOrderModuleConfig> & { moduleCode: string; moduleName: string }): Promise<WorkOrderModuleConfig> {
-    const existed = await this.moduleRepository.findOne({ where: { moduleCode: input.moduleCode } });
+    const businessScope = input.businessScope ?? BusinessScope.BEILUN;
+    const existed = await this.moduleRepository.findOne({ where: { moduleCode: input.moduleCode, businessScope } });
     if (existed) {
-      Object.assign(existed, input, { isActive: input.isActive ?? existed.isActive });
+      Object.assign(existed, input, { businessScope, isActive: input.isActive ?? existed.isActive });
       return this.moduleRepository.save(existed);
     }
-    return this.moduleRepository.save(this.moduleRepository.create({ ...input, isActive: input.isActive ?? true }));
+    return this.moduleRepository.save(this.moduleRepository.create({ ...input, businessScope, isActive: input.isActive ?? true }));
   }
 
-  async updateModule(id: string, input: Partial<WorkOrderModuleConfig>): Promise<WorkOrderModuleConfig> {
-    const row = await this.moduleRepository.findOne({ where: { id } });
+  async updateModule(id: string, input: Partial<WorkOrderModuleConfig> & { businessScope?: BusinessScope }): Promise<WorkOrderModuleConfig> {
+    const businessScope = input.businessScope ?? BusinessScope.BEILUN;
+    const row = await this.moduleRepository.findOne({ where: { id, businessScope } });
     if (!row) throw new NotFoundException('模块不存在');
-    Object.assign(row, input);
+    Object.assign(row, input, { businessScope });
     return this.moduleRepository.save(row);
   }
 
-  listModuleFields(moduleCode: string): Promise<ModuleField[]> {
-    return this.moduleFieldRepository.find({ where: { moduleCode }, order: { displayOrder: 'ASC', fieldCode: 'ASC' } });
+  listModuleFields(moduleCode: string, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<ModuleField[]> {
+    return this.moduleFieldRepository.find({ where: { moduleCode, businessScope }, order: { displayOrder: 'ASC', fieldCode: 'ASC' } });
   }
 
-  async replaceModuleFields(moduleCode: string, fields: Array<Partial<ModuleField> & { fieldCode: string }>): Promise<{ affected: number }> {
-    const existing = await this.moduleFieldRepository.find({ where: { moduleCode } });
+  async replaceModuleFields(moduleCode: string, fields: Array<Partial<ModuleField> & { fieldCode: string }>, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<{ affected: number }> {
+    const existing = await this.moduleFieldRepository.find({ where: { moduleCode, businessScope } });
     const keep = new Set(fields.map((item) => item.fieldCode));
     for (const row of existing) {
       if (!keep.has(row.fieldCode)) {
@@ -64,7 +69,7 @@ export class ModuleConfigsService {
     for (let index = 0; index < fields.length; index += 1) {
       const item = fields[index];
       const row = existing.find((candidate) => candidate.fieldCode === item.fieldCode);
-      const payload = { moduleCode, fieldCode: item.fieldCode, groupName: item.groupName ?? null, displayOrder: item.displayOrder ?? index + 1, isRequiredOverride: item.isRequiredOverride ?? null, isActive: item.isActive ?? true };
+      const payload = { businessScope, moduleCode, fieldCode: item.fieldCode, groupName: item.groupName ?? null, displayOrder: item.displayOrder ?? index + 1, isRequiredOverride: item.isRequiredOverride ?? null, isActive: item.isActive ?? true };
       if (row) {
         Object.assign(row, payload);
         await this.moduleFieldRepository.save(row);
@@ -76,29 +81,31 @@ export class ModuleConfigsService {
     return { affected };
   }
 
-  listSupervisors(moduleCode?: string): Promise<ModuleSupervisor[]> {
-    return this.supervisorRepository.find({ where: { ...(moduleCode ? { moduleCode } : {}) }, order: { moduleCode: 'ASC', createdAt: 'ASC' } });
+  listSupervisors(moduleCode?: string, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<ModuleSupervisor[]> {
+    return this.supervisorRepository.find({ where: { businessScope, ...(moduleCode ? { moduleCode } : {}) }, order: { moduleCode: 'ASC', createdAt: 'ASC' } });
   }
 
-  async saveSupervisor(input: { moduleCode: string; supervisorId: string; isActive?: boolean }): Promise<ModuleSupervisor> {
-    const existed = await this.supervisorRepository.findOne({ where: { moduleCode: input.moduleCode, supervisorId: input.supervisorId } });
+  async saveSupervisor(input: { moduleCode: string; supervisorId: string; isActive?: boolean; businessScope?: BusinessScope }): Promise<ModuleSupervisor> {
+    const businessScope = input.businessScope ?? BusinessScope.BEILUN;
+    const existed = await this.supervisorRepository.findOne({ where: { moduleCode: input.moduleCode, supervisorId: input.supervisorId, businessScope } });
     if (existed) {
       existed.isActive = input.isActive ?? true;
       return this.supervisorRepository.save(existed);
     }
-    return this.supervisorRepository.save(this.supervisorRepository.create({ ...input, isActive: input.isActive ?? true }));
+    return this.supervisorRepository.save(this.supervisorRepository.create({ ...input, businessScope, isActive: input.isActive ?? true }));
   }
 
-  listActions(moduleCode?: string): Promise<ActionConfig[]> {
-    return this.actionRepository.find({ where: { ...(moduleCode ? { moduleCode } : {}) }, order: { moduleCode: 'ASC', actionCode: 'ASC' } });
+  listActions(moduleCode?: string, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<ActionConfig[]> {
+    return this.actionRepository.find({ where: { businessScope, ...(moduleCode ? { moduleCode } : {}) }, order: { moduleCode: 'ASC', actionCode: 'ASC' } });
   }
 
-  async saveAction(input: Partial<ActionConfig> & { moduleCode: string; actionCode: string; actionName: string }): Promise<ActionConfig> {
-    const existed = await this.actionRepository.findOne({ where: { moduleCode: input.moduleCode, actionCode: input.actionCode } });
+  async saveAction(input: Partial<ActionConfig> & { moduleCode: string; actionCode: string; actionName: string; businessScope?: BusinessScope }): Promise<ActionConfig> {
+    const businessScope = input.businessScope ?? BusinessScope.BEILUN;
+    const existed = await this.actionRepository.findOne({ where: { moduleCode: input.moduleCode, actionCode: input.actionCode, businessScope } });
     if (existed) {
-      Object.assign(existed, input, { isActive: input.isActive ?? existed.isActive });
+      Object.assign(existed, input, { businessScope, isActive: input.isActive ?? existed.isActive });
       return this.actionRepository.save(existed);
     }
-    return this.actionRepository.save(this.actionRepository.create({ ...input, isActive: input.isActive ?? true }));
+    return this.actionRepository.save(this.actionRepository.create({ ...input, businessScope, isActive: input.isActive ?? true }));
   }
 }

@@ -1,3 +1,4 @@
+import { BusinessScope } from 'src/entities';
 import { IsIn, IsOptional, IsString, Matches } from 'class-validator';
 
 export class DashboardMonthQueryDto {
@@ -11,6 +12,10 @@ export class DashboardScopeQueryDto extends DashboardMonthQueryDto {
   @IsOptional()
   @IsIn(['mine', 'team'])
   scope?: 'mine' | 'team';
+
+  @IsOptional()
+  @IsIn([BusinessScope.BEILUN, BusinessScope.OUT_OF_PROVINCE])
+  businessScope?: BusinessScope;
 
   @IsOptional()
   @IsIn(['business', 'backend'])

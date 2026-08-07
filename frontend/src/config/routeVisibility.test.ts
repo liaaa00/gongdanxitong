@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { canAccessPath, setDynamicPermissionConfig } from './routeVisibility';
+import { canAccessBusinessScopePath, canAccessPath, setDynamicPermissionConfig } from './routeVisibility';
 import { ROLE } from '@/constants/roles';
 import { DEFAULT_MATRIX } from '@/services/roleActionPermissions';
 
@@ -23,6 +23,32 @@ describe('routeVisibility admin-only configuration routes', () => {
     expect(canAccessPath('/work-orders', roles(['admin']))).toBe(true);
     expect(canAccessPath('/dynamic-reports', roles(['business_group_member']))).toBe(true);
     expect(canAccessPath('/dynamic-reports', roles(['admin']))).toBe(false);
+  });
+
+  it('does not let dynamic permission configuration widen the static role ceiling', () => {
+    setDynamicPermissionConfig({
+      version: 'static-ceiling-test',
+      roles: [],
+      routePermissions: [
+        { path: '/admin/users', allowedRoles: ['business_group_member'] },
+        { path: '/onboarding/resignation_cert', allowedRoles: ['social_insurance_specialist'] },
+      ],
+      fieldPermissions: [],
+    });
+
+    expect(canAccessPath('/admin/users', roles([ROLE.BUSINESS_GROUP_MEMBER]))).toBe(false);
+    expect(canAccessPath('/onboarding/resignation_cert', roles([ROLE.SOCIAL_INSURANCE_SPECIALIST]))).toBe(false);
+  });
+
+  it('keeps business-front accounts inside their assigned business scope', () => {
+    const memberRoles = roles([ROLE.BUSINESS_GROUP_MEMBER]);
+    const adminRoles = roles([ROLE.ADMIN]);
+
+    expect(canAccessBusinessScopePath('/work-orders', memberRoles, 'beilun')).toBe(true);
+    expect(canAccessBusinessScopePath('/out-of-province/increase', memberRoles, 'beilun')).toBe(false);
+    expect(canAccessBusinessScopePath('/out-of-province/increase', memberRoles, 'out_of_province')).toBe(true);
+    expect(canAccessBusinessScopePath('/work-orders', memberRoles, 'out_of_province')).toBe(false);
+    expect(canAccessBusinessScopePath('/work-orders', adminRoles, 'out_of_province')).toBe(true);
   });
 
   it('falls back to the static matrix after dynamic configuration is cleared', () => {

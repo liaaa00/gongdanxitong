@@ -46,49 +46,49 @@ export class DashboardController {
 
   @Get('cards')
   cards(@Query() query: DashboardScopeQueryDto, @CurrentUser() user: JwtUserPayload) {
-    return this.dashboardService.getDashboardCards(user, query.scope, query.month, query.audience);
+    return this.dashboardService.getDashboardCards(user, query.scope, query.month, query.audience, query.businessScope);
   }
 
   /** @Deprecated retained for compatibility; use GET /dashboard/cards. */
   @Get('salesperson')
   salesperson(@CurrentUser() user: JwtUserPayload) {
-    return this.dashboardService.getSalespersonMetrics(user.sub);
+    return this.dashboardService.getSalespersonMetrics(user.sub, user.businessScope);
   }
 
   /** @Deprecated retained for compatibility; use GET /dashboard/cards. */
   @Get('team/:module')
   @Roles(...TEAM_DASHBOARD_ROLES)
   team(@Param('module') moduleCode: string, @CurrentUser() user: JwtUserPayload) {
-    return this.dashboardService.getTeamMetrics(moduleCode, user);
+    return this.dashboardService.getTeamMetrics(moduleCode, user, user.businessScope);
   }
 
   @Get('processor/:module')
   @Roles(...TEAM_DASHBOARD_ROLES)
   processor(@Param('module') moduleCode: string, @CurrentUser() user: JwtUserPayload) {
-    return this.dashboardService.getTeamMetrics(moduleCode, user);
+    return this.dashboardService.getTeamMetrics(moduleCode, user, user.businessScope);
   }
 
   /** @Deprecated retained for compatibility; use GET /dashboard/cards. */
   @Get('manager')
   @Roles('manager', 'admin')
   manager(@CurrentUser() user: JwtUserPayload) {
-    return this.dashboardService.getManagerMetrics(user);
+    return this.dashboardService.getManagerMetrics(user, user.businessScope);
   }
 
   @Get('admin')
   @Roles('admin')
   admin(@CurrentUser() user: JwtUserPayload) {
-    return this.dashboardService.getManagerMetrics(user);
+    return this.dashboardService.getManagerMetrics(user, user.businessScope);
   }
 
   @Get('order-type-matrix')
   orderTypeMatrix(@Query() query: OrderTypeMatrixQueryDto, @CurrentUser() user: JwtUserPayload) {
-    return this.dashboardService.getOrderTypeMatrix(user, query.dimension ?? 'orderType', query.scope, query.month, query.audience);
+    return this.dashboardService.getOrderTypeMatrix(user, query.dimension ?? 'orderType', query.scope, query.month, query.audience, query.businessScope);
   }
 
   @Get('leader-trend')
   @Roles(...LEADER_TREND_ROLES)
   leaderTrend(@Query() query: LeaderTrendQueryDto, @CurrentUser() user: JwtUserPayload) {
-    return this.dashboardService.getLeaderTrend(query.orderType ?? 'onboarding', user, query.moduleCode, query.scope, query.month);
+    return this.dashboardService.getLeaderTrend(query.orderType ?? 'onboarding', user, query.moduleCode, query.scope, query.month, query.businessScope);
   }
 }

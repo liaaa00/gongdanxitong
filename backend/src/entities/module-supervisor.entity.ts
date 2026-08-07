@@ -8,16 +8,20 @@ import {
   Unique,
   UpdateDateColumn,
 } from 'typeorm';
+import { BusinessScope } from './enums';
 import { User } from './user.entity';
 
 @Entity({ name: 'module_supervisors' })
-@Unique('uq_module_supervisors_module_user', ['moduleCode', 'supervisorId'])
+@Unique('uq_module_supervisors_module_user_scope', ['moduleCode', 'supervisorId', 'businessScope'])
 export class ModuleSupervisor {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
   @Column({ name: 'module_code', type: 'varchar', length: 64 })
   moduleCode!: string;
+
+  @Column({ name: 'business_scope', type: 'varchar', length: 32, default: BusinessScope.BEILUN })
+  businessScope!: BusinessScope;
 
   @Column({ name: 'supervisor_id', type: 'uuid' })
   supervisorId!: string;

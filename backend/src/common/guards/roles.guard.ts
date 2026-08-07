@@ -30,12 +30,13 @@ export class RolesGuard implements CanActivate {
       context.getClass(),
     ]);
 
-    const request = context.switchToHttp().getRequest<{ user?: JwtUserPayload }>();
+    const request = context.switchToHttp().getRequest<{ user?: JwtUserPayload; query?: Record<string, unknown> }>();
     const userRoles = request.user?.roles ?? [];
+    const businessScope = this.resolveRequestScope(request.user, request.query?.businessScope);
 
     if (businessPermission) {
-      const configResult = await this.checkActiveConfigBusinessPermission(userRoles, businessPermission);
-      const allowed = configResult ?? await this.checkFallbackBusinessPermission(userRoles, businessPermission);
+      const configResult = await this.checkActiveConfigBusinessPermission(userRoles, businessPermission, businessScope);
+      const allowed = configResult ?? await this.checkFallbackBusinessPermission(userRoles, businessPermission, businessScope);
       if (!allowed) {
         throw new ForbiddenException('业务权限不足');
       }
@@ -51,7 +52,7 @@ export class RolesGuard implements CanActivate {
       return true;
     }
 
-    const configResult = await this.checkActiveConfigRoles(userRoles, requiredRoles);
+    const configResult = await this.checkActiveConfigRoles(userRoles, requiredRoles, businessScope);
     const hasRole = configResult ?? requiredRoles.some((role) => userRoles.includes(role));
     if (!hasRole) {
       throw new ForbiddenException('角色权限不足');
@@ -68,8 +69,9 @@ export class RolesGuard implements CanActivate {
   private async checkActiveConfigBusinessPermission(
     userRoles: readonly string[],
     businessPermission: string,
+    businessScope?: import('src/entities').BusinessScope,
   ): Promise<boolean | null> {
-    const config = await this.readActiveConfig();
+    const config = await this.readActiveConfig(businessScope);
     if (!config) return null;
 
     try {
@@ -85,8 +87,9 @@ export class RolesGuard implements CanActivate {
   private async checkActiveConfigRoles(
     userRoles: readonly string[],
     requiredRoles: readonly string[],
+    businessScope?: import('src/entities').BusinessScope,
   ): Promise<boolean | null> {
-    const config = await this.readActiveConfig();
+    const config = await this.readActiveConfig(businessScope);
     if (!config) return null;
 
     try {
@@ -98,10 +101,10 @@ export class RolesGuard implements CanActivate {
     }
   }
 
-  private async readActiveConfig(): Promise<PermissionConfig | null> {
+  private async readActiveConfig(businessScope?: import('src/entities').BusinessScope): Promise<PermissionConfig | null> {
     if (!this.permissionCenterService) return null;
     try {
-      return await this.permissionCenterService.getActiveConfig();
+      return await this.permissionCenterService.getActiveConfig(businessScope);
     } catch {
       return null;
     }
@@ -110,10 +113,13 @@ export class RolesGuard implements CanActivate {
   private async checkFallbackBusinessPermission(
     userRoles: readonly string[],
     businessPermission: string,
+    businessScope?: import('src/entities').BusinessScope,
   ): Promise<boolean> {
     if (this.roleActionPermissionService?.hasAnyRoleAction) {
       try {
-        return await this.roleActionPermissionService.hasAnyRoleAction(userRoles, businessPermission);
+        return businessScope === undefined
+          ? await this.roleActionPermissionService.hasAnyRoleAction(userRoles, businessPermission)
+          : await this.roleActionPermissionService.hasAnyRoleAction(userRoles, businessPermission, businessScope);
       } catch {
         // A failed emergency store must fail closed.
       }
@@ -123,6 +129,13 @@ export class RolesGuard implements CanActivate {
     // deployments; this path is reached only when the center and its store
     // are unavailable.
     return hasDefaultRoleActionPermission(userRoles, businessPermission);
+  }
+
+  private resolveRequestScope(user: JwtUserPayload | undefined, requestedScope: unknown): import('src/entities').BusinessScope | undefined {
+    if (user?.roles?.includes('admin') && (requestedScope === 'beilun' || requestedScope === 'out_of_province')) {
+      return requestedScope as import('src/entities').BusinessScope;
+    }
+    return user?.businessScope;
   }
 
   private activeRoleGroups(config: PermissionConfig): ReadonlySet<string>[] {

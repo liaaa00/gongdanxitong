@@ -1,7 +1,7 @@
 import { Transform } from 'class-transformer';
 import { IsEnum, IsObject, IsOptional, IsString, MaxLength, ValidateIf } from 'class-validator';
 import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
-import { OrderType } from 'src/entities';
+import { BusinessScope, OrderType } from 'src/entities';
 import { WorkflowDefinitionStatus } from '../workflow.entity';
 
 export class CreateWorkflowDto {
@@ -9,11 +9,11 @@ export class CreateWorkflowDto {
   @MaxLength(128)
   name!: string;
 
-  @ValidateIf((dto: CreateWorkflowDto) => dto.order_type === undefined)
+  @ValidateIf((dto: CreateWorkflowDto) => dto.order_type === undefined && !dto.flowKey)
   @IsEnum(OrderType)
   orderType?: OrderType;
 
-  @ValidateIf((dto: CreateWorkflowDto) => dto.orderType === undefined)
+  @ValidateIf((dto: CreateWorkflowDto) => dto.orderType === undefined && !dto.flowKey)
   @IsEnum(OrderType)
   order_type?: OrderType;
 
@@ -29,6 +29,15 @@ export class CreateWorkflowDto {
   @ValidateIf((dto: CreateWorkflowDto) => dto.definitionJson === undefined)
   @IsObject()
   definition_json?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsEnum(BusinessScope)
+  businessScope?: BusinessScope;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  flowKey?: string;
 }
 
 export class UpdateWorkflowDto {
@@ -57,6 +66,15 @@ export class UpdateWorkflowDto {
   @IsOptional()
   @IsObject()
   definition_json?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsEnum(BusinessScope)
+  businessScope?: BusinessScope;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  flowKey?: string;
 }
 
 export class PublishWorkflowDto extends UpdateWorkflowDto {}
@@ -78,4 +96,13 @@ export class ListWorkflowQueryDto extends PaginationQueryDto {
   @IsString()
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   keyword?: string;
+
+  @IsOptional()
+  @IsEnum(BusinessScope)
+  businessScope?: BusinessScope;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  flowKey?: string;
 }

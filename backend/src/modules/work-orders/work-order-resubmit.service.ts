@@ -19,6 +19,7 @@ import { WorkOrderDetailItem, WorkOrderSubOrderItem } from './work-order.types';
 import { SubmitWorkOrderDto } from './dto/submit.dto';
 import { WorkOrderValidationService } from './work-order-validation.service';
 import { buildOnboardingChildren } from './onboarding-dispatch.helper';
+import { ResignationCertificateAutomationService } from './resignation-certificate-automation.service';
 
 type DispatchChildInput = {
   moduleCode: string;
@@ -40,6 +41,7 @@ export class WorkOrderResubmitService {
     private readonly validationService: WorkOrderValidationService,
     private readonly fieldPermissionService: FieldPermissionService,
     private readonly dispatchEngineService?: DispatchEngineService,
+    private readonly resignationCertificateAutomation?: ResignationCertificateAutomationService,
   ) {}
 
   async resubmit(
@@ -87,6 +89,11 @@ export class WorkOrderResubmitService {
           const touched = await this.applyChildren(dispatchedRepo, existing, childrenToCreate, workOrder.id);
           await workOrderRepo.save(workOrder);
           await this.notifyHandlers(notificationRepo, touched, workOrder);
+          await this.resignationCertificateAutomation?.ensureForWorkOrder(
+            workOrder,
+            'submission',
+            manager,
+          );
           const rows = await dispatchedRepo.find({ where: { parentOrderId: workOrder.id }, relations: { handler: true } });
           return {
             workOrderId: workOrder.id,
@@ -150,6 +157,11 @@ export class WorkOrderResubmitService {
           },
         }, ipAddress: null,
       }));
+      await this.resignationCertificateAutomation?.ensureForWorkOrder(
+        workOrder,
+        'submission',
+        manager,
+      );
       const rows = await dispatchedRepo.find({ where: { parentOrderId: workOrder.id }, relations: { handler: true } });
       return {
         workOrderId: workOrder.id,

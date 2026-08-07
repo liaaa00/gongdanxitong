@@ -8,11 +8,11 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { DispatchModuleCode } from './enums';
+import { BusinessScope, DispatchModuleCode } from './enums';
 import { User } from './user.entity';
 
 @Entity({ name: 'exception_module_handlers' })
-@Index('uq_exception_module_handlers_module_customer', ['moduleCode', 'customerCode'], { unique: true })
+@Index('uq_exception_module_handlers_module_customer_scope', ['moduleCode', 'customerCode', 'businessScope'], { unique: true })
 export class ExceptionModuleHandler {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -23,6 +23,9 @@ export class ExceptionModuleHandler {
     enum: DispatchModuleCode,
   })
   moduleCode!: DispatchModuleCode;
+
+  @Column({ name: 'business_scope', type: 'varchar', length: 32, default: BusinessScope.BEILUN })
+  businessScope!: BusinessScope;
 
   @Column({ name: 'customer_code', type: 'varchar', length: 64 })
   customerCode!: string;

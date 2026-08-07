@@ -1,6 +1,7 @@
 import { matchPath } from 'react-router-dom';
 import { ROLE, canonicalRoleCode, canonicalRoleCodes, userHasAnyCanonicalRole, type CanonicalRole } from '@/constants/roles';
 import type { PermissionConfig } from '@/services/permissionCenter';
+import type { BusinessScope } from '@/utils/businessScope';
 
 /**
  * @deprecated Static route visibility is retained only as a client-side
@@ -431,7 +432,12 @@ export function canAccessPath(pathname: string, userRoles: { code?: string }[] |
     // Frozen phase-one routes remain inaccessible even if an accidental dynamic
     // config entry contains them; this preserves the established business rule.
     const staticRoute = resolveVisibilityRoute(pathname);
-    if (staticRoute && PHASE1_HIDDEN_ROUTES.has(staticRoute)) return false;
+    if (staticRoute) {
+      if (PHASE1_HIDDEN_ROUTES.has(staticRoute)) return false;
+      const staticRoles = ROUTE_VISIBILITY[staticRoute];
+      // ponytail: the static role matrix is the ceiling; permission-center rules may only narrow it.
+      if (staticRoles.length > 0 && !userHasAnyCanonicalRole(userRoles, [...staticRoles])) return false;
+    }
     return userHasAnyCanonicalRole(userRoles, dynamicRoute.allowedRoles.map((role) => canonicalRoleCode(String(role))));
   }
   const route = resolveVisibilityRoute(pathname);
@@ -443,6 +449,24 @@ export function canAccessPath(pathname: string, userRoles: { code?: string }[] |
     return routeActions.some((action) => permissionSet.has(action)) || permissionSet.has('*') || permissionSet.has('all');
   }
   return userHasAnyCanonicalRole(userRoles, [...requiredRoles]) || hasDynamicPermissionForPath(pathname, permissions, userRoles);
+}
+
+/** Business-front accounts are bound to one business system; backend/admin roles may switch. */
+export function canAccessBusinessScopePath(
+  pathname: string,
+  userRoles: { code?: string }[] | undefined,
+  accountScope: BusinessScope | undefined,
+): boolean {
+  const path = normalizePath(pathname);
+  const isOutOfProvincePath = path === '/out-of-province' || path.startsWith('/out-of-province/');
+  const isBusinessFront = userHasAnyCanonicalRole(userRoles, [
+    ROLE.BUSINESS_OWNER,
+    ROLE.BUSINESS_GROUP_LEADER,
+    ROLE.BUSINESS_GROUP_MEMBER,
+  ]);
+  if (!isBusinessFront) return true;
+  const scope = accountScope || 'beilun';
+  return scope === 'out_of_province' ? isOutOfProvincePath : !isOutOfProvincePath;
 }
 
 export function canonicalRoleList(userRoles: { code?: string }[] | undefined): string[] {

@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Customer, CustomerAssignee, User } from 'src/entities';
+import { BusinessScope, Customer, CustomerAssignee, User } from 'src/entities';
 import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 import { toPageResult } from 'src/common/types/pagination.types';
 
@@ -14,6 +14,8 @@ interface SaveCustomerAssigneeInput {
   group_code?: string | null;
   isActive?: boolean;
   is_active?: boolean;
+  businessScope?: BusinessScope;
+  business_scope?: BusinessScope;
 }
 
 export interface CustomerAssigneeView {
@@ -43,13 +45,15 @@ export class CustomerAssigneesService {
     private readonly userRepository: Repository<User>,
   ) {}
 
-  async list(query: PaginationQueryDto & { customerId?: string; customer_id?: string; userId?: string; user_id?: string; isActive?: boolean; is_active?: boolean }) {
+  async list(query: PaginationQueryDto & { customerId?: string; customer_id?: string; userId?: string; user_id?: string; isActive?: boolean; is_active?: boolean; businessScope?: BusinessScope; business_scope?: BusinessScope }) {
     const page = query.page ?? 1;
+    const businessScope = query.businessScope ?? query.business_scope ?? BusinessScope.BEILUN;
     const pageSize = query.pageSize ?? 20;
     const qb = this.repository
       .createQueryBuilder('assignee')
       .leftJoinAndSelect('assignee.customer', 'customer')
       .leftJoinAndSelect('assignee.user', 'user');
+    qb.andWhere('assignee.businessScope = :businessScope', { businessScope });
 
     const customerId = query.customerId ?? query.customer_id;
     const userId = query.userId ?? query.user_id;
@@ -66,14 +70,15 @@ export class CustomerAssigneesService {
     return toPageResult(page, pageSize, total, rows.map((row) => this.toView(row)));
   }
 
-  async get(id: string): Promise<CustomerAssigneeView> {
-    return this.toView(await this.getEntity(id));
+  async get(id: string, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<CustomerAssigneeView> {
+    return this.toView(await this.getEntity(id, businessScope));
   }
 
   async create(input: SaveCustomerAssigneeInput): Promise<CustomerAssigneeView> {
+    const businessScope = input.businessScope ?? input.business_scope ?? BusinessScope.BEILUN;
     const normalized = this.normalize(input, true);
-    await this.assertRefs(normalized.customerId!, normalized.userId!);
-    const existed = await this.repository.findOne({ where: { customerId: normalized.customerId, userId: normalized.userId } });
+    await this.assertRefs(normalized.customerId!, normalized.userId!, businessScope);
+    const existed = await this.repository.findOne({ where: { customerId: normalized.customerId, userId: normalized.userId, businessScope } });
     if (existed) {
       if (!existed.isActive) {
         existed.isActive = true;
@@ -87,18 +92,20 @@ export class CustomerAssigneesService {
       userId: normalized.userId!,
       groupCode: normalized.groupCode ?? null,
       isActive: normalized.isActive ?? true,
+      businessScope,
     });
     return this.toView(await this.repository.save(row));
   }
 
   async update(id: string, input: SaveCustomerAssigneeInput): Promise<CustomerAssigneeView> {
-    const row = await this.getEntity(id);
+    const businessScope = input.businessScope ?? input.business_scope ?? BusinessScope.BEILUN;
+    const row = await this.getEntity(id, businessScope);
     const normalized = this.normalize(input, false);
     const nextCustomerId = normalized.customerId ?? row.customerId;
     const nextUserId = normalized.userId ?? row.userId;
     if (nextCustomerId !== row.customerId || nextUserId !== row.userId) {
-      await this.assertRefs(nextCustomerId, nextUserId);
-      const existed = await this.repository.findOne({ where: { customerId: nextCustomerId, userId: nextUserId } });
+      await this.assertRefs(nextCustomerId, nextUserId, businessScope);
+      const existed = await this.repository.findOne({ where: { customerId: nextCustomerId, userId: nextUserId, businessScope } });
       if (existed && existed.id !== row.id) throw new BadRequestException('客户已绑定该业务员');
       row.customerId = nextCustomerId;
       row.userId = nextUserId;
@@ -108,23 +115,23 @@ export class CustomerAssigneesService {
     return this.toView(await this.repository.save(row));
   }
 
-  async remove(id: string): Promise<{ success: boolean }> {
-    const row = await this.getEntity(id);
+  async remove(id: string, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<{ success: boolean }> {
+    const row = await this.getEntity(id, businessScope);
     row.isActive = false;
     await this.repository.save(row);
     return { success: true };
   }
 
-  private async getEntity(id: string): Promise<CustomerAssignee> {
-    const row = await this.repository.findOne({ where: { id }, relations: { customer: true, user: true } });
+  private async getEntity(id: string, businessScope: BusinessScope): Promise<CustomerAssignee> {
+    const row = await this.repository.findOne({ where: { id, businessScope }, relations: { customer: true, user: true } });
     if (!row) throw new NotFoundException('客户业务员绑定不存在');
     return row;
   }
 
-  private async assertRefs(customerId: string, userId: string): Promise<void> {
+  private async assertRefs(customerId: string, userId: string, businessScope: BusinessScope): Promise<void> {
     const [customer, user] = await Promise.all([
-      this.customerRepository.findOne({ where: { id: customerId, isActive: true } }),
-      this.userRepository.findOne({ where: { id: userId, isActive: true } }),
+      this.customerRepository.findOne({ where: { id: customerId, businessScope, isActive: true } }),
+      this.userRepository.findOne({ where: { id: userId, businessScope, isActive: true } }),
     ]);
     if (!customer) throw new BadRequestException('客户不存在或已停用');
     if (!user) throw new BadRequestException('用户不存在或已停用');
