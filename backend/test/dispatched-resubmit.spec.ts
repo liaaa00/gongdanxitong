@@ -128,7 +128,7 @@ describe('sub-order level resubmit (0602 E)', () => {
       { moduleCode: 'contract', handlerId: 'handler-old', isActive: true },
     ]);
 
-    await service.resubmitDispatched(ORDER_ID, {}, creator);
+    await service.resubmitDispatched(ORDER_ID, { reason: '补齐退回资料' }, creator);
 
     expect(dispatchedOrderRepo.save).toHaveBeenCalledWith(expect.objectContaining({
       status: DispatchedOrderStatus.PENDING,
@@ -156,16 +156,12 @@ describe('sub-order level resubmit (0602 E)', () => {
     ]));
   });
 
-  it('重新提交原因留空时仍允许提交，并记录为空原因', async () => {
+  it('rejects a blank resubmission reason', async () => {
     const order = makeOrder(DispatchedOrderStatus.WITHDRAWN, WorkOrderStatus.WITHDRAWN);
-    const { service, operationLogRepo } = buildService(order);
+    const { service } = buildService(order);
 
-    await service.resubmitDispatched(ORDER_ID, { reason: '   ' }, creator);
-
-    expect(operationLogRepo.save).toHaveBeenCalledWith(expect.objectContaining({
-      actionType: 'creator_resubmit',
-      afterData: expect.objectContaining({ reason: null }),
-    }));
+    await expect(service.resubmitDispatched(ORDER_ID, { reason: '   ' }, creator))
+      .rejects.toThrow('重新提交原因不能为空');
   });
 
   it('E-1b: 已退回子单先保存字段仍保持 returned，再重新提交后 pending 且后道看到新字段', async () => {
@@ -177,14 +173,14 @@ describe('sub-order level resubmit (0602 E)', () => {
       buildDiff: () => [{ field: 'employee_name', before: '张三', after: '李四' }],
     };
 
-    await service.creatorUpdateFields(ORDER_ID, { fields: { employee_name: '李四' } }, creator);
+    await service.creatorUpdateFields(ORDER_ID, { fields: { employee_name: '李四' }, reason: '修正员工资料' }, creator);
 
     expect(order.status).toBe(DispatchedOrderStatus.RETURNED);
     expect(order.parentOrder.extraData).toEqual(expect.objectContaining({ employee_name: '李四' }));
     expect(dispatchedOrderRepo.save).not.toHaveBeenCalled();
 
     jest.clearAllMocks();
-    await service.resubmitDispatched(ORDER_ID, {}, creator);
+    await service.resubmitDispatched(ORDER_ID, { reason: '修正员工资料后重提' }, creator);
 
     expect(dispatchedOrderRepo.save).toHaveBeenCalledWith(expect.objectContaining({ status: DispatchedOrderStatus.PENDING }));
     expect(workOrderRepo.save).toHaveBeenCalledWith(expect.objectContaining({
@@ -199,7 +195,7 @@ describe('sub-order level resubmit (0602 E)', () => {
       { moduleCode: 'contract', handlerId: 'handler-old', isActive: true },
     ]);
 
-    await service.resubmitDispatched(ORDER_ID, {}, creator);
+    await service.resubmitDispatched(ORDER_ID, { reason: '撤回原因已处理' }, creator);
 
     expect(dispatchedOrderRepo.save).toHaveBeenCalledWith(expect.objectContaining({
       status: DispatchedOrderStatus.PENDING,
@@ -214,7 +210,7 @@ describe('sub-order level resubmit (0602 E)', () => {
       { moduleCode: 'contract', handlerId: 'handler-old', isActive: true },
     ]);
 
-    await service.resubmitDispatched(ORDER_ID, {}, creator);
+    await service.resubmitDispatched(ORDER_ID, { reason: '作废原因已处理' }, creator);
 
     expect(dispatchedOrderRepo.save).toHaveBeenCalledWith(expect.objectContaining({
       status: DispatchedOrderStatus.PENDING,
@@ -237,7 +233,7 @@ describe('sub-order level resubmit (0602 E)', () => {
       { moduleCode: 'contract', handlerId: 'yangchun-id', isActive: true, isBackup: false, weight: 10 },
     ]);
 
-    await service.resubmitDispatched(ORDER_ID, {}, creator);
+    await service.resubmitDispatched(ORDER_ID, { reason: '补齐资料并重新派发' }, creator);
 
     expect(dispatchedOrderRepo.save).toHaveBeenCalledWith(expect.objectContaining({
       status: DispatchedOrderStatus.PENDING,
@@ -250,14 +246,14 @@ describe('sub-order level resubmit (0602 E)', () => {
     const { service } = buildService(order);
     const other: JwtUserPayload = { sub: 'someone-else', username: 'other', roles: ['business_group_member'] } as JwtUserPayload;
 
-    await expect(service.resubmitDispatched(ORDER_ID, {}, other)).rejects.toMatchObject({ status: 403 });
+    await expect(service.resubmitDispatched(ORDER_ID, { reason: '无权限重提' }, other)).rejects.toMatchObject({ status: 403 });
   });
 
   it('处理中子单不可重新提交（CONFLICT）', async () => {
     const order = makeOrder(DispatchedOrderStatus.PROCESSING, WorkOrderStatus.PROCESSING);
     const { service } = buildService(order);
 
-    await expect(service.resubmitDispatched(ORDER_ID, {}, creator)).rejects.toMatchObject({ status: 409 });
+    await expect(service.resubmitDispatched(ORDER_ID, { reason: '处理中不应重提' }, creator)).rejects.toMatchObject({ status: 409 });
   });
 });
 
@@ -392,7 +388,7 @@ describe('creator modify does not auto-resubmit (0602 E-4)', () => {
       buildDiff: () => [{ field: 'employee_name', before: '张三', after: '李四' }],
     };
 
-    await service.creatorUpdateFields(ORDER_ID, { fields: { employee_name: '李四' } }, creator);
+    await service.creatorUpdateFields(ORDER_ID, { fields: { employee_name: '李四' }, reason: '补录退回字段' }, creator);
 
     // 只保存父工单内容，子单状态不变（不调用 dispatchedOrderRepository.save 改状态）
     expect(workOrderRepo.save).toHaveBeenCalled();

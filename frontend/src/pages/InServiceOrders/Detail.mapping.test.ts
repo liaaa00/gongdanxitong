@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { IN_SERVICE_ORDER_KINDS, getInServiceStatusMeta } from '@/constants/inService';
-import { isCertificateTemplateOrder } from './Detail';
+import { getInServiceClosureActions, isCertificateTemplateOrder } from './Detail';
 
 describe('in-service detail certificate template access', () => {
   it('allows certificate downloads only for active and resignation certificate orders', () => {
@@ -18,5 +18,14 @@ describe('in-service detail certificate template access', () => {
     expect(getInServiceStatusMeta(IN_SERVICE_ORDER_KINDS.CERTIFICATE, 'failed').label).toBe('已退回');
     expect(getInServiceStatusMeta(IN_SERVICE_ORDER_KINDS.CONTRACT_RENEWAL, 'accepted').label)
       .toBe('已受理，待材料初审');
+  });
+
+  it('uses existing cancellation state for distinct renewal withdrawal and void commands', () => {
+    expect(getInServiceClosureActions(IN_SERVICE_ORDER_KINDS.CONTRACT_RENEWAL, true))
+      .toEqual(['withdraw', 'void']);
+    expect(getInServiceClosureActions(IN_SERVICE_ORDER_KINDS.SINGLE_BUSINESS, true))
+      .toEqual(['void']);
+    expect(getInServiceClosureActions(IN_SERVICE_ORDER_KINDS.CONTRACT_RENEWAL, false))
+      .toEqual([]);
   });
 });

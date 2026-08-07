@@ -3,6 +3,7 @@ import {
   IsArray,
   IsEnum,
   IsNotEmpty,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
@@ -36,6 +37,17 @@ export class ReasonInServiceOrderDto {
   returnType?: InServiceReturnType;
 }
 
+export enum InServiceCancelAction {
+  WITHDRAW = 'withdraw',
+  VOID = 'void',
+}
+
+export class CancelInServiceOrderDto extends ReasonInServiceOrderDto {
+  @IsOptional()
+  @IsEnum(InServiceCancelAction)
+  action: InServiceCancelAction = InServiceCancelAction.VOID;
+}
+
 export class TransferInServiceOrderDto {
   @IsUUID()
   handlerId!: string;
@@ -56,6 +68,10 @@ export class CompleteInServiceOrderDto {
   @IsString()
   @MaxLength(512)
   remark?: string;
+
+  @IsOptional()
+  @IsObject()
+  extraData?: Record<string, unknown>;
 
   @IsOptional()
   @IsArray()

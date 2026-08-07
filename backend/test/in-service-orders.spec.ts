@@ -23,6 +23,7 @@ import {
   IN_SERVICE_ORDER_STATUS_TRANSITIONS,
   assertInServiceOrderTransition,
 } from 'src/modules/dispatched-orders/dispatched-order.service';
+import { InServiceCancelAction } from 'src/modules/in-service-orders/dto/in-service-order-action.dto';
 import { InServiceOrdersService } from 'src/modules/in-service-orders/in-service-orders.service';
 import { WorkflowDefinition, WorkflowDefinitionStatus } from 'src/modules/workflows/workflow.entity';
 
@@ -150,6 +151,25 @@ const createDto = {
   serviceFee: 100,
 };
 
+describe('renewal closure actions', () => {
+  it.each([
+    InServiceCancelAction.WITHDRAW,
+    InServiceCancelAction.VOID,
+  ])('records %s while reusing the existing cancelled terminal state', async (action) => {
+    const order = Object.assign(makeOrder(InServiceOrderStatus.DISPATCHED), {
+      orderKind: InServiceOrderKind.CONTRACT_RENEWAL,
+    });
+    const { service, current } = makeService(order);
+
+    await service.cancel(order.id, { reason: '业务员操作', action }, creator);
+
+    expect(current().status).toBe(InServiceOrderStatus.CANCELLED);
+    expect(current().closeReason).toBe('业务员操作');
+    expect(current().extraData).toMatchObject({ __closureAction: action });
+    expect(current().extraData.__closureAt).toEqual(expect.any(String));
+  });
+});
+
 describe('published in-service flow runtime contract', () => {
   it('rejects an action allowed only by the unpublished editing draft', async () => {
     const workflow = {
@@ -257,9 +277,17 @@ describe('InServiceOrdersService', () => {
     expect(current().status).toBe(InServiceOrderStatus.PENDING_INFO);
     expect(current().pendingReturnStatus).toBe(InServiceOrderStatus.ACCEPTED);
 
-    await service.resubmit(current().id, { attachments: ['attachment-1'] }, creator);
+    await service.resubmit(current().id, { attachments: ['attachment-1'], resubmitReason: '补齐身份证附件' }, creator);
     expect(current().status).toBe(InServiceOrderStatus.ACCEPTED);
     expect(current().handlerId).toBe('handler-1');
+    expect(current().extraData.__resubmitHistory).toEqual([
+      expect.objectContaining({ reason: '补齐身份证附件', submittedBy: creator.sub }),
+    ]);
+  });
+
+  it('requires a reason when resubmitting an in-service order', async () => {
+    const { service, current } = makeService(makeOrder(InServiceOrderStatus.PENDING_INFO));
+    await expect(service.resubmit(current().id, {}, creator)).rejects.toThrow('重新提交原因不能为空');
   });
 
   it('returns processing supplement directly to processing', async () => {
@@ -274,7 +302,7 @@ describe('InServiceOrdersService', () => {
     await service.requestInfo(current().id, { reason: '补充盖章材料' }, handler);
     expect(current().pendingReturnStatus).toBe(InServiceOrderStatus.PROCESSING);
 
-    await service.resubmit(current().id, {}, creator);
+    await service.resubmit(current().id, { resubmitReason: '补齐盖章材料' }, creator);
     expect(current().status).toBe(InServiceOrderStatus.PROCESSING);
     expect(current().handleChannel).toBe(InServiceHandleChannel.OFFLINE);
   });

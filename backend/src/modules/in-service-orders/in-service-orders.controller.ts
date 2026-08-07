@@ -18,6 +18,7 @@ import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import {
   ApproveInServiceOrderDto,
+  CancelInServiceOrderDto,
   CloseInServiceOrderDto,
   CompleteInServiceOrderDto,
   ReasonInServiceOrderDto,
@@ -229,7 +230,7 @@ export class InServiceOrdersController {
   @HttpCode(HttpStatus.OK)
   cancel(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: ReasonInServiceOrderDto,
+    @Body() dto: CancelInServiceOrderDto,
     @CurrentUser() user: JwtUserPayload,
   ) {
     return this.service.cancel(id, dto, user);

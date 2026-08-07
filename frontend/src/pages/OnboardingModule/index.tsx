@@ -106,8 +106,10 @@ export function getOnboardingModulePermissionState({
   const canBackendOperate = canOperateCurrentModule;
   const canBatchImport = !isResignationCertificateModule && canBackendOperate && (!hasBackendActionPermissions || hasActionPermission('dispatched_order.batch_import'));
   const canBatchImportFields = canBackendOperate && (!hasBackendActionPermissions || hasActionPermission('dispatched_order.batch_import_fields'));
-  const canBatchExport = !isResignationCertificateModule && canBackendOperate && (!hasBackendActionPermissions || hasActionPermission('dispatched_order.batch_export'));
-  const canBatchAccept = canBackendOperate && (!hasBackendActionPermissions || hasActionPermission('dispatched_order.batch_accept'));
+  const canBatchExport = canBackendOperate && (!hasBackendActionPermissions || hasActionPermission('dispatched_order.batch_export'));
+  const canBatchAccept = !isResignationCertificateModule
+    && canBackendOperate
+    && (!hasBackendActionPermissions || hasActionPermission('dispatched_order.batch_accept'));
   const canBatchComplete = !isResignationCertificateModule && canBackendOperate && (!hasBackendActionPermissions || hasActionPermission(isSocialModule ? 'dispatched_order.batch_feedback' : 'dispatched_order.batch_complete'));
   const canBatchReturn = canBackendOperate;
   const canBatchUrge = hasBackendActionPermissions

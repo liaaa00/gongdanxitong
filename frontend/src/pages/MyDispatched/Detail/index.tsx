@@ -44,6 +44,13 @@ const HANDLING_RESULT_OPTIONS = [
   { label: '是', value: '是' },
   { label: '否', value: '否' },
 ];
+const RESIGNATION_SIGN_PLATFORM_OPTIONS = [
+  { label: '速创', value: '速创' },
+  { label: 'E签宝', value: 'E签宝' },
+];
+const RESIGNATION_CERTIFICATE_TEMPLATE_OPTIONS = [
+  { label: '北仑通用离职证明', value: '北仑通用离职证明' },
+];
 
 const FIELD_GROUPS: Array<{ title: string; codes: string[] }> = [
   {
@@ -186,6 +193,8 @@ const MyDispatchedDetail: React.FC = () => {
   const [completeModalOpen, setCompleteModalOpen] = useState(false);
   const [completeForm] = Form.useForm();
   const [certificateDownloading, setCertificateDownloading] = useState(false);
+  const [silentSignOpen, setSilentSignOpen] = useState(false);
+  const [silentSignForm] = Form.useForm<{ signPlatform: string; templateName: string }>();
 
   const [supplementModalOpen, setSupplementModalOpen] = useState(false);
   const [supplementForm] = Form.useForm();
@@ -209,7 +218,7 @@ const MyDispatchedDetail: React.FC = () => {
   const [approvalApproved, setApprovalApproved] = useState(true);
   const [approvalForm] = Form.useForm<{ comment: string }>();
   const [resubmitOpen, setResubmitOpen] = useState(false);
-  const [resubmitForm] = Form.useForm<{ reason?: string }>();
+  const [resubmitForm] = Form.useForm<{ reason: string }>();
   const [timelineItems, setTimelineItems] = useState<DispatchedOrderTimelineItem[]>([]);
   const [timelineTotal, setTimelineTotal] = useState(0);
   const [timelineLoading, setTimelineLoading] = useState(false);
@@ -269,7 +278,13 @@ const MyDispatchedDetail: React.FC = () => {
           const field = fieldMap.get(code);
           if (field) orderedFields.push(field);
         });
-        setFields(orderedFields);
+        const authorizedDynamicFields = fieldList.filter((field) => (
+          (field.field_code.startsWith('custom_') || field.field_code.startsWith('f_'))
+          && field.is_included_in_template !== false
+          && orderData.visible_fields.includes(field.field_code)
+          && !visibleFieldCodes?.includes(field.field_code)
+        ));
+        setFields([...orderedFields, ...authorizedDynamicFields]);
         setDetailTemplateApplied(orderedFields.length > 0);
       } else {
         setFields(fieldList);
@@ -422,10 +437,13 @@ const MyDispatchedDetail: React.FC = () => {
 
   const fillCreatorEditForm = () => {
     if (!order) return;
-    creatorEditForm.setFieldsValue(Object.fromEntries(visibleDetailFields.map((field) => [
-      field.field_code,
-      String((order.extra_data as Record<string, unknown> | undefined)?.[field.field_code] ?? ''),
-    ])));
+    creatorEditForm.setFieldsValue({
+      __creator_edit_reason: '',
+      ...Object.fromEntries(visibleDetailFields.map((field) => [
+        field.field_code,
+        String((order.extra_data as Record<string, unknown> | undefined)?.[field.field_code] ?? ''),
+      ])),
+    });
   };
 
   useEffect(() => {
@@ -475,6 +493,7 @@ const MyDispatchedDetail: React.FC = () => {
 
   const handleCreatorEditOk = async () => {
     const values = await creatorEditForm.validateFields();
+    const reason = String(values.__creator_edit_reason ?? '').trim();
     const original = (order.extra_data || {}) as Record<string, unknown>;
     const changed = Object.fromEntries(
       visibleDetailFields
@@ -486,7 +505,7 @@ const MyDispatchedDetail: React.FC = () => {
       setCreatorEditOpen(false);
       return;
     }
-    const updated = await handleCreatorUpdate(changed, '业务员在子工单详情修改字段');
+    const updated = await handleCreatorUpdate(changed, reason);
     if (updated) setCreatorEditOpen(false);
   };
 
@@ -527,7 +546,7 @@ const MyDispatchedDetail: React.FC = () => {
 
   const handleCreatorResubmitOk = async () => {
     const values = await resubmitForm.validateFields();
-    const reason = String(values.reason || '').trim() || undefined;
+    const reason = String(values.reason || '').trim();
     const updated = await handleResubmit(reason);
     if (updated) {
       setResubmitOpen(false);
@@ -578,6 +597,15 @@ const MyDispatchedDetail: React.FC = () => {
       message.error('退回已完成节点失败');
     } finally {
       setReturnCompletedLoading(false);
+    }
+  };
+
+  const handleSilentSignOk = async () => {
+    const values = await silentSignForm.validateFields();
+    const updated = await handleAccept(values);
+    if (updated) {
+      setSilentSignOpen(false);
+      silentSignForm.resetFields();
     }
   };
 
@@ -791,8 +819,21 @@ const MyDispatchedDetail: React.FC = () => {
               </Button>
             )}
             {!isTerminal && canAccept && (
-              <Button type="primary" icon={<CheckCircleOutlined />}
-                loading={actionLoading} onClick={handleAccept}>接单</Button>
+              <Button
+                type="primary"
+                icon={<CheckCircleOutlined />}
+                loading={actionLoading}
+                onClick={() => {
+                  if (isResignationCertificateOrder) {
+                    silentSignForm.setFieldsValue({ templateName: '北仑通用离职证明' });
+                    setSilentSignOpen(true);
+                  } else {
+                    void handleAccept();
+                  }
+                }}
+              >
+                {isResignationCertificateOrder ? '发起静默签' : '接单'}
+              </Button>
             )}
             {!isTerminal && canComplete && (
               <Button type="primary" icon={<CheckCircleOutlined />}
@@ -946,9 +987,23 @@ const MyDispatchedDetail: React.FC = () => {
           </Space>
         </Card>
 
-        {/* 离职材料只在材料收集子工单维护；证明子工单仅核对并生成正式 Word。 */}
         {order.module_code === 'resignation_contact' && order.parent_order_id && (
           <MaterialsUpload workOrderId={order.parent_order_id} bizPurpose="resignation_material" />
+        )}
+        {isResignationCertificateOrder && order.parent_order_id && (
+          <>
+            <MaterialsUpload
+              workOrderId={order.parent_order_id}
+              bizPurpose="resignation_material"
+              readOnly
+              title="辞职信及离职材料（只读）"
+            />
+            <MaterialsUpload
+              workOrderId={order.parent_order_id}
+              dispatchedOrderId={order.id}
+              bizPurpose="resignation_cert"
+            />
+          </>
         )}
 
         {supplementLogs.length > 0 && (
@@ -978,12 +1033,21 @@ const MyDispatchedDetail: React.FC = () => {
           onCancel={() => setResubmitOpen(false)} okText="重新提交" cancelText="取消"
           confirmLoading={actionLoading} destroyOnHidden>
           <Form form={resubmitForm} layout="vertical">
-            <Form.Item name="reason" label="重新提交原因">
+            <Form.Item
+              name="reason"
+              label="重新提交原因"
+              rules={[
+                { required: true, message: '请填写重新提交原因' },
+                { validator: (_, value) => hasText(value)
+                  ? Promise.resolve()
+                  : Promise.reject(new Error('重新提交原因不能只填空格')) },
+              ]}
+            >
               <Input.TextArea
                 rows={4}
                 maxLength={500}
                 showCount
-                placeholder="可说明本次修改或重新提交原因，例如：以员工辞职报告真实日期为准"
+                placeholder="请说明本次修改或重新提交原因"
               />
             </Form.Item>
           </Form>
@@ -993,6 +1057,23 @@ const MyDispatchedDetail: React.FC = () => {
           onCancel={() => setCreatorEditOpen(false)} confirmLoading={actionLoading}
           width={760} destroyOnHidden>
           <Form form={creatorEditForm} layout="vertical">
+            <Form.Item
+              name="__creator_edit_reason"
+              label="修改原因"
+              rules={[
+                { required: true, message: '请填写修改原因' },
+                { validator: (_, value) => hasText(value)
+                  ? Promise.resolve()
+                  : Promise.reject(new Error('修改原因不能只填空格')) },
+              ]}
+            >
+              <Input.TextArea
+                rows={3}
+                maxLength={500}
+                showCount
+                placeholder="请说明新增字段补录或资料修改原因"
+              />
+            </Form.Item>
             {visibleDetailFields.map((field) => (
               <Form.Item
                 key={field.field_code}
@@ -1115,6 +1196,30 @@ const MyDispatchedDetail: React.FC = () => {
           </Form>
         </Modal>
 
+        <Modal
+          title="发起静默签"
+          open={silentSignOpen}
+          onOk={handleSilentSignOk}
+          onCancel={() => setSilentSignOpen(false)}
+          confirmLoading={actionLoading}
+          destroyOnHidden
+        >
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="系统仅记录发起状态，实际电子签仍在线下平台完成"
+          />
+          <Form form={silentSignForm} layout="vertical">
+            <Form.Item name="signPlatform" label="电子签平台" rules={[{ required: true, message: '请选择电子签平台' }]}>
+              <Select options={RESIGNATION_SIGN_PLATFORM_OPTIONS} />
+            </Form.Item>
+            <Form.Item name="templateName" label="证明模板" rules={[{ required: true, message: '请选择证明模板' }]}>
+              <Select options={RESIGNATION_CERTIFICATE_TEMPLATE_OPTIONS} />
+            </Form.Item>
+          </Form>
+        </Modal>
+
         <Modal title="完成工单" open={completeModalOpen} onOk={handleCompleteOk}
           onCancel={() => setCompleteModalOpen(false)} confirmLoading={actionLoading} destroyOnHidden>
           <Form form={completeForm} layout="vertical">
@@ -1148,7 +1253,7 @@ const MyDispatchedDetail: React.FC = () => {
                   type="info"
                   showIcon
                   style={{ marginBottom: 12 }}
-                  message="完成后系统会生成并保存正式离职证明"
+                  message="请先上传线下电子签完成文件，再提交完成"
                 />
                 <Form.Item
                   name="resignation_reason_code"
@@ -1182,7 +1287,16 @@ const MyDispatchedDetail: React.FC = () => {
                       >
                         <Input.TextArea rows={3} maxLength={300} showCount />
                       </Form.Item>
-                      <Form.Item name="resignation_legal_article" label="劳动合同法条款（选填）">
+                      <Form.Item
+                        name="resignation_legal_article"
+                        label="适用的劳动合同法条款"
+                        rules={[
+                          { required: true, message: '选择第 4 项原因时必须填写劳动合同法条款' },
+                          { validator: (_, value) => String(value ?? '').trim()
+                            ? Promise.resolve()
+                            : Promise.reject(new Error('劳动合同法条款不能只填空格')) },
+                        ]}
+                      >
                         <Input placeholder="例如：40" maxLength={20} />
                       </Form.Item>
                     </>

@@ -48,6 +48,7 @@ describe('useDispatchedActions', () => {
     module_name: '合同', status: 'pending', handler_id: null, handler_name: null,
     employee_name: '测试', customer_name: '客户', visible_fields: [], return_reason: null,
     dispatched_at: null, accepted_at: null, completed_at: null, created_at: '',
+    work_order_updated_at: '2026-06-04T08:00:00Z',
   };
 
   it('accept succeeds and refreshes latest order', async () => {
@@ -58,7 +59,7 @@ describe('useDispatchedActions', () => {
       useDispatchedActions({ orderId: 'd1', order: baseOrder, onOrderUpdated: onUpdated }),
     );
     await act(async () => { await result.current.handleAccept(); });
-    expect(mockAccept).toHaveBeenCalledWith('d1');
+    expect(mockAccept).toHaveBeenCalledWith('d1', undefined);
     expect(mockGetDispatchedOrder).toHaveBeenCalledWith('d1');
     await waitFor(() => expect(onUpdated).toHaveBeenCalledTimes(2));
   });
@@ -70,7 +71,7 @@ describe('useDispatchedActions', () => {
       useDispatchedActions({ orderId: 'd1', order: baseOrder, onOrderUpdated: onUpdated }),
     );
     await act(async () => { await result.current.handleAccept(); });
-    expect(mockAccept).toHaveBeenCalledWith('d1');
+    expect(mockAccept).toHaveBeenCalledWith('d1', undefined);
     expect(onUpdated).not.toHaveBeenCalled();
   });
 
@@ -98,7 +99,12 @@ describe('useDispatchedActions', () => {
 
     await act(async () => { await result.current.handleCreatorUpdate({ employee_name: '李四' }, '业务员修改字段'); });
 
-    expect(mockCreatorUpdate).toHaveBeenCalledWith('d1', { employee_name: '李四' }, '业务员修改字段');
+    expect(mockCreatorUpdate).toHaveBeenCalledWith(
+      'd1',
+      { employee_name: '李四' },
+      '业务员修改字段',
+      '2026-06-04T08:00:00Z',
+    );
     await waitFor(() => expect(onUpdated).toHaveBeenCalledWith(expect.objectContaining({ status: 'modify_pending' })));
   });
 
@@ -112,7 +118,12 @@ describe('useDispatchedActions', () => {
 
     await act(async () => { await result.current.handleCreatorUpdate({ employee_name: '李四' }, '业务员修改字段'); });
 
-    expect(mockCreatorUpdate).toHaveBeenCalledWith('d1', { employee_name: '李四' }, '业务员修改字段');
+    expect(mockCreatorUpdate).toHaveBeenCalledWith(
+      'd1',
+      { employee_name: '李四' },
+      '业务员修改字段',
+      '2026-06-04T08:00:00Z',
+    );
     expect(mockResubmit).not.toHaveBeenCalled();
     await waitFor(() => expect(onUpdated).toHaveBeenCalledWith(expect.objectContaining({ status: 'returned' })));
   });

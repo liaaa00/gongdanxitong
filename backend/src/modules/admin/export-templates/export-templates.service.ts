@@ -321,8 +321,13 @@ export class ExportTemplatesService {
           attachmentSummaries,
         );
       }
-      const contractAttachments = moduleCode === 'contract'
-        ? await this.appendContractAttachmentIndex(workbook, moduleOrders)
+      const attachmentPurposes = moduleCode === 'contract'
+        ? ['onboarding_material', 'contract_material']
+        : moduleCode === 'resignation_cert'
+          ? ['resignation_material', 'resignation_cert']
+          : [];
+      const attachmentEntries = attachmentPurposes.length > 0
+        ? await this.appendAttachmentIndex(workbook, moduleOrders, attachmentPurposes)
         : [];
       const buffer = await this.writeWorkbookBuffer(workbook);
       const platformLabel = signPlatform ? `-${signPlatform}` : '';
@@ -341,15 +346,15 @@ export class ExportTemplatesService {
         count: moduleOrders.length,
         fileType: 'excel',
       });
-      if (moduleCode === 'contract' && contractAttachments.length > 0) {
-        const zipMeta = await this.buildContractAttachmentsZip(contractAttachments, template.templateName || moduleCode);
+      if (attachmentEntries.length > 0) {
+        const zipMeta = await this.buildAttachmentsZip(attachmentEntries, template.templateName || moduleCode);
         files.push({
           fileId: zipMeta.fileId,
           fileName: zipMeta.originalName,
           downloadUrl: `/api/files/${zipMeta.fileId}`,
           moduleCode,
           signPlatform,
-          count: contractAttachments.length,
+          count: attachmentEntries.length,
           fileType: 'attachments_zip',
         });
       }
@@ -633,11 +638,12 @@ export class ExportTemplatesService {
 
   }
 
-  private async appendContractAttachmentIndex(
+  private async appendAttachmentIndex(
     workbook: Workbook,
     orders: DispatchedOrder[],
+    bizPurposes: string[],
   ): Promise<Array<{ order: DispatchedOrder; row: AttachmentExportRow }>> {
-    const rows = await this.loadAttachmentRows(orders, ['onboarding_material', 'contract_material']);
+    const rows = await this.loadAttachmentRows(orders, bizPurposes);
     const sheet = workbook.addWorksheet('附件索引');
     sheet.columns = [
       { header: '员工姓名', key: 'employeeName', width: 18 },
@@ -667,7 +673,7 @@ export class ExportTemplatesService {
     return entries;
   }
 
-  private async buildContractAttachmentsZip(
+  private async buildAttachmentsZip(
     entries: Array<{ order: DispatchedOrder; row: AttachmentExportRow }>,
     templateName: string,
   ) {

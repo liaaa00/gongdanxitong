@@ -319,7 +319,7 @@ export class DispatchedOrderService {
 
   async accept(
     id: string,
-    _payload: AcceptDispatchedOrderDto,
+    payload: AcceptDispatchedOrderDto,
     user: JwtUserPayload,
   ): Promise<DispatchedOrderDetailItem> {
     const order = await this.loadDispatchedOrder(id);
@@ -333,6 +333,21 @@ export class DispatchedOrderService {
     }
     if (!order.handlerId) {
       await this.assertModulePoolAccess(user, order.moduleCode);
+    }
+    if (order.moduleCode === DispatchModuleCode.RESIGNATION_CERT) {
+      const signPlatform = payload.signPlatform?.trim();
+      const templateName = payload.templateName?.trim();
+      if (!signPlatform || !templateName) {
+        throw businessException(4231, HttpStatus.BAD_REQUEST, '发起静默签前必须选择平台和模板');
+      }
+      order.parentOrder.extraData = {
+        ...(order.parentOrder.extraData ?? {}),
+        resignation_cert_sign_platform: signPlatform,
+        resignation_cert_template_name: templateName,
+        resignation_cert_status: '开具中',
+        resignation_cert_started_at: new Date().toISOString(),
+      };
+      await this.workOrderRepository.save(order.parentOrder);
     }
 
     const handlerId = this.isAdmin(user) && order.handlerId ? order.handlerId : user.sub;
@@ -349,7 +364,18 @@ export class DispatchedOrderService {
       throw businessException(4220, HttpStatus.CONFLICT, '接单失败：状态已变化');
     }
 
-    await this.writeLog('dispatched_order', id, user.sub, 'accept', this.snapshot(order), { handlerId });
+    await this.writeLog(
+      'dispatched_order',
+      id,
+      user.sub,
+      order.moduleCode === DispatchModuleCode.RESIGNATION_CERT ? 'start_silent_sign' : 'accept',
+      this.snapshot(order),
+      {
+        handlerId,
+        signPlatform: payload.signPlatform?.trim() || null,
+        templateName: payload.templateName?.trim() || null,
+      },
+    );
     return this.findOne(id, user);
   }
 
@@ -393,27 +419,38 @@ export class DispatchedOrderService {
 
     const completedAt = new Date();
     const nextCompleted = completionEvaluation.nextStatus === DispatchedOrderStatus.COMPLETED;
-    let storedCertificate: Awaited<ReturnType<UploadsService['save']>> | null = null;
     if (nextCompleted && order.moduleCode === DispatchModuleCode.RESIGNATION_CERT) {
       await this.assertResignationCertificateMaterialsReady(order);
-      if (!this.uploadsService) {
-        throw businessException(4232, HttpStatus.INTERNAL_SERVER_ERROR, '离职证明文件存储服务未配置');
-      }
       const certificate = await this.createResignationCertificateDocument(order, extraDataPatch);
       extraDataPatch.resignation_reason_code = certificate.replacements.resignationReasonCode;
       if (certificate.replacements.resignationReasonCode === '4') {
         extraDataPatch.resignation_other_reason = certificate.replacements.otherReason;
+        extraDataPatch.resignation_legal_article = String(
+          extraDataPatch.resignation_legal_article
+          ?? order.parentOrder.extraData?.resignation_legal_article
+          ?? '',
+        ).trim();
       }
-      storedCertificate = await this.uploadsService.save({
-        ownerId: user.sub,
-        kind: 'attachment',
-        buffer: certificate.buffer,
-        originalName: certificate.fileName,
-        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      });
+      const certificateAttachments = await this.dispatchedOrderRepository.manager
+        .getRepository(OrderAttachment)
+        .find({
+          where: {
+            workOrderId: order.parentOrderId,
+            dispatchedOrderId: order.id,
+            bizPurpose: 'resignation_cert',
+          },
+          order: { createdAt: 'DESC' },
+        });
+      if (certificateAttachments.length === 0) {
+        throw businessException(4232, HttpStatus.BAD_REQUEST, '完成离职证明前必须上传线下电子签完成文件');
+      }
+      const primary = certificateAttachments[0];
       Object.assign(
         extraDataPatch,
-        buildResignationCertificateResultPatch(order.moduleCode, completedAt, remark, storedCertificate),
+        buildResignationCertificateResultPatch(order.moduleCode, completedAt, remark, {
+          fileId: primary.fileId,
+          originalName: primary.originalName,
+        }),
         {
           resignation_cert_attachments: Array.from(new Set([
             ...(
@@ -423,7 +460,7 @@ export class DispatchedOrderService {
                   )
                 : []
             ),
-            storedCertificate.fileId,
+            ...certificateAttachments.map((attachment) => attachment.fileId),
           ])),
         },
       );
@@ -458,30 +495,7 @@ export class DispatchedOrderService {
         await manager.getRepository(WorkOrder).save(order.parentOrder);
       }
 
-      if (storedCertificate) {
-        const attachmentRepository = manager.getRepository(OrderAttachment);
-        await attachmentRepository.save(attachmentRepository.create({
-          workOrderId: order.parentOrderId,
-          dispatchedOrderId: order.id,
-          bizPurpose: 'resignation_certificate',
-          fileId: storedCertificate.fileId,
-          fileName: storedCertificate.fileName,
-          originalName: storedCertificate.originalName,
-          mimeType: storedCertificate.mimeType,
-          filePath: storedCertificate.filePath,
-          fileSize: storedCertificate.size,
-          status: 'generated',
-          rejectReason: null,
-          receivedAt: completedAt,
-          reviewedBy: user.sub,
-          reviewedAt: completedAt,
-          metadata: {
-            source: 'resignation_certificate_child',
-            reasonCode: extraDataPatch.resignation_reason_code ?? null,
-          },
-        }));
-      }
-
+      // 离职证明成品由线下电子签完成后上传，本事务只回写已上传文件与办理结果。
       // 离职证明子工单在主工单提交时创建，不在离职材料收集完成后追加独立工单。
     });
 
@@ -858,6 +872,10 @@ export class DispatchedOrderService {
     if (entries.length === 0) {
       throw businessException(4301, HttpStatus.BAD_REQUEST, '至少提供一个要修改的字段');
     }
+    const reason = payload.reason?.trim() || null;
+    if (!reason) {
+      throw businessException(4301, HttpStatus.BAD_REQUEST, '修改原因不能为空');
+    }
 
     await this.assertCreatorFieldsEditable(order, entries.map(([fieldCode]) => fieldCode), user);
 
@@ -886,7 +904,6 @@ export class DispatchedOrderService {
     }
 
     const before = this.snapshot(order);
-    const reason = payload.reason?.trim() || null;
     const previousStatus = order.status;
 
     if (this.isAcceptedDispatchedOrder(order)) {
@@ -1277,6 +1294,9 @@ export class DispatchedOrderService {
     const before = this.snapshot(order);
     const previousStatus = order.status;
     const reason = payload.reason?.trim() || null;
+    if (!reason) {
+      throw businessException(4201, HttpStatus.BAD_REQUEST, '重新提交原因不能为空');
+    }
 
     // 可选：携带修改后的字段（仅限当前子单可见字段），合并保存到父工单 extraData。
     let parentTouched = false;
@@ -2352,6 +2372,16 @@ export class DispatchedOrderService {
     if (replacements.resignationReasonCode === '4' && !replacements.otherReason) {
       throw businessException(4231, HttpStatus.BAD_REQUEST, '选择第 4 项原因时必须填写其他原因');
     }
+    if (
+      replacements.resignationReasonCode === '4'
+      && !firstText(
+        extraData.resignation_legal_article,
+        extraData.legal_article,
+        extraData.legalArticle,
+      )
+    ) {
+      throw businessException(4231, HttpStatus.BAD_REQUEST, '选择第 4 项原因时必须填写适用的劳动合同法条款');
+    }
 
     const template = await readFile(join(
       __dirname,
@@ -2476,15 +2506,16 @@ export class DispatchedOrderService {
       ? await this.fieldPermissionService.getPermissionsForUser(user.sub, `dispatched:${order.moduleCode}`)
       : new Map<string, FieldPermissionMode>();
     const hasConfiguredPermissions = permissions.size > 0;
-    const isReturnedToBusinessCreator = Boolean(
+    const isBusinessCreator = Boolean(
       user
-      && order.status === DispatchedOrderStatus.RETURNED
       && order.parentOrder.createdBy === user.sub
       && (
         hasAnyRole(user.roles, BUSINESS_MEMBER_ROLES)
         || hasAnyRole(user.roles, BUSINESS_LEADER_ROLES)
       )
     );
+    const isReturnedToBusinessCreator = isBusinessCreator
+      && order.status === DispatchedOrderStatus.RETURNED;
     const visibleSet = !isReturnedToBusinessCreator && order.visibleFields
       ? new Set(order.visibleFields)
       : null;
@@ -2499,14 +2530,24 @@ export class DispatchedOrderService {
         || field.orderType === order.parentOrder.orderType
         || field.businessContext?.includes(order.parentOrder.orderType) === true;
       const permission = permissions.get(field.fieldCode);
+      const isDynamicSupplementField = isBusinessCreator
+        && this.isDynamicConfiguredFieldCode(field.fieldCode)
+        && field.isIncludedInTemplate !== false;
       return sameType
-        && (!effectiveVisibleSet || effectiveVisibleSet.has(field.fieldCode))
+        && (!effectiveVisibleSet || effectiveVisibleSet.has(field.fieldCode) || isDynamicSupplementField)
         && (order.moduleCode !== DispatchModuleCode.RESIGNATION_CERT || RESIGNATION_CERTIFICATE_VISIBLE_FIELDS.has(field.fieldCode))
         && (!hasConfiguredPermissions || permission !== FieldPermissionMode.HIDDEN);
     });
+    const dynamicSupplementFieldCodes = filteredFields
+      .filter((field) => isBusinessCreator
+        && this.isDynamicConfiguredFieldCode(field.fieldCode)
+        && field.isIncludedInTemplate !== false)
+      .map((field) => field.fieldCode);
     const detailVisibleFields = order.moduleCode === DispatchModuleCode.RESIGNATION_CERT
       ? filteredFields.map((field) => field.fieldCode)
-      : order.visibleFields;
+      : order.visibleFields
+        ? Array.from(new Set([...order.visibleFields, ...dynamicSupplementFieldCodes]))
+        : null;
     return {
       ...this.toListItem(order, configuredHandlerNames),
       handlerName: order.handler?.realName ?? null,
@@ -2670,6 +2711,8 @@ export class DispatchedOrderService {
       created_at: order.createdAt,
       updatedAt: order.updatedAt,
       updated_at: order.updatedAt,
+      workOrderUpdatedAt: order.parentOrder.updatedAt,
+      work_order_updated_at: order.parentOrder.updatedAt,
       configuredHandlerNames,
       configured_handler_names: configuredHandlerNames,
       extraData,
@@ -3056,6 +3099,10 @@ export class DispatchedOrderService {
     }
   }
 
+  private isDynamicConfiguredFieldCode(fieldCode: string): boolean {
+    return fieldCode.startsWith('custom_') || fieldCode.startsWith('f_');
+  }
+
   private async assertCreatorFieldsEditable(order: DispatchedOrder, fieldCodes: string[], user: JwtUserPayload): Promise<void> {
     if (this.isAdmin(user)) return;
     let allowedFields = order.visibleFields ? new Set(order.visibleFields) : null;
@@ -3063,6 +3110,23 @@ export class DispatchedOrderService {
       const template = await this.detailViewTemplatesService.getActiveByModule('contract');
       if (template) {
         allowedFields = new Set(getDetailViewFieldCodes(template.fieldList));
+      }
+    }
+
+    if (allowedFields) {
+      const dynamicCodes = fieldCodes.filter((fieldCode) => this.isDynamicConfiguredFieldCode(fieldCode));
+      if (dynamicCodes.length > 0) {
+        const dynamicFields = await this.fieldConfigRepository.find({
+          where: { fieldCode: In(dynamicCodes), isActive: true },
+        });
+        for (const field of dynamicFields) {
+          const sameType = field.orderType === null
+            || field.orderType === order.parentOrder.orderType
+            || field.businessContext?.includes(order.parentOrder.orderType) === true;
+          if (sameType && field.isIncludedInTemplate !== false) {
+            allowedFields.add(field.fieldCode);
+          }
+        }
       }
     }
 

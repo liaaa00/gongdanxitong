@@ -4,6 +4,7 @@ import { memoryStorage } from 'multer';
 import { Response } from 'express';
 import { randomBytes } from 'crypto';
 
+import { isAdminRole } from 'src/common/auth/role-permissions';
 import { BusinessPermission } from 'src/common/decorators/business-permission.decorator';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { Roles } from 'src/common/decorators/roles.decorator';
@@ -92,6 +93,9 @@ export class ImportsController {
   @BusinessPermission('work_order.import')
   async confirm(@Body() payload: ConfirmImportDto, @CurrentUser() user: JwtUserPayload) {
     assertCanImportWorkOrder(user, payload.orderType);
+    if (payload.newFields && payload.newFields.length > 0 && !isAdminRole(user.roles)) {
+      throw businessException(5000, 403, '仅管理员可在导入时创建特殊字段，请先在后台完成字段配置');
+    }
     if (payload.newFields && payload.newFields.length > 0) {
       const headerToFieldCode = await this.materializeNewFields(payload.newFields, payload.orderType);
       this.applyNewFieldsToPayload(payload, headerToFieldCode);

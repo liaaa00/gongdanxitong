@@ -119,6 +119,22 @@ export class ImportJobService {
       ? { headers: session.headers, rowCount: session.rowCount }
       : await this.excelParserService.parseFile(meta.filePath, sheetName ? { sheetName } : {})
         .then((sheet) => ({ headers: sheet.headers, rowCount: sheet.rows.length }));
+    const availableFields = session && session.fileId === meta.fileId && session.orderType === input.orderType
+      ? session.availableFields
+      : await this.fieldValidationService.buildCandidateFields(input.orderType);
+    const configuredFieldCodes = new Set(availableFields.map((field) => field.fieldCode));
+    const unresolvedHeaders = parsed.headers.filter((header) => {
+      if (this.isPlaceholderHeader(header)) return false;
+      const fieldCode = String(input.mapping[header] ?? '').trim();
+      return !fieldCode || fieldCode === '__NEW_FIELD__' || !configuredFieldCodes.has(fieldCode);
+    });
+    if (unresolvedHeaders.length > 0) {
+      throw businessException(
+        4400,
+        HttpStatus.BAD_REQUEST,
+        `以下表头未配置或未完成映射：${unresolvedHeaders.join('、')}`,
+      );
+    }
 
     const job = await this.importJobRepository.save(this.importJobRepository.create({
       userId: input.user.sub,

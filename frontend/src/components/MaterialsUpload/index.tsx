@@ -25,7 +25,10 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
 
 interface MaterialsUploadProps {
   workOrderId: string;
+  dispatchedOrderId?: string;
   bizPurpose: 'benefit_material' | 'onboarding_material' | 'resignation_cert' | 'resignation_material' | 'renewal_contract';
+  readOnly?: boolean;
+  title?: string;
 }
 
 // 提交前暂存能力：workOrderId 为空时选中的文件先本地缓存，
@@ -49,7 +52,13 @@ function isAllowedUploadFile(fileName: string): boolean {
   return ALLOWED_UPLOAD_EXTENSIONS.includes(ext);
 }
 
-const MaterialsUpload = forwardRef<MaterialsUploadHandle, MaterialsUploadProps>(({ workOrderId, bizPurpose }, ref) => {
+const MaterialsUpload = forwardRef<MaterialsUploadHandle, MaterialsUploadProps>(({
+  workOrderId,
+  dispatchedOrderId,
+  bizPurpose,
+  readOnly = false,
+  title: customTitle,
+}, ref) => {
   const { message } = App.useApp();
   const [attachments, setAttachments] = useState<OrderAttachmentItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -57,11 +66,13 @@ const MaterialsUpload = forwardRef<MaterialsUploadHandle, MaterialsUploadProps>(
   const [fileList, setFileList] = useState<UploadFile[]>([]);
   const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([]);
 
-  const title = bizPurpose === 'benefit_material'
+  const title = customTitle ?? (bizPurpose === 'benefit_material'
     ? '申报材料'
     : bizPurpose === 'onboarding_material'
       ? '入职材料'
-      : '离职材料收集';
+      : bizPurpose === 'resignation_cert'
+        ? '离职证明文件及其他附件'
+        : '离职材料收集');
 
   const fetchAttachments = useCallback(async () => {
     if (!workOrderId) return;
@@ -96,6 +107,7 @@ const MaterialsUpload = forwardRef<MaterialsUploadHandle, MaterialsUploadProps>(
     try {
       const item = await uploadMaterialAttachment(file, {
         work_order_id: workOrderId,
+        dispatched_order_id: dispatchedOrderId,
         biz_purpose: bizPurpose,
         status: 'received',
       });
@@ -154,12 +166,13 @@ const MaterialsUpload = forwardRef<MaterialsUploadHandle, MaterialsUploadProps>(
     for (const staged of stagedFiles) {
       await uploadMaterialAttachment(staged.file, {
         work_order_id: targetWorkOrderId,
+        dispatched_order_id: dispatchedOrderId,
         biz_purpose: bizPurpose,
         status: 'received',
       });
     }
     setStagedFiles([]);
-  }, [bizPurpose, stagedFiles]);
+  }, [bizPurpose, dispatchedOrderId, stagedFiles]);
 
   useImperativeHandle(ref, () => ({
     uploadStaged,
@@ -169,7 +182,7 @@ const MaterialsUpload = forwardRef<MaterialsUploadHandle, MaterialsUploadProps>(
   return (
     <Card title={title} loading={loading}>
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-        <Space wrap>
+        {!readOnly ? <Space wrap>
           <Upload
             accept={UPLOAD_ACCEPT}
             beforeUpload={(file) => {
@@ -192,7 +205,7 @@ const MaterialsUpload = forwardRef<MaterialsUploadHandle, MaterialsUploadProps>(
               <Button size="small" onClick={() => setFileList([])} disabled={uploading}>取消</Button>
             </Space>
           )}
-        </Space>
+        </Space> : null}
 
         <div>
           {stagedFiles.map((staged) => (
@@ -208,7 +221,9 @@ const MaterialsUpload = forwardRef<MaterialsUploadHandle, MaterialsUploadProps>(
                     </Space>
                   </div>
                 </Space>
-                <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => removeStaged(staged.uid)} />
+                {!readOnly ? (
+                  <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => removeStaged(staged.uid)} />
+                ) : null}
               </div>
             </Card>
           ))}
@@ -233,9 +248,11 @@ const MaterialsUpload = forwardRef<MaterialsUploadHandle, MaterialsUploadProps>(
                     <Button type="link" size="small" icon={<DownloadOutlined />} disabled={!item.download_url} onClick={() => handleDownload(item)}>
                       下载
                     </Button>
-                    <Popconfirm title="确定删除此附件？" onConfirm={() => handleDelete(item)}>
-                      <Button type="link" size="small" danger icon={<DeleteOutlined />} />
-                    </Popconfirm>
+                    {!readOnly ? (
+                      <Popconfirm title="确定删除此附件？" onConfirm={() => handleDelete(item)}>
+                        <Button type="link" size="small" danger icon={<DeleteOutlined />} />
+                      </Popconfirm>
+                    ) : null}
                   </Space>
                 </div>
               </Card>

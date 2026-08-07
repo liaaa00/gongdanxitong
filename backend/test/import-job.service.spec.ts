@@ -1,6 +1,6 @@
 import { Repository } from 'typeorm';
 import { HttpStatus } from '@nestjs/common';
-import { Customer, CustomerAssignee, ImportJob, ImportJobStatus } from 'src/entities';
+import { Customer, CustomerAssignee, ImportJob, ImportJobStatus, OrderType } from 'src/entities';
 import { businessException } from 'src/common/exceptions/business-exception';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { ImportJobService } from 'src/modules/imports/import-job.service';
@@ -69,6 +69,31 @@ describe('ImportJobService', () => {
     workOrderImportService,
     attachmentsService,
   );
+
+  it('rejects confirmation when any non-placeholder header is not mapped to a configured field', async () => {
+    jest.clearAllMocks();
+    (uploadsService.resolveForUser as jest.Mock).mockResolvedValue({
+      fileId: 'file-1',
+      filePath: '/tmp/import.xlsx',
+    });
+    (excelParserService.parseFile as jest.Mock).mockResolvedValue({
+      headers: ['姓名', '特殊补充字段'],
+      rows: [{ 姓名: '张三', 特殊补充字段: '测试值' }],
+    });
+    (fieldValidationService.buildCandidateFields as jest.Mock).mockResolvedValue([
+      { fieldCode: 'employee_name', fieldName: '姓名', fieldType: 'text', required: true },
+    ]);
+
+    await expect(service.createJob({
+      user: makeUser({ roles: ['business_group_member'] }),
+      fileId: 'file-1',
+      orderType: OrderType.ONBOARDING,
+      mapping: { 姓名: 'employee_name' },
+      autoSubmit: true,
+    })).rejects.toThrow('以下表头未配置或未完成映射：特殊补充字段');
+
+    expect(importJobRepository.save).not.toHaveBeenCalled();
+  });
 
   it('returns failed row stats and validation errors from job metadata', async () => {
     importJobRepository.findOne.mockResolvedValueOnce({

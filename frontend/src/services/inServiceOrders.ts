@@ -545,6 +545,11 @@ async function postAction(id: string, action: string, payload: RawRecord = {}): 
       closeReason: String(payload.reason || ''),
       closedBy: actor.id,
       closedAt: now,
+      extraData: {
+        ...order.extraData,
+        __closureAction: payload.action === 'withdraw' ? 'withdraw' : 'void',
+        __closureAt: now,
+      },
     };
     return order;
   });
@@ -566,11 +571,21 @@ export const requestInServiceMaterialChange = (
 ) => postAction(id, 'material-change-request', { changes, reason });
 export const reviewInServiceMaterialChange = (id: string, approved: boolean, reason?: string) =>
   postAction(id, 'material-change-review', { approved, reason });
-export const resubmitInServiceOrder = (id: string, payload: Partial<InServiceOrderPayload>) =>
-  postAction(id, 'resubmit', payload);
-export const completeInServiceOrder = (id: string, remark?: string, attachments?: string[]) =>
-  postAction(id, 'complete', { remark, attachments });
+export const resubmitInServiceOrder = (
+  id: string,
+  payload: Partial<InServiceOrderPayload>,
+  resubmitReason: string,
+) => postAction(id, 'resubmit', { ...payload, resubmitReason });
+export const completeInServiceOrder = (
+  id: string,
+  remark?: string,
+  attachments?: string[],
+  extraData?: Record<string, unknown>,
+) => postAction(id, 'complete', { remark, attachments, extraData });
 export const failInServiceOrder = (id: string, remark?: string, attachments?: string[]) =>
   postAction(id, 'fail', { remark, attachments });
-export const cancelInServiceOrder = (id: string, reason: string) =>
-  postAction(id, 'cancel', { reason });
+export const cancelInServiceOrder = (
+  id: string,
+  reason: string,
+  action: 'withdraw' | 'void' = 'void',
+) => postAction(id, 'cancel', { reason, action });

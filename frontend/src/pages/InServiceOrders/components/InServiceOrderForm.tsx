@@ -398,9 +398,6 @@ export default function InServiceOrderForm({
             referenceBaseSalary: currentExtraData.referenceBaseSalary
               ?? source.reference_base_salary
               ?? source.base_salary,
-            averageMonthlyIncome: currentExtraData.averageMonthlyIncome
-              ?? source.averageMonthlyIncome
-              ?? source.average_monthly_income,
           };
           form.setFieldsValue({
             employeeName: form.getFieldValue('employeeName') || result.employeeName || undefined,
@@ -731,8 +728,8 @@ export default function InServiceOrderForm({
                   </Form.Item>
                 </Col>
                 <Col {...formCol}>
-                  <Form.Item name={['extraData', 'averageMonthlyIncome']} label="近一年税前月均收入" rules={[{ required: true, message: '请输入月均收入' }]}>
-                    <InputNumber min={0} precision={2} prefix="¥" style={{ width: '100%' }} />
+                  <Form.Item name={['extraData', 'averageMonthlyIncome']} label="近一年税前月均收入" extra="由经办人在办理完成时确认">
+                    <InputNumber min={0} precision={2} prefix="¥" style={{ width: '100%' }} disabled />
                   </Form.Item>
                 </Col>
               </>

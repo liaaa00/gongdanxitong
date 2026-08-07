@@ -149,6 +149,8 @@ export interface DispatchedOrderListItem {
   created_at?: Date;
   updatedAt: Date;
   updated_at?: Date;
+  workOrderUpdatedAt?: Date;
+  work_order_updated_at?: Date;
   dirtyCount?: number;
   dirty_count?: number;
   configuredHandlerNames?: string[];

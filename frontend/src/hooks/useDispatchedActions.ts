@@ -19,16 +19,19 @@ export function useDispatchedActions({ orderId, order, onOrderUpdated }: UseDisp
   const { message } = App.useApp();
   const [actionLoading, setActionLoading] = useState(false);
 
-  const handleAccept = useCallback(async () => {
+  const handleAccept = useCallback(async (payload?: { signPlatform?: string; templateName?: string }) => {
     setActionLoading(true);
     try {
-      const updated = await acceptDispatchedOrder(orderId);
+      const updated = await acceptDispatchedOrder(orderId, payload);
       onOrderUpdated(updated);
       const latest = await getDispatchedOrder(orderId).catch(() => null);
       if (latest) onOrderUpdated(latest);
-      message.success('已接单');
-    } catch { message.error('接单失败'); }
-    finally { setActionLoading(false); }
+      message.success(payload?.signPlatform ? '已发起静默签' : '已接单');
+      return updated;
+    } catch {
+      message.error(payload?.signPlatform ? '发起静默签失败' : '接单失败');
+      return null;
+    } finally { setActionLoading(false); }
   }, [orderId, onOrderUpdated]);
 
   const handleComplete = useCallback(async (feedback: Record<string, unknown>) => {
@@ -91,11 +94,16 @@ export function useDispatchedActions({ orderId, order, onOrderUpdated }: UseDisp
     return null;
   }, [orderId, onOrderUpdated]);
 
-  const handleCreatorUpdate = useCallback(async (fields: Record<string, unknown>, reason?: string) => {
+  const handleCreatorUpdate = useCallback(async (fields: Record<string, unknown>, reason: string) => {
     setActionLoading(true);
     try {
       const wasAccepted = isDispatchedAcceptedByBackend(order);
-      const updated = await creatorUpdateDispatchedOrderFields(orderId, fields, reason);
+      const updated = await creatorUpdateDispatchedOrderFields(
+        orderId,
+        fields,
+        reason,
+        order?.work_order_updated_at || order?.workOrderUpdatedAt,
+      );
       onOrderUpdated(updated);
       message.success(updated.status === 'modify_pending' || wasAccepted
         ? '修改申请已提交，等待后道审批'

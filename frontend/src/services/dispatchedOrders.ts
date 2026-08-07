@@ -92,6 +92,8 @@ export interface DispatchedOrderItem {
   sla_reminder_before_hours?: number | null;
   slaReminderBeforeHours?: number | null;
   created_at: string;
+  work_order_updated_at?: string;
+  workOrderUpdatedAt?: string;
 }
 
 const MODULE_META: Record<string, { name: string; visible_fields: string[]; supplementable_fields: string[] }> = {
@@ -273,6 +275,8 @@ function normalizeDispatchedOrderItem(raw: unknown): DispatchedOrderItem {
     slaHours: (row.slaHours ?? row.sla_hours ?? null) as number | null,
     sla_reminder_before_hours: (row.sla_reminder_before_hours ?? row.slaReminderBeforeHours ?? null) as number | null,
     slaReminderBeforeHours: (row.slaReminderBeforeHours ?? row.sla_reminder_before_hours ?? null) as number | null,
+    work_order_updated_at: String(row.work_order_updated_at ?? row.workOrderUpdatedAt ?? parent.updated_at ?? parent.updatedAt ?? ''),
+    workOrderUpdatedAt: String(row.workOrderUpdatedAt ?? row.work_order_updated_at ?? parent.updatedAt ?? parent.updated_at ?? ''),
     created_at: String(row.created_at ?? row.createdAt ?? row.dispatched_at ?? row.dispatchedAt ?? new Date().toISOString()),
   } as DispatchedOrderItem;
 }
@@ -591,7 +595,10 @@ export async function getDispatchedOrder(id: string): Promise<DispatchedOrderIte
   return normalizeDispatchedOrderItem(raw);
 }
 
-export async function acceptDispatchedOrder(id: string): Promise<DispatchedOrderItem> {
+export async function acceptDispatchedOrder(
+  id: string,
+  payload?: { signPlatform?: string; templateName?: string },
+): Promise<DispatchedOrderItem> {
   if (isMockMode) {
     const updated = updateChildInParent(id, (c) => {
       c.status = 'processing';
@@ -600,7 +607,7 @@ export async function acceptDispatchedOrder(id: string): Promise<DispatchedOrder
     });
     return mockDelay(updated || ({} as DispatchedOrderItem));
   }
-  return request.post(`/dispatched-orders/${id}/accept`) as Promise<DispatchedOrderItem>;
+  return request.post(`/dispatched-orders/${id}/accept`, payload || {}) as Promise<DispatchedOrderItem>;
 }
 
 export interface BatchAcceptResult {
@@ -753,7 +760,7 @@ export async function supplementField(id: string, fields: Record<string, string>
   return request.post(`/dispatched-orders/${id}/supplement`, { fields }) as Promise<void>;
 }
 
-export async function creatorUpdateDispatchedOrderFields(id: string, fields: Record<string, unknown>, reason?: string): Promise<DispatchedOrderItem> {
+export async function creatorUpdateDispatchedOrderFields(id: string, fields: Record<string, unknown>, reason: string, workOrderUpdatedAt?: string): Promise<DispatchedOrderItem> {
   if (isMockMode) {
     const parents = readParentOrders();
     let updated: DispatchedOrderItem | null = null;
@@ -780,7 +787,11 @@ export async function creatorUpdateDispatchedOrderFields(id: string, fields: Rec
     reloadMockWorkOrders();
     return mockDelay(updated || ({} as DispatchedOrderItem));
   }
-  const raw = await request.post(`/dispatched-orders/${id}/creator-update`, { fields, reason });
+  const raw = await request.post(`/dispatched-orders/${id}/creator-update`, {
+    fields,
+    reason,
+    ...(workOrderUpdatedAt ? { workOrderUpdatedAt } : {}),
+  });
   return normalizeDispatchedOrderItem(raw);
 }
 

@@ -98,4 +98,10 @@ export class UpdateInServiceOrderDto {
   @ArrayMaxSize(5)
   @IsString({ each: true })
   attachments?: string[];
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(512)
+  resubmitReason?: string;
 }

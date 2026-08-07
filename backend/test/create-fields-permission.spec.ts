@@ -3,6 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
 import * as request from 'supertest';
 import { RolesGuard } from 'src/common/guards/roles.guard';
+import { FieldType, OrderType } from 'src/entities';
 import { FieldsService } from 'src/modules/admin/fields/fields.service';
 import { ImportsController } from 'src/modules/imports/imports.controller';
 import { ImportJobService } from 'src/modules/imports/import-job.service';
@@ -65,5 +66,36 @@ describe('create work-order fields permission', () => {
     } finally {
       await app.close();
     }
+  });
+
+  it('rejects import-time field creation from non-admin users', async () => {
+    const fieldsService = { create: jest.fn() };
+    const importJobService = { createJob: jest.fn() };
+    const controller = new ImportsController(
+      importJobService as never,
+      {} as never,
+      fieldsService as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(controller.confirm({
+      orderType: OrderType.ONBOARDING,
+      mapping: { 特殊字段: '__NEW_FIELD__' },
+      autoSubmit: true,
+      newFields: [{
+        header: '特殊字段',
+        fieldName: '特殊字段',
+        fieldType: FieldType.TEXT,
+        required: false,
+      }],
+    }, {
+      sub: 'sales-1',
+      username: 'sales',
+      roles: ['business_group_member'],
+    })).rejects.toThrow('仅管理员可在导入时创建特殊字段');
+
+    expect(fieldsService.create).not.toHaveBeenCalled();
+    expect(importJobService.createJob).not.toHaveBeenCalled();
   });
 });

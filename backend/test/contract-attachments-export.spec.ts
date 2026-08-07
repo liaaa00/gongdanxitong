@@ -35,9 +35,9 @@ describe('contract attachment export', () => {
     ];
     const { service } = makeService(rows);
     const workbook = new Workbook();
-    const entries = await (service as any).appendContractAttachmentIndex(workbook, [{
+    const entries = await (service as any).appendAttachmentIndex(workbook, [{
       parentOrder: { id: 'wo-1', employeeName: '张三', employeeIdCard: '330206199001011234', extraData: {} },
-    }]);
+    }], ['onboarding_material', 'contract_material']);
     expect(entries).toHaveLength(2);
     const sheet = workbook.getWorksheet('附件索引');
     expect(sheet?.rowCount).toBe(3);
@@ -56,10 +56,10 @@ describe('contract attachment export', () => {
       mimeType: 'application/pdf',
     }]);
     const workbook = new Workbook();
-    const entries = await (service as any).appendContractAttachmentIndex(workbook, [{
+    const entries = await (service as any).appendAttachmentIndex(workbook, [{
       id: 'do-1',
       parentOrder: { id: 'wo-1', employeeName: '张三', employeeIdCard: '330206199001011234', extraData: {} },
-    }]);
+    }], ['onboarding_material', 'contract_material']);
 
     expect(entries).toHaveLength(1);
     expect(entries[0].order.id).toBe('do-1');
@@ -75,7 +75,7 @@ describe('contract attachment export', () => {
 
   it('writes employee folders and attachment bytes into the ZIP', async () => {
     const { service, upload } = makeService([]);
-    const result = await (service as any).buildContractAttachmentsZip([{
+    const result = await (service as any).buildAttachmentsZip([{
       order: { parentOrder: { id: 'wo-1', employeeName: '张三', employeeIdCard: '330206199001011234', extraData: {} } },
       row: { workOrderId: 'wo-1', originalName: 'income-certificate.docx', fileId: 'file-1', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
     }], '劳动合同批导出');
@@ -135,17 +135,19 @@ describe('contract attachment export', () => {
         return { fileId: isZip ? 'zip-file' : 'excel-file', originalName: value.originalName };
       }),
     };
+    const attachmentRow = {
+      workOrderId: 'wo-1',
+      originalName: '劳动合同.docx',
+      fileId: 'attachment-1',
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    };
+    const attachmentRepository = { find: jest.fn(async () => [attachmentRow]) };
     const service = new ExportTemplatesService(
       { findOne: jest.fn(async () => template), create: jest.fn((value) => value) } as never,
       { createQueryBuilder: jest.fn(() => queryBuilder) } as never,
       { create: jest.fn((value) => value), save: jest.fn(async (value) => value) } as never,
       { find: jest.fn(async () => [{ fieldCode: 'employee_name', fieldName: '姓名', dropdownOptions: null }]) } as never,
-      { find: jest.fn(async () => [{
-        workOrderId: 'wo-1',
-        originalName: '劳动合同.docx',
-        fileId: 'attachment-1',
-        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      }]) } as never,
+      attachmentRepository as never,
       upload as never,
     );
     jest.spyOn(service as any, 'tryBuildStandardTemplateWorkbook').mockResolvedValue(null);
@@ -172,5 +174,42 @@ describe('contract attachment export', () => {
     const zipBuffer = savedBuffers.find((item) => item.mimeType === 'application/zip')?.buffer;
     const zip = await JSZip.loadAsync(zipBuffer!);
     expect(zip.file('张三-1234/劳动合同.docx')).toBeTruthy();
+
+    savedBuffers.length = 0;
+    order.moduleCode = 'resignation_cert';
+    Object.assign(template, {
+      id: 'template-resignation-cert',
+      templateName: '离职证明批导出模板',
+      moduleCode: 'resignation_cert',
+      signPlatform: null,
+    });
+    attachmentRow.originalName = '已签署离职证明.pdf';
+    attachmentRow.mimeType = 'application/pdf';
+    const loadAttachmentRowsSpy = jest.spyOn(service as any, 'loadAttachmentRows');
+
+    const resignationResult = await service.exportDispatchedOrdersAuto(
+      ['do-1'],
+      undefined,
+      { sub: 'handler-1', businessScope: 'beilun' } as never,
+    );
+
+    expect(loadAttachmentRowsSpy).toHaveBeenCalledWith(
+      expect.any(Array),
+      ['resignation_material', 'resignation_cert'],
+    );
+    expect(resignationResult.files).toEqual([
+      expect.objectContaining({ fileId: 'excel-file', fileType: 'excel', moduleCode: 'resignation_cert' }),
+      expect.objectContaining({ fileId: 'zip-file', fileType: 'attachments_zip', moduleCode: 'resignation_cert' }),
+    ]);
+    const resignationExcelBuffer = savedBuffers.find((item) => item.mimeType.includes('spreadsheet'))?.buffer;
+    const resignationWorkbook = new Workbook();
+    await resignationWorkbook.xlsx.load(resignationExcelBuffer as never);
+    expect(resignationWorkbook.getWorksheet('附件索引')?.getCell(2, 3).value).toBe('已签署离职证明.pdf');
+    expect(resignationWorkbook.getWorksheet('附件索引')?.getCell(2, 4).value).toEqual(
+      expect.objectContaining({ hyperlink: expect.stringContaining('attachment-1') }),
+    );
+    const resignationZipBuffer = savedBuffers.find((item) => item.mimeType === 'application/zip')?.buffer;
+    const resignationZip = await JSZip.loadAsync(resignationZipBuffer!);
+    expect(resignationZip.file('张三-1234/已签署离职证明.pdf')).toBeTruthy();
   });
 });

@@ -158,6 +158,65 @@ describe('DispatchedOrderService', () => {
     expect(result.extra_data?.mobile).toBe('13800000000');
   });
 
+  it('exposes newly configured dynamic template fields to the original business creator', async () => {
+    const order = {
+      ...makeDispatchedOrder(DispatchedOrderStatus.PENDING),
+      visibleFields: ['employee_name'],
+      parentOrder: {
+        ...makeDispatchedOrder().parentOrder,
+        createdBy: 'u1',
+        extraData: { employee_name: '张三' },
+      },
+    } as DispatchedOrder;
+    const allFields = [
+      { fieldCode: 'employee_name', fieldName: '姓名', isIncludedInTemplate: true },
+      { fieldCode: 'mobile', fieldName: '手机号', isIncludedInTemplate: true },
+      { fieldCode: 'custom_province_note', fieldName: '省份特殊说明', isIncludedInTemplate: true },
+      { fieldCode: 'custom_internal_note', fieldName: '内部字段', isIncludedInTemplate: false },
+    ].map((field, index) => ({
+      ...field,
+      fieldType: 'text',
+      orderType: OrderType.ONBOARDING,
+      businessContext: [OrderType.ONBOARDING],
+      isActive: true,
+      displayOrder: index,
+      isRequired: false,
+      defaultRequired: false,
+    } as unknown as FieldConfig));
+    const fieldPermissionService = {
+      getPermissionsForUser: jest.fn(async () => new Map(
+        allFields.map((field) => [field.fieldCode, FieldPermissionMode.VISIBLE]),
+      )),
+    } as unknown as FieldPermissionService;
+    const service = new DispatchedOrderService(
+      repoMock<DispatchedOrder>({ findOne: jest.fn(async () => order) }),
+      repoMock<WorkOrder>(),
+      repoMock<ModuleHandler>(),
+      repoMock<UserRole>(),
+      repoMock<FieldConfig>({ find: jest.fn(async () => allFields) }),
+      repoMock<Notification>(),
+      repoMock<OperationLog>(),
+      fieldPermissionService,
+      { getLogs: jest.fn() } as unknown as FieldSupplementService,
+      { exportSingleDispatchedOrder: jest.fn() } as never,
+      validationServiceMock as never,
+    );
+
+    const result = await service.findOne(order.id, {
+      sub: 'u1',
+      username: 'sales',
+      roles: ['business_group_member'],
+    } as JwtUserPayload);
+
+    expect(result.fields.map((field) => field.fieldCode)).toEqual([
+      'employee_name',
+      'custom_province_note',
+    ]);
+    expect(result.visibleFields).toEqual(['employee_name', 'custom_province_note']);
+    expect(result.workOrderUpdatedAt).toBe(order.parentOrder.updatedAt);
+    expect(result.work_order_updated_at).toBe(order.parentOrder.updatedAt);
+  });
+
   it('limits resignation certificate details to formal certificate fields', async () => {
     const order = {
       ...makeDispatchedOrder(DispatchedOrderStatus.PENDING),

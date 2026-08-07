@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsISO8601, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsISO8601, IsNotEmpty, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
 
 function trimOptionalText(value: unknown): unknown {
   if (typeof value !== 'string') return value;
@@ -16,11 +16,11 @@ export class ResubmitDispatchedOrderDto {
   @IsObject()
   fields?: Record<string, unknown>;
 
-  @IsOptional()
   @Transform(({ value }) => trimOptionalText(value))
   @IsString()
+  @IsNotEmpty()
   @MaxLength(500)
-  reason?: string;
+  reason!: string;
 
   @IsOptional()
   @IsString()

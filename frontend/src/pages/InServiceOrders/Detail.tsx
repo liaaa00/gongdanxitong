@@ -10,6 +10,7 @@ import {
   Empty,
   Form,
   Input,
+  InputNumber,
   Select,
   Space,
   Steps,
@@ -28,6 +29,7 @@ import {
   GlobalOutlined,
   HomeOutlined,
   ReloadOutlined,
+  RollbackOutlined,
   StopOutlined,
   SwapOutlined,
 } from '@ant-design/icons';
@@ -76,6 +78,16 @@ export function isCertificateTemplateOrder(orderKind: string): boolean {
     || orderKind === IN_SERVICE_ORDER_KINDS.RESIGNATION_CERTIFICATE;
 }
 
+export function getInServiceClosureActions(
+  orderKind: string,
+  canClose: boolean,
+): Array<'withdraw' | 'void'> {
+  if (!canClose) return [];
+  return orderKind === IN_SERVICE_ORDER_KINDS.CONTRACT_RENEWAL
+    ? ['withdraw', 'void']
+    : ['void'];
+}
+
 function getListPath(order: InServiceOrder): string {
   if (order.orderKind === IN_SERVICE_ORDER_KINDS.CONTRACT_RENEWAL) return '/renewal';
   if (order.orderKind === IN_SERVICE_ORDER_KINDS.CERTIFICATE) return '/in-service/certificates';
@@ -121,9 +133,16 @@ function useRoleFlags(order?: InServiceOrder | null) {
 interface OutcomeValue {
   remark: string;
   attachments: string[];
+  averageMonthlyIncome?: number;
 }
 
-function OutcomeFields({ onChange }: { onChange: (value: OutcomeValue) => void }) {
+function OutcomeFields({
+  onChange,
+  incomeCertificate = false,
+}: {
+  onChange: (value: OutcomeValue) => void;
+  incomeCertificate?: boolean;
+}) {
   const [value, setValue] = useState<OutcomeValue>({ remark: '', attachments: [] });
   const update = (patch: Partial<OutcomeValue>) => {
     const next = { ...value, ...patch };
@@ -132,6 +151,17 @@ function OutcomeFields({ onChange }: { onChange: (value: OutcomeValue) => void }
   };
   return (
     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+      {incomeCertificate ? (
+        <InputNumber
+          aria-label="近一年税前月均收入"
+          min={0.01}
+          precision={2}
+          prefix="¥"
+          style={{ width: '100%' }}
+          placeholder="请确认并填写最终月均收入"
+          onChange={(amount) => update({ averageMonthlyIncome: amount ?? undefined })}
+        />
+      ) : null}
       <Input.TextArea
         aria-label="办理结果备注"
         rows={4}
@@ -207,6 +237,7 @@ function buildTimelineItems(order: InServiceOrder) {
   }));
   const isCertificateOrder = order.orderKind === IN_SERVICE_ORDER_KINDS.CERTIFICATE;
   const certificateStatus = getInServiceStatusMeta(order.orderKind, order.status);
+  const closureAction = String(order.extraData?.__closureAction ?? 'void');
   const rows = isCertificateOrder ? [
     { label: '创建并自动派单', time: order.dispatchedAt || order.createdAt, note: order.createdByName || order.createdBy },
     { label: '开始开具', time: order.processingAt || order.acceptedAt, note: order.handlerName || order.handlerId || undefined },
@@ -232,7 +263,7 @@ function buildTimelineItems(order: InServiceOrder) {
       time: order.completedAt,
       note: order.completionRemark || undefined,
     },
-    { label: order.status === 'cancelled' ? '订单取消' : '归档', time: order.closedAt, note: order.closeReason || undefined },
+    { label: order.status === 'cancelled' ? (closureAction === 'withdraw' ? '工单撤回' : '工单作废') : '归档', time: order.closedAt, note: order.closeReason || undefined },
     ...transferRows,
   ];
   return rows
@@ -337,18 +368,39 @@ export default function InServiceOrderDetail() {
   const askOutcome = (success: boolean) => {
     let value: OutcomeValue = { remark: '', attachments: [] };
     const label = success ? '办理成功' : '办理失败';
+    const incomeCertificate = Boolean(
+      success
+      && order?.orderKind === IN_SERVICE_ORDER_KINDS.CERTIFICATE
+      && order.extraData?.certificateType === 'income',
+    );
     modal.confirm({
       title: label,
-      content: <OutcomeFields onChange={(next) => { value = next; }} />,
+      content: (
+        <OutcomeFields
+          incomeCertificate={incomeCertificate}
+          onChange={(next) => { value = next; }}
+        />
+      ),
       okText: '确认提交',
       cancelText: '取消',
       okButtonProps: success ? undefined : { danger: true },
-      onOk: () => runAction(
-        label,
-        () => success
-          ? completeInServiceOrder(order!.id, value.remark, value.attachments)
-          : failInServiceOrder(order!.id, value.remark, value.attachments),
-      ),
+      onOk: async () => {
+        if (incomeCertificate && (!value.averageMonthlyIncome || value.averageMonthlyIncome <= 0)) {
+          message.warning('请填写近一年税前月均收入');
+          return Promise.reject(new Error('average income required'));
+        }
+        await runAction(
+          label,
+          () => success
+            ? completeInServiceOrder(
+              order!.id,
+              value.remark,
+              value.attachments,
+              incomeCertificate ? { averageMonthlyIncome: value.averageMonthlyIncome } : undefined,
+            )
+            : failInServiceOrder(order!.id, value.remark, value.attachments),
+        );
+      },
     });
   };
 
@@ -405,7 +457,11 @@ export default function InServiceOrderDetail() {
   const handleResubmit = async () => {
     try {
       const changes = buildInServiceMutableFields(await form.validateFields(), order.orderKind);
-      await runAction('补充材料并重新提交', () => resubmitInServiceOrder(order.id, changes));
+      askReason(
+        '重新提交',
+        '补充材料并重新提交',
+        (reason) => resubmitInServiceOrder(order.id, changes, reason),
+      );
     } catch (error) {
       if ((error as { errorFields?: unknown[] })?.errorFields) message.error('请检查表单必填项');
     }
@@ -564,11 +620,20 @@ export default function InServiceOrderDetail() {
       </Button>,
     );
   }
-  if (canCancel) {
+  const closureActions = getInServiceClosureActions(order.orderKind, canCancel);
+  if (closureActions.includes('withdraw')) {
     actionButtons.push(
-      <Button key="cancel" danger icon={<StopOutlined />} loading={actionLoading}
-        onClick={() => askReason('取消订单', '取消订单', (reason) => cancelInServiceOrder(order.id, reason))}>
-        取消订单
+      <Button key="withdraw" icon={<RollbackOutlined />} loading={actionLoading}
+        onClick={() => askReason('撤回工单', '撤回工单', (reason) => cancelInServiceOrder(order.id, reason, 'withdraw'))}>
+        撤回工单
+      </Button>,
+    );
+  }
+  if (closureActions.includes('void')) {
+    actionButtons.push(
+      <Button key="void" danger icon={<StopOutlined />} loading={actionLoading}
+        onClick={() => askReason('作废工单', '作废工单', (reason) => cancelInServiceOrder(order.id, reason, 'void'))}>
+        作废工单
       </Button>,
     );
   }

@@ -13,6 +13,7 @@ import {
   type OutOfProvinceOrderType,
 } from '@/services/outOfProvince';
 import type { ImportJob } from '@/services/workOrders';
+import { useAuth } from '@/hooks/useAuth';
 
 function toUploadJob(job: ImportJob): ImportJobResult {
   return {
@@ -37,6 +38,7 @@ function toUploadJob(job: ImportJob): ImportJobResult {
 const OutOfProvinceImport: React.FC = () => {
   const navigate = useNavigate();
   const { message } = App.useApp();
+  const { hasRole } = useAuth();
   const [orderType, setOrderType] = useState<OutOfProvinceOrderType>(OUT_OF_PROVINCE_ORDER_TYPE.INCREASE);
 
   const handleConfirm = async (
@@ -75,6 +77,7 @@ const OutOfProvinceImport: React.FC = () => {
           </Space>
           <ExcelUploader
             key={orderType}
+            canCreateFields={hasRole('admin')}
             onPreview={(file) => previewOutOfProvinceImport(file, orderType)}
             onConfirm={handleConfirm}
             onPollJob={async (jobId) => toUploadJob(await getOutOfProvinceImportJob(jobId))}

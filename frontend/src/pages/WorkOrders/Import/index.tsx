@@ -6,6 +6,7 @@ import { DownloadOutlined } from '@ant-design/icons';
 import ExcelUploader from '@/components/ExcelUploader';
 import type { FieldMappingResult, ImportJobResult, NewFieldDraft } from '@/components/ExcelUploader';
 import { previewImport, confirmImport, getImportJob, downloadImportErrorReport, downloadServerImportTemplate } from '@/services/workOrders';
+import { useAuth } from '@/hooks/useAuth';
 
 const ORDER_TYPE_LABEL: Record<string, string> = {
   onboarding: '入职',
@@ -16,6 +17,7 @@ const WorkOrdersImport: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { message } = App.useApp();
+  const { hasRole } = useAuth();
 
   const orderType = useMemo(() => {
     const value = new URLSearchParams(location.search).get('orderType');
@@ -102,6 +104,7 @@ const WorkOrdersImport: React.FC = () => {
           <Button icon={<DownloadOutlined />} onClick={handleDownloadTemplate}>下载当前字段模板</Button>
         </Space>
         <ExcelUploader
+          canCreateFields={hasRole('admin')}
           onPreview={handlePreview}
           onConfirm={handleConfirm}
           onPollJob={handlePollJob}

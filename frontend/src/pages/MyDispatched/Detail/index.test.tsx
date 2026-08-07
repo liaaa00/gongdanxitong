@@ -149,6 +149,7 @@ const fields = [
     field_type: 'text',
     is_required: false,
     is_active: true,
+    is_included_in_template: true,
     display_order: 3,
     collection_group: 'custom',
   },
@@ -442,6 +443,36 @@ describe('MyDispatchedDetail readonly and creator repair actions', () => {
     expect(document.body).toHaveTextContent('标准模板');
     expect(document.body).not.toHaveTextContent('员工姓名');
     expect(document.body).not.toHaveTextContent('出生日期');
+  });
+
+  it('keeps a newly authorized dynamic template field available for original-order supplementation', async () => {
+    mocks.fieldPermissions = {
+      employee_name: 'visible',
+      custom_template_only: 'visible',
+    };
+    mocks.getActiveDetailViewTemplate.mockResolvedValue({
+      id: 'detail-contract',
+      template_name: '劳动合同',
+      module_code: 'contract',
+      field_list: [{ field_code: 'employee_name' }],
+    });
+    mocks.getDispatchedOrder.mockResolvedValue({
+      ...baseOrder,
+      visible_fields: ['employee_name', 'custom_template_only'],
+      extra_data: {
+        employee_name: '张三',
+        custom_template_only: '',
+      },
+      work_order_updated_at: '2026-06-01T00:00:00Z',
+    });
+
+    renderDetail('/my-dispatched/d-1');
+
+    expect(await screen.findByText('模板专用字段')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /修改/ }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByLabelText('模板专用字段')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('修改原因')).toBeRequired();
   });
 
   it('falls back to child visible fields when the contract detail template is unavailable', async () => {
@@ -907,7 +938,7 @@ describe('MyDispatchedDetail readonly and creator repair actions', () => {
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText('4. 其他')).toBeInTheDocument();
     expect(within(dialog).getByLabelText('其他原因')).toHaveValue('公司经营调整');
-    expect(within(dialog).getByLabelText('劳动合同法条款（选填）')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('适用的劳动合同法条款')).toBeInTheDocument();
     expect(screen.queryByText('离职材料收集')).not.toBeInTheDocument();
   });
 });

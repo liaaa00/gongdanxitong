@@ -89,6 +89,23 @@ export interface FieldMappingResult {
   _rows?: Record<string, unknown>[];
 }
 
+export function getUnresolvedImportHeaders(
+  mappingResult: Pick<FieldMappingResult, 'mapping'> | null,
+  mapping: Record<string, string>,
+  newFields: Record<string, NewFieldDraft>,
+  canCreateFields: boolean,
+): string[] {
+  return (mappingResult?.mapping ?? [])
+    .map((item) => item.excelColumn)
+    .filter((header) => !/^__col_\d+__$/.test(header.trim()))
+    .filter((header) => {
+      const fieldCode = String(mapping[header] ?? '').trim();
+      if (!fieldCode) return true;
+      if (fieldCode !== NEW_FIELD_SENTINEL) return false;
+      return !canCreateFields || !newFields[header];
+    });
+}
+
 export interface ImportWarningItem {
   row?: number;
   field?: string;
@@ -143,6 +160,7 @@ interface ExcelUploaderProps {
   onConfirm: (mapping: Record<string, string>, rows?: Record<string, unknown>[], previewResult?: FieldMappingResult, newFields?: NewFieldDraft[]) => Promise<ImportJobResult>;
   onPollJob?: (jobId: string) => Promise<ImportJobResult>;
   onDownloadErrorReport?: (jobId: string) => void;
+  canCreateFields?: boolean;
 }
 
 function getConfidenceBadge(confidence?: number) {
@@ -152,7 +170,7 @@ function getConfidenceBadge(confidence?: number) {
   return <Badge status="error" text={`${Math.round(confidence * 100)}%`} />;
 }
 
-function ExcelUploader({ onPreview, onConfirm, onPollJob, onDownloadErrorReport }: ExcelUploaderProps) {
+function ExcelUploader({ onPreview, onConfirm, onPollJob, onDownloadErrorReport, canCreateFields = false }: ExcelUploaderProps) {
   const { message } = App.useApp();
   const [step, setStep] = useState(0);
   const [file, setFile] = useState<File | null>(null);
@@ -210,14 +228,18 @@ function ExcelUploader({ onPreview, onConfirm, onPollJob, onDownloadErrorReport 
     );
     const stillMissing = requiredFields.filter((f) => !mappedFieldCodes.has(f.field_code));
 
+    const unresolvedHeaders = getUnresolvedImportHeaders(mappingResult, mapping, newFields, canCreateFields);
     const warnings: string[] = [];
+    if (unresolvedHeaders.length > 0) {
+      warnings.push(`以下表头未配置或未完成映射: ${unresolvedHeaders.join('、')}`);
+    }
     if (stillMissing.length > 0) {
       warnings.push(`缺少必填字段: ${stillMissing.map((f) => f.field_name).join('、')}`);
     }
 
     if (warnings.length > 0) {
       setValidationWarnings(warnings);
-      message.warning('仍有必填字段未映射，请查看顶部提示');
+      message.warning('仍有表头未映射或必填字段缺失，请查看顶部提示');
     } else {
       setValidationWarnings([]);
       handleConfirm();
@@ -228,7 +250,9 @@ function ExcelUploader({ onPreview, onConfirm, onPollJob, onDownloadErrorReport 
     setConfirming(true);
     setError(null);
     try {
-      const newFieldsList = Object.values(newFields).filter((f) => mapping[f.header] === NEW_FIELD_SENTINEL);
+      const newFieldsList = canCreateFields
+        ? Object.values(newFields).filter((f) => mapping[f.header] === NEW_FIELD_SENTINEL)
+        : [];
       const result = await onConfirm(mapping, mappingResult?._rows, mappingResult ?? undefined, newFieldsList);
       setImportResult(result);
       setShowAllImportErrors(false);
@@ -350,7 +374,6 @@ function ExcelUploader({ onPreview, onConfirm, onPollJob, onDownloadErrorReport 
                 setMapping((prev) => ({ ...prev, [record.excelColumn]: val }));
               }}
               options={[
-                { label: '— 不导入 —', value: '' },
                 ...(mappingResult?.availableFields || []).map((f) => ({
                   label: (
                     <span>
@@ -360,18 +383,18 @@ function ExcelUploader({ onPreview, onConfirm, onPollJob, onDownloadErrorReport 
                   ),
                   value: f.field_code,
                 })),
-                {
+                ...(canCreateFields ? [{
                   label: (
                     <span style={{ color: '#1677ff' }}>
                       <PlusOutlined /> 新建字段...
                     </span>
                   ),
                   value: NEW_FIELD_SENTINEL,
-                },
+                }] : []),
               ]}
               style={{ width: 240 }}
               allowClear
-              placeholder="选择字段或忽略"
+              placeholder="请选择已配置字段"
             />
             {isNewField && draft && (
               <Tooltip title="编辑新建字段">

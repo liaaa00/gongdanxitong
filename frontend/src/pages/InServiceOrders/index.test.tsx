@@ -174,14 +174,14 @@ describe('single-business mock lifecycle', () => {
 
     await acceptInServiceOrder(created.id);
     await requestInServiceOrderInfo(created.id, '补充身份证');
-    const initialResubmit = await resubmitInServiceOrder(created.id, { attachments: ['a1'] });
+    const initialResubmit = await resubmitInServiceOrder(created.id, { attachments: ['a1'] }, '补齐身份证附件');
     expect(initialResubmit.status).toBe('accepted');
 
     await acceptInServiceOrder(created.id);
     await confirmInServiceOrder(created.id);
     await startInServiceProcessing(created.id, 'offline');
     await requestInServiceOrderInfo(created.id, '补充盖章材料');
-    const processingResubmit = await resubmitInServiceOrder(created.id, { attachments: ['a2'] });
+    const processingResubmit = await resubmitInServiceOrder(created.id, { attachments: ['a2'] }, '补齐盖章材料');
     expect(processingResubmit.status).toBe('processing');
     expect(processingResubmit.attachments).toEqual(['a1', 'a2']);
 

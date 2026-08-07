@@ -352,7 +352,7 @@ describe('dispatched order field sync records', () => {
     const { service, dispatchedOrderRepo, workOrderRepo, fieldSyncBatchRepo, fieldSyncItemRepo } = buildService(order);
     dispatchedOrderRepo.find.mockResolvedValue([order, completed]);
 
-    await service.creatorUpdateFields(ORDER_ID, { fields: { mobile: 'new' } }, creator);
+    await service.creatorUpdateFields(ORDER_ID, { fields: { mobile: 'new' }, reason: '补录手机号' }, creator);
 
     expect(order.status).toBe(DispatchedOrderStatus.MODIFY_PENDING);
     expect(workOrderRepo.save).not.toHaveBeenCalled();
@@ -389,9 +389,59 @@ describe('dispatched order field sync records', () => {
     });
     const { service, workOrderRepo, fieldSyncBatchRepo } = buildService(order);
 
-    await expect(service.creatorUpdateFields(ORDER_ID, { fields: { mobile: 'new' } }, creator)).rejects.toMatchObject({ status: 403 });
+    await expect(service.creatorUpdateFields(ORDER_ID, { fields: { mobile: 'new' }, reason: '尝试修改越权字段' }, creator)).rejects.toMatchObject({ status: 403 });
 
     expect(workOrderRepo.save).not.toHaveBeenCalled();
     expect(fieldSyncBatchRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('allows the creator to supplement a configured dynamic template field on the original order', async () => {
+    const order = makeOrder(DispatchedOrderStatus.PENDING, {
+      moduleCode: 'data_entry',
+      visibleFields: ['employee_name'],
+      handlerId: null,
+      acceptedAt: null,
+    });
+    const { service, workOrderRepo } = buildService(order);
+    (service as any).fieldConfigRepository.find.mockResolvedValue([{
+      fieldCode: 'custom_province_note',
+      fieldName: '省份特殊说明',
+      orderType: OrderType.ONBOARDING,
+      businessContext: [OrderType.ONBOARDING],
+      isActive: true,
+      isIncludedInTemplate: true,
+    } as FieldConfig]);
+
+    await service.creatorUpdateFields(ORDER_ID, {
+      fields: { custom_province_note: '补充内容' },
+      reason: '后台新增字段后补录',
+      workOrderUpdatedAt: fixedDate.toISOString(),
+    }, creator);
+
+    expect(workOrderRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+      extraData: expect.objectContaining({ custom_province_note: '补充内容' }),
+    }));
+  });
+
+  it('requires a reason and rejects stale updates when supplementing the original order', async () => {
+    const order = makeOrder(DispatchedOrderStatus.PENDING);
+    const { service, workOrderRepo } = buildService(order);
+
+    await expect(service.creatorUpdateFields(
+      ORDER_ID,
+      { fields: { mobile: 'new' }, reason: '   ' },
+      creator,
+    )).rejects.toThrow('修改原因不能为空');
+    await expect(service.creatorUpdateFields(
+      ORDER_ID,
+      {
+        fields: { mobile: 'new' },
+        reason: '补录手机号',
+        workOrderUpdatedAt: '2026-06-25T00:00:00.000Z',
+      },
+      creator,
+    )).rejects.toThrow('工单已被更新，请刷新后重试');
+
+    expect(workOrderRepo.save).not.toHaveBeenCalled();
   });
 });

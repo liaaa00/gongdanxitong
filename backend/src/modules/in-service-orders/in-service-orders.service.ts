@@ -46,7 +46,9 @@ import { buildContractTermText } from 'src/modules/dispatched-orders/resignation
 import { WorkflowDefinition, WorkflowDefinitionStatus } from 'src/modules/workflows/workflow.entity';
 import {
   ApproveInServiceOrderDto,
+  CancelInServiceOrderDto,
   CloseInServiceOrderDto,
+  InServiceCancelAction,
   CompleteInServiceOrderDto,
   ReasonInServiceOrderDto,
   StartInServiceProcessingDto,
@@ -170,9 +172,6 @@ export class InServiceOrdersService {
           referenceBaseSalary: extraData.referenceBaseSalary
             ?? source.reference_base_salary
             ?? source.base_salary,
-          averageMonthlyIncome: extraData.averageMonthlyIncome
-            ?? source.averageMonthlyIncome
-            ?? source.average_monthly_income,
         };
       }
     }
@@ -616,21 +615,37 @@ export class InServiceOrdersService {
       throw businessException(4810, HttpStatus.BAD_REQUEST, '仅待补充材料工单可重新提交');
     }
 
-    const next = { ...order, ...dto };
+    const resubmitReason = dto.resubmitReason?.trim();
+    if (!resubmitReason) {
+      throw businessException(4810, HttpStatus.BAD_REQUEST, '重新提交原因不能为空');
+    }
+    const { resubmitReason: _resubmitReason, ...changes } = dto;
+    const next = { ...order, ...changes };
     this.validateKindPayload(
       order.orderKind ?? InServiceOrderKind.SINGLE_BUSINESS,
       next,
     );
-    if (dto.attachments) {
-      const attachments = Array.from(new Set([...(order.attachments ?? []), ...dto.attachments]));
+    if (changes.attachments) {
+      const attachments = Array.from(new Set([...(order.attachments ?? []), ...changes.attachments]));
       if (attachments.length > 5) {
         throw businessException(4805, HttpStatus.BAD_REQUEST, '附件总数不能超过 5 个');
       }
-      Object.assign(order, dto, { attachments });
+      Object.assign(order, changes, { attachments });
     } else {
-      Object.assign(order, dto);
+      Object.assign(order, changes);
     }
 
+    const history = Array.isArray(order.extraData?.__resubmitHistory)
+      ? order.extraData.__resubmitHistory
+      : [];
+    order.extraData = {
+      ...(order.extraData ?? {}),
+      __resubmitHistory: [...history, {
+        reason: resubmitReason,
+        submittedBy: user.sub,
+        submittedAt: new Date().toISOString(),
+      }].slice(-20),
+    };
     const target = order.pendingReturnStatus ?? InServiceOrderStatus.DISPATCHED;
     await this.assertFlowTransition(order, target);
     order.status = target;
@@ -718,6 +733,21 @@ export class InServiceOrdersService {
     const order = await this.findEntity(id);
     this.assertHandlerOrManagement(order, user);
     this.assertNoPendingMaterialChange(order);
+    if (
+      order.orderKind === InServiceOrderKind.CERTIFICATE
+      && String(order.extraData?.certificateType ?? '') === 'income'
+    ) {
+      const averageMonthlyIncome = this.parseSalary(dto.extraData?.averageMonthlyIncome);
+      if (averageMonthlyIncome === null || averageMonthlyIncome <= 0) {
+        throw businessException(4811, HttpStatus.BAD_REQUEST, '经办人完成收入证明前必须填写近一年税前月均收入');
+      }
+      order.extraData = {
+        ...(order.extraData ?? {}),
+        averageMonthlyIncome,
+        incomeConfirmedBy: user.sub,
+        incomeConfirmedAt: new Date().toISOString(),
+      };
+    }
     await this.assertFlowTransition(order, InServiceOrderStatus.COMPLETED);
     order.status = InServiceOrderStatus.COMPLETED;
     order.completionRemark = dto.remark?.trim() || null;
@@ -766,12 +796,12 @@ export class InServiceOrdersService {
 
   async cancel(
     id: string,
-    dto: ReasonInServiceOrderDto,
+    dto: CancelInServiceOrderDto,
     user: JwtUserPayload,
   ): Promise<InServiceOrderResponseDto> {
     const order = await this.findEntity(id);
     this.assertCreator(order, user);
-    return this.cancelOrder(order, dto.reason, user);
+    return this.cancelOrder(order, dto.reason, user, dto.action ?? InServiceCancelAction.VOID);
   }
 
   async exportRenewalTemplate(id: string, user: JwtUserPayload) {
@@ -951,12 +981,21 @@ export class InServiceOrdersService {
     order: InServiceOrder,
     reason: string,
     user: JwtUserPayload,
+    action?: InServiceCancelAction,
   ): Promise<InServiceOrderResponseDto> {
     await this.assertFlowTransition(order, InServiceOrderStatus.CANCELLED);
     order.status = InServiceOrderStatus.CANCELLED;
     order.closedBy = user.sub;
     order.closedAt = new Date();
     order.closeReason = reason.trim();
+    if (action) {
+      // ponytail: withdrawal and void share the existing cancelled terminal state until restoration rules diverge.
+      order.extraData = {
+        ...(order.extraData ?? {}),
+        __closureAction: action,
+        __closureAt: order.closedAt.toISOString(),
+      };
+    }
     return this.saveAndRespond(order);
   }
 
@@ -1111,9 +1150,6 @@ export class InServiceOrdersService {
       }
       if (!extraData.hireDate || !extraData.jobTitle || !extraData.purpose) {
         throw businessException(4811, HttpStatus.BAD_REQUEST, '入职日期、职务和证明用途不能为空');
-      }
-      if (certificateType === 'income' && extraData.averageMonthlyIncome === undefined) {
-        throw businessException(4811, HttpStatus.BAD_REQUEST, '收入证明需填写近一年税前月均收入');
       }
       return;
     }
