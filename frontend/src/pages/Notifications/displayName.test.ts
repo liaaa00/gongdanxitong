@@ -43,6 +43,11 @@ describe('notification operator display helpers', () => {
     expect(getNotificationDisplayContent({ content: '杨纯 修改了 contract_feedback' } as any)).not.toContain('contract_feedback');
   });
 
+  it('localizes resignation certificate module name', () => {
+    expect(localizeNotificationInternalKeys('resignation_cert 已更新')).toBe('离职证明 已更新');
+    expect(getNotificationDisplayContent({ content: 'resignation_cert 已更新' } as any)).toBe('离职证明 已更新');
+  });
+
   it('builds readable Chinese content from single field payload values', () => {
     const content = getNotificationDisplayContent({
       content: '杨纯 修改了 contract_feedback',

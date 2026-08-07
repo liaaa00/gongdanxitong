@@ -92,6 +92,41 @@ describe('dispatchedOrders services', () => {
     expect(requestGet.mock.calls[0][1].params).not.toHaveProperty('silentError');
   });
 
+  it('falls back to the formal resignation certificate field set', async () => {
+    requestGet.mockResolvedValueOnce({
+      list: [{
+        id: 'cert-1',
+        parent_order_id: 'parent-1',
+        order_no: 'RS-001',
+        module_code: 'resignation_cert',
+        status: 'pending',
+        employee_name: '张三',
+        customer_name: '客户A',
+        visible_fields: [],
+        created_at: '2026-08-08T00:00:00.000Z',
+      }],
+      page: 1,
+      pageSize: 20,
+      total: 1,
+      totalPages: 1,
+    });
+
+    const result = await getDispatchedOrders({ page: 1, pageSize: 20, moduleCode: 'resignation_cert' });
+
+    expect(result.list[0].visible_fields).toEqual(expect.arrayContaining([
+      'employee_name',
+      'id_card_no',
+      'position',
+      'resignation_reason',
+      'resignation_date',
+      'need_resignation_cert',
+      'cert_delivery_address',
+      'resignation_cert_status',
+    ]));
+    expect(result.list[0].visible_fields).not.toContain('social_insurance_result');
+    expect(result.list[0].visible_fields).not.toContain('need_resignation_share');
+  });
+
   it('returns an empty failed page instead of throwing when safe list receives a 400 response', async () => {
     const badRequest = Object.assign(new Error('Request failed with status code 400'), {
       response: { status: 400, data: { message: 'pageSize must not be greater than 100' } },

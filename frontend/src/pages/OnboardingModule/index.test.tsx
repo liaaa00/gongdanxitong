@@ -197,6 +197,25 @@ describe('OnboardingModule header table filters', () => {
   });
 });
 
+describe('OnboardingModule resignation certificate list', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.latestProTableProps = undefined;
+    mocks.moduleCode = 'resignation_cert';
+    mocks.getDispatchedOrders.mockResolvedValue({ list: [], total: 0 });
+  });
+
+  it('keeps formal certificate completion on the detail page', () => {
+    render(<OnboardingModule />);
+
+    expect(mocks.latestProTableProps.headerTitle).toBe('离职证明子工单列表');
+    const actions = mocks.latestProTableProps.toolBarRender() as React.ReactElement[];
+    const keys = actions.map((action) => action.key);
+    expect(keys).toEqual(expect.arrayContaining(['columns', 'batch-accept', 'batch-return']));
+    expect(keys).not.toEqual(expect.arrayContaining(['import-status', 'export', 'batch']));
+  });
+});
+
 describe('OnboardingModule batch return', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -349,6 +368,22 @@ describe('OnboardingModule action permission baseline', () => {
       expect(state.canBatchComplete).toBe(true);
       expect(state.canBatchReturn).toBe(true);
       expect(state.canBatchUrge).toBe(false);
+    }
+  });
+
+  it('limits resignation certificate list to accept and return actions', () => {
+    for (const roleCode of ['contract_specialist', 'shared_leader']) {
+      const state = getOnboardingModulePermissionState({
+        currentModule: 'resignation_cert',
+        userPermissions: DEFAULT_MATRIX[roleCode],
+        hasRole: hasRoleFactory(roleCode === 'contract_specialist' ? ['labor_contract_member'] : ['shared_team_owner']),
+      });
+
+      expect(state.canBatchAccept).toBe(true);
+      expect(state.canBatchReturn).toBe(true);
+      expect(state.canBatchImport).toBe(false);
+      expect(state.canBatchExport).toBe(false);
+      expect(state.canBatchComplete).toBe(false);
     }
   });
 

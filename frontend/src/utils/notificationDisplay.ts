@@ -44,7 +44,7 @@ const ENTITY_LABEL_FALLBACKS: Record<string, string> = {
   data_entry_resign: '减员报岗录入',
   resignation_social_insurance: '社保公积金减员',
   social_insurance_resign: '社保公积金减员',
-  resignation_cert: '离职材料收集',
+  resignation_cert: '离职证明',
   contract_feedback: '劳动合同新签反馈',
 };
 

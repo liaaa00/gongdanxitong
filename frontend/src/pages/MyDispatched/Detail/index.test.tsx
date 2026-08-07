@@ -908,5 +908,6 @@ describe('MyDispatchedDetail readonly and creator repair actions', () => {
     expect(within(dialog).getByText('4. 其他')).toBeInTheDocument();
     expect(within(dialog).getByLabelText('其他原因')).toHaveValue('公司经营调整');
     expect(within(dialog).getByLabelText('劳动合同法条款（选填）')).toBeInTheDocument();
+    expect(screen.queryByText('离职材料收集')).not.toBeInTheDocument();
   });
 });

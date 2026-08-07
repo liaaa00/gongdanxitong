@@ -946,8 +946,8 @@ const MyDispatchedDetail: React.FC = () => {
           </Space>
         </Card>
 
-        {/* 离职材料附件：三个离职子工单共享挂在主工单(parent_order_id)上的附件，bizPurpose=resignation_material */}
-        {['resignation_contact', 'resignation_cert'].includes(String(order.module_code || '')) && order.parent_order_id && (
+        {/* 离职材料只在材料收集子工单维护；证明子工单仅核对并生成正式 Word。 */}
+        {order.module_code === 'resignation_contact' && order.parent_order_id && (
           <MaterialsUpload workOrderId={order.parent_order_id} bizPurpose="resignation_material" />
         )}
 

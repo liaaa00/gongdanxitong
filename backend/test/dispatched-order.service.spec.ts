@@ -158,6 +158,64 @@ describe('DispatchedOrderService', () => {
     expect(result.extra_data?.mobile).toBe('13800000000');
   });
 
+  it('limits resignation certificate details to formal certificate fields', async () => {
+    const order = {
+      ...makeDispatchedOrder(DispatchedOrderStatus.PENDING),
+      moduleCode: 'resignation_cert',
+      visibleFields: ['customer_name', 'social_insurance_result', 'resignation_reason'],
+      parentOrder: {
+        ...makeDispatchedOrder().parentOrder,
+        orderType: OrderType.RESIGNATION,
+        extraData: { customer_name: '客户A', resignation_reason: '合同到期' },
+      },
+    } as DispatchedOrder;
+    const allFields = [
+      'customer_name', 'customer_code', 'mobile', 'email', 'position',
+      'employee_name', 'id_card_no', 'resignation_reason', 'resignation_date',
+      'need_resignation_cert', 'cert_delivery_address', 'resignation_cert_status',
+      'social_insurance_result', 'social_insurance_remark',
+    ].map((fieldCode, index) => ({
+      fieldCode,
+      fieldName: fieldCode,
+      fieldType: 'text',
+      orderType: OrderType.RESIGNATION,
+      businessContext: [OrderType.RESIGNATION],
+      isActive: true,
+      displayOrder: index,
+      isRequired: false,
+      defaultRequired: false,
+    } as unknown as FieldConfig));
+    const fieldConfigRepo = repoMock<FieldConfig>({ find: jest.fn(async () => allFields) });
+    const fieldPermissionService = {
+      getPermissionsForUser: jest.fn(async () => new Map(allFields.map((field) => [field.fieldCode, FieldPermissionMode.VISIBLE]))),
+    } as unknown as FieldPermissionService;
+    const service = new DispatchedOrderService(
+      repoMock<DispatchedOrder>({ findOne: jest.fn(async () => order) }),
+      repoMock<WorkOrder>(),
+      repoMock<ModuleHandler>(),
+      repoMock<UserRole>(),
+      fieldConfigRepo,
+      repoMock<Notification>(),
+      repoMock<OperationLog>(),
+      fieldPermissionService,
+      { getLogs: jest.fn() } as unknown as FieldSupplementService,
+      { exportSingleDispatchedOrder: jest.fn() } as never,
+      validationServiceMock as never,
+    );
+
+    const result = await service.findOne(order.id, {
+      sub: 'jiang-id', username: 'jianglu', roles: ['shared_leader'],
+    } as JwtUserPayload);
+
+    expect(result.fields.map((field) => field.fieldCode)).toEqual([
+      'customer_name', 'customer_code', 'mobile', 'email', 'position', 'employee_name',
+      'id_card_no', 'resignation_reason', 'resignation_date',
+      'need_resignation_cert', 'cert_delivery_address', 'resignation_cert_status',
+    ]);
+    expect(result.fields.some((field) => field.fieldCode === 'social_insurance_result')).toBe(false);
+    expect(result.visibleFields).toEqual(result.fields.map((field) => field.fieldCode));
+  });
+
   it('keeps an assigned province handler visible regardless of legacy module roles', async () => {
     const { service, queryBuilder } = makeService({
       find: jest.fn(async () => [

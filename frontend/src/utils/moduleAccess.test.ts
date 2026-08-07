@@ -12,6 +12,7 @@ describe('moduleAccess phase-1 visibility', () => {
     expect(getPhase1ModuleDisplayName('data_entry_resign')).toBe('减员报岗录入');
     expect(getPhase1ModuleDisplayName('social_insurance_resign')).toBe('社保公积金减员');
     expect(getPhase1ModuleDisplayName('resignation_social_insurance')).toBe('社保公积金减员');
+    expect(getPhase1ModuleDisplayName('resignation_cert')).toBe('离职证明');
   });
 
   it('hides in-service modules in phase 1', () => {
@@ -25,6 +26,12 @@ describe('moduleAccess phase-1 visibility', () => {
     expect(isPhase1VisibleOrderType('offboarding')).toBe(true);
     expect(isPhase1VisibleOrderType('leave')).toBe(true);
     expect(isPhase1VisibleOrderType('in_service')).toBe(false);
+  });
+
+  it('exposes resignation certificate only to configured certificate handlers', () => {
+    expect(canAccessModuleCode('resignation_cert', roles([ROLE.LABOR_CONTRACT_MEMBER]))).toBe(true);
+    expect(canAccessModuleCode('resignation_cert', roles([ROLE.SHARED_TEAM_OWNER]))).toBe(true);
+    expect(canAccessModuleCode('resignation_cert', roles([ROLE.SOCIAL_INSURANCE_SPECIALIST]))).toBe(false);
   });
 
   it('maps social insurance specialist to increase/decrease only', () => {

@@ -153,7 +153,15 @@ const MODULE_META: Record<string, { name: string; visible_fields: string[]; supp
   },
   renewal_contract: { name: '劳动合同续签', visible_fields: [], supplementable_fields: [] },
   resignation_contact: { name: '离职材料收集', visible_fields: [], supplementable_fields: [] },
-  resignation_cert: { name: '离职证明', visible_fields: [], supplementable_fields: [] },
+  resignation_cert: {
+    name: '离职证明',
+    visible_fields: [
+      'customer_name', 'customer_code', 'mobile', 'email', 'position',
+      'employee_name', 'id_card_no', 'resignation_reason', 'resignation_date',
+      'need_resignation_cert', 'cert_delivery_address', 'resignation_cert_status',
+    ],
+    supplementable_fields: [],
+  },
   data_entry_resign: { name: '减员报岗录入', visible_fields: [], supplementable_fields: [] },
   social_insurance_resign: { name: '社保公积金减员', visible_fields: [], supplementable_fields: [] },
   resignation_social_insurance: { name: '社保公积金减员', visible_fields: [], supplementable_fields: [] },

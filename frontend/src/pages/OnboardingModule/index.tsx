@@ -67,7 +67,7 @@ export interface OnboardingModulePermissionState {
 }
 
 export function getOnboardingModuleManageAction(currentModule: string): string {
-  if (['contract', 'renewal_contract'].includes(currentModule)) return 'module.contract.manage';
+  if (['contract', 'renewal_contract', 'resignation_cert'].includes(currentModule)) return 'module.contract.manage';
   if (currentModule === 'onboarding_contact') return 'module.onboarding_contact.manage';
   if (currentModule === 'resignation_contact') return 'module.resignation_contact.manage';
   if (currentModule === 'data_entry') return 'module.data_entry.manage';
@@ -87,6 +87,7 @@ export function getOnboardingModulePermissionState({
   hasRole: (roleCode: string) => boolean;
 }): OnboardingModulePermissionState {
   const isSocialModule = ['social_insurance', 'social_insurance_resign', 'resignation_social_insurance'].includes(currentModule);
+  const isResignationCertificateModule = currentModule === 'resignation_cert';
   const hasActionPermission = (action: string) => (
     userPermissions.includes('*') || userPermissions.includes('all') || userPermissions.includes(action)
   );
@@ -95,7 +96,7 @@ export function getOnboardingModulePermissionState({
   ));
   const moduleManageAction = getOnboardingModuleManageAction(currentModule);
   const legacyCanOperateCurrentModule = hasRole('admin')
-    || (['contract', 'renewal_contract'].includes(currentModule) && (hasRole('labor_contract_member') || hasRole('shared_team_owner')))
+    || (['contract', 'renewal_contract', 'resignation_cert'].includes(currentModule) && (hasRole('labor_contract_member') || hasRole('shared_team_owner')))
     || (['onboarding_contact', 'resignation_contact'].includes(currentModule) && (hasRole('onboarding_resignation_member') || hasRole('shared_team_owner')))
     || (['data_entry', 'data_entry_resign'].includes(currentModule) && hasRole('data_entry_leader'))
     || (['social_insurance', 'social_insurance_resign', 'resignation_social_insurance'].includes(currentModule) && hasRole('social_insurance_specialist'));
@@ -103,11 +104,11 @@ export function getOnboardingModulePermissionState({
     ? hasActionPermission(moduleManageAction)
     : legacyCanOperateCurrentModule;
   const canBackendOperate = canOperateCurrentModule;
-  const canBatchImport = canBackendOperate && (!hasBackendActionPermissions || hasActionPermission('dispatched_order.batch_import'));
+  const canBatchImport = !isResignationCertificateModule && canBackendOperate && (!hasBackendActionPermissions || hasActionPermission('dispatched_order.batch_import'));
   const canBatchImportFields = canBackendOperate && (!hasBackendActionPermissions || hasActionPermission('dispatched_order.batch_import_fields'));
-  const canBatchExport = canBackendOperate && (!hasBackendActionPermissions || hasActionPermission('dispatched_order.batch_export'));
+  const canBatchExport = !isResignationCertificateModule && canBackendOperate && (!hasBackendActionPermissions || hasActionPermission('dispatched_order.batch_export'));
   const canBatchAccept = canBackendOperate && (!hasBackendActionPermissions || hasActionPermission('dispatched_order.batch_accept'));
-  const canBatchComplete = canBackendOperate && (!hasBackendActionPermissions || hasActionPermission(isSocialModule ? 'dispatched_order.batch_feedback' : 'dispatched_order.batch_complete'));
+  const canBatchComplete = !isResignationCertificateModule && canBackendOperate && (!hasBackendActionPermissions || hasActionPermission(isSocialModule ? 'dispatched_order.batch_feedback' : 'dispatched_order.batch_complete'));
   const canBatchReturn = canBackendOperate;
   const canBatchUrge = hasBackendActionPermissions
     ? hasActionPermission('dispatched_order.batch_urge')
@@ -622,7 +623,7 @@ const OnboardingModule: React.FC = () => {
         onChange={handleTableChange}
         rowKey="id"
         search={false}
-        headerTitle={`${moduleLabel}列表`}
+        headerTitle={currentModule === 'resignation_cert' ? '离职证明子工单列表' : `${moduleLabel}列表`}
         options={false}
         toolBarRender={() => [
           <span key="columns">{columnConfig.button}</span>,

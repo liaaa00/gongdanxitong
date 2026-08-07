@@ -6,6 +6,7 @@ export const PHASE1_ENABLED_MODULE_CODES = [
   'data_entry',
   'social_insurance',
   'resignation_contact',
+  'resignation_cert',
   'data_entry_resign',
   'social_insurance_resign',
 ] as const;
@@ -35,7 +36,7 @@ export const MODULE_DISPLAY_NAMES: Record<string, string> = {
   social_insurance_change: '社保公积金变更',
   social_fund_change: '社保公积金变更',
   resignation_contact: '离职材料收集',
-  resignation_cert: '离职材料收集',
+  resignation_cert: '离职证明',
   data_entry_resign: '减员报岗录入',
   social_insurance_resign: '社保公积金减员',
   resignation_social_insurance: '社保公积金减员',
@@ -124,8 +125,12 @@ export function getDefaultAccessibleModuleCodesByRoles(userRoles: { code?: strin
     modules.add('contract');
     modules.add('onboarding_contact');
     modules.add('resignation_contact');
+    modules.add('resignation_cert');
   }
-  if (roles.has(ROLE.LABOR_CONTRACT_MEMBER)) modules.add('contract');
+  if (roles.has(ROLE.LABOR_CONTRACT_MEMBER)) {
+    modules.add('contract');
+    modules.add('resignation_cert');
+  }
   if (roles.has(ROLE.ONBOARDING_RESIGNATION_MEMBER)) {
     modules.add('onboarding_contact');
     modules.add('resignation_contact');

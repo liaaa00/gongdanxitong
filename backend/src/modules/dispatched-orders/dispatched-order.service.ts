@@ -119,6 +119,11 @@ const DISPATCHED_ORDER_STATUS_ALIASES: Record<string, DispatchedOrderStatus | Di
 
 const SUPPLEMENT_ALLOWED_MODULE_CODE = 'onboarding_contact';
 const SUPPLEMENT_ALLOWED_USERNAMES = new Set(['maoyani', 'jianglu', '毛雅妮', '江璐']);
+const RESIGNATION_CERTIFICATE_VISIBLE_FIELDS = new Set([
+  'customer_name', 'customer_code', 'mobile', 'email', 'position',
+  'employee_name', 'id_card_no', 'resignation_reason', 'resignation_date',
+  'need_resignation_cert', 'cert_delivery_address', 'resignation_cert_status',
+]);
 
 export function canStartResignationCertificate(
   moduleCode: string,
@@ -2483,6 +2488,10 @@ export class DispatchedOrderService {
     const visibleSet = !isReturnedToBusinessCreator && order.visibleFields
       ? new Set(order.visibleFields)
       : null;
+    // 离职证明字段由正式证明字段白名单定义，忽略历史子单上的旧字段快照。
+    const effectiveVisibleSet = order.moduleCode === DispatchModuleCode.RESIGNATION_CERT
+      ? null
+      : visibleSet;
     const configuredHandlerNames = (await this.getConfiguredHandlerNamesByModule([order.moduleCode])).get(order.moduleCode) ?? [];
     const syncSummary = await this.buildFieldSyncSummary(order.id);
     const filteredFields = fields.filter((field) => {
@@ -2491,9 +2500,13 @@ export class DispatchedOrderService {
         || field.businessContext?.includes(order.parentOrder.orderType) === true;
       const permission = permissions.get(field.fieldCode);
       return sameType
-        && (!visibleSet || visibleSet.has(field.fieldCode))
+        && (!effectiveVisibleSet || effectiveVisibleSet.has(field.fieldCode))
+        && (order.moduleCode !== DispatchModuleCode.RESIGNATION_CERT || RESIGNATION_CERTIFICATE_VISIBLE_FIELDS.has(field.fieldCode))
         && (!hasConfiguredPermissions || permission !== FieldPermissionMode.HIDDEN);
     });
+    const detailVisibleFields = order.moduleCode === DispatchModuleCode.RESIGNATION_CERT
+      ? filteredFields.map((field) => field.fieldCode)
+      : order.visibleFields;
     return {
       ...this.toListItem(order, configuredHandlerNames),
       handlerName: order.handler?.realName ?? null,
@@ -2531,7 +2544,7 @@ export class DispatchedOrderService {
           regexMsg: field.validationMsg ?? undefined,
         },
       })),
-      visibleFields: order.visibleFields,
+      visibleFields: detailVisibleFields,
       dirtyCount: dirtyMarks.filter((item) => item.isActive).length,
       dirty_count: dirtyMarks.filter((item) => item.isActive).length,
       clearedDirtyCount,
