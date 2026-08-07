@@ -67,4 +67,61 @@ describe('seedFieldPermissions contract business permissions', () => {
     expect(scenarioPermission('role-member', 'dispatched:data_entry')?.permission).toBe(FieldPermissionMode.READONLY);
     expect(scenarioPermission('role-member', 'dispatched:social_insurance')?.permission).toBe(FieldPermissionMode.READONLY);
   });
+
+  it('makes the approved 34 social-insurance input fields editable for the specialist', async () => {
+    const socialInputFields = [
+      'customer_name', 'customer_code', 'outsource_type', 'position', 'position_type',
+      'employee_name', 'id_card_type', 'id_card_no', 'gender', 'birth_date', 'age',
+      'household_type', 'ethnicity', 'education', 'graduation_school', 'major',
+      'graduation_date', 'marital_status', 'mobile', 'email', 'current_address',
+      'household_address', 'postal_code', 'social_location', 'start_month',
+      'social_base', 'fund_base', 'fund_ratio', 'bank_name', 'bank_account',
+      'remark', 'business_mode', 'need_company_payroll', 'payroll_location',
+    ];
+    const handlingFields = [
+      'social_insurance_result',
+      'social_insurance_remark',
+      'medical_insurance_result',
+      'housing_fund_result',
+    ];
+    const roles = [{ id: 'role-social', code: 'social_insurance_specialist' }];
+    const fields = [...socialInputFields, ...handlingFields].map((fieldCode) => ({
+      fieldCode,
+      orderType: OrderType.ONBOARDING,
+      businessContext: [OrderType.ONBOARDING],
+    }));
+    const savedPermissions: Array<Record<string, unknown>> = [];
+    const roleRepo = { find: jest.fn().mockResolvedValue(roles) };
+    const fieldRepo = { find: jest.fn().mockResolvedValue(fields) };
+    const permissionRepo = {
+      findOne: jest.fn().mockResolvedValue(null),
+      create: jest.fn((value) => value),
+      save: jest.fn(async (value) => {
+        savedPermissions.push(value);
+        return value;
+      }),
+    };
+    const templateRepo = { findOne: jest.fn().mockResolvedValue(null) };
+    const dataSource = {
+      getRepository: jest.fn((entity) => {
+        if (entity === Role) return roleRepo;
+        if (entity === FieldConfig) return fieldRepo;
+        if (entity === FieldPermission) return permissionRepo;
+        if (entity === DetailViewTemplate) return templateRepo;
+        throw new Error('unexpected repository');
+      }),
+    };
+
+    await seedFieldPermissions(dataSource as any);
+
+    const socialPermissions = savedPermissions.filter((item) => (
+      item.roleId === 'role-social'
+      && item.scenario === 'dispatched:social_insurance'
+    ));
+    for (const fieldCode of [...socialInputFields, ...handlingFields]) {
+      const rows = socialPermissions.filter((item) => item.fieldCode === fieldCode);
+      expect(rows).toHaveLength(2);
+      expect(rows.every((item) => item.permission === FieldPermissionMode.VISIBLE)).toBe(true);
+    }
+  });
 });

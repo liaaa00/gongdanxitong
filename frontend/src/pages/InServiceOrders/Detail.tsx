@@ -38,12 +38,12 @@ import {
   IN_SERVICE_HANDLE_CHANNEL_META,
   IN_SERVICE_ORDER_KINDS,
   IN_SERVICE_ORDER_KIND_META,
-  IN_SERVICE_STATUS_META,
   getInServiceCategoryPath,
+  getInServiceStatusMeta,
 } from '@/constants/inService';
 import InServiceOrderForm, {
   AttachmentField,
-  normalizeInServiceOrderFormValues,
+  buildInServiceMutableFields,
   type InServiceOrderFormValues,
 } from './components/InServiceOrderForm';
 import {
@@ -71,10 +71,15 @@ function formatDate(value?: string | null) {
   return value ? dayjs(value).format('YYYY-MM-DD HH:mm') : '-';
 }
 
+export function isCertificateTemplateOrder(orderKind: string): boolean {
+  return orderKind === IN_SERVICE_ORDER_KINDS.CERTIFICATE
+    || orderKind === IN_SERVICE_ORDER_KINDS.RESIGNATION_CERTIFICATE;
+}
+
 function getListPath(order: InServiceOrder): string {
   if (order.orderKind === IN_SERVICE_ORDER_KINDS.CONTRACT_RENEWAL) return '/renewal';
   if (order.orderKind === IN_SERVICE_ORDER_KINDS.CERTIFICATE) return '/in-service/certificates';
-  if (order.orderKind === IN_SERVICE_ORDER_KINDS.RESIGNATION_CERTIFICATE) return '/resignation-certificates';
+  if (order.orderKind === IN_SERVICE_ORDER_KINDS.RESIGNATION_CERTIFICATE) return '/work-orders?orderType=resignation';
   if (order.orderKind === IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_INCREASE) return '/out-of-province/increase';
   if (order.orderKind === IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_DECREASE) return '/out-of-province/decrease';
   return order.businessScope === 'out_of_province' ? '/out-of-province/single-business' : '/in-service';
@@ -195,7 +200,28 @@ function TransferFields({ onChange }: { onChange: (value: TransferValue) => void
 }
 
 function buildTimelineItems(order: InServiceOrder) {
-  const rows = [
+  const transferRows = order.transferHistory.map((item) => ({
+    label: '转派',
+    time: item.transferredAt,
+    note: item.reason || `转派至 ${item.toHandlerId}`,
+  }));
+  const isCertificateOrder = order.orderKind === IN_SERVICE_ORDER_KINDS.CERTIFICATE;
+  const certificateStatus = getInServiceStatusMeta(order.orderKind, order.status);
+  const rows = isCertificateOrder ? [
+    { label: '创建并自动派单', time: order.dispatchedAt || order.createdAt, note: order.createdByName || order.createdBy },
+    { label: '开始开具', time: order.processingAt || order.acceptedAt, note: order.handlerName || order.handlerId || undefined },
+    {
+      label: '已完成',
+      time: certificateStatus.label === '已完成' ? order.completedAt || order.closedAt : null,
+      note: order.completionRemark || undefined,
+    },
+    {
+      label: '已退回',
+      time: certificateStatus.label === '已退回' ? order.pendingInfoAt || order.completedAt || order.closedAt : null,
+      note: order.pendingInfoReason || order.completionRemark || order.closeReason || undefined,
+    },
+    ...transferRows,
+  ] : [
     { label: '创建并自动派单', time: order.dispatchedAt || order.createdAt, note: order.createdByName || order.createdBy },
     { label: '受理', time: order.acceptedAt, note: order.handlerName || order.handlerId || undefined },
     { label: '完成材料初审', time: order.confirmedAt },
@@ -207,11 +233,7 @@ function buildTimelineItems(order: InServiceOrder) {
       note: order.completionRemark || undefined,
     },
     { label: order.status === 'cancelled' ? '订单取消' : '归档', time: order.closedAt, note: order.closeReason || undefined },
-    ...order.transferHistory.map((item) => ({
-      label: '转派',
-      time: item.transferredAt,
-      note: item.reason || `转派至 ${item.toHandlerId}`,
-    })),
+    ...transferRows,
   ];
   return rows
     .filter((item) => item.time)
@@ -356,7 +378,7 @@ export default function InServiceOrderDetail() {
     );
   }
 
-  const statusMeta = IN_SERVICE_STATUS_META[order.status] || { label: order.status, color: 'default' };
+  const statusMeta = getInServiceStatusMeta(order.orderKind, order.status) || { label: order.status, color: 'default' };
   const channelMeta = IN_SERVICE_HANDLE_CHANNEL_META[order.handleChannel];
   const materialChangeRequest = getMaterialChangeRequest(order);
   const canEditPendingInfo = (roleFlags.isCreator || roleFlags.isManager) && order.status === 'pending_info';
@@ -369,11 +391,12 @@ export default function InServiceOrderDetail() {
     && !['completed', 'failed', 'cancelled', 'archived'].includes(order.status);
   const orderMeta = IN_SERVICE_ORDER_KIND_META[order.orderKind];
   const listPath = getListPath(order);
+  const isCertificateOrder = order.orderKind === IN_SERVICE_ORDER_KINDS.CERTIFICATE;
 
   const handleMaterialChangeRequest = async () => {
     try {
-      const values = normalizeInServiceOrderFormValues(await form.validateFields(), order.orderKind);
-      await runAction('提交材料修改申请', () => requestInServiceMaterialChange(order.id, values));
+      const changes = buildInServiceMutableFields(await form.validateFields(), order.orderKind);
+      await runAction('提交材料修改申请', () => requestInServiceMaterialChange(order.id, changes));
     } catch (error) {
       if ((error as { errorFields?: unknown[] })?.errorFields) message.error('请检查表单必填项');
     }
@@ -381,8 +404,8 @@ export default function InServiceOrderDetail() {
 
   const handleResubmit = async () => {
     try {
-      const values = normalizeInServiceOrderFormValues(await form.validateFields(), order.orderKind);
-      await runAction('补充材料并重新提交', () => resubmitInServiceOrder(order.id, values));
+      const changes = buildInServiceMutableFields(await form.validateFields(), order.orderKind);
+      await runAction('补充材料并重新提交', () => resubmitInServiceOrder(order.id, changes));
     } catch (error) {
       if ((error as { errorFields?: unknown[] })?.errorFields) message.error('请检查表单必填项');
     }
@@ -418,7 +441,8 @@ export default function InServiceOrderDetail() {
     );
   }
 
-  if (order.orderKind === IN_SERVICE_ORDER_KINDS.CERTIFICATE && canHandle) {
+  if (isCertificateTemplateOrder(order.orderKind) && canHandle) {
+    const isResignationCertificate = order.orderKind === IN_SERVICE_ORDER_KINDS.RESIGNATION_CERTIFICATE;
     actionButtons.push(
       <Button
         key="download-certificate"
@@ -427,8 +451,12 @@ export default function InServiceOrderDetail() {
         onClick={async () => {
           setActionLoading(true);
           try {
-            await downloadInServiceCertificate(order.id, order.orderNo);
-            message.success('证明模板已导出');
+            await downloadInServiceCertificate(
+              order.id,
+              order.orderNo,
+              isResignationCertificate ? '离职证明' : '证明',
+            );
+            message.success(isResignationCertificate ? '离职证明已导出' : '证明模板已导出');
           } catch (error) {
             message.error(error instanceof Error ? error.message : '证明模板导出失败');
           } finally {
@@ -436,7 +464,7 @@ export default function InServiceOrderDetail() {
           }
         }}
       >
-        导出标准模板
+        {isResignationCertificate ? '导出离职证明' : '导出标准模板'}
       </Button>,
     );
   }
@@ -485,8 +513,8 @@ export default function InServiceOrderDetail() {
   if (order.status === 'dispatched' && canHandle) {
     actionButtons.push(
       <Button key="accept" type="primary" icon={<CheckOutlined />} loading={actionLoading}
-        onClick={() => runAction('受理', () => acceptInServiceOrder(order.id))}>
-        受理
+        onClick={() => runAction(isCertificateOrder ? '开始开具' : '受理', () => acceptInServiceOrder(order.id))}>
+        {isCertificateOrder ? '开始开具' : '受理'}
       </Button>,
       <Button key="transfer" icon={<SwapOutlined />} loading={actionLoading} onClick={askTransfer}>
         转派
@@ -598,18 +626,30 @@ export default function InServiceOrderDetail() {
           </Descriptions>
         </Card>
 
-        <Card size="small" title="工单进度">
-          <Steps
-            current={currentStep(order)}
-            status={order.status === 'completed' ? 'finish' : ['failed', 'cancelled'].includes(order.status) ? 'error' : 'process'}
-            items={[
-              { title: '创建' },
-              { title: '待受理' },
-              { title: '材料初审' },
-              { title: '办理中' },
-              { title: '办理结果' },
-            ]}
-          />
+        <Card size="small" title={isCertificateOrder ? '证明进度' : '工单进度'}>
+          {isCertificateOrder ? (
+            <Steps
+              current={statusMeta.label === '待开具' ? 0 : statusMeta.label === '开具中' ? 1 : 2}
+              status={statusMeta.label === '已完成' ? 'finish' : statusMeta.label === '已退回' ? 'error' : 'process'}
+              items={[
+                { title: '待开具' },
+                { title: '开具中' },
+                { title: ['已完成', '已退回'].includes(statusMeta.label) ? statusMeta.label : '办理结果' },
+              ]}
+            />
+          ) : (
+            <Steps
+              current={currentStep(order)}
+              status={order.status === 'completed' ? 'finish' : ['failed', 'cancelled'].includes(order.status) ? 'error' : 'process'}
+              items={[
+                { title: '创建' },
+                { title: '待受理' },
+                { title: '材料初审' },
+                { title: '办理中' },
+                { title: '办理结果' },
+              ]}
+            />
+          )}
         </Card>
 
         <Card size="small" title="业务信息">

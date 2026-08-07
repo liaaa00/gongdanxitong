@@ -13,6 +13,7 @@ import type { UserItem } from '@/services/users';
 import { getModuleLabel, getPhaseOneModuleOptions } from '@/constants/modules';
 import { getStatusColor, getStatusText } from '@/constants/dictionaries';
 import { isPhase1VisibleModule, isPhase1VisibleOrderType } from '@/utils/moduleAccess';
+import { useColumnConfig } from '@/components/MultiViewTable/useColumnConfig';
 import { mergeProTableFiltersIntoParams, selectHeaderFilter, textHeaderFilter } from '@/utils/proTableFilters';
 import {
   applyCachedColumnFilters,
@@ -210,6 +211,7 @@ const TeamDispatched: React.FC = () => {
     { title: '派发时间', dataIndex: 'dispatched_at', key: 'dispatched_at', width: 150, valueType: 'dateTime', hideInSearch: true },
     { title: '完成时间', dataIndex: 'completed_at', key: 'completed_at', width: 150, valueType: 'dateTime', hideInSearch: true },
   ], cachedPageState.filters || {}), [navigate, cachedPageState.filters]);
+  const columnConfig = useColumnConfig('team-dispatched-orders', columns);
 
   return (
     <PageContainer
@@ -230,6 +232,7 @@ const TeamDispatched: React.FC = () => {
               }}
             />
           </Space>,
+          <span key="columns">{columnConfig.button}</span>,
           <Button
             key="batch-reassign"
             icon={<SwapOutlined />}
@@ -244,7 +247,7 @@ const TeamDispatched: React.FC = () => {
       <ProTable<DispatchedOrderItem>
         getPopupContainer={() => document.body}
         actionRef={actionRef}
-        columns={columns}
+        columns={columnConfig.columns}
         request={async (params: PageParams & Record<string, unknown>, _sort, filters) => {
           updateCachedListPageState(PAGE_STATE_KEY, {
             current: Number((params as { current?: number }).current || params.page || cachedPageState.current || 1),
@@ -273,6 +276,7 @@ const TeamDispatched: React.FC = () => {
         toolBarRender={false}
         scroll={{ x: 1650 }}
       />
+      {columnConfig.drawer}
 
       <Modal
         title={`批量改派 ${selectedRowKeys.length} 条工单`}

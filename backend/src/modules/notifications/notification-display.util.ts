@@ -74,7 +74,7 @@ export const FALLBACK_FIELD_LABELS: Record<string, string> = {
   probation_salary: '试用期工资',
   payroll_cycle: '发薪周期',
   payroll_date: '发薪日期',
-  social_location: '参保地',
+  social_location: '参保机构名称',
   start_month: '起始月',
   social_base: '社保基数',
   fund_base: '公积金基数',
@@ -113,7 +113,7 @@ export const FALLBACK_MODULE_LABELS: Record<string, string> = {
   resignation_contact: '离职材料收集',
   data_entry_resign: '减员报岗录入',
   resignation_social_insurance: '社保公积金减员',
-  resignation_cert: '离职材料收集',
+  resignation_cert: '离职证明',
 };
 
 const INTERNAL_KEY_PATTERN = /\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/g;

@@ -54,22 +54,25 @@ describe('onboarding module_fields baseline', () => {
     ]);
 
     expect(extractFields('social_insurance')).toEqual([
-      'customer_name', 'customer_code', 'employee_name', 'id_card_no', 'mobile', 'email',
-      'education', 'graduation_school', 'major', 'graduation_date',
-      'social_location', 'start_month', 'social_base', 'fund_base', 'fund_ratio',
+      'customer_name', 'customer_code', 'outsource_type', 'position', 'position_type',
+      'employee_name', 'id_card_type', 'id_card_no', 'gender', 'birth_date', 'age',
+      'household_type', 'ethnicity', 'education', 'graduation_school', 'major',
+      'graduation_date', 'marital_status', 'mobile', 'email', 'current_address',
+      'household_address', 'postal_code', 'social_location', 'start_month',
+      'social_base', 'fund_base', 'fund_ratio', 'bank_name', 'bank_account',
+      'remark', 'business_mode', 'need_company_payroll', 'payroll_location',
     ]);
   });
 
-  it('keeps unconfirmed fields out while retaining confirmed Xiamen education fields', () => {
-    expect(extractFields('social_insurance')).toEqual([
-      'customer_name', 'customer_code', 'employee_name', 'id_card_no', 'mobile', 'email',
-      'education', 'graduation_school', 'major', 'graduation_date',
-      'social_location', 'start_month', 'social_base', 'fund_base', 'fund_ratio',
-    ]);
+  it('keeps unconfirmed fields out while retaining the approved social-insurance baseline', () => {
+    expect(extractFields('social_insurance')).toHaveLength(34);
     expect(extractFields('social_insurance')).toEqual(expect.arrayContaining([
+      'outsource_type', 'position', 'gender', 'birth_date', 'age', 'ethnicity',
       'education', 'graduation_school', 'major', 'graduation_date',
+      'current_address', 'household_address', 'postal_code', 'remark',
+      'social_location', 'start_month', 'social_base', 'fund_base', 'fund_ratio',
     ]));
-    expect(extractFields('social_insurance')).not.toContain('remark');
+    expect(extractFields('social_insurance')).not.toContain('base_salary');
     expect(extractFields('data_entry')).not.toContain('base_salary');
     expect(extractFields('data_entry_resign')).toEqual(expect.arrayContaining(['mobile', 'email']));
     expect(extractFields('resignation_social_insurance')).toEqual(expect.arrayContaining(['mobile', 'email']));

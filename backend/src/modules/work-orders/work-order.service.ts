@@ -936,7 +936,15 @@ export class WorkOrderService {
     }
 
     const total = await qb.getCount();
-    const rows = await qb.orderBy('w.createdAt', 'DESC').skip((page - 1) * pageSize).take(pageSize).getMany();
+    qb.addSelect(
+      "CASE WHEN w.status IN ('returned','withdraw_pending','void_pending') OR EXISTS (SELECT 1 FROM dispatched_orders sort_child WHERE sort_child.parent_order_id = w.id AND sort_child.status IN ('returned','modify_pending')) THEN 0 ELSE 1 END",
+      'status_priority',
+    );
+    qb.orderBy('status_priority', 'ASC');
+    if (typeof (qb as typeof qb & { addOrderBy?: unknown }).addOrderBy === 'function') {
+      qb.addOrderBy('w.updatedAt', 'DESC');
+    }
+    const rows = await qb.skip((page - 1) * pageSize).take(pageSize).getMany();
     const childrenByParentId = new Map<string, DispatchedOrder[]>();
 
     if (rows.length > 0) {

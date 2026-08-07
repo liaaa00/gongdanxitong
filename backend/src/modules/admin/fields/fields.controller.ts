@@ -41,9 +41,10 @@ class QueryFieldsDto extends PaginationQueryDto {
 }
 
 class SaveFieldDto {
+  @IsOptional()
   @IsString()
   @Matches(/^[a-z][a-z0-9_]{1,63}$/)
-  fieldCode!: string;
+  fieldCode?: string;
 
   @IsString()
   fieldName!: string;
@@ -55,9 +56,10 @@ class SaveFieldDto {
   @IsBoolean()
   isRequired!: boolean;
 
+  @IsOptional()
   @Type(() => Boolean)
   @IsBoolean()
-  defaultRequired!: boolean;
+  defaultRequired?: boolean;
 
   @IsOptional()
   @IsString()
@@ -83,6 +85,15 @@ class SaveFieldDto {
   @IsOptional()
   @IsEnum(OrderType)
   orderType?: OrderType | null;
+
+  @IsOptional()
+  @IsString()
+  collectionGroup?: string | null;
+
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  isIncludedInTemplate?: boolean;
 
   @IsOptional()
   @Type(() => Number)
@@ -139,6 +150,15 @@ class UpdateFieldDto {
   @IsOptional()
   @IsEnum(OrderType)
   orderType?: OrderType | null;
+
+  @IsOptional()
+  @IsString()
+  collectionGroup?: string | null;
+
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  isIncludedInTemplate?: boolean;
 
   @IsOptional()
   @Type(() => Number)

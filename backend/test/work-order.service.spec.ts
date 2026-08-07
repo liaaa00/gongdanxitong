@@ -39,6 +39,7 @@ type RepositoryMock<T> = {
 type QueryBuilderMock<T> = {
   leftJoinAndSelect: jest.Mock;
   andWhere: jest.Mock;
+  addSelect: jest.Mock;
   orderBy: jest.Mock;
   skip: jest.Mock;
   take: jest.Mock;
@@ -67,6 +68,7 @@ function createQueryBuilderMock<T>(rows: T[], total = rows.length): QueryBuilder
   const qb = {
     leftJoinAndSelect: jest.fn().mockReturnThis(),
     andWhere: jest.fn(),
+    addSelect: jest.fn(),
     orderBy: jest.fn(),
     skip: jest.fn(),
     take: jest.fn(),
@@ -74,6 +76,7 @@ function createQueryBuilderMock<T>(rows: T[], total = rows.length): QueryBuilder
     getMany: jest.fn(async () => rows),
   } as QueryBuilderMock<T>;
   qb.andWhere.mockReturnValue(qb);
+  qb.addSelect.mockReturnValue(qb);
   qb.orderBy.mockReturnValue(qb);
   qb.skip.mockReturnValue(qb);
   qb.take.mockReturnValue(qb);

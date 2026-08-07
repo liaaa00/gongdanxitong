@@ -2,8 +2,10 @@ import { BadRequestException, Injectable, InternalServerErrorException, NotFound
 import { InjectRepository } from '@nestjs/typeorm';
 import { Workbook, Worksheet } from 'exceljs';
 import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { In, Repository } from 'typeorm';
+import * as JSZip from 'jszip';
 import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 import { toPageResult } from 'src/common/types/pagination.types';
 import {
@@ -31,6 +33,11 @@ interface AttachmentLink {
   name: string;
   url: string;
 }
+
+type AttachmentExportRow = Pick<
+  OrderAttachment,
+  'workOrderId' | 'dispatchedOrderId' | 'originalName' | 'fileId' | 'mimeType'
+>;
 
 interface RichExportColumn {
   kind: 'field' | 'const' | 'sameAs' | 'formula';
@@ -314,6 +321,9 @@ export class ExportTemplatesService {
           attachmentSummaries,
         );
       }
+      const contractAttachments = moduleCode === 'contract'
+        ? await this.appendContractAttachmentIndex(workbook, moduleOrders)
+        : [];
       const buffer = await this.writeWorkbookBuffer(workbook);
       const platformLabel = signPlatform ? `-${signPlatform}` : '';
       const meta = await this.uploadService.saveBuffer({
@@ -329,7 +339,20 @@ export class ExportTemplatesService {
         moduleCode,
         signPlatform,
         count: moduleOrders.length,
+        fileType: 'excel',
       });
+      if (moduleCode === 'contract' && contractAttachments.length > 0) {
+        const zipMeta = await this.buildContractAttachmentsZip(contractAttachments, template.templateName || moduleCode);
+        files.push({
+          fileId: zipMeta.fileId,
+          fileName: zipMeta.originalName,
+          downloadUrl: `/api/files/${zipMeta.fileId}`,
+          moduleCode,
+          signPlatform,
+          count: contractAttachments.length,
+          fileType: 'attachments_zip',
+        });
+      }
     }
 
     const exportGroups = files.map(({ moduleCode, signPlatform, count }) => ({ moduleCode, signPlatform, count }));
@@ -579,22 +602,100 @@ export class ExportTemplatesService {
   }
 
   private async loadAttachmentSummaries(orders: DispatchedOrder[]): Promise<Map<string, AttachmentLink[]>> {
-    const workOrderIds = orders.map((o) => o.parentOrder?.id).filter((id): id is string => !!id);
-    if (workOrderIds.length === 0) return new Map();
-    const rows = await this.attachmentRepository.find({
-      where: { workOrderId: In(workOrderIds), bizPurpose: 'resignation_material' },
-      select: ['workOrderId', 'originalName', 'fileId'],
-    });
-    const base = this.attachmentFileBaseUrl();
+    const rows = await this.loadAttachmentRows(orders, 'resignation_material');
+    const summaryBase = this.attachmentFileBaseUrl();
     const map = new Map<string, AttachmentLink[]>();
     for (const row of rows) {
       const list = map.get(row.workOrderId) ?? [];
-      // 附件含身份证等敏感 PII，下载端点受鉴权保护；Excel 超链接带不了 Authorization 头，
-      // 故使用带 HMAC 签名的临时下载 URL（默认 7 天有效），既可点击又不裸公开。
-      list.push({ name: row.originalName, url: this.uploadService.buildSignedDownloadUrl(base, row.fileId) });
+      list.push({ name: row.originalName, url: this.uploadService.buildSignedDownloadUrl(summaryBase, row.fileId) });
       map.set(row.workOrderId, list);
     }
     return map;
+  }
+
+  private async loadAttachmentRows(
+    orders: DispatchedOrder[],
+    bizPurpose: string | string[],
+  ): Promise<AttachmentExportRow[]> {
+    const workOrderIds = orders.map((order) => order.parentOrder?.id).filter((id): id is string => !!id);
+    const dispatchedOrderIds = orders.map((order) => order.id).filter(Boolean);
+    const bizPurposes = Array.isArray(bizPurpose) ? bizPurpose : [bizPurpose];
+    const where = [
+      ...(workOrderIds.length > 0 ? [{ workOrderId: In(workOrderIds), bizPurpose: In(bizPurposes) }] : []),
+      ...(dispatchedOrderIds.length > 0 ? [{ dispatchedOrderId: In(dispatchedOrderIds), bizPurpose: In(bizPurposes) }] : []),
+    ];
+    if (where.length === 0) return [];
+    return this.attachmentRepository.find({
+      where,
+      select: ['workOrderId', 'dispatchedOrderId', 'originalName', 'fileId', 'mimeType'],
+      order: { createdAt: 'ASC' },
+    });
+
+  }
+
+  private async appendContractAttachmentIndex(
+    workbook: Workbook,
+    orders: DispatchedOrder[],
+  ): Promise<Array<{ order: DispatchedOrder; row: AttachmentExportRow }>> {
+    const rows = await this.loadAttachmentRows(orders, ['onboarding_material', 'contract_material']);
+    const sheet = workbook.addWorksheet('附件索引');
+    sheet.columns = [
+      { header: '员工姓名', key: 'employeeName', width: 18 },
+      { header: '身份证后四位', key: 'idSuffix', width: 14 },
+      { header: '附件名称', key: 'fileName', width: 34 },
+      { header: '下载链接', key: 'downloadUrl', width: 70 },
+    ];
+    const orderByWorkOrderId = new Map(orders.map((order) => [order.parentOrder?.id, order]));
+    const orderByDispatchedOrderId = new Map(orders.map((order) => [order.id, order]));
+    const base = this.attachmentFileBaseUrl();
+    const entries = rows
+      .map((row) => ({
+        order: (row.dispatchedOrderId ? orderByDispatchedOrderId.get(row.dispatchedOrderId) : undefined)
+          ?? orderByWorkOrderId.get(row.workOrderId),
+        row,
+      }))
+      .filter((item): item is { order: DispatchedOrder; row: AttachmentExportRow } => Boolean(item.order));
+    for (const entry of entries) {
+      const idCard = entry.order.parentOrder?.employeeIdCard ?? String(entry.order.parentOrder?.extraData?.id_card_no ?? '');
+      const employeeName = entry.order.parentOrder?.employeeName || '未命名员工';
+      const link = this.uploadService.buildSignedDownloadUrl(base, entry.row.fileId);
+      const row = sheet.addRow({ employeeName, idSuffix: idCard.slice(-4), fileName: entry.row.originalName, downloadUrl: link });
+      const cell = row.getCell(4);
+      cell.value = { text: link, hyperlink: link };
+      cell.font = { color: { argb: 'FF0000FF' }, underline: true };
+    }
+    return entries;
+  }
+
+  private async buildContractAttachmentsZip(
+    entries: Array<{ order: DispatchedOrder; row: AttachmentExportRow }>,
+    templateName: string,
+  ) {
+    const zip = new JSZip();
+    const used = new Map<string, number>();
+    for (const entry of entries) {
+      try {
+        const meta = await this.uploadService.resolveFile(entry.row.fileId);
+        const content = await readFile(meta.filePath);
+        const idCard = entry.order.parentOrder?.employeeIdCard ?? String(entry.order.parentOrder?.extraData?.id_card_no ?? '');
+        const folder = this.safeZipName((entry.order.parentOrder?.employeeName || '未命名员工') + '-' + (idCard.slice(-4) || '未知'));
+        const baseName = this.safeZipName(entry.row.originalName || entry.row.fileId);
+        const extension = baseName.includes('.') ? baseName.slice(baseName.lastIndexOf('.')) : '';
+        const stem = extension ? baseName.slice(0, -extension.length) : baseName;
+        const pathKey = folder + '/' + baseName;
+        const count = used.get(pathKey) ?? 0;
+        used.set(pathKey, count + 1);
+        zip.file(folder + '/' + (count === 0 ? baseName : stem + '-' + count + extension), content);
+      } catch {
+        // Missing files remain visible in the Excel index but do not abort the export.
+      }
+    }
+    const buffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+    return this.uploadService.saveBuffer({ kind: 'excel', buffer, originalName: this.safeZipName(templateName) + '-附件.zip', mimeType: 'application/zip' });
+  }
+
+  private safeZipName(value: string): string {
+    return value.replace(/[\\/:*?"<>|]/g, '_').trim() || '附件';
   }
 
   private renderRichValue(column: RichExportColumn, order: DispatchedOrder, attachmentSummaries?: Map<string, AttachmentLink[]>): unknown {

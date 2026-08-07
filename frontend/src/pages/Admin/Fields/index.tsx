@@ -22,29 +22,10 @@ const ORDER_OPT = [
   { label: '待遇申报', value: 'benefit' },
 ];
 
-const SOURCE_CATEGORY_OPT = [
-  { label: '全部填写方', value: '' },
-  { label: '客户填写', value: 'customer_filled' },
-  { label: '业务员填写', value: 'agent_supplemented' },
-  { label: '系统判断', value: 'process_judgment' },
-];
-
 const TEMPLATE_INCLUSION_OPT = [
   { label: '全部字段', value: '' },
   { label: '标准字段', value: 'true' },
   { label: '可选字段', value: 'false' },
-];
-
-const SUB_TICKET_SCOPE_OPT = [
-  { label: '全部环节', value: '' },
-  { label: '所有环节', value: 'all' },
-  { label: '增员报岗录入环节', value: 'data_entry' },
-  { label: '减员报岗录入环节', value: 'data_entry_resign' },
-  { label: '社保公积金增员环节', value: 'social_insurance' },
-  { label: '社保公积金减员环节', value: 'resignation_social_insurance' },
-  { label: '入职联系环节', value: 'onboarding_contact' },
-  { label: '离职材料收集环节', value: 'resignation_contact' },
-  { label: '劳动合同新签环节', value: 'contract' },
 ];
 
 const COLLECTION_GROUP_OPT = [
@@ -59,24 +40,6 @@ const COLLECTION_GROUP_OPT = [
 
 const getSelectPopupContainer = (triggerNode: HTMLElement) => triggerNode.parentElement || document.body;
 
-const SOURCE_TAG: Record<string, { color: string; label: string }> = {
-  customer_filled: { color: 'blue', label: '客户填写' },
-  agent_supplemented: { color: 'orange', label: '业务员填写' },
-  process_judgment: { color: 'red', label: '系统判断' },
-};
-
-const SCOPE_TAG: Record<string, { color: string; label: string }> = {
-  all: { color: 'green', label: '所有环节' },
-  data_entry: { color: 'cyan', label: '增员报岗录入' },
-  data_entry_resign: { color: 'cyan', label: '减员报岗录入' },
-  social_insurance: { color: 'blue', label: '社保公积金增员' },
-  social_insurance_resign: { color: 'purple', label: '社保公积金减员' },
-  resignation_social_insurance: { color: 'purple', label: '社保公积金减员' },
-  onboarding_contact: { color: 'purple', label: '入职联系' },
-  resignation_contact: { color: 'magenta', label: '离职材料收集' },
-  contract: { color: 'gold', label: '劳动合同新签' },
-};
-
 const AdminFields: React.FC = () => {
   const { message } = App.useApp();
   const { hasRole } = useAuth();
@@ -84,78 +47,148 @@ const AdminFields: React.FC = () => {
   const [data, setData] = useState<FieldConfigItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [filterType, setFilterType] = useState<string>('');
-  const [filterSource, setFilterSource] = useState<string>('');
-  const [filterScope, setFilterScope] = useState<string>('');
   const [filterGroup, setFilterGroup] = useState<string>('');
   const [filterTemplateInclusion, setFilterTemplateInclusion] = useState<string>('');
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<FieldConfigItem | null>(null);
   const [form] = Form.useForm();
+  const fieldType = Form.useWatch('field_type', form);
 
   const load = async () => {
     setLoading(true);
     try {
       const res = await getFields(filterType || undefined);
       let all: FieldConfigItem[] = Array.isArray(res) ? res : (res as any)?.list ?? (res as any)?.items ?? [];
-      // 前端分类过滤（当选择来源或子工单范围时）
-      if (filterSource) {
-        all = all.filter((f) => f.source_category === filterSource);
-      }
-      if (filterScope) {
-        all = all.filter((f) => f.sub_ticket_scope === filterScope);
-      }
       if (filterGroup) {
-        all = all.filter((f) => f.collection_group === filterGroup);
+        all = all.filter((field) => field.collection_group === filterGroup);
       }
       if (filterTemplateInclusion) {
         const included = filterTemplateInclusion === 'true';
-        all = all.filter((f) => f.is_included_in_template === included);
+        all = all.filter((field) => field.is_included_in_template === included);
       }
       setData(all);
-    } catch { message.error('加载失败'); }
-    finally { setLoading(false); }
+    } catch {
+      message.error('加载失败');
+    } finally {
+      setLoading(false);
+    }
   };
-  useEffect(() => { load(); }, [filterType, filterSource, filterScope, filterGroup, filterTemplateInclusion]);
+
+  useEffect(() => {
+    load();
+  }, [filterType, filterGroup, filterTemplateInclusion]);
 
   const onSave = async () => {
-    const v = await form.validateFields();
+    const values = await form.validateFields();
+    const payload = {
+      ...values,
+      default_required: values.is_required,
+      dropdown_options: values.field_type === 'dropdown' ? values.dropdown_options : null,
+    };
     try {
-      if (editing) await updateField(editing.id, v);
-      else await createField(v);
+      if (editing) {
+        await updateField(editing.id, payload);
+      } else {
+        await createField(payload);
+      }
       message.success('保存成功');
-      setOpen(false); setEditing(null); form.resetFields(); load();
-    } catch { message.error('保存失败'); }
+      setOpen(false);
+      setEditing(null);
+      form.resetFields();
+      load();
+    } catch {
+      message.error('保存失败');
+    }
   };
 
   const onDel = async (id: string) => {
-    try { await deleteField(id); message.success('已删除'); load(); }
-    catch { message.error('删除失败'); }
+    try {
+      await deleteField(id);
+      message.success('已删除');
+      load();
+    } catch {
+      message.error('删除失败');
+    }
+  };
+
+  const openCreate = () => {
+    setEditing(null);
+    form.resetFields();
+    setOpen(true);
+  };
+
+  const openEdit = (field: FieldConfigItem) => {
+    setEditing(field);
+    form.setFieldsValue({
+      ...field,
+      dropdown_options: field.dropdown_options?.map((option) => option.value) ?? undefined,
+    });
+    setOpen(true);
   };
 
   return (
     <PageContainer header={{ title: '表单字段管理' }} extra={[
-      <Select key="ot" style={{ width: 140 }} value={filterType} onChange={(v) => { setFilterType(v); }} options={ORDER_OPT} placeholder="适用工单" getPopupContainer={getSelectPopupContainer} />,
-      <Select key="sc" style={{ width: 140 }} value={filterSource} onChange={(v) => { setFilterSource(v); }} options={SOURCE_CATEGORY_OPT} placeholder="谁来填写" getPopupContainer={getSelectPopupContainer} />,
-      <Select key="ss" style={{ width: 140 }} value={filterScope} onChange={(v) => { setFilterScope(v); }} options={SUB_TICKET_SCOPE_OPT} placeholder="显示环节" getPopupContainer={getSelectPopupContainer} />,
-      <Select key="cg" style={{ width: 160 }} value={filterGroup} onChange={(v) => { setFilterGroup(v); }} options={COLLECTION_GROUP_OPT} placeholder="表单分组" getPopupContainer={getSelectPopupContainer} />,
-      <Select key="ti" style={{ width: 140 }} value={filterTemplateInclusion} onChange={(v) => { setFilterTemplateInclusion(v); }} options={TEMPLATE_INCLUSION_OPT} placeholder="模板包含" getPopupContainer={getSelectPopupContainer} />,
-      <Button key="add" type="primary" icon={<PlusOutlined />}
-        onClick={() => { setEditing(null); form.resetFields(); setOpen(true); }}>新增表单字段</Button>,
+      <Select
+        key="ot"
+        style={{ width: 160 }}
+        value={filterType}
+        onChange={setFilterType}
+        options={ORDER_OPT}
+        placeholder="适用工单/模板"
+        getPopupContainer={getSelectPopupContainer}
+      />,
+      <Select
+        key="cg"
+        style={{ width: 160 }}
+        value={filterGroup}
+        onChange={setFilterGroup}
+        options={COLLECTION_GROUP_OPT}
+        placeholder="表单分组"
+        getPopupContainer={getSelectPopupContainer}
+      />,
+      <Select
+        key="ti"
+        style={{ width: 140 }}
+        value={filterTemplateInclusion}
+        onChange={setFilterTemplateInclusion}
+        options={TEMPLATE_INCLUSION_OPT}
+        placeholder="模板包含"
+        getPopupContainer={getSelectPopupContainer}
+      />,
+      <Button key="add" type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+        新增表单字段
+      </Button>,
     ]}>
-      <Alert style={{ marginBottom: 12 }} type="info" showIcon message="这里维护工单表单里会出现哪些字段，例如员工姓名、身份证号、合同开始日期。字段是否给某个角色填写，到“字段填写权限”里设置。标准字段包含在Excel导入模板中，可选字段需要业务员手动添加列。" />
-      <Table rowKey="id" loading={loading} dataSource={data} pagination={{ pageSize: 20 }}
+      <Alert
+        style={{ marginBottom: 12 }}
+        type="info"
+        showIcon
+        message="这里维护字段名称、类型、适用工单和模板。角色填写权限请到“字段填写权限”设置。"
+      />
+      <Table
+        rowKey="id"
+        loading={loading}
+        dataSource={data}
+        pagination={{ pageSize: 20 }}
         columns={[
           { title: '系统标识', dataIndex: 'field_code', width: 180 },
           { title: '字段名称', dataIndex: 'field_name', width: 160 },
-          { title: '类型', dataIndex: 'field_type', width: 90,
-            render: (v) => TYPE_OPT.find((t) => t.value === v)?.label || v },
-          { title: '包含在标准模板', dataIndex: 'is_included_in_template', width: 140,
-            render: (v, record) => (
+          {
+            title: '类型',
+            dataIndex: 'field_type',
+            width: 90,
+            render: (value) => TYPE_OPT.find((item) => item.value === value)?.label || value,
+          },
+          {
+            title: '包含在标准模板',
+            dataIndex: 'is_included_in_template',
+            width: 140,
+            render: (value, record) => (
               <Switch
-                checked={v ?? true}
+                checked={value ?? true}
                 onChange={async (checked) => {
                   try {
-                    await updateField(record.id, { ...record, is_included_in_template: checked });
+                    await updateField(record.id, { is_included_in_template: checked });
                     message.success('已更新');
                     load();
                   } catch {
@@ -163,85 +196,139 @@ const AdminFields: React.FC = () => {
                   }
                 }}
               />
-            )},
-          { title: '谁来填写', dataIndex: 'source_category', width: 110,
-            render: (v) => {
-              const cfg = SOURCE_TAG[v];
-              return cfg ? <Tag color={cfg.color}>{cfg.label}</Tag> : <Tag>通用</Tag>;
-            } },
-          { title: '显示环节', dataIndex: 'sub_ticket_scope', width: 120,
-            render: (v) => {
-              const cfg = SCOPE_TAG[v];
-              return cfg ? <Tag color={cfg.color}>{cfg.label}</Tag> : <Tag>通用</Tag>;
-            } },
-          { title: '表单分组', dataIndex: 'collection_group', width: 100,
-            render: (v) => v ? <Tag>{v}</Tag> : '—' },
-          { title: '所属工单', dataIndex: 'order_type', width: 90,
-            render: (v) => ORDER_OPT.find((o) => o.value === (v || ''))?.label || '—' },
-          { title: '必填', dataIndex: 'is_required', width: 70,
-            render: (v) => v ? <Tag color="red">必填</Tag> : <Tag>选填</Tag> },
+            ),
+          },
+          {
+            title: '表单分组',
+            dataIndex: 'collection_group',
+            width: 120,
+            render: (value) => value ? <Tag>{value}</Tag> : '—',
+          },
+          {
+            title: '适用工单/模板',
+            dataIndex: 'order_type',
+            width: 130,
+            render: (value) => ORDER_OPT.find((item) => item.value === (value || ''))?.label || '—',
+          },
+          {
+            title: '必填',
+            dataIndex: 'is_required',
+            width: 70,
+            render: (value) => value ? <Tag color="red">必填</Tag> : <Tag>选填</Tag>,
+          },
           { title: '排序', dataIndex: 'display_order', width: 60 },
-          { title: '启用', dataIndex: 'is_active', width: 70,
-            render: (v) => v ? <Tag color="success">启用</Tag> : <Tag>停用</Tag> },
-          { title: '操作', width: 160, fixed: 'right', render: (_, r) => (
-            <Space>
-              <Button size="small" icon={<EditOutlined />}
-                onClick={() => { setEditing(r); form.setFieldsValue(r); setOpen(true); }}>编辑</Button>
-              {isAdmin && (
-                <Popconfirm title="确定删除？" onConfirm={() => onDel(r.id)}>
-                  <Button size="small" danger icon={<DeleteOutlined />}>删除</Button>
-                </Popconfirm>
-              )}
-            </Space>
-          ) },
+          {
+            title: '启用',
+            dataIndex: 'is_active',
+            width: 70,
+            render: (value) => value ? <Tag color="success">启用</Tag> : <Tag>停用</Tag>,
+          },
+          {
+            title: '操作',
+            width: 160,
+            fixed: 'right',
+            render: (_, record) => (
+              <Space>
+                <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)}>
+                  编辑
+                </Button>
+                {isAdmin && (
+                  <Popconfirm title="确定删除？" onConfirm={() => onDel(record.id)}>
+                    <Button size="small" danger icon={<DeleteOutlined />}>删除</Button>
+                  </Popconfirm>
+                )}
+              </Space>
+            ),
+          },
         ]}
       />
-      <Modal title={editing ? '编辑表单字段' : '新增表单字段'} open={open} width={640}
-        onOk={onSave} onCancel={() => { setOpen(false); setEditing(null); form.resetFields(); }} destroyOnHidden>
-        <Form form={form} layout="vertical" initialValues={{ field_type: 'text', is_required: false, is_active: true, is_included_in_template: true, display_order: 1 }}>
-          <Form.Item name="field_code" label="系统标识" rules={[{ required: true }]}><Input placeholder="例如 employee_name，保存后尽量不要改" /></Form.Item>
-          <Form.Item name="field_name" label="字段名称" rules={[{ required: true }]}><Input placeholder="如 员工姓名" /></Form.Item>
-          <Form.Item name="field_type" label="字段类型" rules={[{ required: true }]}>
+      <Modal
+        title={editing ? '编辑表单字段' : '新增表单字段'}
+        open={open}
+        width={640}
+        onOk={onSave}
+        onCancel={() => {
+          setOpen(false);
+          setEditing(null);
+          form.resetFields();
+        }}
+        destroyOnHidden
+      >
+        <Form
+          form={form}
+          layout="vertical"
+          initialValues={{
+            field_type: 'text',
+            is_required: false,
+            is_active: true,
+            is_included_in_template: true,
+            display_order: 1,
+          }}
+        >
+          {editing && (
+            <Form.Item name="field_code" label="系统标识">
+              <Input disabled />
+            </Form.Item>
+          )}
+          <Form.Item name="field_name" label="字段名称" rules={[{ required: true, message: '请输入字段名称' }]}>
+            <Input placeholder="如 员工姓名" />
+          </Form.Item>
+          <Form.Item name="field_type" label="字段类型" rules={[{ required: true, message: '请选择字段类型' }]}>
             <Select options={TYPE_OPT} getPopupContainer={getSelectPopupContainer} />
           </Form.Item>
-          <Form.Item name="order_type" label="所属工单类型">
-            <Select allowClear options={ORDER_OPT.filter((o) => o.value !== '')} placeholder="不限定" getPopupContainer={getSelectPopupContainer} />
-          </Form.Item>
-          <Form.Item name="source_category" label="通常由谁填写">
-            <Select allowClear options={[
-              { label: '客户填写', value: 'customer_filled' },
-              { label: '业务员填写', value: 'agent_supplemented' },
-              { label: '系统判断', value: 'process_judgment' },
-            ]} placeholder="不限定" getPopupContainer={getSelectPopupContainer} />
-          </Form.Item>
-          <Form.Item name="sub_ticket_scope" label="主要显示在哪个环节">
-            <Select allowClear options={[
-              { label: '所有环节', value: 'all' },
-              { label: '增员报岗录入环节', value: 'data_entry' },
-              { label: '减员报岗录入环节', value: 'data_entry_resign' },
-              { label: '社保公积金增员环节', value: 'social_insurance' },
-              { label: '社保公积金减员环节', value: 'resignation_social_insurance' },
-              { label: '入职联系环节', value: 'onboarding_contact' },
-              { label: '离职材料收集环节', value: 'resignation_contact' },
-              { label: '劳动合同新签环节', value: 'contract' },
-            ]} placeholder="不限定" getPopupContainer={getSelectPopupContainer} />
-          </Form.Item>
-          <Form.Item name="collection_group" label="表单分组">
+          {fieldType === 'dropdown' && (
+            <Form.Item
+              name="dropdown_options"
+              label="下拉选项"
+              rules={[{ required: true, type: 'array', min: 1, message: '请至少输入一个下拉选项' }]}
+            >
+              <Select
+                mode="tags"
+                tokenSeparators={[',', '，']}
+                placeholder="输入选项后按回车，可输入多个"
+                getPopupContainer={getSelectPopupContainer}
+              />
+            </Form.Item>
+          )}
+          <Form.Item name="order_type" label="适用工单/模板">
             <Select
               allowClear
-              options={COLLECTION_GROUP_OPT.filter((o) => o.value !== '')}
+              options={ORDER_OPT.filter((item) => item.value !== '')}
               placeholder="不限定"
               getPopupContainer={getSelectPopupContainer}
             />
           </Form.Item>
-          <Form.Item name="is_required" label="是否必填" valuePropName="checked"><Switch /></Form.Item>
-          <Form.Item name="is_included_in_template" label="包含在标准模板" valuePropName="checked" tooltip="开启后字段会出现在Excel导入模板的标准列中；关闭后作为可选字段，业务员可手动添加">
+          <Form.Item name="collection_group" label="表单分组">
+            <Select
+              allowClear
+              options={COLLECTION_GROUP_OPT.filter((item) => item.value !== '')}
+              placeholder="不限定"
+              getPopupContainer={getSelectPopupContainer}
+            />
+          </Form.Item>
+          <Form.Item name="is_required" label="是否必填" valuePropName="checked">
             <Switch />
           </Form.Item>
-          <Form.Item name="display_order" label="显示顺序"><InputNumber min={1} /></Form.Item>
-          <Form.Item name="placeholder" label="占位提示"><Input /></Form.Item>
-          <Form.Item name="help_text" label="字段说明"><Input placeholder="给填写人看的简短说明，可不填" /></Form.Item>
-          <Form.Item name="is_active" label="启用" valuePropName="checked"><Switch /></Form.Item>
+          <Form.Item
+            name="is_included_in_template"
+            label="包含在标准模板"
+            valuePropName="checked"
+            tooltip="开启后字段会出现在 Excel 导入模板的标准列中；关闭后作为可选字段。"
+          >
+            <Switch />
+          </Form.Item>
+          <Form.Item name="display_order" label="显示顺序">
+            <InputNumber min={1} />
+          </Form.Item>
+          <Form.Item name="placeholder" label="占位提示">
+            <Input />
+          </Form.Item>
+          <Form.Item name="help_text" label="字段说明">
+            <Input placeholder="给填写人看的简短说明，可不填" />
+          </Form.Item>
+          <Form.Item name="is_active" label="启用" valuePropName="checked">
+            <Switch />
+          </Form.Item>
         </Form>
       </Modal>
     </PageContainer>

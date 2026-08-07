@@ -21,17 +21,17 @@ export default function BusinessScopeSwitcher({ style, className }: BusinessScop
   }, [location.pathname]);
 
   const options: SegmentedProps['options'] = [
-    { label: '单项业务', value: 'beilun' },
-    { label: '省外派单', value: 'out_of_province' },
+    { label: '北仑', value: 'beilun' },
+    { label: '省外', value: 'out_of_province' },
   ];
 
   const handleChange = (value: BusinessScope) => {
     if (value === currentScope) return;
     // ponytail: 切换时跳转到对应模块的默认列表页
     if (value === 'out_of_province') {
-      navigate('/out-of-province/orders');
+      navigate('/out-of-province/increase');
     } else {
-      navigate('/in-service/orders');
+      navigate('/dashboard');
     }
   };
 

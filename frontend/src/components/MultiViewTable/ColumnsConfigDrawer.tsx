@@ -1,9 +1,9 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Drawer, Checkbox, Space, Button, App } from 'antd';
 import { HolderOutlined } from '@ant-design/icons';
 import type { ProColumns } from '@ant-design/pro-components';
 
-const STORAGE_PREFIX = 'mv_columns_';
+const STORAGE_PREFIX = 'mv_config_';
 
 interface ColumnsConfigDrawerProps {
   open: boolean;
@@ -16,14 +16,26 @@ interface ColumnsConfigDrawerProps {
   onOrderChange: (order: string[]) => void;
 }
 
+export function reorderColumnKeys(order: string[], draggedKey: string, targetKey: string): string[] {
+  if (draggedKey === targetKey) return order;
+  const from = order.indexOf(draggedKey);
+  const to = order.indexOf(targetKey);
+  if (from < 0 || to < 0) return order;
+  const next = [...order];
+  next.splice(from, 1);
+  next.splice(to, 0, draggedKey);
+  return next;
+}
+
 const ColumnsConfigDrawer: React.FC<ColumnsConfigDrawerProps> = ({
   open, onClose, viewId, columns, hiddenKeys, onHiddenKeysChange, order: colOrder, onOrderChange,
 }) => {
   const { message } = App.useApp();
   const storageKey = STORAGE_PREFIX + viewId;
+  const [draggedKey, setDraggedKey] = useState<string | null>(null);
 
   const visibleColumns = useMemo(
-    () => columns.filter((c) => c.dataIndex !== 'actions' && c.key !== 'actions'),
+    () => columns.filter((c) => !c.hideInTable && c.dataIndex !== 'actions' && c.key !== 'actions'),
     [columns],
   );
 
@@ -51,10 +63,26 @@ const ColumnsConfigDrawer: React.FC<ColumnsConfigDrawerProps> = ({
   };
 
   const handleSave = () => {
-    const config = { hiddenKeys, order: colOrder };
-    localStorage.setItem(storageKey, JSON.stringify(config));
+    let existing: Record<string, unknown> = {};
+    try {
+      existing = JSON.parse(localStorage.getItem(storageKey) || '{}') as Record<string, unknown>;
+    } catch {
+      existing = {};
+    }
+    localStorage.setItem(storageKey, JSON.stringify({
+      ...existing,
+      columnsOrder: colOrder,
+      columnsHidden: hiddenKeys,
+    }));
     message.success('列配置已保存');
     onClose();
+  };
+
+  const handleDrop = (targetKey: string) => {
+    if (!draggedKey) return;
+    const next = reorderColumnKeys(colOrder, draggedKey, targetKey);
+    if (next !== colOrder) onOrderChange(next);
+    setDraggedKey(null);
   };
 
   const handleReset = () => {
@@ -63,7 +91,7 @@ const ColumnsConfigDrawer: React.FC<ColumnsConfigDrawerProps> = ({
     onOrderChange(allKeys);
   };
 
-  const sortedColumns = visibleColumns.sort((a, b) => {
+  const sortedColumns = [...visibleColumns].sort((a, b) => {
     const ai = colOrder.indexOf((a.dataIndex || a.key) as string);
     const bi = colOrder.indexOf((b.dataIndex || b.key) as string);
     const aIdx = ai >= 0 ? ai : 999;
@@ -72,14 +100,22 @@ const ColumnsConfigDrawer: React.FC<ColumnsConfigDrawerProps> = ({
   });
 
   return (
-    <Drawer title="列配置" open={open} onClose={onClose} width={320}
+    <Drawer title="列配置" open={open} onClose={onClose} width={320} getContainer={() => document.body}
       extra={<Space><Button size="small" onClick={handleReset}>恢复默认</Button><Button size="small" type="primary" onClick={handleSave}>保存</Button></Space>}>
       <Space direction="vertical" style={{ width: '100%' }}>
         {sortedColumns.map((col) => {
           const key = (col.dataIndex || col.key) as string;
           const isHidden = hiddenKeys.includes(key);
           return (
-            <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0' }}>
+            <div
+              key={key}
+              draggable
+              onDragStart={() => setDraggedKey(key)}
+              onDragEnd={() => setDraggedKey(null)}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={() => handleDrop(key)}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0', cursor: 'grab' }}
+            >
               <Checkbox checked={!isHidden} onChange={(e) => handleToggle(key, e.target.checked)}>
                 {col.title as string || key}
               </Checkbox>

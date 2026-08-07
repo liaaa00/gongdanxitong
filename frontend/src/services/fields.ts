@@ -80,7 +80,7 @@ const mockFields: FieldConfigItem[] = [
   { id: 'o_probation_other_salary', field_code: 'probation_other_salary', field_name: '试用期其他工资', field_type: 'text', is_required: false, default_required: false, validation_regex: null, validation_msg: null, dropdown_options: null, placeholder: '请输入试用期其他工资', help_text: '可填写文字说明，如可填写数字加文字。', order_type: 'onboarding', source_category: 'customer_filled', sub_ticket_scope: 'contract', collection_group: '基本信息', business_context: ['onboarding'], display_order: 34, is_active: true },
   { id: '31', field_code: 'payroll_cycle', field_name: '发薪周期', field_type: 'dropdown', is_required: true, default_required: true, validation_regex: null, validation_msg: null, dropdown_options: options(['当月', '次月']), placeholder: '请选择发薪周期', help_text: null, order_type: 'onboarding', source_category: 'customer_filled', sub_ticket_scope: 'contract', collection_group: '基本信息', business_context: ['onboarding'], display_order: 35, is_active: true },
   { id: '32', field_code: 'payroll_date', field_name: '发薪日期', field_type: 'text', is_required: true, default_required: true, validation_regex: null, validation_msg: null, dropdown_options: null, placeholder: '如：15日', help_text: null, order_type: 'onboarding', source_category: 'customer_filled', sub_ticket_scope: 'contract', collection_group: '基本信息', business_context: ['onboarding'], display_order: 36, is_active: true },
-  { id: '33', field_code: 'social_location', field_name: '参保地', field_type: 'text', is_required: true, default_required: true, validation_regex: null, validation_msg: null, dropdown_options: null, placeholder: '请输入参保地', help_text: null, order_type: 'onboarding', source_category: 'customer_filled', sub_ticket_scope: 'data_entry,social_insurance', collection_group: '基本信息', business_context: ['onboarding'], display_order: 37, is_active: true },
+  { id: '33', field_code: 'social_location', field_name: '参保机构名称', field_type: 'text', is_required: true, default_required: true, validation_regex: null, validation_msg: null, dropdown_options: null, placeholder: '请输入参保机构名称', help_text: null, order_type: 'onboarding', source_category: 'customer_filled', sub_ticket_scope: 'data_entry,social_insurance', collection_group: '基本信息', business_context: ['onboarding'], display_order: 37, is_active: true },
   { id: '34', field_code: 'start_month', field_name: '参保起始月', field_type: 'dropdown', is_required: true, default_required: true, validation_regex: null, validation_msg: null, dropdown_options: options(['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月']), placeholder: '请选择参保起始月', help_text: '社保起缴月', order_type: 'onboarding', source_category: 'customer_filled', sub_ticket_scope: 'data_entry,social_insurance', collection_group: '基本信息', business_context: ['onboarding'], display_order: 38, is_active: true },
   { id: '35', field_code: 'social_base', field_name: '社保基数', field_type: 'number', is_required: true, default_required: true, validation_regex: null, validation_msg: null, dropdown_options: null, placeholder: '请输入社保基数', help_text: null, order_type: 'onboarding', source_category: 'customer_filled', sub_ticket_scope: 'data_entry,social_insurance', collection_group: '基本信息', business_context: ['onboarding'], display_order: 39, is_active: true },
   { id: '36', field_code: 'fund_base', field_name: '公积金基数', field_type: 'number', is_required: true, default_required: true, validation_regex: null, validation_msg: null, dropdown_options: null, placeholder: '请输入公积金基数', help_text: null, order_type: 'onboarding', source_category: 'customer_filled', sub_ticket_scope: 'data_entry,social_insurance', collection_group: '基本信息', business_context: ['onboarding'], display_order: 40, is_active: true },
@@ -213,22 +213,24 @@ function normalizeField(f: any): FieldConfigItem {
 export async function createField(data: Partial<FieldConfigItem>): Promise<FieldConfigItem> {
   if (isMockMode) {
     const list = loadList<FieldConfigItem>(FIELD_MOCK_STORE_KEY, mockFields);
+    const id = nextId(list);
     const item: FieldConfigItem = {
-      id: nextId(list),
-      field_code: data.field_code || '',
+      id,
+      field_code: data.field_code || `custom_${id.padStart(20, '0').slice(-20)}`,
       field_name: data.field_name || '',
       field_type: data.field_type || 'text',
       is_required: data.is_required ?? false,
-      default_required: data.default_required ?? false,
+      default_required: data.default_required ?? data.is_required ?? false,
       validation_regex: data.validation_regex ?? null,
       validation_msg: data.validation_msg ?? null,
-      dropdown_options: data.dropdown_options ?? null,
+      dropdown_options: normalizeDropdownOptions(data.dropdown_options),
       placeholder: data.placeholder ?? null,
       help_text: data.help_text ?? null,
       order_type: data.order_type ?? null,
       source_category: data.source_category ?? null,
       sub_ticket_scope: data.sub_ticket_scope ?? null,
       collection_group: data.collection_group ?? null,
+      is_included_in_template: data.is_included_in_template ?? true,
       display_order: data.display_order ?? 99,
       is_active: data.is_active ?? true,
     };
@@ -248,9 +250,14 @@ function packField(data: Partial<FieldConfigItem>): Record<string, unknown> {
   if (data.default_required !== undefined) body.defaultRequired = data.default_required;
   if (data.validation_regex !== undefined) body.validationRegex = data.validation_regex;
   if (data.validation_msg !== undefined) body.validationMsg = data.validation_msg;
-  if (data.dropdown_options !== undefined) body.dropdownOptions = data.dropdown_options;
+  if (data.dropdown_options !== undefined) {
+    body.dropdownOptions = data.dropdown_options?.map((option) => (
+      typeof option === 'string' ? option : option.value
+    )) ?? null;
+  }
   if (data.placeholder !== undefined) body.placeholder = data.placeholder;
   if (data.help_text !== undefined) body.helpText = data.help_text;
+  if (data.collection_group !== undefined) body.collectionGroup = data.collection_group;
   if (data.order_type !== undefined) body.orderType = data.order_type;
   if (data.is_included_in_template !== undefined) body.isIncludedInTemplate = data.is_included_in_template;
   if (data.display_order !== undefined) body.displayOrder = data.display_order;

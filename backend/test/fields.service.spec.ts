@@ -48,4 +48,42 @@ describe('FieldsService', () => {
     );
     expect(result.list[0]).toMatchObject({ fieldCode: 'employee_name', collectionGroup: '基本信息', collection_group: '基本信息' });
   });
+
+  it('generates an internal code and applies safe defaults for a new business field', async () => {
+    const fieldRepo = {
+      findOne: jest.fn(async () => null),
+      create: jest.fn((value) => Object.assign(new FieldConfig(), value)),
+      save: jest.fn(async (value) => value),
+    };
+    const service = new FieldsService(
+      { transaction: jest.fn() } as never,
+      fieldRepo as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    const result = await service.create({
+      fieldName: '业务自定义字段',
+      fieldType: FieldType.TEXT,
+      isRequired: false,
+      orderType: OrderType.ONBOARDING,
+    });
+
+    expect(result.fieldCode).toMatch(/^custom_[a-f0-9]{20}$/);
+    expect(fieldRepo.findOne).toHaveBeenCalledWith({
+      where: { fieldCode: result.fieldCode },
+    });
+    expect(fieldRepo.create).toHaveBeenCalledWith(expect.objectContaining({
+      fieldCode: result.fieldCode,
+      isRequired: false,
+      defaultRequired: false,
+      isIncludedInTemplate: true,
+      isActive: true,
+      orderType: OrderType.ONBOARDING,
+      businessContext: [OrderType.ONBOARDING],
+      displayOrder: 0,
+    }));
+  });
 });

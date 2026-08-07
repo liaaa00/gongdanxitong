@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
@@ -18,11 +19,11 @@ import {
 import { AstValidator } from 'src/modules/dispatch/ast.validator';
 
 interface SaveFieldInput {
-  fieldCode: string;
+  fieldCode?: string;
   fieldName: string;
   fieldType: FieldType;
   isRequired: boolean;
-  defaultRequired: boolean;
+  defaultRequired?: boolean;
   validationRegex?: string | null;
   validationMsg?: string | null;
   dropdownOptions?: string[] | null;
@@ -34,6 +35,7 @@ interface SaveFieldInput {
   collectionGroup?: string | null;
   displayOrder?: number;
   isActive?: boolean;
+  isIncludedInTemplate?: boolean;
 }
 
 @Injectable()
@@ -95,8 +97,10 @@ export class FieldsService {
   }
 
   async create(input: SaveFieldInput): Promise<FieldConfig> {
+    const fieldCode = input.fieldCode?.trim()
+      || `custom_${randomUUID().replace(/-/g, '').slice(0, 20)}`;
     const existed = await this.fieldRepository.findOne({
-      where: { fieldCode: input.fieldCode },
+      where: { fieldCode },
     });
     if (existed) {
       throw new BadRequestException('字段编码已存在');
@@ -111,7 +115,11 @@ export class FieldsService {
 
     const entity = this.fieldRepository.create({
       ...input,
+      fieldCode,
+      isRequired: input.isRequired ?? false,
+      defaultRequired: input.defaultRequired ?? input.isRequired ?? false,
       isActive: input.isActive ?? true,
+      isIncludedInTemplate: input.isIncludedInTemplate ?? true,
       orderType,
       businessContext,
       displayOrder: input.displayOrder ?? 0,

@@ -77,11 +77,8 @@ const IN_SERVICE_ROLES = [
   ROLE.SOCIAL_INSURANCE_SPECIALIST,
 ] as const satisfies readonly CanonicalRole[];
 
-const RESIGNATION_CERTIFICATE_LIST_ROLES = [
+const RESIGNATION_CERT_SUBORDER_ROLES = [
   ROLE.ADMIN,
-  ROLE.BUSINESS_OWNER,
-  ROLE.BUSINESS_GROUP_LEADER,
-  ROLE.BUSINESS_GROUP_MEMBER,
   ROLE.SHARED_TEAM_OWNER,
   ROLE.LABOR_CONTRACT_MEMBER,
 ] as const satisfies readonly CanonicalRole[];
@@ -173,7 +170,7 @@ export const ROUTE_VISIBILITY = {
   '/onboarding/renewal_contract': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.LABOR_CONTRACT_MEMBER, ROLE.SHARED_TEAM_OWNER],
   '/onboarding/benefit_apply': IN_SERVICE_ROLES,
   '/onboarding/resignation_contact': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.ONBOARDING_RESIGNATION_MEMBER, ROLE.SHARED_TEAM_OWNER],
-  '/onboarding/resignation_cert': [],
+  '/onboarding/resignation_cert': RESIGNATION_CERT_SUBORDER_ROLES,
   '/onboarding/data_entry_resign': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.DATA_ENTRY_LEADER],
   '/onboarding/social_insurance_resign': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SOCIAL_INSURANCE_SPECIALIST],
 
@@ -185,8 +182,7 @@ export const ROUTE_VISIBILITY = {
   '/renewal': IN_SERVICE_ROLES,
   '/renewal/new': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER],
   '/renewal/:id': IN_SERVICE_ROLES,
-  '/resignation-certificates': RESIGNATION_CERTIFICATE_LIST_ROLES,
-  '/resignation-certificates/new': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER],
+  // 离职证明没有独立列表/新建路由。
   '/in-service/contract-renewal': IN_SERVICE_ROLES,
   '/in-service/benefit-claim': IN_SERVICE_ROLES,
   '/in-service/:id/audit': [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER],

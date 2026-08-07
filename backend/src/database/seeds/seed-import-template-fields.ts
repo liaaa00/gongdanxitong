@@ -66,6 +66,7 @@ export const ONBOARDING_TEMPLATE_ORDER = [
 ];
 
 const ONBOARDING_TEMPLATE_HEADER_ALIASES: Partial<Record<(typeof ONBOARDING_TEMPLATE_ORDER)[number], string>> = {
+  social_location: '参保机构名称',
   company_address: '劳动合同主体注册地',
 };
 

@@ -1,13 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   IN_SERVICE_BUSINESS_TYPE_MAPPING,
+  IN_SERVICE_ORDER_KINDS,
   IN_SERVICE_PROCESS_TYPE_MAPPING,
   PROVINCES_27,
   getInServiceCategoryPath,
   getInServiceProcessOptions,
   getInServiceRequirementOptions,
 } from '@/constants/inService';
-import { buildInServiceListQuery } from './index';
+import { buildBatchRenewalRows, buildInServiceListQuery, flattenDepartments, getInServiceStatusValueEnum } from './index';
 import {
   acceptInServiceOrder,
   confirmInServiceOrder,
@@ -60,6 +61,89 @@ describe('single-business category contract', () => {
     });
     expect(query.createdFrom).toContain('2026-06-30T16:00:00.000Z');
     expect(query.createdTo).toContain('2026-07-31T15:59:59.999Z');
+  });
+
+  it('uses exactly four user-facing states for certificate lists', () => {
+    const certificateStatuses = getInServiceStatusValueEnum(IN_SERVICE_ORDER_KINDS.CERTIFICATE);
+    expect(Object.keys(certificateStatuses)).toEqual([
+      'dispatched',
+      'processing',
+      'completed',
+      'pending_info',
+    ]);
+    expect(certificateStatuses).toMatchObject({
+      dispatched: { text: '待开具' },
+      processing: { text: '开具中' },
+      completed: { text: '已完成' },
+      pending_info: { text: '已退回' },
+    });
+
+    const renewalStatuses = getInServiceStatusValueEnum(IN_SERVICE_ORDER_KINDS.CONTRACT_RENEWAL);
+    expect(renewalStatuses).toHaveProperty('accepted');
+    expect(renewalStatuses).toHaveProperty('failed');
+  });
+
+  it('maps batch renewal Excel rows to customer and department ids with row errors', () => {
+    const customers = [{
+      id: 'customer-1',
+      customer_name: '测试客户',
+      customer_code: 'C001',
+      is_active: true,
+      created_at: '',
+    }];
+    const departments = [{
+      id: 'department-root',
+      parent_id: null,
+      code: 'BUSINESS',
+      name: '业务团队',
+      sort_order: 1,
+      is_active: true,
+      children: [{
+        id: 'department-1',
+        parent_id: 'department-root',
+        code: 'D001',
+        name: '业务一部',
+        sort_order: 1,
+        is_active: true,
+      }],
+    }];
+    const rows = buildBatchRenewalRows([
+      {
+        客户名称: '测试客户',
+        发起部门: '业务一部',
+        姓名: '张三',
+        证件号码: '330206199001011234',
+        合同期限形式: '固定期限',
+        合同开始日期: '2026-09-01',
+        合同结束日期: '2027-08-31',
+        基本工资: '8,000',
+      },
+      {
+        客户名称: '不存在客户',
+        发起部门: '业务一部',
+        姓名: '李四',
+        证件号码: '330206199001011235',
+        合同期限形式: '无固定期限',
+        合同开始日期: '2026-09-01',
+        基本工资: 0,
+      },
+    ], customers, flattenDepartments(departments));
+
+    expect(rows[0].error).toBeNull();
+    expect(rows[0].payload).toMatchObject({
+      customerId: 'customer-1',
+      departmentId: 'department-1',
+      extraData: {
+        signing_method: '续签',
+        contract_term_type: '固定期限',
+        contract_start_date: '2026-09-01',
+        contract_end_date: '2027-08-31',
+        base_salary: 8000,
+      },
+    });
+    expect(rows[1].error).toContain('客户不存在');
+    expect(rows[1].error).toContain('基本工资必须大于0');
+    expect(rows[1].payload).toBeNull();
   });
 });
 

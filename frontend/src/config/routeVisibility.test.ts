@@ -149,7 +149,7 @@ describe('routeVisibility admin-only configuration routes', () => {
     }
   });
 
-  it('opens independent in-service and resignation-certificate routes while keeping historical placeholders frozen', () => {
+  it('opens in-service routes while keeping resignation certificates inside the parent work-order flow', () => {
     const adminRoles = roles([ROLE.ADMIN]);
     const ownerRoles = roles([ROLE.BUSINESS_OWNER]);
     const leaderRoles = roles([ROLE.BUSINESS_GROUP_LEADER]);
@@ -171,11 +171,12 @@ describe('routeVisibility admin-only configuration routes', () => {
     expect(canAccessPath('/in-service/certificates', contractRoles)).toBe(true);
     expect(canAccessPath('/in-service/certificates/new', memberRoles)).toBe(true);
     expect(canAccessPath('/in-service/certificates/new', contractRoles)).toBe(false);
-    expect(canAccessPath('/resignation-certificates', contractRoles)).toBe(true);
-    expect(canAccessPath('/resignation-certificates', sharedOwnerRoles)).toBe(true);
-    expect(canAccessPath('/resignation-certificates', socialRoles)).toBe(false);
-    expect(canAccessPath('/resignation-certificates/new', memberRoles)).toBe(true);
-    expect(canAccessPath('/resignation-certificates/new', contractRoles)).toBe(false);
+    expect(canAccessPath('/resignation-certificates', contractRoles)).toBe(false);
+    expect(canAccessPath('/resignation-certificates/new', memberRoles)).toBe(false);
+    expect(canAccessPath('/onboarding/resignation_cert', adminRoles)).toBe(true);
+    expect(canAccessPath('/onboarding/resignation_cert', contractRoles)).toBe(true);
+    expect(canAccessPath('/onboarding/resignation_cert', sharedOwnerRoles)).toBe(true);
+    expect(canAccessPath('/onboarding/resignation_cert', socialRoles)).toBe(false);
 
     expect(canAccessPath('/benefit', adminRoles)).toBe(false);
     expect(canAccessPath('/benefit/new', adminRoles)).toBe(false);
@@ -190,7 +191,7 @@ describe('routeVisibility admin-only configuration routes', () => {
     expect(canAccessPath('/onboarding/contract', sharedOwnerRoles)).toBe(true);
     expect(canAccessPath('/onboarding/onboarding_contact', sharedOwnerRoles)).toBe(true);
     expect(canAccessPath('/onboarding/resignation_contact', sharedOwnerRoles)).toBe(true);
-    expect(canAccessPath('/onboarding/resignation_cert', sharedOwnerRoles)).toBe(false);
+    expect(canAccessPath('/onboarding/resignation_cert', sharedOwnerRoles)).toBe(true);
     expect(canAccessPath('/offboarding/contact-pool', sharedOwnerRoles)).toBe(true);
     expect(canAccessPath('/offboarding/proof-pool', sharedOwnerRoles)).toBe(false);
     expect(canAccessPath('/onboarding/data_entry', sharedOwnerRoles)).toBe(false);

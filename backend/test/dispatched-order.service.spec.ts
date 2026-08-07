@@ -30,6 +30,7 @@ function qbMock(rows: DispatchedOrder[], total = rows.length) {
   const qb = {
     leftJoinAndSelect: jest.fn(),
     andWhere: jest.fn(),
+    addSelect: jest.fn(),
     orderBy: jest.fn(),
     offset: jest.fn(),
     limit: jest.fn(),
@@ -37,6 +38,7 @@ function qbMock(rows: DispatchedOrder[], total = rows.length) {
   };
   qb.leftJoinAndSelect.mockReturnValue(qb);
   qb.andWhere.mockReturnValue(qb);
+  qb.addSelect.mockReturnValue(qb);
   qb.orderBy.mockReturnValue(qb);
   qb.offset.mockReturnValue(qb);
   qb.limit.mockReturnValue(qb);
@@ -85,6 +87,11 @@ describe('DispatchedOrderService', () => {
     const result = await service.findAll({ page: 1, pageSize: 20, moduleCode: 'data_entry' } as never, user);
 
     expect(queryBuilder.andWhere).toHaveBeenCalledWith(expect.stringContaining('d.module_code = :moduleCode'), { moduleCode: 'data_entry' });
+    expect(queryBuilder.addSelect).toHaveBeenCalledWith(
+      expect.stringContaining("CASE WHEN d.status IN ('returned','modify_pending')"),
+      'status_priority',
+    );
+    expect(queryBuilder.orderBy).toHaveBeenCalledWith('status_priority', 'ASC');
     expect(queryBuilder.offset).toHaveBeenCalledWith(0);
     expect(queryBuilder.limit).toHaveBeenCalledWith(20);
     expect(result.total).toBe(1);
@@ -506,6 +513,12 @@ describe('DispatchedOrderService', () => {
 
       await expect(service.findAll({ page: 1, pageSize: 20, moduleCode } as never, user)).resolves.toMatchObject({ total: 1 });
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(expect.stringContaining('d.module_code = :moduleCode'), { moduleCode });
+      if (moduleCode === 'resignation_cert') {
+        expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+          expect.stringContaining('d.module_code IN (:...phase1Modules)'),
+          { phase1Modules: expect.arrayContaining(['resignation_cert']) },
+        );
+      }
     },
   );
 

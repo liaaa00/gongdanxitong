@@ -1,25 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { IN_SERVICE_ORDER_KINDS } from '@/constants/inService';
-import { getInServiceDetailModuleCode } from './Detail';
+import { IN_SERVICE_ORDER_KINDS, getInServiceStatusMeta } from '@/constants/inService';
+import { isCertificateTemplateOrder } from './Detail';
 
-describe('in-service detail template module mapping', () => {
-  it('keeps Beilun and Zhejiang self-sign single-business templates isolated', () => {
-    expect(getInServiceDetailModuleCode(IN_SERVICE_ORDER_KINDS.SINGLE_BUSINESS, 'beilun'))
-      .toBe('in_service_single_business');
-    expect(getInServiceDetailModuleCode(IN_SERVICE_ORDER_KINDS.SINGLE_BUSINESS, 'out_of_province'))
-      .toBe('out_of_province_single_business');
+describe('in-service detail certificate template access', () => {
+  it('allows certificate downloads only for active and resignation certificate orders', () => {
+    expect(isCertificateTemplateOrder(IN_SERVICE_ORDER_KINDS.CERTIFICATE)).toBe(true);
+    expect(isCertificateTemplateOrder(IN_SERVICE_ORDER_KINDS.RESIGNATION_CERTIFICATE)).toBe(true);
+    expect(isCertificateTemplateOrder(IN_SERVICE_ORDER_KINDS.CONTRACT_RENEWAL)).toBe(false);
+    expect(isCertificateTemplateOrder(IN_SERVICE_ORDER_KINDS.SINGLE_BUSINESS)).toBe(false);
   });
 
-  it('maps each independent detail page to its own backend module', () => {
-    expect(getInServiceDetailModuleCode(IN_SERVICE_ORDER_KINDS.CONTRACT_RENEWAL, 'beilun'))
-      .toBe('renewal_contract');
-    expect(getInServiceDetailModuleCode(IN_SERVICE_ORDER_KINDS.CERTIFICATE, 'beilun'))
-      .toBe('in_service_certificate');
-    expect(getInServiceDetailModuleCode(IN_SERVICE_ORDER_KINDS.RESIGNATION_CERTIFICATE, 'beilun'))
-      .toBe('resignation_certificate');
-    expect(getInServiceDetailModuleCode(IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_INCREASE, 'out_of_province'))
-      .toBe('out_of_province_increase');
-    expect(getInServiceDetailModuleCode(IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_DECREASE, 'out_of_province'))
-      .toBe('out_of_province_decrease');
+  it('maps internal certificate statuses to the four business labels', () => {
+    expect(getInServiceStatusMeta(IN_SERVICE_ORDER_KINDS.CERTIFICATE, 'dispatched').label).toBe('待开具');
+    expect(getInServiceStatusMeta(IN_SERVICE_ORDER_KINDS.CERTIFICATE, 'accepted').label).toBe('开具中');
+    expect(getInServiceStatusMeta(IN_SERVICE_ORDER_KINDS.CERTIFICATE, 'ready').label).toBe('开具中');
+    expect(getInServiceStatusMeta(IN_SERVICE_ORDER_KINDS.CERTIFICATE, 'completed').label).toBe('已完成');
+    expect(getInServiceStatusMeta(IN_SERVICE_ORDER_KINDS.CERTIFICATE, 'failed').label).toBe('已退回');
+    expect(getInServiceStatusMeta(IN_SERVICE_ORDER_KINDS.CONTRACT_RENEWAL, 'accepted').label)
+      .toBe('已受理，待材料初审');
   });
 });

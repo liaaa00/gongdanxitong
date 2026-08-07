@@ -33,6 +33,7 @@ import { getModuleLabel, getPhaseOneModuleOptions, isPhaseOneVisibleModule } fro
 import { getStatusColor, getStatusText } from '@/constants/dictionaries';
 import { ROLE } from '@/constants/roles';
 import { isPhase1VisibleOrderType } from '@/utils/moduleAccess';
+import { useColumnConfig } from '@/components/MultiViewTable/useColumnConfig';
 import { mergeProTableFiltersIntoParams, selectHeaderFilter, textHeaderFilter } from '@/utils/proTableFilters';
 import {
   KEEP_ALIVE_ROUTE_ACTIVATED_EVENT,
@@ -424,7 +425,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
       render: (_, record) => String(record.extra_data?.email || '-'),
     },
     {
-      title: '参保地',
+      title: '参保机构名称',
       key: 'insurance_location',
       width: 120,
       hideInSearch: true,
@@ -493,6 +494,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
     { title: '完成时间', dataIndex: 'completedRange', key: 'completedRange', valueType: 'dateTimeRange', hideInTable: true },
 
   ], cachedPageState.filters || {}), [navigate, isDoneMode, isInitiatedMode, isReturnedMode, cachedPageState.filters]);
+  const columnConfig = useColumnConfig(`my-dispatched:${currentMode}`, columns);
 
   // 我的退回仅展示退回子工单，避免主工单表 + 子工单表重复筛选/重复数据。
   const updateSlaCounts = (list: DispatchedOrderItem[]) => {
@@ -649,13 +651,14 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
             }}
           />
         </Space>,
+        <span key="columns">{columnConfig.button}</span>,
         ...(!isDoneMode && slaWarningCount > 0 ? [<Badge key="sla-warning" count={slaWarningCount}><Tag color="orange" icon={<ClockCircleOutlined />}>即将超时</Tag></Badge>] : []),
         ...(!isDoneMode && slaBreachedCount > 0 ? [<Badge key="sla-breached" count={slaBreachedCount}><Tag color="red" icon={<ClockCircleOutlined />}>已超时</Tag></Badge>] : []),
       ],
     }}>
       <ProTable<DispatchedOrderItem>
         getPopupContainer={() => document.body}
-        actionRef={actionRef} columns={columns} rowKey="id"
+        actionRef={actionRef} columns={columnConfig.columns} rowKey="id"
         request={requestDispatchedOrders}
         search={false} headerTitle={childTableTitle}
         options={false}
@@ -707,6 +710,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
           );
         }}
       />
+      {columnConfig.drawer}
             <Modal
         title="批量完成子工单"
         open={batchCompleteVisible}

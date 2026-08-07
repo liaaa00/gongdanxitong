@@ -118,7 +118,7 @@ describe('OnboardingModule header table filters', () => {
     const columns = mocks.latestProTableProps.columns as Array<Record<string, any>>;
     const location = columns.find((column) => column.key === 'social_location');
     const startMonth = columns.find((column) => column.key === 'start_month');
-    expect(location?.title).toBe('参保地');
+    expect(location?.title).toBe('参保机构名称');
     expect(startMonth?.title).toBe('起始月');
     expect(location?.renderText(undefined, { extra_data: { social_location: '厦门' } })).toBe('厦门');
     expect(columns.some((column) => column.key === 'social_pay_region')).toBe(false);

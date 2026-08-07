@@ -2,7 +2,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { App } from 'antd';
-import MultiViewTable, { mergeTableFiltersIntoParams, mergeTableSorterIntoParams } from './index';
+import MultiViewTable, {
+  getScopedViewId,
+  mergeTableFiltersIntoParams,
+  mergeTableSorterIntoParams,
+} from './index';
+import { reorderColumnKeys } from './ColumnsConfigDrawer';
 import { clearCachedListPageState } from '@/utils/listPageState';
 
 const mockColumns = [
@@ -90,6 +95,20 @@ describe('MultiViewTable', () => {
       { page: 1 },
       { created_at: 'invalid' as unknown as string, name: null as unknown as string },
     )).toEqual({ page: 1 });
+  });
+
+  it('isolates saved column layouts by account and business scope', () => {
+    expect(getScopedViewId('orders', 'user-a', 'beilun')).toBe('orders:user-a:beilun');
+    expect(getScopedViewId('orders', 'user-b', 'beilun'))
+      .not.toBe(getScopedViewId('orders', 'user-a', 'beilun'));
+    expect(getScopedViewId('orders', 'user-a', 'out_of_province'))
+      .not.toBe(getScopedViewId('orders', 'user-a', 'beilun'));
+  });
+
+  it('reorders columns by drag target without mutating the saved order', () => {
+    const original = ['name', 'age', 'status'];
+    expect(reorderColumnKeys(original, 'status', 'name')).toEqual(['status', 'name', 'age']);
+    expect(original).toEqual(['name', 'age', 'status']);
   });
 
   it('renders table view by default', async () => {

@@ -19,7 +19,7 @@ describe('businessScope local persistence', () => {
   it('persists out-of-province scope and maps both scopes to frontend landing routes', () => {
     writeBusinessScope(BUSINESS_SCOPE.OUT_OF_PROVINCE);
     expect(readBusinessScope()).toBe(BUSINESS_SCOPE.OUT_OF_PROVINCE);
-    expect(getBusinessScopeLandingPath(BUSINESS_SCOPE.OUT_OF_PROVINCE)).toBe('/out-of-province');
+    expect(getBusinessScopeLandingPath(BUSINESS_SCOPE.OUT_OF_PROVINCE)).toBe('/out-of-province/increase');
     expect(getBusinessScopeLandingPath(BUSINESS_SCOPE.BEILUN)).toBe('/dashboard');
   });
 });

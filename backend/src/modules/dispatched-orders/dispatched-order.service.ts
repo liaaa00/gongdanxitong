@@ -1,4 +1,6 @@
 import { ForbiddenException, HttpStatus, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { readFile } from 'fs/promises';
+import { join } from 'path';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, In, MoreThan, QueryFailedError, Repository, SelectQueryBuilder } from 'typeorm';
 import {
@@ -34,12 +36,15 @@ import {
   DispatchedOrderStatus,
   FieldConfig,
   FieldPermissionMode,
+  InServiceOrder,
+  InServiceOrderKind,
   InServiceOrderStatus,
   ModuleField,
   ModuleHandler,
   ModuleSupervisor,
   Notification,
   OperationLog,
+  OrderAttachment,
   OrderStage,
   OrderType,
   RoleLevel,
@@ -57,9 +62,10 @@ import { DetailViewTemplatesService } from 'src/modules/admin/detail-view-templa
 import { ExportTemplatesService } from 'src/modules/admin/export-templates/export-templates.service';
 import { FieldPermissionService } from 'src/modules/field-permissions/field-permission.service';
 import { FieldSupplementService } from 'src/modules/field-supplement/field-supplement.service';
+import { UploadsService } from 'src/modules/uploads/uploads.service';
 import { FieldChangeHook, FieldDiffItem } from 'src/modules/notifications/field-change.hook';
 import { describeActionCode, humanizeActionCode, toOperationLogActionCode } from 'src/modules/operation-logs/operation-log-semantics';
-import { ResignationCertificateAutomationService } from 'src/modules/work-orders/resignation-certificate-automation.service';
+// 离职证明改由离职主工单下的 resignation_cert 子工单处理。
 import { WorkOrderValidationService } from 'src/modules/work-orders/work-order-validation.service';
 import { AcceptDispatchedOrderDto } from './dto/accept.dto';
 import { BatchAcceptDispatchedOrderDto } from './dto/batch-accept.dto';
@@ -95,6 +101,11 @@ import {
   isHandlingFeedbackModule,
   normalizeHandlingResult,
 } from './handling-feedback';
+import {
+  buildResignationCertificateReplacements,
+  firstText,
+  renderResignationCertificate,
+} from './resignation-certificate';
 
 const DISPATCHED_ORDER_STATUS_ALIASES: Record<string, DispatchedOrderStatus | DispatchedOrderStatus[]> = {
   accepted: DispatchedOrderStatus.PROCESSING,
@@ -108,6 +119,34 @@ const DISPATCHED_ORDER_STATUS_ALIASES: Record<string, DispatchedOrderStatus | Di
 
 const SUPPLEMENT_ALLOWED_MODULE_CODE = 'onboarding_contact';
 const SUPPLEMENT_ALLOWED_USERNAMES = new Set(['maoyani', 'jianglu', '毛雅妮', '江璐']);
+
+export function canStartResignationCertificate(
+  moduleCode: string,
+  parentExtraData: Record<string, unknown> | null | undefined,
+  materialStatus: DispatchedOrderStatus | null,
+): boolean {
+  if (moduleCode !== DispatchModuleCode.RESIGNATION_CERT) return true;
+  if (String(parentExtraData?.need_resignation_share ?? '').trim() !== '是') return true;
+  return materialStatus === DispatchedOrderStatus.COMPLETED;
+}
+
+export function buildResignationCertificateResultPatch(
+  moduleCode: string,
+  completedAt: Date,
+  remark: string,
+  file?: { fileId: string; originalName: string },
+): Record<string, unknown> {
+  if (moduleCode !== DispatchModuleCode.RESIGNATION_CERT) return {};
+  return {
+    resignation_cert_status: '已开具',
+    resignation_cert_result: remark || '正式离职证明已生成',
+    resignation_cert_completed_at: completedAt.toISOString(),
+    ...(file ? {
+      resignation_cert_file_id: file.fileId,
+      resignation_cert_file_name: file.originalName,
+    } : {}),
+  };
+}
 
 @Injectable()
 export class DispatchedOrderService {
@@ -155,7 +194,8 @@ export class DispatchedOrderService {
     @Optional()
     private readonly detailViewTemplatesService?: DetailViewTemplatesService,
     @Optional()
-    private readonly resignationCertificateAutomation?: ResignationCertificateAutomationService,
+    private readonly uploadsService?: UploadsService,
+    // 离职证明不再由资料收集完成事件自动创建独立工单。
   ) {}
 
   async findAll(
@@ -177,8 +217,15 @@ export class DispatchedOrderService {
     );
     this.applyCommonFilters(qb, { ...query, __currentUserId: user.sub } as ListDispatchedOrderQueryDto & { __currentUserId: string });
 
+    qb.addSelect(
+      "CASE WHEN d.status IN ('returned','modify_pending') THEN 0 ELSE 1 END",
+      'status_priority',
+    );
+    qb.orderBy('status_priority', 'ASC');
+    if (typeof (qb as SelectQueryBuilder<DispatchedOrder> & { addOrderBy?: unknown }).addOrderBy === 'function') {
+      qb.addOrderBy('d.updatedAt', 'DESC');
+    }
     const [rows, total] = await qb
-      .orderBy('d.createdAt', 'DESC')
       .offset((page - 1) * pageSize)
       .limit(pageSize)
       .getManyAndCount();
@@ -253,6 +300,18 @@ export class DispatchedOrderService {
     return this.toDetailItem(order, 0, user);
   }
 
+  async downloadResignationCertificate(
+    id: string,
+    user: JwtUserPayload,
+  ): Promise<{ buffer: Buffer; fileName: string }> {
+    const order = await this.loadDispatchedOrder(id);
+    await this.assertCanRead(order, user);
+    if (order.moduleCode !== DispatchModuleCode.RESIGNATION_CERT) {
+      throw businessException(4231, HttpStatus.BAD_REQUEST, '当前子工单不是离职证明');
+    }
+    return this.createResignationCertificateDocument(order);
+  }
+
   async accept(
     id: string,
     _payload: AcceptDispatchedOrderDto,
@@ -260,6 +319,7 @@ export class DispatchedOrderService {
   ): Promise<DispatchedOrderDetailItem> {
     const order = await this.loadDispatchedOrder(id);
     this.assertParentAllowsDispatchedHandling(order);
+    await this.assertResignationCertificateMaterialsReady(order);
     if (order.status !== DispatchedOrderStatus.PENDING) {
       throw businessException(4201, HttpStatus.CONFLICT, '子工单状态不允许接单');
     }
@@ -291,6 +351,7 @@ export class DispatchedOrderService {
   async claim(id: string, user: JwtUserPayload): Promise<DispatchedOrderDetailItem> {
     const order = await this.loadDispatchedOrder(id);
     this.assertParentAllowsDispatchedHandling(order);
+    await this.assertResignationCertificateMaterialsReady(order);
     if (order.handlerId) {
       throw businessException(4220, HttpStatus.CONFLICT, '认领失败：已被认领');
     }
@@ -327,6 +388,43 @@ export class DispatchedOrderService {
 
     const completedAt = new Date();
     const nextCompleted = completionEvaluation.nextStatus === DispatchedOrderStatus.COMPLETED;
+    let storedCertificate: Awaited<ReturnType<UploadsService['save']>> | null = null;
+    if (nextCompleted && order.moduleCode === DispatchModuleCode.RESIGNATION_CERT) {
+      await this.assertResignationCertificateMaterialsReady(order);
+      if (!this.uploadsService) {
+        throw businessException(4232, HttpStatus.INTERNAL_SERVER_ERROR, '离职证明文件存储服务未配置');
+      }
+      const certificate = await this.createResignationCertificateDocument(order, extraDataPatch);
+      extraDataPatch.resignation_reason_code = certificate.replacements.resignationReasonCode;
+      if (certificate.replacements.resignationReasonCode === '4') {
+        extraDataPatch.resignation_other_reason = certificate.replacements.otherReason;
+      }
+      storedCertificate = await this.uploadsService.save({
+        ownerId: user.sub,
+        kind: 'attachment',
+        buffer: certificate.buffer,
+        originalName: certificate.fileName,
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      });
+      Object.assign(
+        extraDataPatch,
+        buildResignationCertificateResultPatch(order.moduleCode, completedAt, remark, storedCertificate),
+        {
+          resignation_cert_attachments: Array.from(new Set([
+            ...(
+              Array.isArray(order.parentOrder.extraData?.resignation_cert_attachments)
+                ? order.parentOrder.extraData.resignation_cert_attachments.filter(
+                    (value): value is string => typeof value === 'string',
+                  )
+                : []
+            ),
+            storedCertificate.fileId,
+          ])),
+        },
+      );
+    } else if (nextCompleted) {
+      Object.assign(extraDataPatch, buildResignationCertificateResultPatch(order.moduleCode, completedAt, remark));
+    }
     let beforeExtraData: Record<string, unknown> | null = null;
 
     await this.dispatchedOrderRepository.manager.transaction(async (manager) => {
@@ -355,13 +453,31 @@ export class DispatchedOrderService {
         await manager.getRepository(WorkOrder).save(order.parentOrder);
       }
 
-      if (nextCompleted && order.moduleCode === DispatchModuleCode.RESIGNATION_CONTACT) {
-        await this.resignationCertificateAutomation?.ensureForWorkOrder(
-          order.parentOrder,
-          'materials_completed',
-          manager,
-        );
+      if (storedCertificate) {
+        const attachmentRepository = manager.getRepository(OrderAttachment);
+        await attachmentRepository.save(attachmentRepository.create({
+          workOrderId: order.parentOrderId,
+          dispatchedOrderId: order.id,
+          bizPurpose: 'resignation_certificate',
+          fileId: storedCertificate.fileId,
+          fileName: storedCertificate.fileName,
+          originalName: storedCertificate.originalName,
+          mimeType: storedCertificate.mimeType,
+          filePath: storedCertificate.filePath,
+          fileSize: storedCertificate.size,
+          status: 'generated',
+          rejectReason: null,
+          receivedAt: completedAt,
+          reviewedBy: user.sub,
+          reviewedAt: completedAt,
+          metadata: {
+            source: 'resignation_certificate_child',
+            reasonCode: extraDataPatch.resignation_reason_code ?? null,
+          },
+        }));
       }
+
+      // 离职证明子工单在主工单提交时创建，不在离职材料收集完成后追加独立工单。
     });
 
     if (beforeExtraData && this.fieldChangeHook) {
@@ -2004,6 +2120,7 @@ export class DispatchedOrderService {
       'data_entry',
       'social_insurance',
       'resignation_contact',
+      'resignation_cert',
       'data_entry_resign',
       'resignation_social_insurance',
     ]) });
@@ -2197,6 +2314,105 @@ export class DispatchedOrderService {
     }
 
     throw new NotFoundException('子工单不存在');
+  }
+
+  private async createResignationCertificateDocument(
+    order: DispatchedOrder,
+    extraDataPatch: Record<string, unknown> = {},
+  ): Promise<{
+    buffer: Buffer;
+    fileName: string;
+    replacements: Record<string, string>;
+  }> {
+    const historyData = await this.loadLatestEmploymentData(order.parentOrder);
+    const extraData = {
+      ...historyData,
+      ...(order.parentOrder.extraData ?? {}),
+      ...extraDataPatch,
+    };
+    const explicitReasonCode = firstText(
+      extraData.resignation_reason_code,
+      extraData.resignationReasonCode,
+    );
+    if (explicitReasonCode && !/^[1-4]$/.test(explicitReasonCode)) {
+      throw businessException(4231, HttpStatus.BAD_REQUEST, '离职证明原因只能选择 1 至 4');
+    }
+
+    const replacements = buildResignationCertificateReplacements({
+      employeeName: order.parentOrder.employeeName,
+      idCardNo: order.parentOrder.employeeIdCard,
+      historyData,
+      extraData,
+    });
+    if (replacements.resignationReasonCode === '4' && !replacements.otherReason) {
+      throw businessException(4231, HttpStatus.BAD_REQUEST, '选择第 4 项原因时必须填写其他原因');
+    }
+
+    const template = await readFile(join(
+      __dirname,
+      '..',
+      '..',
+      'assets',
+      'certificates',
+      'resignation-certificate.docx',
+    ));
+    return {
+      buffer: await renderResignationCertificate(template, replacements),
+      fileName: `离职证明-${order.parentOrder.orderNo}.docx`,
+      replacements,
+    };
+  }
+
+  private async loadLatestEmploymentData(parentOrder: WorkOrder): Promise<Record<string, unknown>> {
+    const renewalRepository = this.dispatchedOrderRepository.manager.getRepository(InServiceOrder);
+    const [onboardingOrders, renewalOrders] = await Promise.all([
+      this.workOrderRepository.find({
+        where: {
+          customerId: parentOrder.customerId,
+          employeeIdCard: parentOrder.employeeIdCard,
+          orderType: OrderType.ONBOARDING,
+        },
+        order: { createdAt: 'DESC' },
+        take: 30,
+      }),
+      renewalRepository.find({
+        where: {
+          customerId: parentOrder.customerId,
+          idCardNo: parentOrder.employeeIdCard,
+          orderKind: InServiceOrderKind.CONTRACT_RENEWAL,
+        },
+        order: { createdAt: 'DESC' },
+        take: 30,
+      }),
+    ]);
+
+    const latest = [
+      ...onboardingOrders
+        .filter((item) => item.status !== WorkOrderStatus.DRAFT)
+        .map((item) => ({ extraData: item.extraData ?? {}, createdAt: item.createdAt })),
+      ...renewalOrders
+        .map((item) => ({ extraData: item.extraData ?? {}, createdAt: item.createdAt })),
+    ].sort((left, right) => (
+      (right.createdAt?.getTime?.() ?? 0) - (left.createdAt?.getTime?.() ?? 0)
+    ))[0];
+    return latest?.extraData ?? {};
+  }
+
+  private async assertResignationCertificateMaterialsReady(order: DispatchedOrder): Promise<void> {
+    if (canStartResignationCertificate(order.moduleCode, order.parentOrder?.extraData, null)) return;
+    const materialOrder = await this.dispatchedOrderRepository.findOne({
+      where: {
+        parentOrderId: order.parentOrderId,
+        moduleCode: DispatchModuleCode.RESIGNATION_CONTACT,
+      },
+      select: { id: true, status: true },
+    });
+    if (canStartResignationCertificate(
+      order.moduleCode,
+      order.parentOrder?.extraData,
+      materialOrder?.status ?? null,
+    )) return;
+    throw businessException(4230, HttpStatus.CONFLICT, '离职材料收集完成后才能办理离职证明');
   }
 
   private async loadDispatchedOrder(id: string): Promise<DispatchedOrder> {
@@ -2637,6 +2853,10 @@ export class DispatchedOrderService {
       return filterPhase1VisibleDispatchModules(moduleCodes);
     }
     const allowed = new Set(this.roleAccessibleModules(roles));
+    if (hasAnyRole(roles, ['shared_leader', 'shared_team_owner', 'contract_specialist', 'labor_contract_member', 'contract_team'])) {
+      // 仅允许实际配置在离职证明处理池中的合同岗/共享负责人通过后续模块过滤。
+      allowed.add('resignation_cert');
+    }
     if (allowed.size === 0) return filterPhase1VisibleDispatchModules(moduleCodes);
     return filterPhase1VisibleDispatchModules(moduleCodes).filter((moduleCode) => allowed.has(moduleCode));
   }

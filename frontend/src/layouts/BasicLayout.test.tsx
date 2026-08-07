@@ -231,7 +231,7 @@ describe('BasicLayout menu visibility', () => {
     fireEvent.click(screen.getByText('省外'));
 
     expect(window.localStorage.getItem('business_scope_v1')).toBe('out_of_province');
-    expect(mockNavigate).toHaveBeenLastCalledWith('/out-of-province');
+    expect(mockNavigate).toHaveBeenLastCalledWith('/out-of-province/increase');
     expect(menuText()).toContain('浙江自签业务');
   });
 
@@ -332,6 +332,13 @@ describe('BasicLayout menu visibility', () => {
     expect(duplicateButton).toBeUndefined();
   });
 
+  it('shows resignation certificate suborders to labor contract handlers', () => {
+    renderLayout(['/onboarding/resignation_cert']);
+
+    expect(menuText()).toContain('离职证明子工单');
+    expect(menuPaths()).toContain('/onboarding/resignation_cert');
+  });
+
   it('keeps business owner menu to dashboard without my-work pages', () => {
     mockUserState.user = mockUserState.makeUser(['business_owner']);
     mockUserState.user.permissions = ['*', 'work_order.*', 'data_scope.all'];
@@ -351,7 +358,7 @@ describe('BasicLayout menu visibility', () => {
     expect(text).toContain('在职管理');
     expect(text).toContain('单项业务办理');
     expect(text).toContain('离职管理');
-    expect(text).toContain('离职证明');
+    expect(text).not.toContain('离职证明列表');
     expect(text).not.toContain('消息通知');
   });
 
@@ -372,7 +379,7 @@ describe('BasicLayout menu visibility', () => {
     expect(text).toContain('离职材料收集子工单');
     expect(text).toContain('减员报岗录入子工单');
     expect(text).toContain('社保公积金减员子工单');
-    expect(text).toContain('离职证明');
+    expect(text).not.toContain('离职证明列表');
     expect(text).not.toContain('入职导入');
     expect(text).not.toContain('离职导入');
     expect(text).not.toContain('我的工单');
@@ -429,6 +436,7 @@ describe('BasicLayout menu visibility', () => {
     expect(text).toContain('劳动合同新签子工单');
     expect(text).toContain('入职联系子工单');
     expect(text).toContain('离职材料收集子工单');
+    expect(text).toContain('离职证明子工单');
     expect(text).not.toContain('劳动合同续签子工单');
     expect(text).not.toContain('增员报岗录入子工单');
     expect(text).not.toContain('减员报岗录入子工单');

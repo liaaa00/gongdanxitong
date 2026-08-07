@@ -169,7 +169,7 @@ describe('LoginPage mustChangePassword synchronization', () => {
       businessScope: 'out_of_province',
     }));
     expect(window.localStorage.getItem('business_scope_v1')).toBe('out_of_province');
-    expect(mocks.navigate).toHaveBeenCalledWith('/out-of-province', { replace: true });
+    expect(mocks.navigate).toHaveBeenCalledWith('/out-of-province/increase', { replace: true });
   });
 
   it('shows the backend error message when credentials are wrong', async () => {

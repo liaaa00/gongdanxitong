@@ -195,6 +195,39 @@ export function normalizeInServiceOrderFormValues(
   };
 }
 
+const IN_SERVICE_MUTABLE_FIELDS = [
+  'customerId',
+  'departmentId',
+  'employeeName',
+  'idCardNo',
+  'extraData',
+  'expectedCompletionDate',
+  'businessReason',
+  'businessType',
+  'processType',
+  'requirementType',
+  'province',
+  'city',
+  'district',
+  'businessDescription',
+  'serviceFee',
+  'attachments',
+] as const;
+
+export function buildInServiceMutableFields(
+  values: InServiceOrderFormValues,
+  orderKind: InServiceOrderKind,
+): Partial<InServiceOrderPayload> {
+  const normalized = normalizeInServiceOrderFormValues(values, orderKind);
+  const changes: Partial<InServiceOrderPayload> = {};
+  for (const field of IN_SERVICE_MUTABLE_FIELDS) {
+    if (normalized[field] !== undefined) {
+      Object.assign(changes, { [field]: normalized[field] });
+    }
+  }
+  return changes;
+}
+
 export function AttachmentField({ value = [], onChange, disabled }: AttachmentFieldProps) {
   const { message } = App.useApp();
   const [uploading, setUploading] = useState(false);
@@ -349,6 +382,37 @@ export default function InServiceOrderForm({
     }, 350);
     return () => window.clearTimeout(timer);
   }, [customerId, form, idCardNo, isRenewal, message]);
+
+  useEffect(() => {
+    if (!isCertificate || !customerId || !idCardNo?.trim()) return;
+    const timer = window.setTimeout(() => {
+      getRenewalHistory(customerId, idCardNo.trim())
+        .then((result) => {
+          if (!result.found) return;
+          const source = result.extraData || {};
+          const currentExtraData = form.getFieldValue('extraData') || {};
+          const nextExtraData = {
+            ...currentExtraData,
+            hireDate: currentExtraData.hireDate ?? source.hire_date ?? source.contract_start_date,
+            jobTitle: currentExtraData.jobTitle ?? source.job_title ?? source.position,
+            referenceBaseSalary: currentExtraData.referenceBaseSalary
+              ?? source.reference_base_salary
+              ?? source.base_salary,
+            averageMonthlyIncome: currentExtraData.averageMonthlyIncome
+              ?? source.averageMonthlyIncome
+              ?? source.average_monthly_income,
+          };
+          form.setFieldsValue({
+            employeeName: form.getFieldValue('employeeName') || result.employeeName || undefined,
+            extraData: nextExtraData,
+          });
+        })
+        .catch(() => {
+          // 历史资料仅用于默认值，查询失败不阻断证明开具。
+        });
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [customerId, form, idCardNo, isCertificate]);
 
   const renewalFieldRules = (field: ImportTemplateFieldItem) => {
     const rules: Array<Record<string, unknown>> = [];
@@ -660,11 +724,18 @@ export default function InServiceOrderForm({
               </Form.Item>
             </Col>
             {certificateType === 'income' ? (
-              <Col {...formCol}>
-                <Form.Item name={['extraData', 'averageMonthlyIncome']} label="近一年税前月均收入" rules={[{ required: true, message: '请输入月均收入' }]}>
-                  <InputNumber min={0} precision={2} prefix="¥" style={{ width: '100%' }} />
-                </Form.Item>
-              </Col>
+              <>
+                <Col {...formCol}>
+                  <Form.Item name={['extraData', 'referenceBaseSalary']} label="基本工资参考">
+                    <InputNumber precision={2} prefix="¥" style={{ width: '100%' }} disabled />
+                  </Form.Item>
+                </Col>
+                <Col {...formCol}>
+                  <Form.Item name={['extraData', 'averageMonthlyIncome']} label="近一年税前月均收入" rules={[{ required: true, message: '请输入月均收入' }]}>
+                    <InputNumber min={0} precision={2} prefix="¥" style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+              </>
             ) : null}
           </Row>
         </>

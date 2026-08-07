@@ -25,7 +25,7 @@ const modules: Array<Partial<WorkOrderModuleConfig>> = [
   { moduleCode: 'resignation_contact', moduleName: '离职材料收集', moduleType: 'sub_module', parentModuleCode: 'resignation_management', displayOrder: 31, description: '离职材料收集办理' },
   { moduleCode: 'data_entry_resign', moduleName: '减员报岗录入', moduleType: 'sub_module', parentModuleCode: 'resignation_management', displayOrder: 32, description: '离职减员报岗录入' },
   { moduleCode: 'resignation_social_insurance', moduleName: '社保公积金减员', moduleType: 'sub_module', parentModuleCode: 'resignation_management', displayOrder: 33, description: '离职社保公积金减员，负责人傅倩雯' },
-  { moduleCode: 'resignation_cert', moduleName: '离职材料收集（历史兼容）', moduleType: 'sub_module', parentModuleCode: 'resignation_management', displayOrder: 99, description: '历史兼容配置，第一阶段不在可见列表展示' },
+  { moduleCode: 'resignation_cert', moduleName: '离职证明', moduleType: 'sub_module', parentModuleCode: 'resignation_management', displayOrder: 34, description: '离职主工单下的离职证明子工单，使用正式 Word 模板办理' },
 ];
 
 const defaultSlaByModule: Record<string, { slaHours: number; reminderBeforeHours: number }> = {
@@ -67,9 +67,13 @@ const contractFields = [
 ];
 
 const onboardingSocialFields = [
-  'customer_name', 'customer_code', 'employee_name', 'id_card_no', 'mobile', 'email',
-  'education', 'graduation_school', 'major', 'graduation_date',
-  'social_location', 'start_month', 'social_base', 'fund_base', 'fund_ratio',
+  'customer_name', 'customer_code', 'outsource_type', 'position', 'position_type',
+  'employee_name', 'id_card_type', 'id_card_no', 'gender', 'birth_date', 'age',
+  'household_type', 'ethnicity', 'education', 'graduation_school', 'major',
+  'graduation_date', 'marital_status', 'mobile', 'email', 'current_address',
+  'household_address', 'postal_code', 'social_location', 'start_month',
+  'social_base', 'fund_base', 'fund_ratio', 'bank_name', 'bank_account',
+  'remark', 'business_mode', 'need_company_payroll', 'payroll_location',
 ];
 
 // 离职减员表 10 字段：前 7 字段 → 三单可见；后 3 字段（feedback_deadline/is_common_template/template_name）→ 仅离职材料收集。
@@ -82,6 +86,12 @@ const resignationContactFields = [
   'customer_name', 'customer_code', 'mobile', 'email', 'position',
   ...resignationCoreFields,
   'feedback_deadline', 'is_common_template', 'template_name',
+];
+
+const resignationCertificateFields = [
+  'customer_name', 'customer_code', 'mobile', 'email', 'position',
+  'employee_name', 'id_card_no', 'resignation_reason', 'resignation_date',
+  'need_resignation_cert', 'cert_delivery_address', 'resignation_cert_status',
 ];
 
 const dataEntryResignFields = [
@@ -117,7 +127,7 @@ const moduleFields: Record<string, string[]> = {
   resignation_contact: resignationContactFields,
   data_entry_resign: dataEntryResignFields,
   resignation_social_insurance: resignationSocialFields,
-  resignation_cert: resignationContactFields,
+  resignation_cert: resignationCertificateFields,
 };
 
 const supervisorSeeds: Array<{ moduleCode: string; usernames: string[] }> = [
@@ -137,12 +147,13 @@ const actionSeeds: Array<Partial<ActionConfig>> = [
   { moduleCode: 'data_entry', actionCode: 'complete', actionName: '完成', remarkRequired: false, formSchema: null },
   { moduleCode: 'social_insurance', actionCode: 'complete', actionName: '完成', remarkRequired: true, formSchema: { fields: [{ fieldCode: 'remark', label: '办理备注', required: true }] } },
   { moduleCode: 'resignation_contact', actionCode: 'complete', actionName: '完成', remarkRequired: false, formSchema: null },
+  { moduleCode: 'resignation_cert', actionCode: 'complete', actionName: '完成', remarkRequired: false, formSchema: null },
   { moduleCode: 'data_entry_resign', actionCode: 'complete', actionName: '完成', remarkRequired: false, formSchema: null },
   { moduleCode: 'resignation_social_insurance', actionCode: 'complete', actionName: '完成', remarkRequired: true, formSchema: { fields: [{ fieldCode: 'remark', label: '办理备注', required: true }] } },
   { moduleCode: 'social_insurance', actionCode: 'batch_complete', actionName: '社保批量完成', remarkRequired: true, formSchema: { fields: [{ fieldCode: 'remark', label: '批量完成备注', required: true, helpText: '请填写月份、基数、操作类型等追溯信息' }] } },
   { moduleCode: 'resignation_social_insurance', actionCode: 'batch_complete', actionName: '社保批量完成', remarkRequired: true, formSchema: { fields: [{ fieldCode: 'remark', label: '批量完成备注', required: true, helpText: '请填写月份、基数、操作类型等追溯信息' }] } },
-  ...['onboarding_contact', 'contract', 'data_entry', 'social_insurance', 'resignation_contact', 'data_entry_resign', 'resignation_social_insurance'].map((moduleCode) => ({ moduleCode, actionCode: 'confirm_read', actionName: '确认已阅', remarkRequired: false, formSchema: null })),
-  ...['onboarding_contact', 'contract', 'data_entry', 'social_insurance', 'resignation_contact', 'data_entry_resign', 'resignation_social_insurance'].map((moduleCode) => ({ moduleCode, actionCode: 'return_completed', actionName: '退回已完成子单', remarkRequired: true, formSchema: { fields: [{ fieldCode: 'returnReason', label: '退回原因', required: true }] } })),
+  ...['onboarding_contact', 'contract', 'data_entry', 'social_insurance', 'resignation_contact', 'resignation_cert', 'data_entry_resign', 'resignation_social_insurance'].map((moduleCode) => ({ moduleCode, actionCode: 'confirm_read', actionName: '确认已阅', remarkRequired: false, formSchema: null })),
+  ...['onboarding_contact', 'contract', 'data_entry', 'social_insurance', 'resignation_contact', 'resignation_cert', 'data_entry_resign', 'resignation_social_insurance'].map((moduleCode) => ({ moduleCode, actionCode: 'return_completed', actionName: '退回已完成子单', remarkRequired: true, formSchema: { fields: [{ fieldCode: 'returnReason', label: '退回原因', required: true }] } })),
 ];
 
 export async function seedModuleConfigs(dataSource: DataSource): Promise<void> {
@@ -310,6 +321,7 @@ function defaultGroupName(moduleCode: string): string {
     benefit_apply: '待遇申报字段',
     social_insurance_change: '社保公积金变更字段',
     resignation_contact: '离职材料收集字段',
+    resignation_cert: '离职证明字段',
     data_entry_resign: '减员报岗录入字段',
     resignation_social_insurance: '社保公积金减员字段',
   };

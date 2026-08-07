@@ -9,6 +9,7 @@ import {
   ModuleSupervisor,
   Notification,
   OperationLog,
+  OrderAttachment,
   OrderStage,
   UserRole,
   WorkOrder,
@@ -21,6 +22,7 @@ import { ExportTemplatesModule } from 'src/modules/admin/export-templates/export
 import { FieldPermissionsModule } from 'src/modules/field-permissions/field-permissions.module';
 import { FieldSupplementModule } from 'src/modules/field-supplement/field-supplement.module';
 import { NotificationModule } from 'src/modules/notifications/notification.module';
+import { UploadsModule } from 'src/modules/uploads/uploads.module';
 import { WorkOrderModule } from 'src/modules/work-orders/work-order.module';
 import { DispatchedOrderController, WorkOrderSubOrderController } from './dispatched-order.controller';
 import { DispatchedOrderService } from './dispatched-order.service';
@@ -39,6 +41,7 @@ import { SlaNotificationService } from './sla-notification.service';
       ModuleField,
       Notification,
       OperationLog,
+      OrderAttachment,
       OrderStage,
       WorkOrderFieldDirtyMark,
       WorkOrderFieldSyncBatch,
@@ -49,6 +52,7 @@ import { SlaNotificationService } from './sla-notification.service';
     FieldPermissionsModule,
     FieldSupplementModule,
     NotificationModule,
+    UploadsModule,
     WorkOrderModule,
   ],
   controllers: [DispatchedOrderController, WorkOrderSubOrderController],

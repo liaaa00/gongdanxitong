@@ -26,12 +26,7 @@ const NotificationsPage = lazy(() => import('@/pages/Notifications'));
 const InServiceOrderList = lazy(() => import('@/pages/InServiceOrders'));
 const InServiceOrderNew = lazy(() => import('@/pages/InServiceOrders/New'));
 const InServiceOrderDetail = lazy(() => import('@/pages/InServiceOrders/Detail'));
-const OutOfProvinceList = lazy(() => import('@/pages/OutOfProvince'));
 const OutOfProvinceImport = lazy(() => import('@/pages/OutOfProvince/Import'));
-const OutOfProvinceForm = lazy(() => import('@/pages/OutOfProvince/Form'));
-const OutOfProvinceOrderList = lazy(() => import('@/pages/OutOfProvinceOrders'));
-const OutOfProvinceOrderNew = lazy(() => import('@/pages/OutOfProvinceOrders/New'));
-const OutOfProvinceOrderDetail = lazy(() => import('@/pages/OutOfProvinceOrders/Detail'));
 
 const RenewalList = lazy(() => import('@/pages/Renewal'));
 const RenewalNew = lazy(() => import('@/pages/Renewal/New'));
@@ -39,7 +34,6 @@ const RenewalDetail = lazy(() => import('@/pages/Renewal/Detail'));
 const ResignationList = lazy(() => import('@/pages/Resignation'));
 const ResignationNew = lazy(() => import('@/pages/Resignation/New'));
 const ResignationDetail = lazy(() => import('@/pages/Resignation/Detail'));
-const ResignationCert = lazy(() => import('@/pages/Resignation/Cert'));
 const BenefitList = lazy(() => import('@/pages/Benefit'));
 const BenefitNew = lazy(() => import('@/pages/Benefit/New'));
 const BenefitDetail = lazy(() => import('@/pages/Benefit/Detail'));
@@ -148,9 +142,9 @@ const AppRoutes: React.FC = () => (
         <Route path="work-orders/import" element={<RoleRoute><RouteGuard moduleName="批量导入"><WorkOrdersImport /></RouteGuard></RoleRoute>} />
         <Route path="work-orders/:id" element={<RoleRoute><RouteGuard moduleName="工单详情"><WorkOrdersDetail /></RouteGuard></RoleRoute>} />
 
-        <Route path="out-of-province" element={<RoleRoute><RouteGuard moduleName="省外增减员列表"><OutOfProvinceList /></RouteGuard></RoleRoute>} />
+        <Route path="out-of-province" element={<Navigate to="/out-of-province/increase" replace />} />
         <Route path="out-of-province/import" element={<RoleRoute><RouteGuard moduleName="省外增减员导入"><OutOfProvinceImport /></RouteGuard></RoleRoute>} />
-        <Route path="out-of-province/new" element={<RoleRoute><RouteGuard moduleName="省外表单占位"><OutOfProvinceForm /></RouteGuard></RoleRoute>} />
+        <Route path="out-of-province/new" element={<Navigate to="/out-of-province/increase/new" replace />} />
         <Route
           path="out-of-province/increase"
           element={<RoleRoute><RouteGuard moduleName="省外增员"><InServiceOrderList orderKind="out_of_province_increase" businessScope="out_of_province" createPath="/out-of-province/increase/new" /></RouteGuard></RoleRoute>}
@@ -176,9 +170,10 @@ const AppRoutes: React.FC = () => (
           element={<RoleRoute><RouteGuard moduleName="新建省外单项业务"><InServiceOrderNew orderKind="single_business" listPath="/out-of-province/single-business" businessScope="out_of_province" /></RouteGuard></RoleRoute>}
         />
 
-        <Route path="out-of-province/orders" element={<RoleRoute><RouteGuard moduleName="省外派单列表"><OutOfProvinceOrderList /></RouteGuard></RoleRoute>} />
-        <Route path="out-of-province/orders/new" element={<RoleRoute><RouteGuard moduleName="新建省外派单"><OutOfProvinceOrderNew /></RouteGuard></RoleRoute>} />
-        <Route path="out-of-province/orders/:id" element={<RoleRoute><RouteGuard moduleName="省外派单详情"><OutOfProvinceOrderDetail /></RouteGuard></RoleRoute>} />
+        {/* 兼容旧书签；省外增减员已改为独立直单，不再进入历史专用派单链路。 */}
+        <Route path="out-of-province/orders" element={<Navigate to="/out-of-province/increase" replace />} />
+        <Route path="out-of-province/orders/new" element={<Navigate to="/out-of-province/increase/new" replace />} />
+        <Route path="out-of-province/orders/:id" element={<Navigate to="/out-of-province/increase" replace />} />
 
         <Route path="onboarding/:moduleCode" element={<RoleRoute><RouteGuard moduleName="入职模块"><OnboardingModule /></RouteGuard></RoleRoute>} />
 
@@ -219,15 +214,7 @@ const AppRoutes: React.FC = () => (
         <Route path="resignation" element={<RoleRoute><RouteGuard moduleName="离职列表"><ResignationList /></RouteGuard></RoleRoute>} />
         <Route path="resignation/new" element={<RoleRoute><RouteGuard moduleName="新建离职"><ResignationNew /></RouteGuard></RoleRoute>} />
         <Route path="resignation/:id" element={<RoleRoute><RouteGuard moduleName="离职详情"><ResignationDetail /></RouteGuard></RoleRoute>} />
-        <Route path="resignation/:id/cert" element={<RoleRoute><RouteGuard moduleName="离职材料收集"><ResignationCert /></RouteGuard></RoleRoute>} />
-        <Route
-          path="resignation-certificates"
-          element={<RoleRoute><RouteGuard moduleName="离职证明"><InServiceOrderList orderKind="resignation_certificate" createPath="/resignation-certificates/new" /></RouteGuard></RoleRoute>}
-        />
-        <Route
-          path="resignation-certificates/new"
-          element={<RoleRoute><RouteGuard moduleName="发起离职证明"><InServiceOrderNew orderKind="resignation_certificate" listPath="/resignation-certificates" /></RouteGuard></RoleRoute>}
-        />
+        {/* 离职证明改为离职主工单下的子工单，不提供独立新建/列表路由。 */}
 
         <Route path="benefit" element={<RoleRoute><RouteGuard moduleName="待遇申报列表"><BenefitList /></RouteGuard></RoleRoute>} />
         <Route path="benefit/new" element={<RoleRoute><RouteGuard moduleName="新建申报"><BenefitNew /></RouteGuard></RoleRoute>} />

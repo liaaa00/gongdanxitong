@@ -64,7 +64,7 @@ export const MODULE_META: Record<string, ModuleMeta> = {
   benefit_apply: { code: 'benefit_apply', label: '待遇申报', shortLabel: '待遇申报', color: 'magenta', group: 'in_service', title: '待遇申报子工单' },
   social_insurance_change: { code: 'social_insurance_change', label: '社保公积金变更', shortLabel: '社保公积金变更', color: 'purple', group: 'in_service', title: '社保公积金变更子工单' },
   resignation_contact: { code: 'resignation_contact', label: '离职材料收集', shortLabel: '离职材料', color: 'orange', group: 'resignation', title: '离职材料收集子工单' },
-  resignation_cert: { code: 'resignation_cert', label: '离职材料收集', shortLabel: '离职材料', color: 'cyan', group: 'resignation', title: '离职材料收集子工单' },
+  resignation_cert: { code: 'resignation_cert', label: '离职证明', shortLabel: '离职证明', color: 'cyan', group: 'resignation', title: '离职证明子工单' },
   data_entry_resign: { code: 'data_entry_resign', label: '减员报岗录入', shortLabel: '减员报岗', color: 'red', group: 'resignation', title: '减员报岗录入子工单' },
   social_insurance_resign: { code: 'social_insurance_resign', label: '社保公积金减员', shortLabel: '社保公积金减员', color: 'purple', group: 'resignation', title: '社保公积金减员子工单' },
   resignation_social_insurance: { code: 'resignation_social_insurance', label: '社保公积金减员', shortLabel: '社保公积金减员', color: 'purple', group: 'resignation', title: '社保公积金减员子工单' },

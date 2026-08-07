@@ -176,6 +176,35 @@ export const IN_SERVICE_STATUS_META: Record<InServiceOrderStatus, { label: strin
   archived: { label: '历史归档', color: 'default' },
 };
 
+const CERTIFICATE_STATUS_META: Record<InServiceOrderStatus, { label: string; color: string }> = {
+  draft: { label: '待开具', color: 'processing' },
+  dispatched: { label: '待开具', color: 'processing' },
+  accepted: { label: '开具中', color: 'blue' },
+  ready: { label: '开具中', color: 'blue' },
+  processing: { label: '开具中', color: 'blue' },
+  pending_info: { label: '已退回', color: 'warning' },
+  completed: { label: '已完成', color: 'success' },
+  failed: { label: '已退回', color: 'warning' },
+  cancelled: { label: '已退回', color: 'warning' },
+  archived: { label: '已完成', color: 'success' },
+};
+
+export const CERTIFICATE_STATUS_FILTER_META = {
+  dispatched: { label: '待开具', color: 'processing' },
+  processing: { label: '开具中', color: 'blue' },
+  completed: { label: '已完成', color: 'success' },
+  pending_info: { label: '已退回', color: 'warning' },
+} as const;
+
+export function getInServiceStatusMeta(
+  orderKind: InServiceOrderKind,
+  status: InServiceOrderStatus,
+): { label: string; color: string } {
+  return orderKind === IN_SERVICE_ORDER_KINDS.CERTIFICATE
+    ? CERTIFICATE_STATUS_META[status]
+    : IN_SERVICE_STATUS_META[status];
+}
+
 export const IN_SERVICE_HANDLE_CHANNEL_META = {
   online: { label: '线上办理', color: 'blue' },
   offline: { label: '线下办理', color: 'green' },

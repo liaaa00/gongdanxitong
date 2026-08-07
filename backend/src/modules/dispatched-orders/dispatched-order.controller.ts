@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, Query, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Query, Res, UseInterceptors } from '@nestjs/common';
+import { Response } from 'express';
 import { ApiResponse } from 'src/common/decorators/api-response.decorator';
 import { Audit } from 'src/common/decorators/audit.decorator';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
@@ -80,6 +81,25 @@ export class DispatchedOrderController {
     @CurrentUser() user: JwtUserPayload,
   ) {
     return this.dispatchedOrderService.getTimeline(assertUuidParam(id, '子工单不存在'), query, user);
+  }
+
+  @Get(':id/resignation-certificate')
+  @ApiResponse({ status: 404, description: '子工单不存在' })
+  @ApiResponse({ status: 403, description: '无权导出该离职证明' })
+  @FieldPermissionScenario('dispatched:auto')
+  async downloadResignationCertificate(
+    @Param('id') id: string,
+    @CurrentUser() user: JwtUserPayload,
+    @Res() res: Response,
+  ): Promise<void> {
+    const result = await this.dispatchedOrderService.downloadResignationCertificate(
+      assertUuidParam(id, '子工单不存在'),
+      user,
+    );
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(result.fileName)}`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.end(result.buffer);
   }
 
   @Get(':id')

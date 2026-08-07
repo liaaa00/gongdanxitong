@@ -153,7 +153,7 @@ const MODULE_META: Record<string, { name: string; visible_fields: string[]; supp
   },
   renewal_contract: { name: '劳动合同续签', visible_fields: [], supplementable_fields: [] },
   resignation_contact: { name: '离职材料收集', visible_fields: [], supplementable_fields: [] },
-  resignation_cert: { name: '离职材料收集', visible_fields: [], supplementable_fields: [] },
+  resignation_cert: { name: '离职证明', visible_fields: [], supplementable_fields: [] },
   data_entry_resign: { name: '减员报岗录入', visible_fields: [], supplementable_fields: [] },
   social_insurance_resign: { name: '社保公积金减员', visible_fields: [], supplementable_fields: [] },
   resignation_social_insurance: { name: '社保公积金减员', visible_fields: [], supplementable_fields: [] },
@@ -647,6 +647,26 @@ export async function batchApproveModifyDispatchedOrders(
   return request.post('/dispatched-orders/batch-approve-modify', { ids, approved, comment }) as Promise<BatchApproveModifyResult>;
 }
 
+export async function downloadResignationCertificate(
+  id: string,
+  orderNo: string,
+): Promise<void> {
+  if (isMockMode) return mockDelay(undefined, 120);
+  const token = localStorage.getItem('token');
+  const base = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || '';
+  const response = await fetch(
+    base + '/api/dispatched-orders/' + encodeURIComponent(id) + '/resignation-certificate',
+    { headers: token ? { Authorization: 'Bearer ' + token } : undefined },
+  );
+  if (!response.ok) throw new Error('离职证明导出失败');
+  const blob = await response.blob();
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = '离职证明-' + orderNo + '.docx';
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
 export async function completeDispatchedOrder(id: string, data?: Record<string, unknown>): Promise<DispatchedOrderItem> {
   if (isMockMode) {
     const updated = updateChildInParent(id, (c) => {
@@ -997,6 +1017,7 @@ export interface DispatchedOrderExportFile {
   moduleCode?: string;
   signPlatform?: string | null;
   count?: number;
+  fileType?: 'excel' | 'attachments_zip';
 }
 
 export interface DispatchedOrderExportResult {
@@ -1041,6 +1062,14 @@ async function downloadBinaryFile(url: string, fileName: string): Promise<void> 
 }
 
 export async function downloadDispatchedExport(result: DispatchedOrderExportResult, fallbackName: string): Promise<void> {
+  if (result.files && result.files.length > 0) {
+    for (const file of result.files) {
+      const fileUrl = resolveExportDownloadUrl(file);
+      if (!fileUrl) continue;
+      await downloadBinaryFile(fileUrl, file.fileName || fallbackName);
+    }
+    return;
+  }
   const url = resolveExportDownloadUrl(result);
   if (!url) {
     const blobUrl = window.URL.createObjectURL(new Blob(['mock export data'], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));

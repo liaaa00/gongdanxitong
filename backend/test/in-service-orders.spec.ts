@@ -201,6 +201,21 @@ describe('InServiceOrdersService', () => {
     );
   });
 
+  it('starts certificate issuing directly without the generic initial-review states', async () => {
+    const certificate = makeOrder();
+    certificate.orderKind = InServiceOrderKind.CERTIFICATE;
+    certificate.employeeName = '张三';
+    certificate.idCardNo = '330206199001011234';
+    certificate.extraData = { certificateType: 'employment' };
+    const { service, current } = makeService(certificate);
+
+    await service.accept(current().id, handler);
+
+    expect(current().status).toBe(InServiceOrderStatus.PROCESSING);
+    expect(current().acceptedAt).toBeInstanceOf(Date);
+    expect(current().processingAt).toEqual(current().acceptedAt);
+  });
+
   it('returns initial-review supplement to the accepted handler', async () => {
     const { service, current } = makeService(makeOrder());
     await service.accept(current().id, handler);
@@ -437,21 +452,62 @@ describe('InServiceOrdersService', () => {
     expect(xml).not.toContain('{{');
   });
 
-  it('routes resignation certificates independently from resignation main orders', async () => {
+  it('generates the formal resignation certificate from the child order and latest contract history', async () => {
+    const order = Object.assign(makeOrder(InServiceOrderStatus.ACCEPTED), {
+      orderKind: InServiceOrderKind.RESIGNATION_CERTIFICATE,
+      employeeName: '张三',
+      idCardNo: '330206199001011234',
+      extraData: {
+        resignationDate: '2026-08-06',
+        resignationReason: '个人原因',
+      },
+    });
+    const { service, workOrderRepository } = makeService(order);
+    workOrderRepository.find.mockResolvedValue([{
+      id: 'onboarding-1',
+      orderNo: 'ON20230101001',
+      orderType: OrderType.ONBOARDING,
+      status: WorkOrderStatus.PROCESSING,
+      customerId: order.customerId,
+      employeeName: order.employeeName,
+      employeeIdCard: order.idCardNo,
+      extraData: {
+        position: '招商主管',
+        contract_start_date: '2023-01-01',
+        contract_end_date: '2026-07-31',
+      },
+      createdAt: new Date('2023-01-01T00:00:00.000Z'),
+    }]);
+
+    const result = await service.generateCertificate(order.id, handler);
+    const zip = await JSZip.loadAsync(result.buffer);
+    const xml = await zip.file('word/document.xml')!.async('string');
+
+    expect(result.fileName).toBe(`resignation-certificate-${order.orderNo}.docx`);
+    expect(xml).toContain('解除（或终止）劳动合同证明书');
+    expect(xml).toContain('张三');
+    expect(xml).toContain('男');
+    expect(xml).toContain('330206199001011234');
+    expect(xml).toContain('招商主管');
+    expect(xml).toContain('2023-01-01');
+    expect(xml).toContain('2026-07-31');
+    expect(xml).toContain('2026-08-06');
+    expect(xml).toContain('<w:t>2</w:t>');
+    expect(xml).not.toContain('{{');
+  });
+
+  it('rejects direct resignation certificate creation because it belongs to the resignation parent work order', async () => {
     const { service, picker } = makeService();
-    await service.create({
+    await expect(service.create({
       customerId: createDto.customerId,
       departmentId: createDto.departmentId,
       orderKind: InServiceOrderKind.RESIGNATION_CERTIFICATE,
       employeeName: '张三',
       idCardNo: '330206199001011234',
       extraData: { resignationDate: '2026-07-31' },
-    }, creator);
+    }, creator)).rejects.toThrow('离职证明必须从离职管理的离职证明子工单办理');
 
-    expect(picker.pick).toHaveBeenCalledWith(
-      DispatchStrategy.FIXED,
-      DispatchModuleCode.RESIGNATION_CERT,
-    );
+    expect(picker.pick).not.toHaveBeenCalled();
   });
 
   it('warns resignation for any injury application record regardless of status', async () => {

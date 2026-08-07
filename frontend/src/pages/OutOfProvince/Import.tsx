@@ -86,7 +86,15 @@ const OutOfProvinceImport: React.FC = () => {
               }
             }}
           />
-          <Button onClick={() => navigate('/out-of-province')}>返回省外增减员列表</Button>
+          <Button
+            onClick={() => navigate(
+              orderType === OUT_OF_PROVINCE_ORDER_TYPE.INCREASE
+                ? '/out-of-province/increase'
+                : '/out-of-province/decrease',
+            )}
+          >
+            返回{orderType === OUT_OF_PROVINCE_ORDER_TYPE.INCREASE ? '省外增员' : '省外减员'}列表
+          </Button>
         </Space>
       </Card>
     </PageContainer>

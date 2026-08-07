@@ -21,6 +21,7 @@ import {
   updateCachedListPageState,
 } from '@/utils/listPageState';
 import { useRef } from 'react';
+import { useColumnConfig } from '@/components/MultiViewTable/useColumnConfig';
 
 const MODULE_OPTIONS = [
   { label: '入职联系', value: 'onboarding_contact' },
@@ -89,10 +90,11 @@ const HistoryWorkOrders: React.FC = () => {
     { title: '派发时间', dataIndex: 'dispatched_at', valueType: 'dateTime', width: 170, hideInSearch: true },
     { title: '完成时间', dataIndex: 'completed_at', valueType: 'dateTime', width: 170, hideInSearch: true },
     {
-      title: '操作', valueType: 'option', width: 90,
+      title: '操作', key: 'actions', valueType: 'option', width: 90,
       render: (_, row) => <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => navigate(getHistoryDetailUrl(row))}>详情</Button>,
     },
   ], cachedPageState.filters || {}), [navigate, cachedPageState.filters]);
+  const columnConfig = useColumnConfig('history-work-orders', columns);
 
   return (
     <PageContainer
@@ -113,6 +115,7 @@ const HistoryWorkOrders: React.FC = () => {
               }}
             />
           </Space>,
+          <span key="columns">{columnConfig.button}</span>,
         ],
       }}
     >
@@ -120,7 +123,7 @@ const HistoryWorkOrders: React.FC = () => {
         getPopupContainer={() => document.body}
         actionRef={actionRef}
         rowKey="id"
-        columns={columns}
+        columns={columnConfig.columns}
         search={false}
         options={false}
         pagination={{ defaultCurrent: cachedPageState.current || 1, defaultPageSize: cachedPageState.pageSize || 50, pageSizeOptions: ['20', '50', '100'], showSizeChanger: true }}
@@ -143,6 +146,7 @@ const HistoryWorkOrders: React.FC = () => {
           return { data: list, success: true, total: result.total };
         }}
       />
+      {columnConfig.drawer}
     </PageContainer>
   );
 };

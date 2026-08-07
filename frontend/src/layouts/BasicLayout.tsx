@@ -173,10 +173,10 @@ const RAW_MENU: MenuItem[] = [
     children: [
       { path: '/work-orders?orderType=resignation', name: '离职主工单列表', key: 'resignation-list' },
       { path: '/onboarding/resignation_contact', name: '离职材料收集子工单', key: 'resignation-contact-sub-list' },
-      { path: '/onboarding/resignation_cert', name: '离职材料收集子工单', key: 'resignation-cert-sub-list', menuVisible: false },
+      { path: '/onboarding/resignation_cert', name: '离职证明子工单', key: 'resignation-cert-sub-list' },
       { path: '/onboarding/data_entry_resign', name: '减员报岗录入子工单', key: 'data-entry-resign-sub-list' },
       { path: '/onboarding/social_insurance_resign', name: '社保公积金减员子工单', key: 'social-insurance-resign-sub-list' },
-      { path: '/resignation-certificates', name: '离职证明', key: 'resignation-certificate-list' },
+      // 仅展示离职主工单拆分出的子工单列表，不恢复历史独立直单入口。
       { path: '/resignation/:id/cert', name: '离职材料收集', key: 'resignation-cert', menuVisible: false },
     ],
   },
@@ -360,7 +360,7 @@ function isTemporaryActionPath(pathname: string): boolean {
   const normalized = normalizeMenuUrl(pathname).pathname;
   if (['/', '/login', '/change-password', '/403', '/404'].includes(normalized)) return true;
   if (/^\/work-orders\/(new|create|import)$/.test(normalized)) return true;
-  if (/^\/out-of-province\/(new|import)$/.test(normalized)) return true;
+  if (/^\/out-of-province\/(?:new|import|(?:increase|decrease|single-business)\/new)$/.test(normalized)) return true;
   if (/^\/renewal\/new$/.test(normalized)) return true;
   if (/^\/in-service\/new$/.test(normalized)) return true;
   if (/^\/resignation\/new$/.test(normalized)) return true;
@@ -577,7 +577,9 @@ const BasicLayout: React.FC = () => {
     if (location.pathname === '/in-service') title = '单项业务办理 - 工单管理系统';
     else if (location.pathname === '/in-service/new') title = '新建单项业务 - 工单管理系统';
     else if (/^\/in-service\/[^/]+$/.test(location.pathname)) title = '单项业务详情 - 工单管理系统';
-    if (location.pathname === '/out-of-province') title = '省外增减员列表 - 工单管理系统';
+    if (location.pathname === '/out-of-province/increase') title = '省外增员 - 工单管理系统';
+    if (location.pathname === '/out-of-province/decrease') title = '省外减员 - 工单管理系统';
+    if (location.pathname === '/out-of-province/single-business') title = '省外单项业务 - 工单管理系统';
     if (location.pathname === '/out-of-province/import') title = '省外增减员导入 - 工单管理系统';
     if (location.pathname === '/admin/users') title = '用户管理 - 工单管理系统';
     if (location.pathname === '/admin/module-config') title = '子工单字段配置 - 工单管理系统';

@@ -25,6 +25,7 @@ import {
   TransferInServiceOrderDto,
 } from './dto/in-service-order-action.dto';
 import { CreateInServiceOrderDto } from './dto/create-in-service-order.dto';
+import { BatchCreateRenewalDto } from './dto/batch-create-renewal.dto';
 import { ListInServiceOrderQueryDto } from './dto/list-in-service-order.dto';
 import { UpdateInServiceOrderDto } from './dto/update-in-service-order.dto';
 import {
@@ -42,6 +43,15 @@ export class InServiceOrdersController {
   @Post()
   create(@Body() dto: CreateInServiceOrderDto, @CurrentUser() user: JwtUserPayload) {
     return this.service.create(dto, user);
+  }
+
+  @Post('renewal/batch')
+  @HttpCode(HttpStatus.OK)
+  batchCreateRenewals(
+    @Body() dto: BatchCreateRenewalDto,
+    @CurrentUser() user: JwtUserPayload,
+  ) {
+    return this.service.batchCreateRenewals(dto.items, user);
   }
 
   @Get()

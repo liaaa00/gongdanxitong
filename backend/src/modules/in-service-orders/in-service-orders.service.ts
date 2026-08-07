@@ -41,6 +41,7 @@ import { ExportTemplatesService } from 'src/modules/admin/export-templates/expor
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { HandlerPickerService } from 'src/modules/dispatch-engine/handler-picker.service';
 import { assertInServiceOrderTransition } from 'src/modules/dispatched-orders/dispatched-order.service';
+import { buildContractTermText } from 'src/modules/dispatched-orders/resignation-certificate';
 import {
   ApproveInServiceOrderDto,
   CloseInServiceOrderDto,
@@ -98,6 +99,34 @@ const BUSINESS_FRONT_ROLE_CODES = new Set([
   'salesperson',
 ]);
 
+export function expandInServiceStatusFilter(
+  orderKind: InServiceOrderKind | undefined,
+  status: InServiceOrderStatus,
+): InServiceOrderStatus[] {
+  if (orderKind !== InServiceOrderKind.CERTIFICATE) return [status];
+  const certificateStatuses: Partial<Record<InServiceOrderStatus, InServiceOrderStatus[]>> = {
+    [InServiceOrderStatus.DISPATCHED]: [
+      InServiceOrderStatus.DRAFT,
+      InServiceOrderStatus.DISPATCHED,
+    ],
+    [InServiceOrderStatus.PROCESSING]: [
+      InServiceOrderStatus.ACCEPTED,
+      InServiceOrderStatus.READY,
+      InServiceOrderStatus.PROCESSING,
+    ],
+    [InServiceOrderStatus.COMPLETED]: [
+      InServiceOrderStatus.COMPLETED,
+      InServiceOrderStatus.ARCHIVED,
+    ],
+    [InServiceOrderStatus.PENDING_INFO]: [
+      InServiceOrderStatus.PENDING_INFO,
+      InServiceOrderStatus.FAILED,
+      InServiceOrderStatus.CANCELLED,
+    ],
+  };
+  return certificateStatuses[status] ?? [status];
+}
+
 @Injectable()
 export class InServiceOrdersService {
   constructor(
@@ -115,10 +144,32 @@ export class InServiceOrdersService {
   ): Promise<InServiceOrderResponseDto> {
     this.assertCanCreate(user);
     const orderKind = dto.orderKind ?? InServiceOrderKind.SINGLE_BUSINESS;
+    if (orderKind === InServiceOrderKind.RESIGNATION_CERTIFICATE) {
+      throw businessException(4814, HttpStatus.BAD_REQUEST, '离职证明必须从离职管理的离职证明子工单办理');
+    }
     const businessScope = this.resolveCreateBusinessScope(orderKind, dto.businessScope, user);
-    this.validateKindPayload(orderKind, dto);
+    let extraData = dto.extraData ?? {};
+    if (orderKind === InServiceOrderKind.CERTIFICATE && dto.idCardNo) {
+      const history = await this.getRenewalHistory(dto.customerId, dto.idCardNo);
+      if (history.found) {
+        const source = (history.extraData ?? {}) as Record<string, unknown>;
+        extraData = {
+          ...source,
+          ...extraData,
+          hireDate: extraData.hireDate ?? source.hire_date ?? source.contract_start_date,
+          jobTitle: extraData.jobTitle ?? source.job_title ?? source.position,
+          referenceBaseSalary: extraData.referenceBaseSalary
+            ?? source.reference_base_salary
+            ?? source.base_salary,
+          averageMonthlyIncome: extraData.averageMonthlyIncome
+            ?? source.averageMonthlyIncome
+            ?? source.average_monthly_income,
+        };
+      }
+    }
+    this.validateKindPayload(orderKind, { ...dto, extraData });
     if (orderKind === InServiceOrderKind.CONTRACT_RENEWAL) {
-      await this.assertRenewalSalary(dto.customerId, dto.idCardNo, dto.extraData ?? {});
+      await this.assertRenewalSalary(dto.customerId, dto.idCardNo, extraData);
     }
 
     const handlerId = await this.pickHandler(
@@ -133,7 +184,7 @@ export class InServiceOrdersService {
       businessScope,
       employeeName: dto.employeeName?.trim() || null,
       idCardNo: dto.idCardNo?.trim() || null,
-      extraData: dto.extraData ?? {},
+      extraData,
       requirementType: dto.requirementType ?? null,
       businessType: dto.businessType ?? null,
       processType: dto.processType ?? null,
@@ -174,6 +225,31 @@ export class InServiceOrdersService {
     return this.saveAndRespond(order);
   }
 
+  async batchCreateRenewals(
+    items: CreateInServiceOrderDto[],
+    user: JwtUserPayload,
+  ): Promise<{ items: InServiceOrderResponseDto[]; total: number }> {
+    if (items.length === 0) {
+      throw new NotFoundException('至少选择一条续签记录');
+    }
+    if (items.some((item) => item.orderKind && item.orderKind !== InServiceOrderKind.CONTRACT_RENEWAL)) {
+      throw new ForbiddenException('批量发起接口仅支持劳动合同续签');
+    }
+    for (const item of items) {
+      const extraData = item.extraData ?? {};
+      this.validateKindPayload(InServiceOrderKind.CONTRACT_RENEWAL, { ...item, extraData });
+      await this.assertRenewalSalary(item.customerId, item.idCardNo, extraData);
+    }
+    const results: InServiceOrderResponseDto[] = [];
+    for (const item of items) {
+      results.push(await this.create({
+        ...item,
+        orderKind: InServiceOrderKind.CONTRACT_RENEWAL,
+      }, user));
+    }
+    return { items: results, total: results.length };
+  }
+
   async list(
     query: ListInServiceOrderQueryDto,
     user: JwtUserPayload,
@@ -201,7 +277,10 @@ export class InServiceOrdersService {
     if (query.businessType) qb.andWhere('order.business_type = :businessType', { businessType: query.businessType });
     if (query.processType) qb.andWhere('order.process_type = :processType', { processType: query.processType });
     if (query.requirementType) qb.andWhere('order.requirement_type = :requirementType', { requirementType: query.requirementType });
-    if (query.status) qb.andWhere('order.status = :status', { status: query.status });
+    if (query.status) {
+      const statuses = expandInServiceStatusFilter(query.orderKind, query.status);
+      qb.andWhere('order.status IN (:...statuses)', { statuses });
+    }
     if (query.province) qb.andWhere('order.province = :province', { province: query.province });
     if (query.createdFrom) qb.andWhere('order.created_at >= :createdFrom', { createdFrom: query.createdFrom });
     if (query.createdTo) qb.andWhere('order.created_at <= :createdTo', { createdTo: query.createdTo });
@@ -218,7 +297,15 @@ export class InServiceOrdersService {
       }));
     }
 
-    qb.orderBy('order.createdAt', 'DESC')
+    qb.addSelect(
+      "CASE WHEN order.status = 'pending_info' THEN 0 ELSE 1 END",
+      'status_priority',
+    );
+    qb.orderBy('status_priority', 'ASC');
+    if (typeof (qb as typeof qb & { addOrderBy?: unknown }).addOrderBy === 'function') {
+      qb.addOrderBy('order.updatedAt', 'DESC');
+    }
+    qb
       .skip((query.page - 1) * query.pageSize)
       .take(query.pageSize);
     const [rows, total] = await qb.getManyAndCount();
@@ -425,8 +512,14 @@ export class InServiceOrdersService {
     const order = await this.findEntity(id);
     this.assertHandlerOrManagement(order, user);
     assertInServiceOrderTransition(order.status, InServiceOrderStatus.ACCEPTED);
-    order.status = InServiceOrderStatus.ACCEPTED;
-    order.acceptedAt = new Date();
+    const acceptedAt = new Date();
+    order.acceptedAt = acceptedAt;
+    if (order.orderKind === InServiceOrderKind.CERTIFICATE) {
+      order.status = InServiceOrderStatus.PROCESSING;
+      order.processingAt = acceptedAt;
+    } else {
+      order.status = InServiceOrderStatus.ACCEPTED;
+    }
     return this.saveAndRespond(order);
   }
 
@@ -684,6 +777,10 @@ export class InServiceOrdersService {
   ): Promise<{ buffer: Buffer; fileName: string }> {
     const order = await this.findEntity(id);
     this.assertHandlerOrManagement(order, user);
+
+    if (order.orderKind === InServiceOrderKind.RESIGNATION_CERTIFICATE) {
+      return this.generateResignationCertificate(order);
+    }
     if (order.orderKind !== InServiceOrderKind.CERTIFICATE) {
       throw businessException(4812, HttpStatus.BAD_REQUEST, '当前工单不是证明开具工单');
     }
@@ -701,6 +798,73 @@ export class InServiceOrdersService {
       throw businessException(4812, HttpStatus.BAD_REQUEST, '证明类型不支持导出');
     }
 
+    return this.renderCertificateTemplate(
+      templateName,
+      {
+        employeeName: order.employeeName,
+        idCardNo: order.idCardNo,
+        hireDate: order.extraData?.hireDate,
+        jobTitle: order.extraData?.jobTitle,
+        purpose: order.extraData?.purpose,
+        averageMonthlyIncome: order.extraData?.averageMonthlyIncome,
+      },
+      `${certificateType}-${order.orderNo}.docx`,
+    );
+  }
+
+  private async generateResignationCertificate(
+    order: InServiceOrder,
+  ): Promise<{ buffer: Buffer; fileName: string }> {
+    const extraData = order.extraData ?? {};
+    const history = await this.getRenewalHistory(order.customerId, order.idCardNo ?? '');
+    const historyData: Record<string, unknown> = history.extraData ?? {};
+    const idCardNo = this.firstText(order.idCardNo, history.idCardNo);
+    const reason = this.firstText(
+      extraData.resignationReason,
+      extraData.resignation_reason,
+      historyData.resignation_reason,
+    );
+    const reasonCode = this.firstText(
+      extraData.resignationReasonCode,
+      extraData.resignation_reason_code,
+    ) || this.resolveResignationReasonCode(reason);
+    const legalArticle = this.firstText(
+      extraData.legalArticle,
+      extraData.legal_article,
+    ) || this.extractLegalArticle(reason);
+
+    return this.renderCertificateTemplate(
+      'resignation-certificate.docx',
+      {
+        employeeName: this.firstText(order.employeeName, history.employeeName),
+        gender: this.firstText(extraData.gender, historyData.gender) || this.deriveGender(idCardNo),
+        idCardNo,
+        jobTitle: this.firstText(
+          extraData.jobTitle,
+          extraData.job_title,
+          historyData.jobTitle,
+          historyData.job_title,
+          historyData.position,
+          historyData.renewal_position,
+        ),
+        contractTermText: buildContractTermText({ ...historyData, ...extraData }),
+        resignationReasonCode: reasonCode,
+        resignationDate: this.firstText(
+          extraData.resignationDate,
+          extraData.resignation_date,
+        ),
+        otherReason: reasonCode === '4' ? reason : '',
+        legalArticleText: legalArticle ? `第${legalArticle}条` : '相关规定',
+      },
+      `resignation-certificate-${order.orderNo}.docx`,
+    );
+  }
+
+  private async renderCertificateTemplate(
+    templateName: string,
+    replacements: Record<string, unknown>,
+    fileName: string,
+  ): Promise<{ buffer: Buffer; fileName: string }> {
     const template = await readFile(join(
       __dirname,
       '..',
@@ -716,14 +880,6 @@ export class InServiceOrdersService {
     }
 
     let xml = await document.async('string');
-    const replacements: Record<string, unknown> = {
-      employeeName: order.employeeName,
-      idCardNo: order.idCardNo,
-      hireDate: order.extraData?.hireDate,
-      jobTitle: order.extraData?.jobTitle,
-      purpose: order.extraData?.purpose,
-      averageMonthlyIncome: order.extraData?.averageMonthlyIncome,
-    };
     for (const [key, rawValue] of Object.entries(replacements)) {
       const token = `{{${key}}}`;
       const value = this.escapeXml(rawValue == null ? '' : String(rawValue));
@@ -733,8 +889,38 @@ export class InServiceOrdersService {
 
     return {
       buffer: await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }),
-      fileName: `${certificateType}-${order.orderNo}.docx`,
+      fileName,
     };
+  }
+
+  private firstText(...values: unknown[]): string {
+    for (const value of values) {
+      if (value === undefined || value === null) continue;
+      const text = String(value).trim();
+      if (text) return text;
+    }
+    return '';
+  }
+
+  private deriveGender(idCardNo: string): string {
+    const digit = idCardNo.length === 18
+      ? idCardNo[16]
+      : idCardNo.length === 15
+        ? idCardNo[14]
+        : '';
+    if (!digit || !/\d/.test(digit)) return '';
+    return Number(digit) % 2 === 1 ? '男' : '女';
+  }
+
+  private resolveResignationReasonCode(reason: string): string {
+    if (/合同期满|期满终止|合同到期/.test(reason)) return '1';
+    if (/辞职|个人原因|员工提出|劳动者提出/.test(reason)) return '2';
+    if (/协商一致|双方协商/.test(reason)) return '3';
+    return '4';
+  }
+
+  private extractLegalArticle(reason: string): string {
+    return reason.match(/第\s*(\d+)\s*条/)?.[1] ?? '';
   }
 
   async close(

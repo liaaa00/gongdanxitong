@@ -49,6 +49,9 @@ describe('onboarding import template seeds', () => {
       'graduation_date',
     ]));
     expect(saved.map((row) => row.fieldCode)).toEqual(ONBOARDING_TEMPLATE_ORDER);
+    expect(saved.find((row) => row.fieldCode === 'social_location')).toMatchObject({
+      headerAlias: '参保机构名称',
+    });
     expect(saved.find((row) => row.fieldCode === 'company_address')).toMatchObject({
       headerAlias: '劳动合同主体注册地',
     });
@@ -105,6 +108,9 @@ describe('onboarding import template seeds', () => {
     });
     expect(byCode.get('company_address')).toMatchObject({
       fieldName: '劳动合同主体注册地',
+    });
+    expect(byCode.get('social_location')).toMatchObject({
+      fieldName: '参保机构名称',
     });
     expect(byCode.get('education')).toMatchObject({ isIncludedInTemplate: true });
     expect(byCode.get('postal_code')).toMatchObject({ isIncludedInTemplate: false, isActive: true });

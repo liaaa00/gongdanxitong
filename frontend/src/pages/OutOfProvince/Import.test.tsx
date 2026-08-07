@@ -1,13 +1,25 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from 'antd';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import OutOfProvinceImport from './Import';
 
 vi.mock('@/components/ExcelUploader', () => ({
   default: () => <div data-testid="excel-uploader">Excel 上传组件</div>,
 }));
+
+function renderImport() {
+  return render(
+    <MemoryRouter initialEntries={['/out-of-province/import']}>
+      <Routes>
+        <Route path="/out-of-province/import" element={<OutOfProvinceImport />} />
+        <Route path="/out-of-province/increase" element={<div>省外增员列表页</div>} />
+        <Route path="/out-of-province/decrease" element={<div>省外减员列表页</div>} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
 
 describe('OutOfProvinceImport', () => {
   beforeEach(() => {
@@ -18,18 +30,21 @@ describe('OutOfProvinceImport', () => {
     });
   });
 
-  it('explains the fixed Cainiao sheet and system field mapping in Chinese', async () => {
-    render(<MemoryRouter><OutOfProvinceImport /></MemoryRouter>);
+  it('explains that province imports create independent direct orders', () => {
+    renderImport();
 
     expect(screen.getByText('省外导入与北仑数据独立')).toBeInTheDocument();
-    expect(screen.getByText('固定读取的 Excel 工作表')).toBeInTheDocument();
-    expect(screen.getByText('参保申请单')).toBeInTheDocument();
-    expect(screen.getByText('标签 → 客户/项目名称')).toBeInTheDocument();
-    expect(screen.getByText(/不会再让 AI 猜字段/)).toBeInTheDocument();
+    expect(screen.getByText(/Excel 每条记录会直接生成一张工单/)).toBeInTheDocument();
+    expect(screen.getByText('返回省外增员列表')).toBeInTheDocument();
+  });
 
-    await userEvent.click(screen.getByText('省外减员'));
+  it('returns to the list matching the selected import type', async () => {
+    const user = userEvent.setup();
+    renderImport();
 
-    expect(screen.getByText('停保申请单')).toBeInTheDocument();
-    expect(screen.getByText('最后工作日 → 最后工作日')).toBeInTheDocument();
+    await user.click(screen.getByText('省外减员'));
+    await user.click(screen.getByText('返回省外减员列表'));
+
+    expect(await screen.findByText('省外减员列表页')).toBeInTheDocument();
   });
 });

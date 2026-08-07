@@ -3,6 +3,7 @@ import { IN_SERVICE_ORDER_KINDS } from '@/constants/inService';
 import type { ImportTemplateFieldItem } from '@/services/importTemplates';
 import {
   RENEWAL_SIGNING_METHOD,
+  buildInServiceMutableFields,
   buildRenewalConfiguredFields,
   isRenewalFieldRequired,
   normalizeInServiceOrderFormValues,
@@ -111,6 +112,38 @@ describe('InServiceOrderForm renewal rules', () => {
       renewal_contract_subject: '测试主体',
       renewal_contract_template: '标准模板',
       renewal_term_type: '固定期限',
+    });
+  });
+
+  it('keeps immutable routing fields out of renewal and certificate updates', () => {
+    const renewalChanges = buildInServiceMutableFields({
+      customerId: 'customer-1',
+      departmentId: 'department-1',
+      orderKind: IN_SERVICE_ORDER_KINDS.CONTRACT_RENEWAL,
+      businessScope: 'beilun',
+      employeeName: '张三',
+      extraData: { contract_start_date: '2026-08-01' },
+    }, IN_SERVICE_ORDER_KINDS.CONTRACT_RENEWAL);
+
+    expect(renewalChanges).not.toHaveProperty('orderKind');
+    expect(renewalChanges).not.toHaveProperty('businessScope');
+    expect(renewalChanges.extraData).toMatchObject({
+      contract_start_date: '2026-08-01',
+      renewal_start_date: '2026-08-01',
+    });
+
+    const certificateChanges = buildInServiceMutableFields({
+      customerId: 'customer-1',
+      departmentId: 'department-1',
+      orderKind: IN_SERVICE_ORDER_KINDS.CERTIFICATE,
+      businessScope: 'beilun',
+      extraData: { certificateType: 'income', averageMonthlyIncome: 10000 },
+    }, IN_SERVICE_ORDER_KINDS.CERTIFICATE);
+
+    expect(certificateChanges).toEqual({
+      customerId: 'customer-1',
+      departmentId: 'department-1',
+      extraData: { certificateType: 'income', averageMonthlyIncome: 10000 },
     });
   });
 

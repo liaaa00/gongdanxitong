@@ -24,5 +24,5 @@ export function writeBusinessScope(scope: BusinessScope): void {
 }
 
 export function getBusinessScopeLandingPath(scope: BusinessScope): string {
-  return scope === BUSINESS_SCOPE.OUT_OF_PROVINCE ? '/out-of-province' : '/dashboard';
+  return scope === BUSINESS_SCOPE.OUT_OF_PROVINCE ? '/out-of-province/increase' : '/dashboard';
 }

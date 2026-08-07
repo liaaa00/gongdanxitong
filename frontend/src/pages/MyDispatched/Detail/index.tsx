@@ -7,7 +7,7 @@ import {
 } from 'antd';
 import {
   CheckCircleOutlined, RollbackOutlined, PlusCircleOutlined,
-  HistoryOutlined,
+  HistoryOutlined, DownloadOutlined,
   WarningOutlined, EyeOutlined, EditOutlined, BellOutlined, StopOutlined,
 } from '@ant-design/icons';
 import DynamicForm from '@/components/DynamicForm';
@@ -19,6 +19,7 @@ import {
   getDispatchedOrder,
   getDispatchedOrderTimeline,
   confirmDispatchedDirtyRead,
+  downloadResignationCertificate,
   returnCompletedDispatchedOrder,
 } from '@/services/dispatchedOrders';
 import type { DirtyFieldMark, DispatchedOrderItem, DispatchedOrderTimelineItem } from '@/services/dispatchedOrders';
@@ -47,7 +48,7 @@ const HANDLING_RESULT_OPTIONS = [
 const FIELD_GROUPS: Array<{ title: string; codes: string[] }> = [
   {
     title: '基础信息',
-    codes: ['customer_name', 'customer_code', 'outsource_type', 'position', 'employee_name', 'id_card_no', 'gender', 'birth_date', 'age', 'household_type', 'ethnicity', 'mobile', 'email', 'current_address', 'household_address', 'postal_code', 'business_mode', 'employee_type'],
+    codes: ['customer_name', 'customer_code', 'outsource_type', 'position', 'position_type', 'employee_name', 'id_card_type', 'id_card_no', 'gender', 'birth_date', 'age', 'household_type', 'ethnicity', 'marital_status', 'mobile', 'email', 'current_address', 'household_address', 'postal_code', 'business_mode', 'employee_type'],
   },
   {
     title: '合同信息',
@@ -85,6 +86,20 @@ const FEEDBACK_FIELD_MAP: Record<string, string> = {
   renewal_contract: 'renewal_feedback', resignation_contact: 'resignation_contact_feedback',
   resignation_cert: 'resignation_cert_status', benefit_apply: 'benefit_result',
 };
+
+export function inferResignationReasonCode(extraData: Record<string, unknown>): string {
+  const explicit = String(extraData.resignation_reason_code ?? '').trim();
+  if (/^[1-4]$/.test(explicit)) return explicit;
+  const source = String(
+    extraData.resignation_type
+    ?? extraData.resignation_reason
+    ?? '',
+  );
+  if (/合同期满|期满终止|合同到期/.test(source)) return '1';
+  if (/辞职|个人原因|员工提出|劳动者提出|主动离职/.test(source)) return '2';
+  if (/协商一致|双方协商/.test(source)) return '3';
+  return '4';
+}
 
 const SUPPLEMENT_ALLOWED_MODULE_CODE = 'onboarding_contact';
 const SUPPLEMENT_ALLOWED_USERNAMES = new Set(['maoyani', 'jianglu']);
@@ -170,6 +185,7 @@ const MyDispatchedDetail: React.FC = () => {
 
   const [completeModalOpen, setCompleteModalOpen] = useState(false);
   const [completeForm] = Form.useForm();
+  const [certificateDownloading, setCertificateDownloading] = useState(false);
 
   const [supplementModalOpen, setSupplementModalOpen] = useState(false);
   const [supplementForm] = Form.useForm();
@@ -363,9 +379,11 @@ const MyDispatchedDetail: React.FC = () => {
   const isVoided = Boolean(order?.void_at || order?.voidAt || order?.status === 'void');
   const isResubmittableStatus = Boolean(order && (['returned', 'withdrawn', 'void'].includes(order.status) || isVoided));
   const isSocialInsuranceOrder = isSocialInsuranceModule(order?.module_code);
+  const isResignationCertificateOrder = order?.module_code === 'resignation_cert';
   const isAcceptedByBackend = Boolean(order?.accepted_at) || order?.status === 'accepted' || order?.status === 'processing';
   const canAccept = canBackendOperate && !isVoided && order?.status === 'pending';
   const canComplete = canBackendOperate && !isVoided && order?.status === 'processing';
+  const canDownloadResignationCertificate = canBackendOperate && isResignationCertificateOrder;
   const canReturn = canBackendOperate && !isVoided && (order?.status === 'processing' || order?.status === 'pending');
   const canSupplementOperator = isAllowedSupplementOperator(user);
   const canSupplementModule = order?.module_code === SUPPLEMENT_ALLOWED_MODULE_CODE;
@@ -575,8 +593,42 @@ const MyDispatchedDetail: React.FC = () => {
         .join('；');
       payload.remark = remarkSummary;
     }
-    await handleComplete(payload);
-    setCompleteModalOpen(false);
+    const completed = await handleComplete(payload);
+    if (completed) setCompleteModalOpen(false);
+  };
+
+  const openCompleteModal = () => {
+    completeForm.resetFields();
+    if (isResignationCertificateOrder) {
+      const extraData = (order?.extra_data ?? {}) as Record<string, unknown>;
+      completeForm.setFieldsValue({
+        resignation_reason_code: inferResignationReasonCode(extraData),
+        resignation_other_reason: String(
+          extraData.resignation_other_reason
+          ?? extraData.resignation_reason
+          ?? '',
+        ),
+        resignation_legal_article: String(
+          extraData.resignation_legal_article
+          ?? extraData.legal_article
+          ?? '',
+        ),
+      });
+    }
+    setCompleteModalOpen(true);
+  };
+
+  const handleDownloadResignationCertificate = async () => {
+    if (!order) return;
+    setCertificateDownloading(true);
+    try {
+      await downloadResignationCertificate(order.id, order.order_no);
+      message.success('离职证明已导出');
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '离职证明导出失败');
+    } finally {
+      setCertificateDownloading(false);
+    }
   };
 
   const handleSupplementOk = async () => {
@@ -729,13 +781,22 @@ const MyDispatchedDetail: React.FC = () => {
                 <Button danger icon={<RollbackOutlined />} onClick={() => openApproval('void', false)}>拒绝作废</Button>
               </>
             )}
+            {canDownloadResignationCertificate && (
+              <Button
+                icon={<DownloadOutlined />}
+                loading={certificateDownloading}
+                onClick={handleDownloadResignationCertificate}
+              >
+                导出离职证明
+              </Button>
+            )}
             {!isTerminal && canAccept && (
               <Button type="primary" icon={<CheckCircleOutlined />}
                 loading={actionLoading} onClick={handleAccept}>接单</Button>
             )}
             {!isTerminal && canComplete && (
               <Button type="primary" icon={<CheckCircleOutlined />}
-                onClick={() => { completeForm.resetFields(); setCompleteModalOpen(true); }}>完成</Button>
+                onClick={openCompleteModal}>完成</Button>
             )}
             {!isTerminal && canReturn && (
               <Button danger icon={<RollbackOutlined />}
@@ -1079,6 +1140,56 @@ const MyDispatchedDetail: React.FC = () => {
                 ))}
                 <Form.Item name={HANDLING_SHARED_REMARK} label="社保公积金办理备注（选填）" style={{ marginTop: 8 }}>
                   <Input.TextArea rows={2} maxLength={500} showCount placeholder="可填写未完成原因或补充说明" />
+                </Form.Item>
+              </>
+            ) : isResignationCertificateOrder ? (
+              <>
+                <Alert
+                  type="info"
+                  showIcon
+                  style={{ marginBottom: 12 }}
+                  message="完成后系统会生成并保存正式离职证明"
+                />
+                <Form.Item
+                  name="resignation_reason_code"
+                  label="解除或终止原因"
+                  rules={[{ required: true, message: '请选择解除或终止原因' }]}
+                >
+                  <Select
+                    getPopupContainer={(triggerNode) => triggerNode.parentElement || document.body}
+                    options={[
+                      { label: '1. 劳动合同期满终止', value: '1' },
+                      { label: '2. 劳动者提出书面辞职', value: '2' },
+                      { label: '3. 双方协商一致解除', value: '3' },
+                      { label: '4. 其他', value: '4' },
+                    ]}
+                  />
+                </Form.Item>
+                <Form.Item noStyle shouldUpdate={(before, after) => (
+                  before.resignation_reason_code !== after.resignation_reason_code
+                )}>
+                  {({ getFieldValue }) => getFieldValue('resignation_reason_code') === '4' ? (
+                    <>
+                      <Form.Item
+                        name="resignation_other_reason"
+                        label="其他原因"
+                        rules={[
+                          { required: true, message: '选择第 4 项原因时必须填写其他原因' },
+                          { validator: (_, value) => String(value ?? '').trim()
+                            ? Promise.resolve()
+                            : Promise.reject(new Error('其他原因不能只填空格')) },
+                        ]}
+                      >
+                        <Input.TextArea rows={3} maxLength={300} showCount />
+                      </Form.Item>
+                      <Form.Item name="resignation_legal_article" label="劳动合同法条款（选填）">
+                        <Input placeholder="例如：40" maxLength={20} />
+                      </Form.Item>
+                    </>
+                  ) : null}
+                </Form.Item>
+                <Form.Item name="remark" label="办理结果备注（选填）">
+                  <Input.TextArea rows={2} maxLength={500} showCount />
                 </Form.Item>
               </>
             ) : (

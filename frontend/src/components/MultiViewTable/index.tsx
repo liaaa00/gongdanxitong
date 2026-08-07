@@ -18,10 +18,15 @@ import {
   type CachedTableFilters,
 } from '@/utils/listPageState';
 import type { ViewMode, MultiViewTableProps, ViewConfig, FilterCondition, SavedFilter } from './types';
+import { useUserStore } from '@/stores/userStore';
 
 const STORAGE_PREFIX = 'mv_config_';
 const FILTER_STORAGE_PREFIX = 'mv_filters_';
 void FILTER_STORAGE_PREFIX;
+
+export function getScopedViewId(viewId: string, userId: string, businessScope: string): string {
+  return `${viewId}:${userId}:${businessScope}`;
+}
 
 function loadViewConfig(viewId: string): ViewConfig | null {
   try {
@@ -129,6 +134,10 @@ function MultiViewTable<T extends Record<string, unknown>>(props: MultiViewTable
   void onKanbanDragEnd;
 
   const { message } = App.useApp();
+  const currentUser = useUserStore((state) => state.user);
+  const currentUserId = currentUser?.id ?? 'anonymous';
+  const currentBusinessScope = currentUser?.business_scope ?? currentUser?.businessScope ?? 'default';
+  const scopedViewId = getScopedViewId(viewId, currentUserId, currentBusinessScope);
   const actionRef = useRef<ActionType>(null);
   const [, setSearchParams] = useSearchParams();
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
@@ -139,14 +148,14 @@ function MultiViewTable<T extends Record<string, unknown>>(props: MultiViewTable
   );
   const currentListStateRef = useRef<CachedListPageState>(resolvedInitialListState);
 
-  const savedConfig = useMemo(() => loadViewConfig(viewId), [viewId]);
+  const savedConfig = useMemo(() => loadViewConfig(scopedViewId), [scopedViewId]);
   const allColKeys = useMemo(
     () => columns.filter((c) => c.dataIndex !== 'actions' && c.key !== 'actions')
       .map((c) => (c.dataIndex || c.key) as string),
     [columns],
   );
 
-  const [viewMode, setViewMode] = useState<ViewMode>(() => (showViewSwitcher ? getInitialViewMode(viewId) : 'table'));
+  const [viewMode, setViewMode] = useState<ViewMode>(() => (showViewSwitcher ? getInitialViewMode(scopedViewId) : 'table'));
   const [hiddenKeys, setHiddenKeys] = useState<string[]>(() => savedConfig?.columnsHidden || []);
   const [colOrder, setColOrder] = useState<string[]>(() => savedConfig?.columnsOrder || allColKeys);
   const [columnsDrawerOpen, setColumnsDrawerOpen] = useState(false);
@@ -161,9 +170,9 @@ function MultiViewTable<T extends Record<string, unknown>>(props: MultiViewTable
       next.set('view', mode);
       return next;
     });
-    const existing = loadViewConfig(viewId) || { viewMode: mode, columnsOrder: allColKeys, columnsHidden: [], columnWidths: {} };
-    saveViewConfig(viewId, { ...existing, viewMode: mode });
-  }, [viewId, allColKeys, setSearchParams]);
+    const existing = loadViewConfig(scopedViewId) || { viewMode: mode, columnsOrder: allColKeys, columnsHidden: [], columnWidths: {} };
+    saveViewConfig(scopedViewId, { ...existing, viewMode: mode });
+  }, [scopedViewId, allColKeys, setSearchParams]);
 
   const handleFilterSelect = useCallback((filter: SavedFilter | null) => {
     if (filter) {
@@ -254,7 +263,7 @@ function MultiViewTable<T extends Record<string, unknown>>(props: MultiViewTable
         {showViewSwitcher && <ViewSwitcher value={viewMode} onChange={handleViewChange} />}
         {showFilterViews && (
           <FilterViews
-            viewId={viewId}
+            viewId={scopedViewId}
             columns={columns as ProColumns<Record<string, unknown>>[]}
             activeFilterId={activeFilterId}
             onFilterSelect={handleFilterSelect}
@@ -339,12 +348,20 @@ function MultiViewTable<T extends Record<string, unknown>>(props: MultiViewTable
             setColumnsDrawerOpen(false);
             message.info('列配置已更新');
           }}
-          viewId={viewId}
+          viewId={scopedViewId}
           columns={columns as ProColumns<Record<string, unknown>>[]}
           hiddenKeys={hiddenKeys}
-          onHiddenKeysChange={setHiddenKeys}
+          onHiddenKeysChange={(keys) => {
+            setHiddenKeys(keys);
+            const existing = loadViewConfig(scopedViewId) || { viewMode, columnsOrder: colOrder, columnsHidden: [], columnWidths: {} };
+            saveViewConfig(scopedViewId, { ...existing, columnsHidden: keys, columnsOrder: colOrder });
+          }}
           order={colOrder}
-          onOrderChange={setColOrder}
+          onOrderChange={(nextOrder) => {
+            setColOrder(nextOrder);
+            const existing = loadViewConfig(scopedViewId) || { viewMode, columnsOrder: nextOrder, columnsHidden: hiddenKeys, columnWidths: {} };
+            saveViewConfig(scopedViewId, { ...existing, columnsOrder: nextOrder, columnsHidden: hiddenKeys });
+          }}
         />
       )}
     </div>

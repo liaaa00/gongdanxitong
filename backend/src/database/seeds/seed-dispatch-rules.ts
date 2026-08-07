@@ -63,12 +63,20 @@ const dispatchRuleSeeds: Array<{
     priority: 10,
   },
   {
+    name: 'resignation-certificate-when-needed',
+    orderType: OrderType.RESIGNATION,
+    triggerConditions: yesCondition('need_resignation_cert'),
+    targetModule: 'resignation_cert',
+    strategy: DispatchStrategy.FIXED,
+    priority: 20,
+  },
+  {
     name: 'resignation-default-data-entry',
     orderType: OrderType.RESIGNATION,
     triggerConditions: null,
     targetModule: 'data_entry_resign',
     strategy: DispatchStrategy.FIXED,
-    priority: 20,
+    priority: 30,
   },
   {
     name: 'resignation-default-social-insurance',
@@ -111,6 +119,15 @@ export async function seedDispatchRules(dataSource: DataSource): Promise<void> {
     const existed = await repository.findOne({ where: { ruleName: seed.name } });
 
     if (existed) {
+      Object.assign(existed, {
+        orderType: seed.orderType,
+        triggerConditions: seed.triggerConditions,
+        targetModule: seed.targetModule,
+        dispatchStrategy: seed.strategy,
+        priority: seed.priority,
+        isActive: true,
+      });
+      await repository.save(existed);
       continue;
     }
 
@@ -127,6 +144,15 @@ export async function seedDispatchRules(dataSource: DataSource): Promise<void> {
     );
   }
 
-  // Non-destructive seed: do not disable existing dispatch rules here.
-  // Operators can manage rule activation from the admin console.
+  const certificateRules = await repository.find({
+    where: {
+      orderType: OrderType.RESIGNATION,
+      targetModule: DispatchModuleCode.RESIGNATION_CERT,
+    },
+  });
+  for (const rule of certificateRules) {
+    if (rule.ruleName === 'resignation-certificate-when-needed' || !rule.isActive) continue;
+    rule.isActive = false;
+    await repository.save(rule);
+  }
 }

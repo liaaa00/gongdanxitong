@@ -126,7 +126,7 @@ const onboardingFields: FieldSeed[] = [
   { code: 'probation_other_salary', name: '试用期其他工资', type: FieldType.TEXT, required: false, defaultRequired: false, helpText: '可填写文字说明，如可填写数字加文字。', orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'payroll_cycle',          name: '发薪周期',     type: FieldType.DROPDOWN, required: true,  defaultRequired: true,  options: ['当月', '次月'], orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'payroll_date',           name: '发薪日期',     type: FieldType.TEXT,     required: true,  defaultRequired: true,  helpText: '整数。', orderType: ONBOARDING, businessContext: [ONBOARDING] },
-  { code: 'social_location',        name: '参保地',       type: FieldType.TEXT,     required: true,  defaultRequired: true,  orderType: ONBOARDING, businessContext: [ONBOARDING] },
+  { code: 'social_location',        name: '参保机构名称', type: FieldType.TEXT,     required: true,  defaultRequired: true,  orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'start_month',            name: '参保起始月',   type: FieldType.DROPDOWN, required: true,  defaultRequired: true,  options: ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'], orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'social_base',            name: '社保基数',     type: FieldType.NUMBER,   required: true,  defaultRequired: true,  helpText: '数字格式：保留小数点后两位。', orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'fund_base',              name: '公积金基数',   type: FieldType.NUMBER,   required: true,  defaultRequired: true,  helpText: '数字格式：保留小数点后两位。', orderType: ONBOARDING, businessContext: [ONBOARDING] },

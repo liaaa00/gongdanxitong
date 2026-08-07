@@ -157,7 +157,7 @@ const socialInsuranceColumns: Array<[string, string]> = [
   ['graduation_school', '毕业院校'],
   ['major', '专业'],
   ['graduation_date', '毕业时间'],
-  ['social_location', '社保参缴地'],
+  ['social_location', '参保机构名称'],
   ['start_month', '参保月份'],
   ['social_base', '社保基数'],
   ['fund_base', '公积金基数'],

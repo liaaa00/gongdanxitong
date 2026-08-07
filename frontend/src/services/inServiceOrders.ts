@@ -397,6 +397,26 @@ export async function createInServiceOrder(payload: InServiceOrderPayload): Prom
   return normalizeInServiceOrder(await request.post('/in-service-orders', payload) as RawRecord);
 }
 
+export async function createBatchRenewalOrders(
+  payloads: InServiceOrderPayload[],
+): Promise<{ items: InServiceOrder[]; total: number }> {
+  if (isMockMode) {
+    const items = await Promise.all(payloads.map((payload) => createInServiceOrder({
+      ...payload,
+      orderKind: 'contract_renewal',
+    })));
+    return { items, total: items.length };
+  }
+  const result = await request.post('/in-service-orders/renewal/batch', { items: payloads.map((payload) => ({
+    ...payload,
+    orderKind: 'contract_renewal',
+  })) }) as RawRecord;
+  const items = Array.isArray(result?.items)
+    ? result.items.map(normalizeInServiceOrder)
+    : [];
+  return { items, total: Number(result?.total ?? items.length) };
+}
+
 export async function exportInServiceRenewalTemplate(
   id: string,
 ): Promise<DispatchedOrderExportResult> {
@@ -413,7 +433,11 @@ export async function exportInServiceRenewalTemplate(
   ) as Promise<DispatchedOrderExportResult>;
 }
 
-export async function downloadInServiceCertificate(id: string, orderNo: string): Promise<void> {
+export async function downloadInServiceCertificate(
+  id: string,
+  orderNo: string,
+  filePrefix = '证明',
+): Promise<void> {
   const token = localStorage.getItem('token');
   const base = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || '';
   const response = await fetch(base + '/api/in-service-orders/' + encodeURIComponent(id) + '/certificate-template', {
@@ -423,7 +447,7 @@ export async function downloadInServiceCertificate(id: string, orderNo: string):
   const blob = await response.blob();
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
-  link.download = '证明-' + orderNo + '.docx';
+  link.download = filePrefix + '-' + orderNo + '.docx';
   link.click();
   URL.revokeObjectURL(link.href);
 }

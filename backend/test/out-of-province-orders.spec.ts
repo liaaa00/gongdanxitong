@@ -121,6 +121,7 @@ describe('out-of-province dispatch and import contracts', () => {
   it('seeds both production rules into the Sheet5 module', async () => {
     const saved: Array<Record<string, unknown>> = [];
     const repository = {
+      find: jest.fn(async () => []),
       findOne: jest.fn(async () => null),
       create: jest.fn((value) => value),
       save: jest.fn(async (value) => {

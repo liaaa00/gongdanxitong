@@ -22,6 +22,7 @@ import type { PageParams } from '@/services/mock';
 import { getModuleLabel, getModuleTitle } from '@/constants/modules';
 import { getStatusColor, getStatusText } from '@/constants/dictionaries';
 import { useAuth } from '@/hooks/useAuth';
+import { useColumnConfig } from '@/components/MultiViewTable/useColumnConfig';
 import { DISPATCHED_NINE_STATUS_OPTIONS } from '@/utils/dispatchedStatusFilter';
 import {
   KEEP_ALIVE_ROUTE_ACTIVATED_EVENT,
@@ -387,7 +388,7 @@ const OnboardingModule: React.FC = () => {
     { title: '员工姓名', dataIndex: 'employee_name', key: 'employee_name', width: 120, search: { transform: (value) => ({ employeeName: value }) }, filteredValue: tableFilters.employee_name || null, ...textHeaderFilter('输入员工姓名') },
     { title: '证件号', dataIndex: 'employee_id_card', key: 'employee_id_card', width: 190, search: { transform: (value) => ({ idCardNo: value }) }, filteredValue: tableFilters.employee_id_card || null, ...textHeaderFilter('输入证件号') },
     ...(currentModule === 'social_insurance' ? [
-      { title: '参保地', key: 'social_location', width: 130, hideInSearch: true, renderText: (_: unknown, record: DispatchedOrderItem) => String(record.extra_data?.social_location || '-') },
+      { title: '参保机构名称', key: 'social_location', width: 130, hideInSearch: true, renderText: (_: unknown, record: DispatchedOrderItem) => String(record.extra_data?.social_location || '-') },
       { title: '起始月', key: 'start_month', width: 100, hideInSearch: true, renderText: (_: unknown, record: DispatchedOrderItem) => String(record.extra_data?.start_month || '-') },
     ] : []),
     ...(['social_insurance_resign', 'resignation_social_insurance'].includes(currentModule) ? [
@@ -426,6 +427,7 @@ const OnboardingModule: React.FC = () => {
     },
     
   ], [currentModule, navigate, tableFilters]);
+  const columnConfig = useColumnConfig(`onboarding-module:${currentModule || 'unknown'}`, columns);
 
   const requestFn = useCallback(async (params: PageParams, _sort: Record<string, unknown>, filters: TableFilters = {}) => {
     const headerFilters = buildEffectiveHeaderFilterParams(filters, tableFilters);
@@ -615,7 +617,7 @@ const OnboardingModule: React.FC = () => {
         key={currentModule}
         getPopupContainer={() => document.body}
         actionRef={actionRef}
-        columns={columns}
+        columns={columnConfig.columns}
         request={requestFn}
         onChange={handleTableChange}
         rowKey="id"
@@ -623,6 +625,7 @@ const OnboardingModule: React.FC = () => {
         headerTitle={`${moduleLabel}列表`}
         options={false}
         toolBarRender={() => [
+          <span key="columns">{columnConfig.button}</span>,
           canBatchImport && <Button key="import-status" icon={<UploadOutlined />} onClick={() => setBatchImportMode('status')}>
             导入办理结果
           </Button>,
@@ -760,6 +763,7 @@ const OnboardingModule: React.FC = () => {
         scroll={{ x: 1280 }}
         dateFormatter="string"
       />
+      {columnConfig.drawer}
 
       <Modal
         title={`批量退回${moduleLabel}子工单`}

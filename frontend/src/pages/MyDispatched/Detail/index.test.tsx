@@ -2,7 +2,7 @@ import React from 'react';
 import { cleanup, render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import MyDispatchedDetail from './index';
+import MyDispatchedDetail, { inferResignationReasonCode } from './index';
 
 const mocks = vi.hoisted(() => ({
   getDispatchedOrder: vi.fn(),
@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   getActiveDetailViewTemplate: vi.fn(),
   supplementField: vi.fn(),
   resubmitDispatchedOrder: vi.fn(),
+  downloadResignationCertificate: vi.fn(),
   navigate: vi.fn(),
   confirm: vi.fn(),
   message: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() },
@@ -64,6 +65,7 @@ vi.mock('@/services/dispatchedOrders', () => ({
   supplementField: (...args: unknown[]) => mocks.supplementField(...args),
   exportDispatchedOrder: vi.fn(),
   downloadDispatchedExport: vi.fn(),
+  downloadResignationCertificate: (...args: unknown[]) => mocks.downloadResignationCertificate(...args),
   reassignDispatchedOrder: vi.fn(),
   creatorUpdateDispatchedOrderFields: vi.fn(),
   resubmitDispatchedOrder: (...args: unknown[]) => mocks.resubmitDispatchedOrder(...args),
@@ -864,5 +866,47 @@ describe('MyDispatchedDetail readonly and creator repair actions', () => {
     await waitFor(() => expect(mocks.getDispatchedOrder).toHaveBeenCalledWith('d-1'));
     expect(screen.queryByRole('button', { name: /补充\/修改暂存字段/ })).not.toBeInTheDocument();
     expect(mocks.supplementField).not.toHaveBeenCalled();
+  });
+
+  it('maps existing resignation types to the formal certificate reason numbers', () => {
+    expect(inferResignationReasonCode({ resignation_type: '合同到期' })).toBe('1');
+    expect(inferResignationReasonCode({ resignation_type: '主动辞职' })).toBe('2');
+    expect(inferResignationReasonCode({ resignation_type: '协商一致' })).toBe('3');
+    expect(inferResignationReasonCode({ resignation_type: '公司辞退' })).toBe('4');
+  });
+
+  it('shows the formal certificate fields and downloads as the assigned handler', async () => {
+    mocks.currentUser = {
+      id: 'handler-yangchun',
+      username: 'yangchun',
+      real_name: '杨纯',
+      roles: [{ code: 'labor_contract_member' }],
+    };
+    mocks.downloadResignationCertificate.mockResolvedValue(undefined);
+    mocks.getDispatchedOrder.mockResolvedValue({
+      ...baseOrder,
+      order_no: 'RS-001',
+      module_code: 'resignation_cert',
+      module_name: '离职证明',
+      status: 'processing',
+      handler_id: 'handler-yangchun',
+      extra_data: {
+        employee_name: '张三',
+        resignation_type: '公司辞退',
+        resignation_reason: '公司经营调整',
+      },
+    });
+
+    renderDetail('/my-dispatched/d-1');
+
+    const downloadButton = await screen.findByRole('button', { name: /导出离职证明/ });
+    fireEvent.click(downloadButton);
+    await waitFor(() => expect(mocks.downloadResignationCertificate).toHaveBeenCalledWith('d-1', 'RS-001'));
+
+    fireEvent.click(screen.getByRole('button', { name: /完成/ }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('4. 其他')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('其他原因')).toHaveValue('公司经营调整');
+    expect(within(dialog).getByLabelText('劳动合同法条款（选填）')).toBeInTheDocument();
   });
 });

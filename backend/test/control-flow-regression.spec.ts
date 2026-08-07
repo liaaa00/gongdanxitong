@@ -180,10 +180,12 @@ describe('five control-flow regression coverage', () => {
   it.each([
     ['social_insurance', 'social-user', 'social_insurance_team'],
     ['data_entry', 'data-user', 'data_entry_team'],
+    ['resignation_cert', 'contract-user', 'contract_specialist'],
   ])('strictly maps %s module visibility to configured handler access', async (moduleCode, userId, roleCode) => {
     const qb = {
       leftJoinAndSelect: jest.fn(),
       andWhere: jest.fn(),
+      addSelect: jest.fn(),
       orderBy: jest.fn(),
       offset: jest.fn(),
       limit: jest.fn(),
@@ -220,13 +222,14 @@ describe('five control-flow regression coverage', () => {
       roles: ['shared_leader', 'contract_specialist', 'onboarding_specialist'],
     };
     // 江璐 seed 中保留合同续签配置，但第一阶段列表 scope 会过滤掉在职模块 renewal_contract。
-    const jiangluHandlerModules = ['contract', 'renewal_contract', 'onboarding_contact', 'resignation_contact'];
-    const expectedPhase1Modules = ['contract', 'onboarding_contact', 'resignation_contact'];
+    const jiangluHandlerModules = ['contract', 'renewal_contract', 'onboarding_contact', 'resignation_contact', 'resignation_cert'];
+    const expectedPhase1Modules = ['contract', 'onboarding_contact', 'resignation_contact', 'resignation_cert'];
     const forbiddenModules = ['data_entry', 'data_entry_resign', 'social_insurance', 'onboarding_social_insurance', 'resignation_social_insurance', 'benefit_apply', 'renewal_contract'];
 
     const qb = {
       leftJoinAndSelect: jest.fn(),
       andWhere: jest.fn(),
+      addSelect: jest.fn(),
       orderBy: jest.fn(),
       offset: jest.fn(),
       limit: jest.fn(),
