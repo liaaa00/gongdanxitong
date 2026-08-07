@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { OrderType } from 'src/entities';
+import { BusinessScope, InServiceOrderStatus, OrderType } from 'src/entities';
 import { ROLES_KEY } from 'src/common/decorators/roles.decorator';
 import { WorkflowController } from 'src/modules/workflows/workflow.controller';
 import { WorkflowDefinition, WorkflowDefinitionStatus } from 'src/modules/workflows/workflow.entity';
@@ -22,8 +22,13 @@ function makeWorkflow(overrides: Partial<WorkflowDefinition> = {}): WorkflowDefi
     id: 'workflow-1',
     name: 'Onboarding default flow',
     orderType: OrderType.ONBOARDING,
+    flowKey: null,
+    businessScope: BusinessScope.BEILUN,
     description: null,
     definitionJson: { nodes: [], edges: [] },
+    publishedDefinitionJson: null,
+    version: 0,
+    publishedAt: null,
     status: WorkflowDefinitionStatus.DRAFT,
     createdBy: 'admin-1',
     createdAt: new Date('2026-05-20T00:00:00.000Z'),
@@ -91,10 +96,47 @@ describe('WorkflowService', () => {
     await service.publish('workflow-1', {});
 
     expect(repo.update).toHaveBeenCalledWith(
-      { orderType: OrderType.ONBOARDING, status: WorkflowDefinitionStatus.PUBLISHED },
+      { orderType: OrderType.ONBOARDING, businessScope: BusinessScope.BEILUN, status: WorkflowDefinitionStatus.PUBLISHED },
       { status: WorkflowDefinitionStatus.DRAFT },
     );
-    expect(repo.save).toHaveBeenCalledWith(expect.objectContaining({ status: WorkflowDefinitionStatus.PUBLISHED }));
+    expect(repo.save).toHaveBeenCalledWith(expect.objectContaining({
+      status: WorkflowDefinitionStatus.PUBLISHED,
+      version: 1,
+      publishedDefinitionJson: existing.definitionJson,
+    }));
+    expect(existing.publishedDefinitionJson).not.toBe(existing.definitionJson);
+  });
+
+  it('publishes a flow-key draft as the next isolated snapshot version', async () => {
+    const editingDefinition = {
+      nodes: [
+        { id: 'start', type: 'start', label: '开始' },
+        { id: 'end', type: 'end', label: '结束' },
+      ],
+      edges: [{ id: 'edge-1', source: 'start', target: 'end' }],
+      status_transitions: {
+        [InServiceOrderStatus.DISPATCHED]: [InServiceOrderStatus.ACCEPTED],
+      },
+    };
+    const previousSnapshot = { ...editingDefinition, status_transitions: {} };
+    const existing = makeWorkflow({
+      orderType: null,
+      flowKey: 'certificate',
+      definitionJson: editingDefinition,
+      publishedDefinitionJson: previousSnapshot,
+      version: 1,
+      status: WorkflowDefinitionStatus.PUBLISHED,
+    });
+    const repo = createRepositoryMock([existing]);
+    const service = new WorkflowService(repo as never);
+
+    await service.publish('workflow-1', {});
+
+    expect(repo.update).not.toHaveBeenCalled();
+    expect(existing.version).toBe(2);
+    expect(existing.publishedDefinitionJson).toEqual(editingDefinition);
+    expect(existing.publishedDefinitionJson).not.toBe(editingDefinition);
+    expect(existing.publishedDefinitionJson).not.toBe(previousSnapshot);
   });
 
   it('rejects non-object definition_json payloads', async () => {

@@ -20,6 +20,8 @@ export interface DispatchConfigItem {
   id: string;
   source: DispatchConfigSource;
   module?: string;
+  module_name?: string;
+  moduleName?: string;
   module_code?: string;
   moduleCode?: string;
   sub_module?: string;
@@ -68,7 +70,7 @@ export interface DispatchConfigItem {
   slaReminderBeforeHours?: number | null;
 }
 
-function normalizeDispatchConfigItem(item: any): DispatchConfigItem {
+export function normalizeDispatchConfigItem(item: any): DispatchConfigItem {
   const advanced = item.advanced || {};
   const targetModule = item.target_module ?? item.targetModule ?? item.module ?? item.module_code ?? item.moduleCode;
   const subModule = item.sub_module ?? item.subModule ?? targetModule;
@@ -82,7 +84,9 @@ function normalizeDispatchConfigItem(item: any): DispatchConfigItem {
     ...item,
     id: item.id ?? item.ID ?? `${item.source || 'config'}-${targetModule || subModule || ''}-${item.customer_id || item.customerId || 'all'}`,
     source: item.source === 'rules' ? 'rules' : 'handlers',
-    module: item.module ?? item.module_name ?? item.moduleName ?? targetModule,
+    module: item.moduleName ?? item.module_name ?? item.module ?? targetModule,
+    module_name: item.module_name ?? item.moduleName,
+    moduleName: item.moduleName ?? item.module_name,
     module_code: item.module_code ?? item.moduleCode ?? targetModule,
     moduleCode: item.moduleCode ?? item.module_code ?? targetModule,
     sub_module: subModule,

@@ -13,6 +13,19 @@ const ORDER_TYPE_OPTIONS = [
   { label: '待遇申报', value: 'benefit' },
 ];
 
+const IN_SERVICE_FLOW_OPTIONS = [
+  { label: '北仑单项业务办理', value: 'single_business' },
+  { label: '劳动合同续签', value: 'contract_renewal' },
+  { label: '在职证明开具', value: 'certificate' },
+];
+
+export function workflowTypeLabel(record: WorkflowItem): string {
+  if (record.flow_key) {
+    return IN_SERVICE_FLOW_OPTIONS.find((item) => item.value === record.flow_key)?.label || record.flow_key;
+  }
+  return ORDER_TYPE_OPTIONS.find((item) => item.value === record.order_type)?.label || record.order_type || '-';
+}
+
 const STATUS_COLOR: Record<string, string> = {
   draft: 'default',
   active: 'green',
@@ -90,7 +103,7 @@ const AdminWorkflows: React.FC = () => {
 
   return (
     <PageContainer
-      header={{ title: '工单流程配置', subTitle: '管理员可视化维护工单节点、字段权限、按钮和发布版本' }}
+      header={{ title: '工单流程配置', subTitle: '保存只更新编辑稿；发布后才生成正式版本并影响新流转' }}
       extra={[
         <Select
           key="filter"
@@ -110,7 +123,7 @@ const AdminWorkflows: React.FC = () => {
         dataSource={data}
         columns={[
           { title: '流程名称', dataIndex: 'name', render: (value) => <Typography.Text strong>{value}</Typography.Text> },
-          { title: '工单类型', dataIndex: 'order_type', width: 140, render: (value) => ORDER_TYPE_OPTIONS.find((item) => item.value === value)?.label || value },
+          { title: '工单类型', dataIndex: 'order_type', width: 180, render: (_, record) => workflowTypeLabel(record) },
           { title: '版本', dataIndex: 'version', width: 90, render: (value) => value ? `v${value}` : '-' },
           { title: '状态', dataIndex: 'status', width: 110, render: (value) => <Tag color={STATUS_COLOR[value] || 'default'}>{STATUS_TEXT[value] || value}</Tag> },
           { title: '节点数', dataIndex: 'definition_json', width: 100, render: (value) => value?.nodes?.length || 0 },
@@ -123,8 +136,8 @@ const AdminWorkflows: React.FC = () => {
               <Space wrap>
                 <Button size="small" icon={<EyeOutlined />} onClick={() => navigate(`/admin/workflows/${record.id}?mode=view`)}>查看</Button>
                 <Button size="small" type="primary" icon={<EditOutlined />} onClick={() => navigate(`/admin/workflows/${record.id}`)}>编辑</Button>
-                <Popconfirm title="发布该流程版本？" description="发布后新工单将按该定义进入流程；历史工单不受影响。" onConfirm={() => handlePublish(record)}>
-                  <Button size="small" icon={<RocketOutlined />} disabled={['active', 'published'].includes(record.status)}>发布</Button>
+                <Popconfirm title="发布当前编辑稿？" description="发布后生成下一版本；未发布的保存不会影响正式工单。" onConfirm={() => handlePublish(record)}>
+                  <Button size="small" icon={<RocketOutlined />}>发布</Button>
                 </Popconfirm>
                 <Popconfirm title="停用该流程？" description="停用后不再作为新工单流程配置。" onConfirm={() => handleDeactivate(record)}>
                   <Button size="small" icon={<PauseCircleOutlined />} disabled={record.status === 'archived'}>停用</Button>

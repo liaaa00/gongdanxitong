@@ -21,7 +21,8 @@ import { PlusOutlined, RocketOutlined, SaveOutlined } from '@ant-design/icons';
 import { createDefaultWorkflowDefinition, getWorkflow, publishWorkflow, updateWorkflow } from '@/services/workflows';
 import type { WorkflowDefinitionJson, WorkflowEdgeConfig, WorkflowFieldBindingConfig, WorkflowItem, WorkflowNodeConfig, WorkflowNodeType } from '@/services/workflows';
 import { getFields, type FieldConfigItem } from '@/services/fields';
-import { getModuleFields } from '@/services/moduleConfigs';
+import { buildModuleLabelMap, getModuleConfigs, getModuleFields } from '@/services/moduleConfigs';
+import { readBusinessScope } from '@/utils/businessScope';
 import { getRoles, type RoleItem } from '@/services/roles';
 import { getUsers, type UserItem } from '@/services/users';
 
@@ -52,6 +53,19 @@ const ACTION_BUTTON_OPTIONS = [
   { label: '作废审批', value: 'void' },
   { label: '催办', value: 'urge' },
 ];
+
+export const IN_SERVICE_STATUS_OPTIONS = [
+  { label: '草稿', value: 'draft' },
+  { label: '待受理', value: 'dispatched' },
+  { label: '已受理', value: 'accepted' },
+  { label: '材料已确认', value: 'ready' },
+  { label: '办理中', value: 'processing' },
+  { label: '待补充资料', value: 'pending_info' },
+  { label: '已完成', value: 'completed' },
+  { label: '办理失败', value: 'failed' },
+  { label: '已取消', value: 'cancelled' },
+  { label: '已归档', value: 'archived' },
+] as const;
 
 const GENERATION_RULE_OPTIONS = [
   { label: '默认生成', value: 'always' },
@@ -143,8 +157,13 @@ function edgeToFlowEdge(edge: WorkflowEdgeConfig): Edge<WorkflowEdgeConfig> {
   };
 }
 
-export function buildWorkflowDefinitionForSave(nodes: Node<WorkflowNodeConfig>[], edges: Edge<WorkflowEdgeConfig>[]): WorkflowDefinitionJson {
+export function buildWorkflowDefinitionForSave(
+  nodes: Node<WorkflowNodeConfig>[],
+  edges: Edge<WorkflowEdgeConfig>[],
+  base?: WorkflowDefinitionJson,
+): WorkflowDefinitionJson {
   return {
+    ...(base || {}),
     nodes: nodes.map((node) => ({ ...node.data, id: node.id, position: node.position })),
     edges: edges.map((edge) => ({
       ...edge.data,
@@ -252,6 +271,7 @@ const AdminWorkflowEditor: React.FC = () => {
   const [roleOptions, setRoleOptions] = useState<Array<{ label: string; value: string }>>([]);
   const [userOptions, setUserOptions] = useState<Array<{ label: string; value: string }>>([]);
   const [moduleFieldCodes, setModuleFieldCodes] = useState<Record<string, string[]>>({});
+  const [moduleOptions, setModuleOptions] = useState(MODULE_OPTIONS);
   const [editingModuleCode, setEditingModuleCode] = useState<string>();
   const [nodes, setNodes] = useState<Node<WorkflowNodeConfig>[]>([]);
   const [edges, setEdges] = useState<Edge<WorkflowEdgeConfig>[]>([]);
@@ -266,6 +286,23 @@ const AdminWorkflowEditor: React.FC = () => {
 
   const selectedNode = useMemo(() => nodes.find((node) => node.id === selectedNodeId), [nodes, selectedNodeId]);
   const selectedEdge = useMemo(() => edges.find((edge) => edge.id === selectedEdgeId), [edges, selectedEdgeId]);
+  const statusTransitions = useMemo(() => {
+    const raw = workflow?.definition_json?.status_transitions;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {} as Record<string, string[]>;
+    return Object.fromEntries(Object.entries(raw).map(([status, targets]) => [
+      status,
+      Array.isArray(targets) ? targets.map(String) : [],
+    ]));
+  }, [workflow]);
+  const updateStatusTransitions = (status: string, targets: string[]) => {
+    setWorkflow((current) => current ? {
+      ...current,
+      definition_json: {
+        ...current.definition_json,
+        status_transitions: { ...statusTransitions, [status]: targets },
+      },
+    } : current);
+  };
   const availableFieldsForEditingNode = useMemo(() => {
     const codes = editingModuleCode ? moduleFieldCodes[editingModuleCode] : undefined;
     if (!codes || codes.length === 0) return fields;
@@ -273,6 +310,7 @@ const AdminWorkflowEditor: React.FC = () => {
     return fields.filter((field) => codeSet.has(field.field_code));
   }, [editingModuleCode, fields, moduleFieldCodes]);
   const groupedFields = useMemo(() => groupFields(availableFieldsForEditingNode), [availableFieldsForEditingNode]);
+  const moduleLabel = (moduleCode?: string) => moduleOptions.find((item) => item.value === moduleCode)?.label || (moduleCode ? '模块名称待配置' : '-');
 
   useEffect(() => {
     let cancelled = false;
@@ -281,19 +319,25 @@ const AdminWorkflowEditor: React.FC = () => {
       setLoading(true);
       try {
         const item = await getWorkflow(id);
-        const [fieldList, moduleFieldEntries, roles, usersResult] = await Promise.all([
+        const businessScope = readBusinessScope();
+        const [fieldList, moduleFieldEntries, roles, usersResult, moduleConfigs] = await Promise.all([
           getFields(item.order_type || 'onboarding').catch(() => [] as FieldConfigItem[]),
           Promise.all(MODULE_OPTIONS.map(async (module) => {
             const rows = await getModuleFields(module.value).catch(() => []);
             return [module.value, rows.map((row) => row.field_code).filter(Boolean)] as const;
           })),
           getRoles().catch(() => [] as RoleItem[]),
-          getUsers({ page: 1, pageSize: 100 }).catch(() => ({ list: [] as UserItem[] })),
+          getUsers({ page: 1, pageSize: 100, businessScope }).catch(() => ({ list: [] as UserItem[] })),
+          getModuleConfigs({ businessScope, isActive: true }).catch(() => []),
         ]);
         const definition = item.definition_json || createDefaultWorkflowDefinition();
         if (cancelled) return;
         setWorkflow(item);
         setFields(fieldList);
+        const dynamicLabels = buildModuleLabelMap(moduleConfigs);
+        const mergedModuleOptions = new Map(MODULE_OPTIONS.map((option) => [option.value, option]));
+        Object.entries(dynamicLabels).forEach(([value, label]) => mergedModuleOptions.set(value, { value, label }));
+        setModuleOptions(Array.from(mergedModuleOptions.values()));
         setRoleOptions(buildRoleOptions(roles));
         setUserOptions((usersResult.list || []).filter((user) => user.is_active).map((user) => ({
           label: `${user.real_name || user.username}${user.group_name ? `（${user.group_name}）` : ''}`,
@@ -517,7 +561,7 @@ const AdminWorkflowEditor: React.FC = () => {
     }
     setSaving(true);
     try {
-      const definition = buildWorkflowDefinitionForSave(nodes, edges);
+      const definition = buildWorkflowDefinitionForSave(nodes, edges, workflow.definition_json);
       const updated = await updateWorkflow(id, {
         name: workflow.name,
         order_type: workflow.order_type,
@@ -555,8 +599,12 @@ const AdminWorkflowEditor: React.FC = () => {
     <PageContainer
       header={{
         title: workflow.name,
-        subTitle: readOnly ? '查看模式' : '新版流程引擎预配置：先配置子工单生成条件、办理字段、SLA 与通知，暂不影响现有派发',
-        tags: <Tag color={['active', 'published'].includes(workflow.status) ? 'green' : 'default'}>{['active', 'published'].includes(workflow.status) ? '已发布' : '草稿'}</Tag>,
+        subTitle: readOnly
+          ? '查看模式'
+          : workflow.flow_key
+            ? '在职独立状态流程：保存为编辑稿，发布后才影响正式流转；负责人仍由派发配置维护'
+            : '新版流程引擎预配置：先配置子工单生成条件、办理字段、SLA 与通知，暂不影响现有派发',
+        tags: <Tag color={['active', 'published'].includes(workflow.status) ? 'green' : 'default'}>{['active', 'published'].includes(workflow.status) ? `已发布 v${workflow.version || 1}` : '草稿'}</Tag>,
         extra: [
           <Button key="back" onClick={() => navigate('/admin/workflows')}>返回列表</Button>,
           !readOnly && <Button key="add" icon={<PlusOutlined />} onClick={() => openNodeModal()}>新增节点</Button>,
@@ -567,11 +615,37 @@ const AdminWorkflowEditor: React.FC = () => {
     >
       <Alert
         showIcon
-        type="warning"
+        type={workflow.flow_key ? 'info' : 'warning'}
         style={{ marginBottom: 16 }}
-        message="新版流程配置暂不接管正式派发"
-        description="这里先用于配置未来流程引擎：子工单生成条件、办理字段、SLA、通知和退回规则。当前新建/导入工单仍以“派发配置”为准，等该配置成熟后再逐步替换旧派发配置。"
+        message={workflow.flow_key ? '保存只更新编辑稿，发布后才生效' : '新版流程配置暂不接管正式派发'}
+        description={workflow.flow_key
+          ? '正式工单只读取本流程最近一次发布的状态流转快照；未发布的保存不会影响现有或新工单。办理负责人仍以派发配置为准。'
+          : '这里先用于配置未来流程引擎：子工单生成条件、办理字段、SLA、通知和退回规则。当前新建/导入工单仍以“派发配置”为准，等该配置成熟后再逐步替换旧派发配置。'}
       />
+      {workflow.flow_key && (
+        <Card size="small" title="状态流转规则" style={{ marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+            {IN_SERVICE_STATUS_OPTIONS.map((currentStatus) => (
+              <div key={currentStatus.value}>
+                <Typography.Text strong>{currentStatus.label}</Typography.Text>
+                <Select
+                  mode="multiple"
+                  allowClear
+                  disabled={readOnly}
+                  value={statusTransitions[currentStatus.value] || []}
+                  options={IN_SERVICE_STATUS_OPTIONS
+                    .filter((item) => item.value !== currentStatus.value)
+                    .map((item) => ({ label: item.label, value: item.value }))}
+                  onChange={(targets) => updateStatusTransitions(currentStatus.value, targets)}
+                  placeholder="选择允许进入的下一状态"
+                  maxTagCount="responsive"
+                  style={{ width: '100%', marginTop: 6 }}
+                />
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
       <div style={{ display: 'grid', gridTemplateColumns: '280px minmax(520px, 1fr) 460px', gap: 16, alignItems: 'start' }}>
         <Card
           title="流程步骤"
@@ -597,7 +671,7 @@ const AdminWorkflowEditor: React.FC = () => {
                       <Tag color={active ? 'blue' : undefined}>{typeLabel}</Tag>
                     </Space>
                     <Typography.Text type="secondary" style={{ fontSize: 12 }}>节点编码：{node.id}</Typography.Text>
-                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>模块：{node.data.module_code || '-'}</Typography.Text>
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>模块：{moduleLabel(node.data.module_code)}</Typography.Text>
                     <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                       生成：{GENERATION_RULE_OPTIONS.find((item) => item.value === node.data.generation_rule?.mode)?.label || '未配置'}
                     </Typography.Text>
@@ -616,7 +690,7 @@ const AdminWorkflowEditor: React.FC = () => {
                 <Space direction="vertical" size={2} style={{ textAlign: 'center' }}>
                   <Typography.Text strong>{node.data.label}</Typography.Text>
                   <Tag>{NODE_TYPE_OPTIONS.find((item) => item.value === node.data.type)?.label || node.data.type}</Tag>
-                  {node.data.module_code && <Typography.Text type="secondary" style={{ fontSize: 12 }}>{node.data.module_code}</Typography.Text>}
+                  {node.data.module_code && <Typography.Text type="secondary" style={{ fontSize: 12 }}>{moduleLabel(node.data.module_code)}</Typography.Text>}
                   {node.data.generation_rule?.mode && (
                     <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                       {GENERATION_RULE_OPTIONS.find((item) => item.value === node.data.generation_rule?.mode)?.label || node.data.generation_rule.mode}
@@ -658,7 +732,7 @@ const AdminWorkflowEditor: React.FC = () => {
 
                 <Divider orientation="left">基础信息</Divider>
                 <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                  <Typography.Text>关联子工单：{MODULE_OPTIONS.find((item) => item.value === selectedNode.data.module_code)?.label || selectedNode.data.module_code || '-'}</Typography.Text>
+                  <Typography.Text>关联子工单：{moduleLabel(selectedNode.data.module_code)}</Typography.Text>
                 </Space>
 
                 <Divider orientation="left">子工单生成条件</Divider>
@@ -793,7 +867,9 @@ const AdminWorkflowEditor: React.FC = () => {
 
           <Divider />
           <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            当前页面用于沉淀新版流程引擎配置：节点、子工单生成条件、办理字段、SLA、通知和退回规则都会写入 definition_json；但当前正式新建/导入工单仍按“派发配置”执行。
+            {workflow.flow_key
+              ? '状态流转规则由已发布快照正式执行；节点负责人仍按“派发配置”执行。保存编辑稿不会改变正式工单。'
+              : '当前页面用于沉淀新版流程引擎配置：节点、子工单生成条件、办理字段、SLA、通知和退回规则都会写入 definition_json；但当前正式新建/导入工单仍按“派发配置”执行。'}
           </Typography.Paragraph>
         </Card>
       </div>
@@ -826,7 +902,7 @@ const AdminWorkflowEditor: React.FC = () => {
             description="正式生成子工单和分配处理人暂时仍由“派发配置”控制。这里先把条件沉淀下来，后续成熟后再接入运行时。"
           />
           <Form.Item name="module_code" label="关联子工单">
-            <Select allowClear options={MODULE_OPTIONS} placeholder="选择这个节点代表哪个子工单" />
+            <Select allowClear options={moduleOptions} placeholder="选择这个节点代表哪个子工单" />
           </Form.Item>
           <Form.Item name="generation_rule_mode" label="生成方式" rules={[{ required: true, message: '请选择生成方式' }]}>
             <Select options={GENERATION_RULE_OPTIONS} placeholder="选择该子工单什么时候生成" />

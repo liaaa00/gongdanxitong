@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { InServiceOrder, WorkOrder } from 'src/entities';
+import { InServiceOrder, WorkOrder, WorkflowDefinition } from 'src/entities';
 import { ExportTemplatesModule } from 'src/modules/admin/export-templates/export-templates.module';
 import { DispatchEngineModule } from 'src/modules/dispatch-engine/dispatch-engine.module';
 import { InServiceOrdersController } from './in-service-orders.controller';
@@ -8,7 +8,7 @@ import { InServiceOrdersService } from './in-service-orders.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([InServiceOrder, WorkOrder]),
+    TypeOrmModule.forFeature([InServiceOrder, WorkOrder, WorkflowDefinition]),
     DispatchEngineModule,
     ExportTemplatesModule,
   ],

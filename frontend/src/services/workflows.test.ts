@@ -10,6 +10,7 @@ describe('workflow configuration service mock contract', () => {
     });
 
     const nextDefinition = {
+      status_transitions: { dispatched: ['accepted'], processing: ['completed'] },
       nodes: [
         {
           id: 'start',
@@ -45,9 +46,12 @@ describe('workflow configuration service mock contract', () => {
     const saved = await getWorkflow(created.id);
     expect(saved.definition_json.nodes[1].form_schema?.visible_fields).toContain('id_card_no');
     expect(saved.definition_json.edges[1].condition).toBe('办理完成');
+    expect(saved.definition_json.status_transitions).toEqual({ dispatched: ['accepted'], processing: ['completed'] });
 
     const published = await publishWorkflow(created.id, saved.definition_json);
     expect(published.status).toBe('published');
     expect(published.definition_json.nodes).toHaveLength(3);
+    expect(published.version).toBe(1);
+    expect(published.published_definition_json?.status_transitions).toEqual({ dispatched: ['accepted'], processing: ['completed'] });
   });
 });

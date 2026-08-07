@@ -44,6 +44,8 @@ import type { UserItem } from '@/services/users';
 import { getCustomers } from '@/services/customers';
 import type { CustomerItem } from '@/services/customers';
 import { useAuth } from '@/hooks/useAuth';
+import { buildModuleLabelMap, getModuleConfigs } from '@/services/moduleConfigs';
+import { readBusinessScope } from '@/utils/businessScope';
 
 const { Text, Paragraph } = Typography;
 
@@ -130,10 +132,16 @@ const rowOrderType = (row: DispatchConfigItem): string | undefined =>
 const rowModuleCode = (row: DispatchConfigItem): string | undefined =>
   firstValidText(row.module_code, row.moduleCode, row.target_module, row.targetModule, row.sub_module, row.subModule);
 
-const rowModuleLabel = (row: DispatchConfigItem): string => {
-  const orderLabel = labelOf(ORDER_TYPES, rowOrderType(row) || row.module);
-  const subLabel = labelOf(SUB_MODULES, rowSubModule(row));
-  if (!subLabel || subLabel === '—' || subLabel === orderLabel) return orderLabel;
+export const rowModuleLabel = (row: DispatchConfigItem, moduleLabels: Record<string, string> = {}): string => {
+  const orderType = rowOrderType(row);
+  const fallbackOrderType = ORDER_TYPES.some((item) => item.value === row.module) ? row.module : undefined;
+  const orderLabel = labelOf(ORDER_TYPES, orderType || fallbackOrderType);
+  const moduleCode = rowSubModule(row);
+  const subLabel = moduleCode
+    ? (row.moduleName || row.module_name || moduleLabels[moduleCode] || SUB_MODULES.find((item) => item.value === moduleCode)?.label || '模块名称待配置')
+    : '—';
+  if (!subLabel || subLabel === '—') return orderLabel;
+  if (orderLabel === '—' || subLabel === orderLabel) return subLabel;
   return `${orderLabel} / ${subLabel}`;
 };
 
@@ -237,6 +245,7 @@ const AdminDispatchConfig: React.FC = () => {
   const [editingCustomerException, setEditingCustomerException] = useState<ExceptionModuleHandlerItem | null>(null);
   const [delegationOpen, setDelegationOpen] = useState(false);
   const [sourceHandlerOptions, setSourceHandlerOptions] = useState<Option[]>([]);
+  const [moduleLabels, setModuleLabels] = useState<Record<string, string>>({});
   const [form] = Form.useForm();
   const [customerExceptionForm] = Form.useForm();
   const [delegationForm] = Form.useForm();
@@ -246,11 +255,16 @@ const AdminDispatchConfig: React.FC = () => {
   const watchedStrategy = Form.useWatch('dispatch_strategy', form) as string | undefined;
   const watchedSla = Form.useWatch('sla_hours', form) as number | undefined;
   const watchedReminder = Form.useWatch('sla_reminder_before_hours', form) as number | undefined;
+  const businessScope = readBusinessScope();
 
-  const subModuleOptions = useMemo(
-    () => orderType ? SUB_MODULES.filter((item) => item.orderType === orderType) : SUB_MODULES,
-    [orderType],
-  );
+  const subModuleOptions = useMemo(() => {
+    const staticOptions = orderType ? SUB_MODULES.filter((item) => item.orderType === orderType) : SUB_MODULES;
+    const staticCodes = new Set(staticOptions.map((item) => item.value));
+    const dynamicOptions = Object.entries(moduleLabels)
+      .filter(([value]) => !staticCodes.has(value))
+      .map(([value, label]) => ({ value, label }));
+    return [...staticOptions, ...dynamicOptions];
+  }, [orderType, moduleLabels]);
 
   useEffect(() => {
     if (!open || !defaultFormDirty) return undefined;
@@ -265,12 +279,14 @@ const AdminDispatchConfig: React.FC = () => {
   useEffect(() => {
     (async () => {
       try {
-        const [u, c] = await Promise.all([
-          getUsers({ page: 1, pageSize: 50, isActive: true }),
+        const [u, c, modules] = await Promise.all([
+          getUsers({ page: 1, pageSize: 50, isActive: true, businessScope }),
           getCustomers({ page: 1, pageSize: 100 }),
+          getModuleConfigs({ businessScope, isActive: true }).catch(() => []),
         ]);
         const userList = Array.isArray(u) ? u : u?.list || [];
         const customerList = Array.isArray(c) ? c : c?.list || [];
+        setModuleLabels(buildModuleLabelMap(modules));
         setUsers(userList
           .filter((x: UserItem) => x.is_active ?? x.isActive ?? true)
           .map((x: UserItem) => ({
@@ -286,11 +302,11 @@ const AdminDispatchConfig: React.FC = () => {
           .filter((item): item is Option => !!item));
       } catch { /* 静默失败，不阻断配置列表 */ }
     })();
-  }, []);
+  }, [businessScope]);
 
   const searchUserOptions = async (keyword: string) => {
     try {
-      const result = await getUsers({ page: 1, pageSize: 50, keyword, isActive: true });
+      const result = await getUsers({ page: 1, pageSize: 50, keyword, isActive: true, businessScope });
       const list = Array.isArray(result) ? result : result?.list || [];
       setUsers(list.map((user: UserItem) => ({
         value: user.id,
@@ -308,6 +324,9 @@ const AdminDispatchConfig: React.FC = () => {
   };
 
   const userLabel = (userId?: string) => userId ? users.find((item) => item.value === userId)?.label : undefined;
+  const moduleLabel = (moduleCode?: string) => moduleCode
+    ? (moduleLabels[moduleCode] || SUB_MODULES.find((item) => item.value === moduleCode)?.label || '模块名称待配置')
+    : '—';
   const remoteUserSelectProps = {
     showSearch: true,
     filterOption: false as const,
@@ -372,7 +391,7 @@ const AdminDispatchConfig: React.FC = () => {
   };
 
   const delegationColumns: ProColumns<ModuleDelegationItem>[] = [
-    { title: '模块', dataIndex: 'moduleCode', width: 180, renderText: (value) => labelOf(SUB_MODULES, String(value)) },
+    { title: '模块', dataIndex: 'moduleCode', width: 180, renderText: (value) => moduleLabel(String(value)) },
     { title: '原负责人', dataIndex: 'sourceHandlerName', width: 180, renderText: (value, row) => value || userLabel(row.sourceHandlerId) || row.sourceHandlerId },
     { title: '代理人', dataIndex: 'delegateHandlerName', width: 180, render: (_, row) => row.delegateHandlerId ? <Tag color="blue">{row.delegateHandlerName || userLabel(row.delegateHandlerId) || row.delegateHandlerId}</Tag> : <Tag color="warning">仅暂停派单</Tag> },
     { title: '开始时间', dataIndex: 'startsAt', width: 170, valueType: 'dateTime' },
@@ -712,7 +731,7 @@ const AdminDispatchConfig: React.FC = () => {
   };
 
   const defaultColumns: ProColumns<DispatchConfigItem>[] = [
-    { title: '模块', width: 220, render: (_, row) => <Text strong>{rowModuleLabel(row)}</Text> },
+    { title: '模块', width: 220, render: (_, row) => <Text strong>{rowModuleLabel(row, moduleLabels)}</Text> },
     { title: '共同负责人', width: 360, render: (_, row) => renderHandlers(row) },
     {
       title: '派发策略',
@@ -748,7 +767,7 @@ const AdminDispatchConfig: React.FC = () => {
       width: 240,
       render: (_, row) => {
         const moduleCode = getCustomerExceptionModuleCode(row);
-        return moduleCode ? <Text strong>{labelOf(SUB_MODULES, moduleCode)}</Text> : <Tag color="warning">未配置模块</Tag>;
+        return moduleCode ? <Text strong>{moduleLabel(moduleCode)}</Text> : <Tag color="warning">未配置模块</Tag>;
       },
     },
     {
@@ -918,7 +937,7 @@ const AdminDispatchConfig: React.FC = () => {
         <Form form={delegationForm} layout="vertical">
           <Form.Item name="moduleCode" label="办理模块" rules={[{ required: true, message: '请选择模块' }]}>
             <Select
-              options={SUB_MODULES}
+              options={subModuleOptions}
               showSearch
               optionFilterProp="label"
               onChange={(moduleCode) => {
@@ -970,7 +989,7 @@ const AdminDispatchConfig: React.FC = () => {
               style={{ marginBottom: 16 }}
               message="保存前变更摘要"
               description={[
-                `模块：${labelOf(SUB_MODULES, watchedModule)}`,
+                `模块：${moduleLabel(watchedModule)}`,
                 `负责人：${(watchedHandlers || []).map((id) => userLabel(id) || id).join('、') || '未选择'}`,
                 `策略：${watchedStrategy || '未选择'}`,
                 `SLA：${watchedSla ?? '-'} 小时，提前 ${watchedReminder ?? 0} 小时提醒`,

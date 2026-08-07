@@ -3,6 +3,7 @@ import {
   HttpStatus,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
@@ -42,6 +43,7 @@ import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { HandlerPickerService } from 'src/modules/dispatch-engine/handler-picker.service';
 import { assertInServiceOrderTransition } from 'src/modules/dispatched-orders/dispatched-order.service';
 import { buildContractTermText } from 'src/modules/dispatched-orders/resignation-certificate';
+import { WorkflowDefinition, WorkflowDefinitionStatus } from 'src/modules/workflows/workflow.entity';
 import {
   ApproveInServiceOrderDto,
   CloseInServiceOrderDto,
@@ -61,6 +63,10 @@ import {
   RequestMaterialChangeDto,
   ReviewMaterialChangeDto,
 } from './dto/material-change.dto';
+import {
+  getDefaultInServiceFlowDefinition,
+  getInServiceFlowKey,
+} from './in-service-flow';
 
 const MATERIAL_CHANGE_REQUEST_KEY = '__materialChangeRequest';
 const MATERIAL_CHANGE_HISTORY_KEY = '__materialChangeHistory';
@@ -136,6 +142,9 @@ export class InServiceOrdersService {
     private readonly workOrderRepository: Repository<WorkOrder>,
     private readonly handlerPicker: HandlerPickerService,
     private readonly exportTemplatesService: ExportTemplatesService,
+    @InjectRepository(WorkflowDefinition)
+    @Optional()
+    private readonly workflowRepository: Repository<WorkflowDefinition> | null = null,
   ) {}
 
   async create(
@@ -485,7 +494,7 @@ export class InServiceOrdersService {
   ): Promise<InServiceOrderResponseDto> {
     const order = await this.findEntity(id);
     this.assertApprover(user);
-    assertInServiceOrderTransition(order.status, InServiceOrderStatus.DISPATCHED);
+    await this.assertFlowTransition(order, InServiceOrderStatus.DISPATCHED);
     order.handlerId = await this.pickHandler(
       order.orderKind ?? InServiceOrderKind.SINGLE_BUSINESS,
       order.businessScope ?? BusinessScope.BEILUN,
@@ -511,7 +520,7 @@ export class InServiceOrdersService {
   async accept(id: string, user: JwtUserPayload): Promise<InServiceOrderResponseDto> {
     const order = await this.findEntity(id);
     this.assertHandlerOrManagement(order, user);
-    assertInServiceOrderTransition(order.status, InServiceOrderStatus.ACCEPTED);
+    await this.assertFlowTransition(order, InServiceOrderStatus.ACCEPTED);
     const acceptedAt = new Date();
     order.acceptedAt = acceptedAt;
     if (order.orderKind === InServiceOrderKind.CERTIFICATE) {
@@ -527,7 +536,7 @@ export class InServiceOrdersService {
     const order = await this.findEntity(id);
     this.assertHandlerOrManagement(order, user);
     this.assertNoPendingMaterialChange(order);
-    assertInServiceOrderTransition(order.status, InServiceOrderStatus.READY);
+    await this.assertFlowTransition(order, InServiceOrderStatus.READY);
     order.status = InServiceOrderStatus.READY;
     order.confirmedAt = new Date();
     return this.saveAndRespond(order);
@@ -569,7 +578,7 @@ export class InServiceOrdersService {
   ): Promise<InServiceOrderResponseDto> {
     const order = await this.findEntity(id);
     this.assertHandlerOrManagement(order, user);
-    assertInServiceOrderTransition(order.status, InServiceOrderStatus.PROCESSING);
+    await this.assertFlowTransition(order, InServiceOrderStatus.PROCESSING);
     order.status = InServiceOrderStatus.PROCESSING;
     order.handleChannel = dto.handleChannel;
     order.processingAt = new Date();
@@ -588,7 +597,7 @@ export class InServiceOrdersService {
       throw businessException(4809, HttpStatus.BAD_REQUEST, '当前节点不可发起补充材料');
     }
     const returnStatus = order.status;
-    assertInServiceOrderTransition(order.status, InServiceOrderStatus.PENDING_INFO);
+    await this.assertFlowTransition(order, InServiceOrderStatus.PENDING_INFO);
     order.status = InServiceOrderStatus.PENDING_INFO;
     order.pendingReturnStatus = returnStatus;
     order.pendingInfoReason = dto.reason;
@@ -623,7 +632,7 @@ export class InServiceOrdersService {
     }
 
     const target = order.pendingReturnStatus ?? InServiceOrderStatus.DISPATCHED;
-    assertInServiceOrderTransition(order.status, target);
+    await this.assertFlowTransition(order, target);
     order.status = target;
     order.pendingReturnStatus = null;
     order.pendingInfoReason = null;
@@ -709,7 +718,7 @@ export class InServiceOrdersService {
     const order = await this.findEntity(id);
     this.assertHandlerOrManagement(order, user);
     this.assertNoPendingMaterialChange(order);
-    assertInServiceOrderTransition(order.status, InServiceOrderStatus.COMPLETED);
+    await this.assertFlowTransition(order, InServiceOrderStatus.COMPLETED);
     order.status = InServiceOrderStatus.COMPLETED;
     order.completionRemark = dto.remark?.trim() || null;
     order.attachments = this.mergeAttachments(order.attachments, dto.attachments);
@@ -747,7 +756,7 @@ export class InServiceOrdersService {
     const order = await this.findEntity(id);
     this.assertHandlerOrManagement(order, user);
     this.assertNoPendingMaterialChange(order);
-    assertInServiceOrderTransition(order.status, InServiceOrderStatus.FAILED);
+    await this.assertFlowTransition(order, InServiceOrderStatus.FAILED);
     order.status = InServiceOrderStatus.FAILED;
     order.completionRemark = dto.remark?.trim() || null;
     order.attachments = this.mergeAttachments(order.attachments, dto.attachments);
@@ -930,7 +939,7 @@ export class InServiceOrdersService {
   ): Promise<InServiceOrderResponseDto> {
     const order = await this.findEntity(id);
     this.assertOwnerOrManagement(order, user);
-    assertInServiceOrderTransition(order.status, InServiceOrderStatus.ARCHIVED);
+    await this.assertFlowTransition(order, InServiceOrderStatus.ARCHIVED);
     order.status = InServiceOrderStatus.ARCHIVED;
     order.closedBy = user.sub;
     order.closedAt = new Date();
@@ -943,7 +952,7 @@ export class InServiceOrdersService {
     reason: string,
     user: JwtUserPayload,
   ): Promise<InServiceOrderResponseDto> {
-    assertInServiceOrderTransition(order.status, InServiceOrderStatus.CANCELLED);
+    await this.assertFlowTransition(order, InServiceOrderStatus.CANCELLED);
     order.status = InServiceOrderStatus.CANCELLED;
     order.closedBy = user.sub;
     order.closedAt = new Date();
@@ -1233,6 +1242,39 @@ export class InServiceOrdersService {
       || order.handlerId === user.sub
     ) return;
     throw new ForbiddenException('无权访问该单项业务工单');
+  }
+
+  private async assertFlowTransition(order: InServiceOrder, next: InServiceOrderStatus): Promise<void> {
+    const flowKey = getInServiceFlowKey(order.orderKind ?? InServiceOrderKind.SINGLE_BUSINESS);
+    if (!flowKey) {
+      assertInServiceOrderTransition(order.status, next);
+      return;
+    }
+
+    let transitions = getDefaultInServiceFlowDefinition(flowKey).status_transitions;
+    if (this.workflowRepository) {
+      const workflow = await this.workflowRepository.findOne({
+        where: {
+          flowKey,
+          businessScope: order.businessScope ?? BusinessScope.BEILUN,
+          status: WorkflowDefinitionStatus.PUBLISHED,
+        },
+        order: { updatedAt: 'DESC' },
+      });
+      const published = workflow?.publishedDefinitionJson?.status_transitions;
+      if (published && typeof published === 'object' && !Array.isArray(published)) {
+        transitions = published as typeof transitions;
+      }
+    }
+
+    const allowed = transitions[order.status];
+    if (!allowed?.includes(next)) {
+      throw businessException(
+        4801,
+        HttpStatus.BAD_REQUEST,
+        `在职流程 ${flowKey} 不允许状态 ${order.status} -> ${next}`,
+      );
+    }
   }
 
   private assertOwnerOrManagement(order: InServiceOrder, user: JwtUserPayload): void {

@@ -27,6 +27,18 @@ export interface ModuleConfigItem {
   isActive?: boolean;
   createdAt?: string;
   updatedAt?: string;
+  business_scope?: 'beilun' | 'out_of_province';
+  businessScope?: 'beilun' | 'out_of_province';
+}
+
+/** Build business-facing labels while retaining module codes for API payloads. */
+export function buildModuleLabelMap(items: ModuleConfigItem[]): Record<string, string> {
+  return items.reduce<Record<string, string>>((result, item) => {
+    const code = item.module_code || item.moduleCode;
+    const name = item.module_name || item.moduleName;
+    if (code && name) result[code] = name;
+    return result;
+  }, {});
 }
 
 export interface ModuleFieldItem {
@@ -82,6 +94,8 @@ function normalizeModuleConfig(raw: any): ModuleConfigItem {
     is_active: raw.is_active ?? raw.isActive ?? true,
     created_at: raw.created_at ?? raw.createdAt,
     updated_at: raw.updated_at ?? raw.updatedAt,
+    business_scope: raw.business_scope ?? raw.businessScope,
+    businessScope: raw.businessScope ?? raw.business_scope,
   };
 }
 
@@ -100,11 +114,12 @@ function packModuleConfig(data: Partial<ModuleConfigItem>): Record<string, unkno
   return body;
 }
 
-export async function getModuleConfigs(params?: { parentModuleCode?: string; isActive?: boolean }): Promise<ModuleConfigItem[]> {
+export async function getModuleConfigs(params?: { parentModuleCode?: string; isActive?: boolean; businessScope?: 'beilun' | 'out_of_province' }): Promise<ModuleConfigItem[]> {
   if (isMockMode) {
     let list = store();
     if (params?.parentModuleCode !== undefined) list = list.filter((item) => item.parent_module_code === params.parentModuleCode);
     if (params?.isActive !== undefined) list = list.filter((item) => item.is_active === params.isActive);
+    if (params?.businessScope !== undefined) list = list.filter((item) => (item.business_scope ?? item.businessScope ?? 'beilun') === params.businessScope);
     return mockDelay(list);
   }
   try {

@@ -24,6 +24,7 @@ import {
   assertInServiceOrderTransition,
 } from 'src/modules/dispatched-orders/dispatched-order.service';
 import { InServiceOrdersService } from 'src/modules/in-service-orders/in-service-orders.service';
+import { WorkflowDefinition, WorkflowDefinitionStatus } from 'src/modules/workflows/workflow.entity';
 
 const creator = { sub: 'creator-1', username: 'creator', roles: ['biz_member'] } as JwtUserPayload;
 const handler = { sub: 'handler-1', username: 'handler', roles: [] } as JwtUserPayload;
@@ -81,7 +82,11 @@ function makeOrder(status = InServiceOrderStatus.DISPATCHED): InServiceOrder {
   });
 }
 
-function makeService(initial = makeOrder(), mappedHandler: string | null = 'handler-1') {
+function makeService(
+  initial = makeOrder(),
+  mappedHandler: string | null = 'handler-1',
+  workflow?: Partial<WorkflowDefinition>,
+) {
   let current = initial;
   const repository = {
     create: jest.fn((input: Partial<InServiceOrder>) => Object.assign(makeOrder(), input)),
@@ -111,8 +116,11 @@ function makeService(initial = makeOrder(), mappedHandler: string | null = 'hand
       rowCount: 1,
     })),
   } as unknown as ExportTemplatesService;
+  const workflowRepository = {
+    findOne: jest.fn(async () => workflow ?? null),
+  } as unknown as Repository<WorkflowDefinition>;
   return {
-    service: new InServiceOrdersService(repository, workOrderRepository, picker, exporter),
+    service: new InServiceOrdersService(repository, workOrderRepository, picker, exporter, workflowRepository),
     picker: picker as unknown as { pick: jest.Mock },
     exporter: exporter as unknown as { exportContractRenewal: jest.Mock },
     repository: repository as unknown as {
@@ -122,6 +130,7 @@ function makeService(initial = makeOrder(), mappedHandler: string | null = 'hand
       find: jest.Mock;
     },
     workOrderRepository: workOrderRepository as unknown as { find: jest.Mock },
+    workflowRepository: workflowRepository as unknown as { findOne: jest.Mock },
     current: () => current,
   };
 }
@@ -140,6 +149,30 @@ const createDto = {
   businessDescription: '补缴 2026 年 6 月社保',
   serviceFee: 100,
 };
+
+describe('published in-service flow runtime contract', () => {
+  it('rejects an action allowed only by the unpublished editing draft', async () => {
+    const workflow = {
+      flowKey: 'single_business',
+      businessScope: BusinessScope.BEILUN,
+      status: WorkflowDefinitionStatus.PUBLISHED,
+      definitionJson: {
+        status_transitions: {
+          [InServiceOrderStatus.DISPATCHED]: [InServiceOrderStatus.ACCEPTED],
+        },
+      },
+      publishedDefinitionJson: {
+        status_transitions: {
+          [InServiceOrderStatus.DISPATCHED]: [],
+        },
+      },
+    } as Partial<WorkflowDefinition>;
+    const { service, repository } = makeService(makeOrder(), 'handler-1', workflow);
+
+    await expect(service.accept(makeOrder().id, handler)).rejects.toThrow('不允许状态');
+    expect(repository.save).not.toHaveBeenCalled();
+  });
+});
 
 describe('single-business category contract', () => {
   it('matches the Excel 4/19/6 category tree and allows empty level 3', () => {

@@ -77,15 +77,19 @@ export interface WorkflowEdgeConfig {
 export interface WorkflowDefinitionJson {
   nodes: WorkflowNodeConfig[];
   edges: WorkflowEdgeConfig[];
+  status_transitions?: Record<string, string[]>;
+  [key: string]: unknown;
 }
 
 export interface WorkflowItem {
   id: string;
   name: string;
   order_type: string;
+  flow_key?: string | null;
   version?: number;
   status: 'draft' | 'published' | 'active' | 'archived' | string;
   definition_json: WorkflowDefinitionJson;
+  published_definition_json?: WorkflowDefinitionJson | null;
   description?: string | null;
   created_at?: string;
   updated_at?: string;
@@ -146,9 +150,10 @@ let mockWorkflows: WorkflowItem[] = [
     id: 'workflow-onboarding-default',
     name: '入职工单默认流程',
     order_type: 'onboarding',
-    version: 1,
+    version: 0,
     status: 'draft',
     definition_json: DEFAULT_DEFINITION,
+    published_definition_json: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     published_at: null,
@@ -180,8 +185,16 @@ function normalizeDefinition(raw: unknown): WorkflowDefinitionJson {
   if (typeof raw === 'string') {
     try { return normalizeDefinition(JSON.parse(raw)); } catch { return { nodes: [], edges: [] }; }
   }
-  const value = (raw || {}) as Partial<WorkflowDefinitionJson>;
+  const value = (raw || {}) as Record<string, unknown>;
+  const rawTransitions = value.status_transitions ?? value.statusTransitions;
+  const statusTransitions = rawTransitions && typeof rawTransitions === 'object' && !Array.isArray(rawTransitions)
+    ? Object.fromEntries(Object.entries(rawTransitions).map(([status, targets]) => [
+      status,
+      normalizeStringArray(targets),
+    ]))
+    : undefined;
   return {
+    ...value,
     nodes: Array.isArray(value.nodes) ? value.nodes.map((node) => {
       const row = (node || {}) as WorkflowNodeConfig;
       return { ...row, id: String(row.id), type: row.type || 'process', label: String(row.label || row.id || '未命名节点'), form_schema: normalizeFieldBinding(row.form_schema) };
@@ -199,7 +212,8 @@ function normalizeDefinition(raw: unknown): WorkflowDefinitionJson {
         priority: row.priority === undefined ? undefined : Number(row.priority),
       };
     }) : [],
-  };
+    ...(statusTransitions ? { status_transitions: statusTransitions } : {}),
+  } as WorkflowDefinitionJson;
 }
 
 function normalizeWorkflow(raw: unknown): WorkflowItem {
@@ -208,11 +222,15 @@ function normalizeWorkflow(raw: unknown): WorkflowItem {
     ...(row as WorkflowItem),
     id: String(row.id ?? ''),
     name: String(row.name ?? row.workflow_name ?? row.workflowName ?? '未命名流程'),
-    order_type: String(row.order_type ?? row.orderType ?? 'onboarding'),
+    order_type: String(row.order_type ?? row.orderType ?? ''),
+    flow_key: (row.flow_key ?? row.flowKey ?? null) as string | null,
     version: row.version === undefined ? undefined : Number(row.version),
     status: String(row.status ?? 'draft'),
     description: (row.description ?? null) as string | null,
     definition_json: normalizeDefinition(row.definition_json ?? row.definitionJson ?? row.definition ?? DEFAULT_DEFINITION),
+    published_definition_json: row.published_definition_json || row.publishedDefinitionJson
+      ? normalizeDefinition(row.published_definition_json ?? row.publishedDefinitionJson)
+      : null,
     created_at: (row.created_at ?? row.createdAt) as string | undefined,
     updated_at: (row.updated_at ?? row.updatedAt) as string | undefined,
     published_at: (row.published_at ?? row.publishedAt ?? null) as string | null,
@@ -255,9 +273,10 @@ export async function createWorkflow(data: Partial<WorkflowItem>): Promise<Workf
       id: `workflow-${Date.now()}`,
       name: data.name || '新建工单流程',
       order_type: data.order_type || 'onboarding',
-      version: 1,
+      version: 0,
       status: 'draft',
       definition_json: data.definition_json || createDefaultWorkflowDefinition(),
+      published_definition_json: null,
       description: data.description ?? null,
       created_at: now,
       updated_at: now,
@@ -293,7 +312,17 @@ export async function publishWorkflow(id: string, definitionJson?: WorkflowDefin
   if (isMockMode) {
     const idx = mockWorkflows.findIndex((item) => item.id === id);
     const now = new Date().toISOString();
-    const next = normalizeWorkflow({ ...(mockWorkflows[idx] || {}), id, definition_json: definitionJson || mockWorkflows[idx]?.definition_json, status: 'published', published_at: now, updated_at: now });
+    const definition = definitionJson || mockWorkflows[idx]?.definition_json || createDefaultWorkflowDefinition();
+    const next = normalizeWorkflow({
+      ...(mockWorkflows[idx] || {}),
+      id,
+      definition_json: definition,
+      published_definition_json: JSON.parse(JSON.stringify(definition)),
+      version: (mockWorkflows[idx]?.version || 0) + 1,
+      status: 'published',
+      published_at: now,
+      updated_at: now,
+    });
     if (idx >= 0) mockWorkflows[idx] = next;
     return mockDelay(next);
   }
