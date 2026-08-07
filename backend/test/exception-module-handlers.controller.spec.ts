@@ -79,7 +79,7 @@ describe('ExceptionModuleHandlersController DTO', () => {
     await request(app.getHttpServer())
       .delete('/admin/exception-module-handlers/rule-1')
       .expect(200);
-    expect(remove).toHaveBeenCalledWith('rule-1');
+    expect(remove).toHaveBeenCalledWith('rule-1', undefined);
   });
 
   it('rejects unsupported moduleCode values', async () => {

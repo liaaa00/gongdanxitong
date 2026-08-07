@@ -1,4 +1,4 @@
-import { OrderType } from 'src/entities';
+import { BusinessScope, OrderType } from 'src/entities';
 import { AiController } from 'src/modules/ai/ai.controller';
 import { AiMappingService } from 'src/modules/ai/ai-mapping.service';
 import { ImportFieldValidationService } from 'src/modules/imports/field-validation.service';
@@ -26,7 +26,7 @@ describe('AiController', () => {
     const result = await controller.fieldMapping({ orderType: OrderType.ONBOARDING, headers: ['姓名', '备注'] } as never);
 
     expect(fieldValidationService.buildCandidateFields).toHaveBeenCalledWith(OrderType.ONBOARDING);
-    expect(aiMappingService.suggest).toHaveBeenCalledWith(OrderType.ONBOARDING, ['姓名', '备注'], [{ fieldCode: 'employee_name', fieldName: '姓名', fieldType: 'text', required: true }]);
+    expect(aiMappingService.suggest).toHaveBeenCalledWith(OrderType.ONBOARDING, ['姓名', '备注'], [{ fieldCode: 'employee_name', fieldName: '姓名', fieldType: 'text', required: true }], BusinessScope.BEILUN);
     expect(result).toMatchObject({
       suggestion: { 姓名: 'employee_name' },
       confidence: { 姓名: 0.98 },

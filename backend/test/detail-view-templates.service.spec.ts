@@ -1,4 +1,4 @@
-import { FieldPermissionMode } from 'src/entities';
+import { BusinessScope, FieldPermissionMode } from 'src/entities';
 import { getDetailViewFieldCodes } from 'src/modules/admin/detail-view-templates/detail-view-template-fields';
 import { DetailViewTemplatesService } from 'src/modules/admin/detail-view-templates/detail-view-templates.service';
 
@@ -58,20 +58,23 @@ describe('DetailViewTemplatesService contract permissions', () => {
         roleId: 'role-biz',
         fieldCode: 'employee_name',
         scenario: 'dispatched:contract',
+        businessScope: BusinessScope.BEILUN,
         permission: FieldPermissionMode.VISIBLE,
       },
       {
         roleId: 'role-biz',
         fieldCode: 'special_remark',
         scenario: 'dispatched:contract',
+        businessScope: BusinessScope.BEILUN,
         permission: FieldPermissionMode.VISIBLE,
       },
       {
         roleId: 'role-biz',
         fieldCode: 'bank_name',
         scenario: 'dispatched:contract',
+        businessScope: BusinessScope.BEILUN,
         permission: FieldPermissionMode.HIDDEN,
       },
-    ], ['roleId', 'fieldCode', 'scenario']);
+    ], ['roleId', 'fieldCode', 'scenario', 'businessScope']);
   });
 });

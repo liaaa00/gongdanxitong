@@ -1,4 +1,5 @@
 import {
+  BusinessScope,
   DispatchModuleCode,
   DispatchStrategy,
   ExceptionModuleHandler,
@@ -105,7 +106,7 @@ describe('onboarding-dispatch helper', () => {
 
     expect(result).toBe('handler-vip');
     expect(exceptionRepo.findOne).toHaveBeenCalledWith({
-      where: { moduleCode: DispatchModuleCode.CONTRACT, customerCode: 'C001' },
+      where: { moduleCode: DispatchModuleCode.CONTRACT, customerCode: 'C001', businessScope: BusinessScope.BEILUN },
     });
     expect(moduleHandlerRepo.find).not.toHaveBeenCalled();
   });
@@ -119,7 +120,7 @@ describe('onboarding-dispatch helper', () => {
 
     expect(result).toBe('handler-primary');
     expect(moduleHandlerRepo.findOne).toHaveBeenCalledWith({
-      where: { moduleCode: DispatchModuleCode.DATA_ENTRY, isActive: true, isBackup: false },
+      where: { moduleCode: DispatchModuleCode.DATA_ENTRY, isActive: true, isBackup: false, businessScope: BusinessScope.BEILUN },
       order: { weight: 'DESC' },
     });
   });
@@ -181,7 +182,7 @@ describe('onboarding-dispatch helper', () => {
     expect(children).toHaveLength(3);
     expect(children.every((child) => child.handlerId !== null)).toBe(true);
     expect(exceptionRepo.findOne).toHaveBeenCalledWith({
-      where: { moduleCode: DispatchModuleCode.DATA_ENTRY, customerCode: 'C001' },
+      where: { moduleCode: DispatchModuleCode.DATA_ENTRY, customerCode: 'C001', businessScope: BusinessScope.BEILUN },
     });
   });
 
