@@ -192,6 +192,40 @@ describe('published in-service flow runtime contract', () => {
     await expect(service.accept(makeOrder().id, handler)).rejects.toThrow('不允许状态');
     expect(repository.save).not.toHaveBeenCalled();
   });
+
+  it('uses the Beilun single-business workflow for out-of-province single business', async () => {
+    const order = Object.assign(makeOrder(), { businessScope: BusinessScope.OUT_OF_PROVINCE });
+    const { service, workflowRepository } = makeService(order);
+
+    await service.accept(order.id, handler);
+
+    expect(workflowRepository.findOne).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        flowKey: 'single_business',
+        businessScope: BusinessScope.BEILUN,
+        status: WorkflowDefinitionStatus.PUBLISHED,
+      }),
+    }));
+  });
+
+  it('does not let a legacy renewal workflow snapshot override the Beilun contract-child flow', async () => {
+    const order = Object.assign(makeOrder(), { orderKind: InServiceOrderKind.CONTRACT_RENEWAL });
+    const { service, current, workflowRepository } = makeService(order, 'handler-1', {
+      flowKey: 'contract_renewal',
+      businessScope: BusinessScope.BEILUN,
+      status: WorkflowDefinitionStatus.PUBLISHED,
+      publishedDefinitionJson: {
+        status_transitions: {
+          [InServiceOrderStatus.DISPATCHED]: [],
+        },
+      },
+    });
+
+    await service.accept(order.id, handler);
+
+    expect(current().status).toBe(InServiceOrderStatus.ACCEPTED);
+    expect(workflowRepository.findOne).not.toHaveBeenCalled();
+  });
 });
 
 describe('single-business category contract', () => {
@@ -599,9 +633,12 @@ describe('InServiceOrdersService', () => {
       province: '江苏',
       city: '南京市',
       extraData: {
-        paymentInstitution: '南京一盘',
-        contractStartDate: '2026-08-01',
-        contractEndDate: '2028-07-31',
+        insured_unit: '南京一盘',
+        social_pay_region: '江苏/南京市',
+        start_month: '2026-08',
+        social_base: 12000,
+        fund_start_month: '2026-08',
+        fund_base: 12000,
       },
     }, creator);
 
@@ -614,6 +651,49 @@ describe('InServiceOrdersService', () => {
     );
   });
 
+
+  it('rejects out-of-province increase when fund start fields are missing', async () => {
+    const { service, picker } = makeService();
+    await expect(service.create({
+      customerId: createDto.customerId,
+      departmentId: createDto.departmentId,
+      orderKind: InServiceOrderKind.OUT_OF_PROVINCE_INCREASE,
+      employeeName: '张三',
+      idCardNo: '330206199001011234',
+      province: '江苏',
+      city: '南京市',
+      extraData: {
+        insured_unit: '南京一盘',
+        social_pay_region: '江苏/南京市',
+        start_month: '2026-08',
+        social_base: 12000,
+        fund_base: 12000,
+      },
+    }, creator)).rejects.toThrow('省外增员需填写社保、公积金起缴月和缴费工资');
+
+    expect(picker.pick).not.toHaveBeenCalled();
+  });
+
+  it('rejects out-of-province decrease when fund stop month is missing', async () => {
+    const { service, picker } = makeService();
+    await expect(service.create({
+      customerId: createDto.customerId,
+      departmentId: createDto.departmentId,
+      orderKind: InServiceOrderKind.OUT_OF_PROVINCE_DECREASE,
+      employeeName: '张三',
+      idCardNo: '330206199001011234',
+      province: '江苏',
+      city: '南京市',
+      extraData: {
+        insured_unit: '南京一盘',
+        social_pay_region: '江苏/南京市',
+        social_stop_month: '2026-08',
+        last_work_date: '2026-08-08',
+      },
+    }, creator)).rejects.toThrow('省外减员需填写社保停缴月、公积金停缴月和最后工作日');
+
+    expect(picker.pick).not.toHaveBeenCalled();
+  });
 
   it('applies creator material changes only after the original handler approves', async () => {
     const order = makeOrder(InServiceOrderStatus.ACCEPTED);
@@ -669,6 +749,102 @@ describe('InServiceOrdersService', () => {
     expect(current().extraData.__materialChangeHistory).toEqual([
       expect.objectContaining({ approved: false, reviewReason: '材料内容不符合要求' }),
     ]);
+  });
+
+  it('accepts and completes contract renewal like the Beilun contract child order', async () => {
+    const order = Object.assign(makeOrder(), { orderKind: InServiceOrderKind.CONTRACT_RENEWAL });
+    const { service, current } = makeService(order);
+
+    await service.accept(order.id, handler);
+    expect(current().status).toBe(InServiceOrderStatus.ACCEPTED);
+    await expect(service.confirm(order.id, handler)).rejects.toThrow();
+    await expect(service.startProcessing(
+      order.id,
+      { handleChannel: InServiceHandleChannel.ONLINE },
+      handler,
+    )).rejects.toThrow();
+
+    await service.complete(order.id, { remark: '已完成' }, handler);
+    expect(current().status).toBe(InServiceOrderStatus.COMPLETED);
+  });
+
+  it.each([
+    InServiceOrderKind.CONTRACT_RENEWAL,
+    InServiceOrderKind.OUT_OF_PROVINCE_INCREASE,
+    InServiceOrderKind.OUT_OF_PROVINCE_DECREASE,
+  ])('allows %s to return before acceptance and forbids transfer', async (orderKind) => {
+    const pending = Object.assign(makeOrder(), { orderKind });
+    const pendingService = makeService(pending);
+
+    await pendingService.service.requestInfo(pending.id, { reason: '资料需要补充' }, handler);
+    expect(pendingService.current().status).toBe(InServiceOrderStatus.PENDING_INFO);
+    expect(pendingService.current().pendingReturnStatus).toBe(InServiceOrderStatus.DISPATCHED);
+
+    const accepted = Object.assign(makeOrder(InServiceOrderStatus.ACCEPTED), { orderKind });
+    const acceptedService = makeService(accepted);
+    await expect(acceptedService.service.transfer(
+      accepted.id,
+      { handlerId: '44444444-4444-4444-8444-444444444444', reason: '不应允许转派' },
+      handler,
+    )).rejects.toThrow('不支持转派');
+  });
+
+  it.each([
+    InServiceOrderKind.OUT_OF_PROVINCE_INCREASE,
+    InServiceOrderKind.OUT_OF_PROVINCE_DECREASE,
+  ])('completes %s only after all Beilun social-fund feedback items are finished', async (orderKind) => {
+    const incomplete = Object.assign(makeOrder(InServiceOrderStatus.ACCEPTED), { orderKind });
+    const incompleteService = makeService(incomplete);
+    await incompleteService.service.complete(
+      incomplete.id,
+      { extraData: { social_insurance_result: '是', medical_insurance_result: '否' } },
+      handler,
+    );
+    expect(incompleteService.current().status).toBe(InServiceOrderStatus.ACCEPTED);
+    expect(incompleteService.current().extraData).toMatchObject({
+      social_insurance_result: '是',
+      medical_insurance_result: '否',
+    });
+
+    const complete = Object.assign(makeOrder(InServiceOrderStatus.ACCEPTED), { orderKind });
+    const completeService = makeService(complete);
+    await completeService.service.complete(
+      complete.id,
+      {
+        remark: '已完成',
+        extraData: {
+          social_insurance_result: '是',
+          medical_insurance_result: '是',
+          housing_fund_result: '是',
+          social_insurance_remark: '均已办理',
+        },
+      },
+      handler,
+    );
+    expect(completeService.current().status).toBe(InServiceOrderStatus.COMPLETED);
+    expect(completeService.current().extraData).toMatchObject({
+      social_insurance_result: '是',
+      medical_insurance_result: '是',
+      housing_fund_result: '是',
+      social_insurance_remark: '均已办理',
+    });
+  });
+
+  it('opens and completes certificates without single-business review or failure actions', async () => {
+    const order = Object.assign(makeOrder(), {
+      orderKind: InServiceOrderKind.CERTIFICATE,
+      employeeName: '张三',
+      idCardNo: '330206199001011234',
+      extraData: { certificateType: 'employment' },
+    });
+    const { service, current } = makeService(order);
+
+    await service.accept(order.id, handler);
+    expect(current().status).toBe(InServiceOrderStatus.PROCESSING);
+    await expect(service.fail(order.id, { remark: '不应提供失败动作' }, handler)).rejects.toThrow();
+
+    await service.complete(order.id, { remark: '已开具' }, handler);
+    expect(current().status).toBe(InServiceOrderStatus.COMPLETED);
   });
 
   it('requires level 3 only when the selected level 2 has children', async () => {

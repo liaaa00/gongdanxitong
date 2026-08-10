@@ -22,6 +22,7 @@ import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { DispatchedOrderExportFile, DispatchedOrderExportResult } from 'src/modules/dispatched-orders/dispatched-order.types';
 import { fallbackBusinessLabel } from 'src/modules/notifications/notification-display.util';
 import { UploadService } from 'src/modules/upload/upload.service';
+import { getSocialFundExportFieldList, getSocialFundExportTemplateName } from './social-fund-export';
 
 interface ExportColumn {
   fieldCode: string;
@@ -479,6 +480,21 @@ export class ExportTemplatesService {
     signPlatform?: string | null,
     businessScope: BusinessScope = BusinessScope.BEILUN,
   ): Promise<ExportTemplate> {
+    const fixedFieldList = getSocialFundExportFieldList(moduleCode);
+    const fixedTemplateName = getSocialFundExportTemplateName(moduleCode);
+    if (fixedFieldList && fixedTemplateName) {
+      return this.repository.create({
+        id: '',
+        templateName: fixedTemplateName,
+        moduleCode,
+        fieldList: fixedFieldList.map((column) => ({ ...column })),
+        createdBy: '',
+        isShared: false,
+        signPlatform: null,
+        businessScope,
+      });
+    }
+
     const platform = this.normalizeSignPlatform(signPlatform);
     let shared: ExportTemplate | null = null;
     if (moduleCode === 'contract') {
@@ -1136,12 +1152,14 @@ export class ExportTemplatesService {
   }
 
   private renderExportValue(fieldCode: string, order: DispatchedOrder): unknown {
+    const extraData = order.parentOrder.extraData ?? {};
     const builtIns: Record<string, unknown> = {
       order_no: order.parentOrder.orderNo,
       handler_name: order.handler?.realName ?? '',
       handler_id: order.handlerId,
       employee_name: order.parentOrder.employeeName,
       employee_id_card: order.parentOrder.employeeIdCard,
+      id_card_no: extraData.id_card_no ?? extraData.idCardNo ?? order.parentOrder.employeeIdCard,
       module_code: order.moduleCode,
       status: order.status,
       dispatched_at: order.dispatchedAt?.toISOString() ?? '',
@@ -1150,7 +1168,36 @@ export class ExportTemplatesService {
       created_by_name: order.parentOrder.creator?.realName || order.parentOrder.creator?.username || order.parentOrder.createdBy || '',
       creator_name: order.parentOrder.creator?.realName || order.parentOrder.creator?.username || order.parentOrder.createdBy || '',
     };
-    return fieldCode in builtIns ? builtIns[fieldCode] : order.parentOrder.extraData[fieldCode] ?? '';
+    if (fieldCode in builtIns) return builtIns[fieldCode];
+
+    const aliases: Record<string, string[]> = {
+      customer_name: ['customer_name', 'customerName'],
+      insured_unit: ['insured_unit', 'insuredUnit', 'payment_institution', 'paymentInstitution', 'social_location', 'socialLocation', '参保机构名称', '参保单位'],
+      social_location: ['social_location', 'socialLocation', 'social_pay_region', 'socialPayRegion'],
+      social_pay_region: ['social_pay_region', 'socialPayRegion', 'social_location', 'socialLocation'],
+      start_month: ['start_month', 'startMonth', 'social_start_month', 'socialStartMonth'],
+      fund_start_month: ['fund_start_month', 'fundStartMonth', 'start_month', 'startMonth'],
+      social_base: ['social_base', 'socialBase', 'social_security_base', 'socialSecurityBase'],
+      fund_base: ['fund_base', 'fundBase', 'housing_fund_base', 'housingFundBase'],
+      fund_ratio: ['fund_ratio', 'fundRatio', 'housing_fund_ratio', 'housingFundRatio'],
+      social_stop_month: ['social_stop_month', 'socialStopMonth', 'stop_month', 'stopMonth'],
+      fund_stop_month: ['fund_stop_month', 'fundStopMonth', 'social_stop_month', 'socialStopMonth'],
+      contract_start_date: ['contract_start_date', 'contractStartDate'],
+      contract_end_date: ['contract_end_date', 'contractEndDate'],
+      last_work_date: ['last_work_date', 'lastWorkDate'],
+      resignation_reason: ['resignation_reason', 'resignationReason', 'resignation_type', 'resignationType'],
+      bank_name: ['bank_name', 'bankName'],
+      bank_account: ['bank_account', 'bankAccount'],
+      social_insurance_result: ['social_insurance_result', 'socialInsuranceResult', 'social_security_result'],
+      medical_insurance_result: ['medical_insurance_result', 'medicalInsuranceResult'],
+      housing_fund_result: ['housing_fund_result', 'housingFundResult'],
+      social_insurance_remark: ['social_insurance_remark', 'socialInsuranceRemark', 'social_security_remark'],
+    };
+    for (const alias of aliases[fieldCode] ?? [fieldCode]) {
+      const value = extraData[alias];
+      if (value !== undefined && value !== null) return value;
+    }
+    return '';
   }
 
   private readString(value: unknown): string | null {

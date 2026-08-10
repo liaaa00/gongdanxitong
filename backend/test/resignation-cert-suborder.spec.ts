@@ -143,6 +143,51 @@ describe('离职证明子工单', () => {
     });
   });
 
+  it('downloads a legacy free-text reason without requiring a legal article', async () => {
+    const parentOrder = Object.assign(new WorkOrder(), {
+      id: 'legacy-work-order',
+      orderNo: 'RS20260809001',
+      orderType: OrderType.RESIGNATION,
+      status: WorkOrderStatus.PROCESSING,
+      employeeName: '张三',
+      employeeIdCard: '330206199001019999',
+      extraData: {
+        resignation_reason: '公司经营调整',
+        resignation_date: '2026-08-09',
+      },
+    });
+    const order = Object.assign(new DispatchedOrder(), {
+      id: 'legacy-certificate',
+      parentOrderId: parentOrder.id,
+      parentOrder,
+      moduleCode: DispatchModuleCode.RESIGNATION_CERT,
+      status: DispatchedOrderStatus.PROCESSING,
+    });
+    const service = new (await import('src/modules/dispatched-orders/dispatched-order.service')).DispatchedOrderService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    jest.spyOn(service as never, 'loadLatestEmploymentData' as never).mockResolvedValue({} as never);
+
+    const result = await (service as any).createResignationCertificateDocument(order);
+
+    expect(result.buffer.length).toBeGreaterThan(0);
+    expect(result.replacements).toMatchObject({
+      resignationReasonCode: '4',
+      otherReason: '公司经营调整',
+      legalArticleText: '相关规定',
+    });
+  });
+
   it('rejects starting silent sign without both platform and template', async () => {
     const parentOrder = Object.assign(new WorkOrder(), {
       id: 'work-order-accept',

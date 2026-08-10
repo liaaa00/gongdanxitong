@@ -156,6 +156,7 @@ const AppRoutes: React.FC = () => (
           path="out-of-province/increase/new"
           element={<RoleRoute><RouteGuard moduleName="新建省外增员"><InServiceOrderNew orderKind="out_of_province_increase" listPath="/out-of-province/increase" businessScope="out_of_province" /></RouteGuard></RoleRoute>}
         />
+        <Route path="out-of-province/increase/:id" element={<RoleRoute><RouteGuard moduleName="省外增员详情"><InServiceOrderDetail /></RouteGuard></RoleRoute>} />
         <Route
           path="out-of-province/decrease"
           element={<RoleRoute><RouteGuard moduleName="省外减员"><InServiceOrderList orderKind="out_of_province_decrease" businessScope="out_of_province" createPath="/out-of-province/decrease/new" /></RouteGuard></RoleRoute>}
@@ -164,6 +165,7 @@ const AppRoutes: React.FC = () => (
           path="out-of-province/decrease/new"
           element={<RoleRoute><RouteGuard moduleName="新建省外减员"><InServiceOrderNew orderKind="out_of_province_decrease" listPath="/out-of-province/decrease" businessScope="out_of_province" /></RouteGuard></RoleRoute>}
         />
+        <Route path="out-of-province/decrease/:id" element={<RoleRoute><RouteGuard moduleName="省外减员详情"><InServiceOrderDetail /></RouteGuard></RoleRoute>} />
         <Route
           path="out-of-province/single-business"
           element={<RoleRoute><RouteGuard moduleName="省外单项业务"><InServiceOrderList orderKind="single_business" businessScope="out_of_province" createPath="/out-of-province/single-business/new" /></RouteGuard></RoleRoute>}
@@ -172,6 +174,7 @@ const AppRoutes: React.FC = () => (
           path="out-of-province/single-business/new"
           element={<RoleRoute><RouteGuard moduleName="新建省外单项业务"><InServiceOrderNew orderKind="single_business" listPath="/out-of-province/single-business" businessScope="out_of_province" /></RouteGuard></RoleRoute>}
         />
+        <Route path="out-of-province/single-business/:id" element={<RoleRoute><RouteGuard moduleName="省外单项业务详情"><InServiceOrderDetail /></RouteGuard></RoleRoute>} />
 
         {/* 兼容旧书签；省外增减员已改为独立直单，不再进入历史专用派单链路。 */}
         <Route path="out-of-province/orders" element={<Navigate to="/out-of-province/increase" replace />} />
@@ -205,6 +208,7 @@ const AppRoutes: React.FC = () => (
           path="in-service/certificates/new"
           element={<RoleRoute><RouteGuard moduleName="发起证明开具"><InServiceOrderNew orderKind="certificate" listPath="/in-service/certificates" /></RouteGuard></RoleRoute>}
         />
+        <Route path="in-service/certificates/:id" element={<RoleRoute><RouteGuard moduleName="证明开具详情"><InServiceOrderDetail /></RouteGuard></RoleRoute>} />
         <Route path="in-service/:id" element={<RoleRoute><RouteGuard moduleName="独立工单详情"><InServiceOrderDetail /></RouteGuard></RoleRoute>} />
 
         {/* 字段权限入口仅管理员可访问；保留旧路径并由 RoleRoute 按 ADMIN 权限拦截。*/}

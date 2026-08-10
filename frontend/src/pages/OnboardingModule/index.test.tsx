@@ -110,32 +110,39 @@ describe('OnboardingModule header table filters', () => {
     })));
   });
 
-  it('shows social increase location and start month on the module list', () => {
+  it('shows the workbook 14-column social increase list', () => {
     mocks.moduleCode = 'social_insurance';
 
     render(<OnboardingModule />);
 
     const columns = mocks.latestProTableProps.columns as Array<Record<string, any>>;
-    const location = columns.find((column) => column.key === 'social_location');
-    const startMonth = columns.find((column) => column.key === 'start_month');
-    expect(location?.title).toBe('参保机构名称');
-    expect(startMonth?.title).toBe('起始月');
-    expect(location?.renderText(undefined, { extra_data: { social_location: '厦门' } })).toBe('厦门');
-    expect(columns.some((column) => column.key === 'social_pay_region')).toBe(false);
+    const visibleTitles = columns.filter((column) => !column.hideInTable).map((column) => column.title);
+    expect(visibleTitles).toEqual([
+      '查看', '状态', '参保单位', '员工姓名', '证件号', '缴纳地', '社保起缴月', '公积金起缴月',
+      '社保是否办结', '医保是否办结', '公积金是否办结', '社保公积金办理备注', '派发时间', '完成时间',
+    ]);
+    const insuredUnit = columns.find((column) => column.key === 'insured_unit');
+    const fundStartMonth = columns.find((column) => column.key === 'fund_start_month');
+    expect(insuredUnit?.renderText(undefined, { extra_data: { paymentInstitution: '历史参保单位' } })).toBe('历史参保单位');
+    expect(insuredUnit?.renderText(undefined, { extra_data: { socialLocation: '参保机构名称值' } })).toBe('参保机构名称值');
+    expect(fundStartMonth?.renderText(undefined, { extra_data: { startMonth: '2026-08' } })).toBe('2026-08');
   });
 
-  it('shows social decrease region and stop month on the module list', () => {
+  it('shows the workbook 14-column social decrease list', () => {
     mocks.moduleCode = 'social_insurance_resign';
 
     render(<OnboardingModule />);
 
     const columns = mocks.latestProTableProps.columns as Array<Record<string, any>>;
+    const visibleTitles = columns.filter((column) => !column.hideInTable).map((column) => column.title);
+    expect(visibleTitles).toEqual([
+      '查看', '状态', '参保单位', '员工姓名', '证件号', '缴纳地', '社保停缴月', '公积金停缴月',
+      '社保是否办结', '医保是否办结', '公积金是否办结', '社保公积金办理备注', '派发时间', '完成时间',
+    ]);
     const region = columns.find((column) => column.key === 'social_pay_region');
-    const stopMonth = columns.find((column) => column.key === 'social_stop_month');
-    expect(region?.title).toBe('缴纳地区');
-    expect(stopMonth?.title).toBe('停保月');
-    expect(stopMonth?.renderText(undefined, { extra_data: { social_stop_month: '8月' } })).toBe('8月');
-    expect(columns.some((column) => column.key === 'social_location')).toBe(false);
+    const fundStopMonth = columns.find((column) => column.key === 'fund_stop_month');
+    expect(region?.renderText(undefined, { extra_data: { socialLocation: '宁波' } })).toBe('宁波');
+    expect(fundStopMonth?.renderText(undefined, { extra_data: { socialStopMonth: '2026-08' } })).toBe('2026-08');
   });
 
   it('maps social_insurance_resign route to backend resignation_social_insurance module code', async () => {
@@ -205,14 +212,17 @@ describe('OnboardingModule resignation certificate list', () => {
     mocks.getDispatchedOrders.mockResolvedValue({ list: [], total: 0 });
   });
 
-  it('keeps formal certificate completion on the detail page', () => {
+  it('offers batch resignation-certificate export without fixed-template wording', () => {
     render(<OnboardingModule />);
 
     expect(mocks.latestProTableProps.headerTitle).toBe('离职证明子工单列表');
     const actions = mocks.latestProTableProps.toolBarRender() as React.ReactElement[];
     const keys = actions.map((action) => action.key);
-    expect(keys).toEqual(expect.arrayContaining(['columns', 'batch-return']));
-    expect(keys).not.toEqual(expect.arrayContaining(['import-status', 'export', 'batch']));
+    expect(keys).toEqual(expect.arrayContaining(['columns', 'export']));
+    expect(keys).not.toEqual(expect.arrayContaining(['import-status', 'batch', 'batch-return']));
+    render(<>{actions}</>);
+    expect(screen.getByRole('button', { name: /批量导出离职证明/ })).toBeInTheDocument();
+    expect(screen.queryByText(/按固定模板导出/)).not.toBeInTheDocument();
   });
 });
 
@@ -380,7 +390,7 @@ describe('OnboardingModule action permission baseline', () => {
       });
 
       expect(state.canBatchAccept).toBe(false);
-      expect(state.canBatchReturn).toBe(true);
+      expect(state.canBatchReturn).toBe(false);
       expect(state.canBatchImport).toBe(false);
       expect(state.canBatchExport).toBe(true);
       expect(state.canBatchComplete).toBe(false);

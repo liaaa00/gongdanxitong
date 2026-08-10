@@ -196,13 +196,69 @@ export const CERTIFICATE_STATUS_FILTER_META = {
   pending_info: { label: '已退回', color: 'warning' },
 } as const;
 
+const RENEWAL_STATUS_META: Record<InServiceOrderStatus, { label: string; color: string }> = {
+  draft: { label: '未接单', color: 'default' },
+  dispatched: { label: '未接单', color: 'processing' },
+  accepted: { label: '已接单', color: 'blue' },
+  ready: { label: '已接单', color: 'blue' },
+  processing: { label: '已接单', color: 'blue' },
+  pending_info: { label: '已退回', color: 'warning' },
+  completed: { label: '已完成', color: 'success' },
+  failed: { label: '办理失败', color: 'error' },
+  cancelled: { label: '订单取消', color: 'default' },
+  archived: { label: '历史归档', color: 'default' },
+};
+
+const SOCIAL_FUND_STATUS_META: Record<InServiceOrderStatus, { label: string; color: string }> = {
+  draft: { label: '未接单', color: 'default' },
+  dispatched: { label: '未接单', color: 'processing' },
+  accepted: { label: '已接单', color: 'blue' },
+  ready: { label: '已接单', color: 'blue' },
+  processing: { label: '已接单', color: 'blue' },
+  pending_info: { label: '已退回', color: 'warning' },
+  completed: { label: '已完成', color: 'success' },
+  failed: { label: '办理失败', color: 'error' },
+  cancelled: { label: '订单取消', color: 'default' },
+  archived: { label: '历史归档', color: 'default' },
+};
+
+const COMPACT_FLOW_FILTER_STATUSES: readonly InServiceOrderStatus[] = [
+  'dispatched',
+  'accepted',
+  'processing',
+  'pending_info',
+  'completed',
+  'cancelled',
+  'archived',
+];
+
 export function getInServiceStatusMeta(
   orderKind: InServiceOrderKind,
   status: InServiceOrderStatus,
 ): { label: string; color: string } {
-  return orderKind === IN_SERVICE_ORDER_KINDS.CERTIFICATE
-    ? CERTIFICATE_STATUS_META[status]
-    : IN_SERVICE_STATUS_META[status];
+  if (orderKind === IN_SERVICE_ORDER_KINDS.CERTIFICATE) return CERTIFICATE_STATUS_META[status];
+  if (orderKind === IN_SERVICE_ORDER_KINDS.CONTRACT_RENEWAL) return RENEWAL_STATUS_META[status];
+  if (
+    orderKind === IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_INCREASE
+    || orderKind === IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_DECREASE
+  ) return SOCIAL_FUND_STATUS_META[status];
+  return IN_SERVICE_STATUS_META[status];
+}
+
+export function getInServiceStatusFilterMeta(
+  orderKind: InServiceOrderKind,
+): Partial<Record<InServiceOrderStatus, { label: string; color: string }>> {
+  if (orderKind === IN_SERVICE_ORDER_KINDS.CERTIFICATE) return CERTIFICATE_STATUS_FILTER_META;
+  if (
+    orderKind === IN_SERVICE_ORDER_KINDS.CONTRACT_RENEWAL
+    || orderKind === IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_INCREASE
+    || orderKind === IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_DECREASE
+  ) {
+    return Object.fromEntries(
+      COMPACT_FLOW_FILTER_STATUSES.map((status) => [status, getInServiceStatusMeta(orderKind, status)]),
+    );
+  }
+  return IN_SERVICE_STATUS_META;
 }
 
 export const IN_SERVICE_HANDLE_CHANNEL_META = {

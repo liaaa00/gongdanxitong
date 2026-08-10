@@ -42,6 +42,33 @@ export async function mockCommonApis(page: Page, role: string) {
     });
   });
 
+  // The permission-center endpoint is optional during role-menu smoke tests.
+  // Returning a successful empty payload keeps the app on its static, tested matrix
+  // instead of allowing an unmocked 401 to clear the test session.
+  await page.route('**/api/permission-center/config*', async (route) => {
+    if (route.request().method() !== 'GET') {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ code: 0, message: 'ok', traceId: 'mock', data: null }),
+    });
+  });
+
+  await page.route('**/api/permission-center/versions*', async (route) => {
+    if (route.request().method() !== 'GET') {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ code: 0, message: 'ok', traceId: 'mock', data: [] }),
+    });
+  });
+
   await page.route('**/api/auth/login', async (route) => {
     const body = await route.request().postDataJSON().catch(() => ({}));
     await route.fulfill({

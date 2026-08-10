@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageContainer, ProTable } from '@ant-design/pro-components';
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
@@ -7,14 +7,13 @@ import { DownloadOutlined, EyeOutlined, InboxOutlined, PlusOutlined, UploadOutli
 import dayjs from 'dayjs';
 import * as XLSX from 'xlsx';
 import {
-  CERTIFICATE_STATUS_FILTER_META,
   IN_SERVICE_BUSINESS_TYPE_OPTIONS,
   IN_SERVICE_HANDLE_CHANNEL_META,
   IN_SERVICE_ORDER_KINDS,
   IN_SERVICE_ORDER_KIND_META,
-  IN_SERVICE_STATUS_META,
   PROVINCES_27,
   getInServiceCategoryPath,
+  getInServiceStatusFilterMeta,
   getInServiceStatusMeta,
   type InServiceBusinessType,
   type InServiceOrderKind,
@@ -27,8 +26,14 @@ import {
   type InServiceOrderListQuery,
   type InServiceOrderPayload,
 } from '@/services/inServiceOrders';
+import { downloadOutOfProvinceOrdersExport } from '@/services/outOfProvinceExport';
 import { getCustomers, type CustomerItem } from '@/services/customers';
 import { getDepartments, type DepartmentItem } from '@/services/departments';
+import {
+  displayOutOfProvinceDate,
+  displayOutOfProvinceExtra,
+  sortOutOfProvinceOrders,
+} from './outOfProvince';
 import { ROLE, canonicalRoleCodes } from '@/constants/roles';
 import { useUserStore } from '@/stores/userStore';
 
@@ -198,9 +203,7 @@ function downloadBatchRenewalTemplate(): void {
 }
 
 export function getInServiceStatusValueEnum(orderKind: InServiceOrderKind) {
-  const source = orderKind === IN_SERVICE_ORDER_KINDS.CERTIFICATE
-    ? CERTIFICATE_STATUS_FILTER_META
-    : IN_SERVICE_STATUS_META;
+  const source = getInServiceStatusFilterMeta(orderKind);
   return Object.fromEntries(
     Object.entries(source).map(([value, item]) => [value, { text: item.label }]),
   );
@@ -230,6 +233,23 @@ export function buildInServiceListQuery(
   };
 }
 
+export function getOutOfProvinceImportPath(orderKind: InServiceOrderKind): string {
+  return `/out-of-province/import?orderType=${orderKind}`;
+}
+
+export function getInServiceDetailPath(
+  orderKind: InServiceOrderKind,
+  id: string,
+  businessScope?: 'beilun' | 'out_of_province',
+): string {
+  if (orderKind === IN_SERVICE_ORDER_KINDS.CONTRACT_RENEWAL) return `/renewal/${id}`;
+  if (orderKind === IN_SERVICE_ORDER_KINDS.CERTIFICATE) return `/in-service/certificates/${id}`;
+  if (orderKind === IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_INCREASE) return `/out-of-province/increase/${id}`;
+  if (orderKind === IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_DECREASE) return `/out-of-province/decrease/${id}`;
+  if (businessScope === 'out_of_province') return `/out-of-province/single-business/${id}`;
+  return `/in-service/${id}`;
+}
+
 export default function InServiceOrderList({
   orderKind = IN_SERVICE_ORDER_KINDS.SINGLE_BUSINESS,
   createPath = '/in-service/new',
@@ -241,11 +261,20 @@ export default function InServiceOrderList({
   const [batchOpen, setBatchOpen] = useState(false);
   const [batchRows, setBatchRows] = useState<BatchRenewalPreviewRow[]>([]);
   const [batchLoading, setBatchLoading] = useState(false);
+  const [selectedOutOfProvinceRows, setSelectedOutOfProvinceRows] = useState<InServiceOrder[]>([]);
+  const [outOfProvinceExporting, setOutOfProvinceExporting] = useState(false);
   const user = useUserStore((state) => state.user);
   const roleCodes = canonicalRoleCodes(user?.roles);
   const meta = IN_SERVICE_ORDER_KIND_META[orderKind];
   const isSingleBusiness = orderKind === IN_SERVICE_ORDER_KINDS.SINGLE_BUSINESS;
+  const isOutOfProvince = orderKind === IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_INCREASE
+    || orderKind === IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_DECREASE;
+  const isOutIncrease = orderKind === IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_INCREASE;
   const statusValueEnum = useMemo(() => getInServiceStatusValueEnum(orderKind), [orderKind]);
+
+  useEffect(() => {
+    setSelectedOutOfProvinceRows([]);
+  }, [orderKind]);
   const canCreate = roleCodes.some((role) => [
     ROLE.ADMIN,
     ROLE.BUSINESS_GROUP_LEADER,
@@ -286,15 +315,79 @@ export default function InServiceOrderList({
       批量发起续签
     </Button>
   ) : null;
+  const outOfProvinceImportButton = isOutOfProvince && canCreate ? (
+    <Button icon={<UploadOutlined />} onClick={() => navigate(getOutOfProvinceImportPath(orderKind))}>
+      批量导入
+    </Button>
+  ) : null;
+
+  const handleOutOfProvinceBatchExport = async () => {
+    if (selectedOutOfProvinceRows.length === 0) return;
+    setOutOfProvinceExporting(true);
+    try {
+      const typeLabel = isOutIncrease ? '省外增员' : '省外减员';
+      await downloadOutOfProvinceOrdersExport(
+        selectedOutOfProvinceRows.map((row) => row.id),
+        typeLabel,
+      );
+      message.success(`已导出 ${selectedOutOfProvinceRows.length} 条${typeLabel}数据`);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '批量导出失败');
+    } finally {
+      setOutOfProvinceExporting(false);
+    }
+  };
 
   const columns = useMemo<ProColumns<InServiceOrder>[]>(() => {
+    const keywordColumn: ProColumns<InServiceOrder> = {
+      title: '关键词',
+      dataIndex: 'keyword',
+      hideInTable: true,
+      fieldProps: { placeholder: '工单号、姓名、证件号、客户或发起人' },
+    };
+    if (isOutOfProvince) {
+      const monthField = isOutIncrease ? 'start_month' : 'social_stop_month';
+      const fundMonthField = isOutIncrease ? 'fund_start_month' : 'fund_stop_month';
+      return [
+        keywordColumn,
+        {
+          title: '查看',
+          key: 'actions',
+          width: 76,
+          hideInSearch: true,
+          fixed: 'left',
+          render: (_, record) => (
+            <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => navigate(getInServiceDetailPath(record.orderKind, record.id, record.businessScope))}>
+              查看
+            </Button>
+          ),
+        },
+        {
+          title: '状态',
+          dataIndex: 'status',
+          width: 170,
+          valueEnum: statusValueEnum,
+          render: (_, record) => {
+            const item = getInServiceStatusMeta(record.orderKind, record.status) || { label: record.status, color: 'default' };
+            return <Tag color={item.color}>{item.label}</Tag>;
+          },
+        },
+        { title: '参保单位', key: 'insured_unit', width: 220, hideInSearch: true, render: (_, record) => displayOutOfProvinceExtra(record, 'insured_unit') },
+        { title: '员工姓名', dataIndex: 'employeeName', width: 120, hideInSearch: true, render: (_, record) => record.employeeName || '-' },
+        { title: '证件号', dataIndex: 'idCardNo', width: 180, hideInSearch: true, render: (_, record) => record.idCardNo || '-' },
+        { title: '缴纳地', key: 'social_pay_region', width: 170, hideInSearch: true, render: (_, record) => displayOutOfProvinceExtra(record, 'social_pay_region') },
+        { title: isOutIncrease ? '社保起缴月' : '社保停缴月', key: monthField, width: 130, hideInSearch: true, render: (_, record) => displayOutOfProvinceExtra(record, monthField) },
+        { title: isOutIncrease ? '公积金起缴月' : '公积金停缴月', key: fundMonthField, width: 130, hideInSearch: true, render: (_, record) => displayOutOfProvinceExtra(record, fundMonthField) },
+        { title: '社保是否办结', key: 'social_insurance_result', width: 130, hideInSearch: true, render: (_, record) => displayOutOfProvinceExtra(record, 'social_insurance_result') },
+        { title: '医保是否办结', key: 'medical_insurance_result', width: 130, hideInSearch: true, render: (_, record) => displayOutOfProvinceExtra(record, 'medical_insurance_result') },
+        { title: '公积金是否办结', key: 'housing_fund_result', width: 140, hideInSearch: true, render: (_, record) => displayOutOfProvinceExtra(record, 'housing_fund_result') },
+        { title: '社保公积金办理备注', key: 'social_insurance_remark', width: 230, hideInSearch: true, ellipsis: true, render: (_, record) => displayOutOfProvinceExtra(record, 'social_insurance_remark') },
+        { title: '派发时间', dataIndex: 'dispatchedAt', width: 165, hideInSearch: true, render: (_, record) => displayOutOfProvinceDate(record.dispatchedAt) },
+        { title: '完成时间', dataIndex: 'completedAt', width: 165, hideInSearch: true, render: (_, record) => displayOutOfProvinceDate(record.completedAt) },
+      ];
+    }
     const result: ProColumns<InServiceOrder>[] = [
-      {
-        title: '关键词',
-        dataIndex: 'keyword',
-        hideInTable: true,
-        fieldProps: { placeholder: '工单号、姓名、证件号、客户或发起人' },
-      },
+      keywordColumn,
       {
         title: '工单编号',
         dataIndex: 'orderNo',
@@ -407,14 +500,14 @@ export default function InServiceOrderList({
         hideInSearch: true,
         fixed: 'right',
         render: (_, record) => (
-          <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => navigate('/in-service/' + record.id)}>
+          <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => navigate(getInServiceDetailPath(record.orderKind, record.id, record.businessScope))}>
             详情
           </Button>
         ),
       },
     );
     return result;
-  }, [businessScope, isSingleBusiness, navigate, orderKind, statusValueEnum]);
+  }, [businessScope, isOutIncrease, isOutOfProvince, isSingleBusiness, navigate, orderKind, statusValueEnum]);
 
   return (
     <PageContainer header={{ title: meta.listTitle }}>
@@ -423,13 +516,39 @@ export default function InServiceOrderList({
         rowKey="id"
         headerTitle={meta.label + '工单'}
         columns={columns}
+        rowSelection={isOutOfProvince ? {
+          selectedRowKeys: selectedOutOfProvinceRows.map((row) => row.id),
+          preserveSelectedRowKeys: true,
+          onChange: (_keys, rows) => setSelectedOutOfProvinceRows(rows),
+        } : undefined}
+        tableAlertRender={isOutOfProvince ? ({ selectedRowKeys, onCleanSelected }) => (
+          <Space>
+            <span>已选 {selectedRowKeys.length} 项</span>
+            <Button
+              size="small"
+              icon={<DownloadOutlined />}
+              loading={outOfProvinceExporting}
+              disabled={selectedRowKeys.length === 0}
+              onClick={() => void handleOutOfProvinceBatchExport()}
+            >
+              导出当前表格
+            </Button>
+            <Button size="small" onClick={() => { onCleanSelected(); setSelectedOutOfProvinceRows([]); }}>
+              取消选择
+            </Button>
+          </Space>
+        ) : undefined}
         request={async (params) => {
           const result = await getInServiceOrders(buildInServiceListQuery(params, orderKind, businessScope));
-          return { data: result.items, total: result.total, success: true };
+          return {
+            data: isOutOfProvince ? sortOutOfProvinceOrders(result.items) : result.items,
+            total: result.total,
+            success: true,
+          };
         }}
         search={{ labelWidth: 'auto', defaultCollapsed: false }}
         pagination={{ defaultPageSize: 20, showSizeChanger: true }}
-        scroll={{ x: isSingleBusiness ? 1900 : 1500 }}
+        scroll={{ x: isOutOfProvince ? 2050 : isSingleBusiness ? 1900 : 1500 }}
         options={{ reload: true, density: true, setting: true }}
         locale={{
           emptyText: (
@@ -438,10 +557,22 @@ export default function InServiceOrderList({
             </Empty>
           ),
         }}
-        toolBarRender={() => canCreate ? [
-          <span key="new">{createButton}</span>,
+        toolBarRender={() => [
+          canCreate ? <span key="new">{createButton}</span> : null,
+          outOfProvinceImportButton ? <span key="out-of-province-import">{outOfProvinceImportButton}</span> : null,
           batchButton ? <span key="batch">{batchButton}</span> : null,
-        ].filter(Boolean) as React.ReactNode[] : []}
+          isOutOfProvince ? (
+            <Button
+              key="out-of-province-export"
+              icon={<DownloadOutlined />}
+              loading={outOfProvinceExporting}
+              disabled={selectedOutOfProvinceRows.length === 0}
+              onClick={() => void handleOutOfProvinceBatchExport()}
+            >
+              导出当前表格
+            </Button>
+          ) : null,
+        ].filter(Boolean) as React.ReactNode[]}
       />
       {batchButton ? (
         <Modal

@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   OneToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
@@ -11,11 +12,12 @@ import { WorkOrder } from './work-order.entity';
 import { BusinessScope } from './enums';
 
 @Entity({ name: 'customers' })
+@Index('uq_customers_code_scope', ['customerCode', 'businessScope'], { unique: true })
 export class Customer {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ name: 'customer_code', type: 'varchar', length: 64, unique: true })
+  @Column({ name: 'customer_code', type: 'varchar', length: 64 })
   customerCode!: string;
 
   @Column({ name: 'customer_name', type: 'varchar', length: 128 })

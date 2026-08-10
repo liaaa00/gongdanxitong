@@ -8,7 +8,14 @@ import {
   getInServiceProcessOptions,
   getInServiceRequirementOptions,
 } from '@/constants/inService';
-import { buildBatchRenewalRows, buildInServiceListQuery, flattenDepartments, getInServiceStatusValueEnum } from './index';
+import {
+  buildBatchRenewalRows,
+  buildInServiceListQuery,
+  flattenDepartments,
+  getInServiceDetailPath,
+  getInServiceStatusValueEnum,
+  getOutOfProvinceImportPath,
+} from './index';
 import {
   acceptInServiceOrder,
   confirmInServiceOrder,
@@ -63,6 +70,30 @@ describe('single-business category contract', () => {
     expect(query.createdTo).toContain('2026-07-31T15:59:59.999Z');
   });
 
+  it('opens the batch import page with the matching out-of-province order type', () => {
+    expect(getOutOfProvinceImportPath(IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_INCREASE)).toBe(
+      '/out-of-province/import?orderType=out_of_province_increase',
+    );
+    expect(getOutOfProvinceImportPath(IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_DECREASE)).toBe(
+      '/out-of-province/import?orderType=out_of_province_decrease',
+    );
+  });
+
+  it('keeps renewal and certificate detail routes owned by their independent menus', () => {
+    expect(getInServiceDetailPath(IN_SERVICE_ORDER_KINDS.CONTRACT_RENEWAL, 'renewal-1'))
+      .toBe('/renewal/renewal-1');
+    expect(getInServiceDetailPath(IN_SERVICE_ORDER_KINDS.CERTIFICATE, 'certificate-1'))
+      .toBe('/in-service/certificates/certificate-1');
+    expect(getInServiceDetailPath(IN_SERVICE_ORDER_KINDS.SINGLE_BUSINESS, 'single-1'))
+      .toBe('/in-service/single-1');
+    expect(getInServiceDetailPath(IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_INCREASE, 'increase-1'))
+      .toBe('/out-of-province/increase/increase-1');
+    expect(getInServiceDetailPath(IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_DECREASE, 'decrease-1'))
+      .toBe('/out-of-province/decrease/decrease-1');
+    expect(getInServiceDetailPath(IN_SERVICE_ORDER_KINDS.SINGLE_BUSINESS, 'single-2', 'out_of_province'))
+      .toBe('/out-of-province/single-business/single-2');
+  });
+
   it('uses exactly four user-facing states for certificate lists', () => {
     const certificateStatuses = getInServiceStatusValueEnum(IN_SERVICE_ORDER_KINDS.CERTIFICATE);
     expect(Object.keys(certificateStatuses)).toEqual([
@@ -79,8 +110,26 @@ describe('single-business category contract', () => {
     });
 
     const renewalStatuses = getInServiceStatusValueEnum(IN_SERVICE_ORDER_KINDS.CONTRACT_RENEWAL);
-    expect(renewalStatuses).toHaveProperty('accepted');
-    expect(renewalStatuses).toHaveProperty('failed');
+    expect(Object.keys(renewalStatuses)).toEqual([
+      'dispatched',
+      'accepted',
+      'processing',
+      'pending_info',
+      'completed',
+      'cancelled',
+      'archived',
+    ]);
+    expect(renewalStatuses).not.toHaveProperty('ready');
+    expect(renewalStatuses).not.toHaveProperty('failed');
+
+    const provinceStatuses = getInServiceStatusValueEnum(IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_INCREASE);
+    expect(provinceStatuses).toMatchObject({
+      dispatched: { text: '未接单' },
+      accepted: { text: '已接单' },
+      completed: { text: '已完成' },
+    });
+    expect(provinceStatuses).not.toHaveProperty('ready');
+    expect(provinceStatuses).not.toHaveProperty('failed');
   });
 
   it('maps batch renewal Excel rows to customer and department ids with row errors', () => {

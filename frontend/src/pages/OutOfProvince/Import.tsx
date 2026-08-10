@@ -1,7 +1,6 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { PageContainer } from '@ant-design/pro-components';
-import { Alert, App, Button, Card, Segmented, Space } from 'antd';
+import { App, Button, Card, Segmented, Space } from 'antd';
 import ExcelUploader from '@/components/ExcelUploader';
 import type { FieldMappingResult, ImportJobResult, NewFieldDraft } from '@/components/ExcelUploader';
 import {
@@ -35,11 +34,18 @@ function toUploadJob(job: ImportJob): ImportJobResult {
   };
 }
 
+export function resolveOutOfProvinceImportType(value: string | null): OutOfProvinceOrderType {
+  return value === OUT_OF_PROVINCE_ORDER_TYPE.DECREASE
+    ? OUT_OF_PROVINCE_ORDER_TYPE.DECREASE
+    : OUT_OF_PROVINCE_ORDER_TYPE.INCREASE;
+}
+
 const OutOfProvinceImport: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { message } = App.useApp();
   const { hasRole } = useAuth();
-  const [orderType, setOrderType] = useState<OutOfProvinceOrderType>(OUT_OF_PROVINCE_ORDER_TYPE.INCREASE);
+  const orderType = resolveOutOfProvinceImportType(searchParams.get('orderType'));
 
   const handleConfirm = async (
     mapping: Record<string, string>,
@@ -57,12 +63,7 @@ const OutOfProvinceImport: React.FC = () => {
     <PageContainer header={{ title: '省外增减员导入' }}>
       <Card>
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
-          <Alert
-            type="info"
-            showIcon
-            message="省外导入与北仑数据独立"
-            description="增员和减员需分开导入；Excel 每条记录会直接生成一张工单，并按参保省份派给对应专员。"
-          />
+
           <Space>
             <span>导入类型：</span>
             <Segmented
@@ -72,7 +73,7 @@ const OutOfProvinceImport: React.FC = () => {
                 { label: '省外增员', value: OUT_OF_PROVINCE_ORDER_TYPE.INCREASE },
                 { label: '省外减员', value: OUT_OF_PROVINCE_ORDER_TYPE.DECREASE },
               ]}
-              onChange={(value) => setOrderType(value as OutOfProvinceOrderType)}
+              onChange={(value) => setSearchParams({ orderType: value as OutOfProvinceOrderType }, { replace: true })}
             />
           </Space>
           <ExcelUploader

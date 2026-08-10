@@ -54,28 +54,30 @@ describe('onboarding module_fields baseline', () => {
     ]);
 
     expect(extractFields('social_insurance')).toEqual([
-      'customer_name', 'customer_code', 'outsource_type', 'position', 'position_type',
-      'employee_name', 'id_card_type', 'id_card_no', 'gender', 'birth_date', 'age',
-      'household_type', 'ethnicity', 'education', 'graduation_school', 'major',
-      'graduation_date', 'marital_status', 'mobile', 'email', 'current_address',
-      'household_address', 'postal_code', 'social_location', 'start_month',
-      'social_base', 'fund_base', 'fund_ratio', 'bank_name', 'bank_account',
-      'remark', 'business_mode', 'need_company_payroll', 'payroll_location',
+      'insured_unit', 'social_insurance_remark', 'social_pay_region',
+      'start_month', 'social_base', 'fund_start_month', 'fund_base', 'fund_ratio',
+      'social_insurance_result', 'medical_insurance_result', 'housing_fund_result',
+    ]);
+
+    expect(extractFields('resignation_social_insurance')).toEqual([
+      'social_insurance_result', 'medical_insurance_result', 'housing_fund_result',
+      'social_pay_region', 'social_insurance_remark', 'insured_unit',
+      'social_stop_month', 'fund_stop_month', 'last_work_date',
     ]);
   });
 
-  it('keeps unconfirmed fields out while retaining the approved social-insurance baseline', () => {
-    expect(extractFields('social_insurance')).toHaveLength(34);
-    expect(extractFields('social_insurance')).toEqual(expect.arrayContaining([
-      'outsource_type', 'position', 'gender', 'birth_date', 'age', 'ethnicity',
-      'education', 'graduation_school', 'major', 'graduation_date',
-      'current_address', 'household_address', 'postal_code', 'remark',
-      'social_location', 'start_month', 'social_base', 'fund_base', 'fund_ratio',
+  it('keeps the approved workbook-only social fund detail fields', () => {
+    expect(extractFields('social_insurance')).toHaveLength(11);
+    expect(extractFields('resignation_social_insurance')).toHaveLength(9);
+    expect(extractFields('social_insurance')).not.toEqual(expect.arrayContaining([
+      'outsource_type', 'position', 'gender', 'birth_date', 'education',
+      'current_address', 'bank_name', 'remark', 'base_salary',
     ]));
-    expect(extractFields('social_insurance')).not.toContain('base_salary');
+    expect(extractFields('resignation_social_insurance')).not.toEqual(expect.arrayContaining([
+      'mobile', 'email', 'position', 'resignation_reason',
+    ]));
     expect(extractFields('data_entry')).not.toContain('base_salary');
     expect(extractFields('data_entry_resign')).toEqual(expect.arrayContaining(['mobile', 'email']));
-    expect(extractFields('resignation_social_insurance')).toEqual(expect.arrayContaining(['mobile', 'email']));
   });
 
   it('does not treat out-of-province direct-order types as child module codes', () => {

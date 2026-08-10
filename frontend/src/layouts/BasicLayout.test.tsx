@@ -725,4 +725,29 @@ describe('BasicLayout menu returns to last detail page', () => {
     expect(selectedKeys()).toContain('resignation-list');
     expect(selectedKeys()).toContain('/work-orders?orderType=resignation');
   });
+
+  it.each([
+    ['/renewal', 'renewal-list', 'in-service-list'],
+    ['/renewal/renewal-1', 'renewal-list', 'in-service-list'],
+    ['/in-service/certificates', 'certificate-list', 'in-service-list'],
+    ['/in-service/certificates/new', 'certificate-list', 'in-service-list'],
+    ['/in-service/certificates/certificate-1', 'certificate-list', 'in-service-list'],
+  ])('keeps %s owned by its independent in-service menu', (path, expectedKey, wrongKey) => {
+    renderLayout([path]);
+
+    expect(selectedKeys()).toContain(expectedKey);
+    expect(selectedKeys()).not.toContain(wrongKey);
+  });
+
+  it.each([
+    ['/out-of-province/increase/increase-1', 'out-of-province-increase'],
+    ['/out-of-province/decrease/decrease-1', 'out-of-province-decrease'],
+    ['/out-of-province/single-business/single-1', 'out-of-province-single-business'],
+  ])('keeps %s owned by its province menu', (path, expectedKey) => {
+    mockUserState.user = mockUserState.makeUser(['business_group_member'], 'out_of_province');
+    renderLayout([path]);
+
+    expect(selectedKeys()).toContain(expectedKey);
+    expect(selectedKeys()).not.toContain('in-service-list');
+  });
 });

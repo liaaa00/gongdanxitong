@@ -67,13 +67,9 @@ const contractFields = [
 ];
 
 const onboardingSocialFields = [
-  'customer_name', 'customer_code', 'outsource_type', 'position', 'position_type',
-  'employee_name', 'id_card_type', 'id_card_no', 'gender', 'birth_date', 'age',
-  'household_type', 'ethnicity', 'education', 'graduation_school', 'major',
-  'graduation_date', 'marital_status', 'mobile', 'email', 'current_address',
-  'household_address', 'postal_code', 'social_location', 'start_month',
-  'social_base', 'fund_base', 'fund_ratio', 'bank_name', 'bank_account',
-  'remark', 'business_mode', 'need_company_payroll', 'payroll_location',
+  'insured_unit', 'social_insurance_remark', 'social_pay_region',
+  'start_month', 'social_base', 'fund_start_month', 'fund_base', 'fund_ratio',
+  'social_insurance_result', 'medical_insurance_result', 'housing_fund_result',
 ];
 
 // 离职减员表 10 字段：前 7 字段 → 三单可见；后 3 字段（feedback_deadline/is_common_template/template_name）→ 仅离职材料收集。
@@ -100,9 +96,37 @@ const dataEntryResignFields = [
 ];
 
 const resignationSocialFields = [
-  'customer_name', 'customer_code', 'mobile', 'email',
-  ...resignationCoreFields,
+  'social_insurance_result', 'medical_insurance_result', 'housing_fund_result',
+  'social_pay_region', 'social_insurance_remark', 'insured_unit',
+  'social_stop_month', 'fund_stop_month', 'last_work_date',
 ];
+
+const moduleRequiredOverrides: Record<string, Record<string, boolean>> = {
+  social_insurance: {
+    insured_unit: true,
+    social_insurance_remark: false,
+    social_pay_region: true,
+    start_month: true,
+    social_base: true,
+    fund_start_month: true,
+    fund_base: true,
+    fund_ratio: false,
+    social_insurance_result: false,
+    medical_insurance_result: false,
+    housing_fund_result: false,
+  },
+  resignation_social_insurance: {
+    social_insurance_result: false,
+    medical_insurance_result: false,
+    housing_fund_result: false,
+    social_pay_region: true,
+    social_insurance_remark: false,
+    insured_unit: true,
+    social_stop_month: true,
+    fund_stop_month: true,
+    last_work_date: true,
+  },
+};
 
 const moduleFields: Record<string, string[]> = {
   onboarding_contact: onboardingContactFields,
@@ -200,6 +224,7 @@ export async function seedModuleConfigs(dataSource: DataSource): Promise<void> {
         fieldCode,
         groupName: defaultGroupName(moduleCode),
         displayOrder: index + 1,
+        isRequiredOverride: moduleRequiredOverrides[moduleCode]?.[fieldCode] ?? null,
         isActive: true,
       };
       if (existed) {

@@ -111,7 +111,7 @@ export function getOnboardingModulePermissionState({
     && canBackendOperate
     && (!hasBackendActionPermissions || hasActionPermission('dispatched_order.batch_accept'));
   const canBatchComplete = !isResignationCertificateModule && canBackendOperate && (!hasBackendActionPermissions || hasActionPermission(isSocialModule ? 'dispatched_order.batch_feedback' : 'dispatched_order.batch_complete'));
-  const canBatchReturn = canBackendOperate;
+  const canBatchReturn = !isResignationCertificateModule && canBackendOperate;
   const canBatchUrge = hasBackendActionPermissions
     ? hasActionPermission('dispatched_order.batch_urge')
     : hasRole('admin') || hasRole('business_group_member') || hasRole('business_group_leader') || hasRole('business_owner');
@@ -279,6 +279,28 @@ const selectHeaderFilter = (
   filterIcon: (filtered) => <SearchOutlined style={{ color: filtered ? '#1677ff' : undefined }} />,
 });
 
+const SOCIAL_FUND_VALUE_ALIASES: Record<string, string[]> = {
+  insured_unit: ['insured_unit', 'insuredUnit', 'payment_institution', 'paymentInstitution', 'social_location', 'socialLocation', '参保机构名称', '参保单位'],
+  social_pay_region: ['social_pay_region', 'socialPayRegion', 'social_location', 'socialLocation'],
+  start_month: ['start_month', 'startMonth', 'social_start_month', 'socialStartMonth'],
+  fund_start_month: ['fund_start_month', 'fundStartMonth', 'start_month', 'startMonth'],
+  social_stop_month: ['social_stop_month', 'socialStopMonth', 'stop_month', 'stopMonth'],
+  fund_stop_month: ['fund_stop_month', 'fundStopMonth', 'social_stop_month', 'socialStopMonth'],
+  social_insurance_result: ['social_insurance_result', 'socialInsuranceResult', 'social_security_result'],
+  medical_insurance_result: ['medical_insurance_result', 'medicalInsuranceResult'],
+  housing_fund_result: ['housing_fund_result', 'housingFundResult'],
+  social_insurance_remark: ['social_insurance_remark', 'socialInsuranceRemark', 'social_security_remark'],
+};
+
+export const displaySocialFundValue = (record: DispatchedOrderItem, fieldCode: string): string => {
+  const extraData = record.extra_data ?? {};
+  for (const alias of SOCIAL_FUND_VALUE_ALIASES[fieldCode] ?? [fieldCode]) {
+    const value = extraData[alias];
+    if (value !== undefined && value !== null && value !== '') return String(value);
+  }
+  return '-';
+};
+
 const OnboardingModule: React.FC = () => {
   const { moduleCode } = useParams<{ moduleCode: string }>();
   const navigate = useNavigate();
@@ -303,6 +325,8 @@ const OnboardingModule: React.FC = () => {
   const [month, setMonth] = useState<Dayjs | null>(() => getCachedMonthOrNull(pageStateKey));
   const backendModuleCode = currentModule === 'social_insurance_resign' ? 'resignation_social_insurance' : currentModule;
   const moduleLabel = getModuleLabel(currentModule);
+  const isResignationCertificateModule = currentModule === 'resignation_cert';
+  const batchExportLabel = isResignationCertificateModule ? '批量导出离职证明' : '按固定模板导出';
 
   useEffect(() => {
     const handleRouteActivated = (event: Event) => {
@@ -352,8 +376,8 @@ const OnboardingModule: React.FC = () => {
     hasRole,
   });
 
-  const columns: ProColumns<DispatchedOrderItem>[] = useMemo(() => [
-    {
+  const columns: ProColumns<DispatchedOrderItem>[] = useMemo(() => {
+    const actionColumn: ProColumns<DispatchedOrderItem> = {
       title: '查看',
       key: 'actions',
       width: 88,
@@ -364,42 +388,8 @@ const OnboardingModule: React.FC = () => {
           查看
         </RefButton>
       ),
-    },
-    {
-      title: '子工单号',
-      dataIndex: 'order_no',
-      key: 'order_no',
-      width: 160,
-      copyable: true,
-      search: { transform: (value) => ({ orderNo: value }) },
-      filteredValue: tableFilters.order_no || null,
-      ...textHeaderFilter('输入子工单号'),
-      render: (_, record) => (
-        <Space size={4}>
-          {record.has_unread_dirty && (
-            <Tooltip title="业务员更新了字段，请打开详情核对">
-              <Badge color="red" />
-            </Tooltip>
-          )}
-          <span>{record.order_no}</span>
-          {record.has_unread_dirty && <Tag color="red">有字段变更</Tag>}
-        </Space>
-      ),
-    },
-    { title: '客户代码', dataIndex: 'customer_code', key: 'customer_code', width: 130, search: { transform: (value) => ({ customerCode: value }) }, filteredValue: tableFilters.customer_code || null, ...textHeaderFilter('输入客户代码') },
-    { title: '客户名称', dataIndex: 'customer_name', key: 'customer_name', width: 190, search: { transform: (value) => ({ customerName: value }) }, filteredValue: tableFilters.customer_name || null, ...textHeaderFilter('输入客户名称') },
-    { title: '员工姓名', dataIndex: 'employee_name', key: 'employee_name', width: 120, search: { transform: (value) => ({ employeeName: value }) }, filteredValue: tableFilters.employee_name || null, ...textHeaderFilter('输入员工姓名') },
-    { title: '证件号', dataIndex: 'employee_id_card', key: 'employee_id_card', width: 190, search: { transform: (value) => ({ idCardNo: value }) }, filteredValue: tableFilters.employee_id_card || null, ...textHeaderFilter('输入证件号') },
-    ...(currentModule === 'social_insurance' ? [
-      { title: '参保机构名称', key: 'social_location', width: 130, hideInSearch: true, renderText: (_: unknown, record: DispatchedOrderItem) => String(record.extra_data?.social_location || '-') },
-      { title: '起始月', key: 'start_month', width: 100, hideInSearch: true, renderText: (_: unknown, record: DispatchedOrderItem) => String(record.extra_data?.start_month || '-') },
-    ] : []),
-    ...(['social_insurance_resign', 'resignation_social_insurance'].includes(currentModule) ? [
-      { title: '缴纳地区', key: 'social_pay_region', width: 130, hideInSearch: true, renderText: (_: unknown, record: DispatchedOrderItem) => String(record.extra_data?.social_pay_region || '-') },
-      { title: '停保月', key: 'social_stop_month', width: 100, hideInSearch: true, renderText: (_: unknown, record: DispatchedOrderItem) => String(record.extra_data?.social_stop_month || '-') },
-    ] : []),
-    { title: '发起人', dataIndex: 'created_by_name', key: 'created_by_name', width: 120, hideInSearch: true, filteredValue: tableFilters.created_by_name || null, ...textHeaderFilter('输入发起人'), renderText: (value, record) => value || record.created_by || '-' },
-    {
+    };
+    const statusColumn: ProColumns<DispatchedOrderItem> = {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
@@ -409,28 +399,90 @@ const OnboardingModule: React.FC = () => {
       fieldProps: { options: DISPATCHED_STATUS_FILTER_OPTIONS },
       ...selectHeaderFilter('选择状态', DISPATCHED_STATUS_FILTER_OPTIONS),
       render: (_, record) => <Tag color={getStatusColor(record.status)}>{getStatusText(record.status)}</Tag>,
-    },
-    { title: '派发时间', dataIndex: 'dispatched_at', key: 'dispatched_at', width: 160, valueType: 'dateTime', sorter: true, hideInSearch: true },
-    { title: '完成时间', dataIndex: 'completed_at', key: 'completed_at', width: 160, valueType: 'dateTime', hideInSearch: true },
-    {
-      title: '派发时间',
-      dataIndex: 'dispatchedRange',
-      key: 'dispatchedRange',
-      valueType: 'dateTimeRange',
-      hideInTable: true,
-      search: { transform: (value) => ({ dispatchedFrom: value?.[0], dispatchedTo: value?.[1] }) },
-    },
-    {
-      title: '完成时间',
-      dataIndex: 'completedRange',
-      key: 'completedRange',
-      valueType: 'dateTimeRange',
-      hideInTable: true,
-      search: { transform: (value) => ({ completedFrom: value?.[0], completedTo: value?.[1] }) },
-    },
-    
-  ], [currentModule, navigate, tableFilters]);
+    };
+    const dateRangeColumns: ProColumns<DispatchedOrderItem>[] = [
+      {
+        title: '派发时间',
+        dataIndex: 'dispatchedRange',
+        key: 'dispatchedRange',
+        valueType: 'dateTimeRange',
+        hideInTable: true,
+        search: { transform: (value) => ({ dispatchedFrom: value?.[0], dispatchedTo: value?.[1] }) },
+      },
+      {
+        title: '完成时间',
+        dataIndex: 'completedRange',
+        key: 'completedRange',
+        valueType: 'dateTimeRange',
+        hideInTable: true,
+        search: { transform: (value) => ({ completedFrom: value?.[0], completedTo: value?.[1] }) },
+      },
+    ];
+
+    if (isSocialModule) {
+      const increase = currentModule === 'social_insurance';
+      const socialMonthCode = increase ? 'start_month' : 'social_stop_month';
+      const fundMonthCode = increase ? 'fund_start_month' : 'fund_stop_month';
+      return [
+        actionColumn,
+        statusColumn,
+        { title: '参保单位', key: 'insured_unit', width: 220, hideInSearch: true, renderText: (_: unknown, record) => displaySocialFundValue(record, 'insured_unit') },
+        { title: '员工姓名', dataIndex: 'employee_name', key: 'employee_name', width: 120, search: { transform: (value) => ({ employeeName: value }) }, filteredValue: tableFilters.employee_name || null, ...textHeaderFilter('输入员工姓名') },
+        { title: '证件号', dataIndex: 'employee_id_card', key: 'employee_id_card', width: 190, search: { transform: (value) => ({ idCardNo: value }) }, filteredValue: tableFilters.employee_id_card || null, ...textHeaderFilter('输入证件号') },
+        { title: '缴纳地', key: 'social_pay_region', width: 140, hideInSearch: true, renderText: (_: unknown, record) => displaySocialFundValue(record, 'social_pay_region') },
+        { title: increase ? '社保起缴月' : '社保停缴月', key: socialMonthCode, width: 120, hideInSearch: true, renderText: (_: unknown, record) => displaySocialFundValue(record, socialMonthCode) },
+        { title: increase ? '公积金起缴月' : '公积金停缴月', key: fundMonthCode, width: 130, hideInSearch: true, renderText: (_: unknown, record) => displaySocialFundValue(record, fundMonthCode) },
+        { title: '社保是否办结', key: 'social_insurance_result', width: 120, hideInSearch: true, renderText: (_: unknown, record) => displaySocialFundValue(record, 'social_insurance_result') },
+        { title: '医保是否办结', key: 'medical_insurance_result', width: 120, hideInSearch: true, renderText: (_: unknown, record) => displaySocialFundValue(record, 'medical_insurance_result') },
+        { title: '公积金是否办结', key: 'housing_fund_result', width: 130, hideInSearch: true, renderText: (_: unknown, record) => displaySocialFundValue(record, 'housing_fund_result') },
+        { title: '社保公积金办理备注', key: 'social_insurance_remark', width: 220, hideInSearch: true, renderText: (_: unknown, record) => displaySocialFundValue(record, 'social_insurance_remark') },
+        { title: '派发时间', dataIndex: 'dispatched_at', key: 'dispatched_at', width: 160, valueType: 'dateTime', sorter: true, hideInSearch: true },
+        { title: '完成时间', dataIndex: 'completed_at', key: 'completed_at', width: 160, valueType: 'dateTime', hideInSearch: true },
+        ...dateRangeColumns,
+      ];
+    }
+
+    return [
+      actionColumn,
+      {
+        title: '子工单号',
+        dataIndex: 'order_no',
+        key: 'order_no',
+        width: 160,
+        copyable: true,
+        search: { transform: (value) => ({ orderNo: value }) },
+        filteredValue: tableFilters.order_no || null,
+        ...textHeaderFilter('输入子工单号'),
+        render: (_, record) => (
+          <Space size={4}>
+            {record.has_unread_dirty && (
+              <Tooltip title="业务员更新了字段，请打开详情核对">
+                <Badge color="red" />
+              </Tooltip>
+            )}
+            <span>{record.order_no}</span>
+            {record.has_unread_dirty && <Tag color="red">有字段变更</Tag>}
+          </Space>
+        ),
+      },
+      { title: '客户代码', dataIndex: 'customer_code', key: 'customer_code', width: 130, search: { transform: (value) => ({ customerCode: value }) }, filteredValue: tableFilters.customer_code || null, ...textHeaderFilter('输入客户代码') },
+      { title: '客户名称', dataIndex: 'customer_name', key: 'customer_name', width: 190, search: { transform: (value) => ({ customerName: value }) }, filteredValue: tableFilters.customer_name || null, ...textHeaderFilter('输入客户名称') },
+      { title: '员工姓名', dataIndex: 'employee_name', key: 'employee_name', width: 120, search: { transform: (value) => ({ employeeName: value }) }, filteredValue: tableFilters.employee_name || null, ...textHeaderFilter('输入员工姓名') },
+      { title: '证件号', dataIndex: 'employee_id_card', key: 'employee_id_card', width: 190, search: { transform: (value) => ({ idCardNo: value }) }, filteredValue: tableFilters.employee_id_card || null, ...textHeaderFilter('输入证件号') },
+      { title: '发起人', dataIndex: 'created_by_name', key: 'created_by_name', width: 120, hideInSearch: true, filteredValue: tableFilters.created_by_name || null, ...textHeaderFilter('输入发起人'), renderText: (value, record) => value || record.created_by || '-' },
+      statusColumn,
+      { title: '派发时间', dataIndex: 'dispatched_at', key: 'dispatched_at', width: 160, valueType: 'dateTime', sorter: true, hideInSearch: true },
+      { title: '完成时间', dataIndex: 'completed_at', key: 'completed_at', width: 160, valueType: 'dateTime', hideInSearch: true },
+      ...dateRangeColumns,
+    ];
+  }, [currentModule, isSocialModule, navigate, tableFilters]);
   const columnConfig = useColumnConfig(`onboarding-module:${currentModule || 'unknown'}`, columns);
+  const resolvedColumns = useMemo(() => {
+    if (!isSocialModule) return columnConfig.columns;
+    const actionColumns = columnConfig.columns.filter((column) => String(column.key ?? column.dataIndex) === 'actions');
+    const dataColumns = columnConfig.columns.filter((column) => String(column.key ?? column.dataIndex) !== 'actions');
+    return [...actionColumns, ...dataColumns];
+  }, [columnConfig.columns, isSocialModule]);
 
   const requestFn = useCallback(async (params: PageParams, _sort: Record<string, unknown>, filters: TableFilters = {}) => {
     const headerFilters = buildEffectiveHeaderFilterParams(filters, tableFilters);
@@ -527,8 +579,12 @@ const OnboardingModule: React.FC = () => {
         let failed = 0;
         for (const file of files) {
           const platform = file.signPlatform ? `-${file.signPlatform}` : '';
+          const extension = file.fileType === 'attachments_zip' ? '.zip' : '.xlsx';
+          const fallbackName = isResignationCertificateModule
+            ? `离职证明批量导出${extension}`
+            : `${moduleLabel}子工单${platform}${extension}`;
           try {
-            await downloadDispatchedExport(file, `${moduleLabel}子工单${platform}.xlsx`);
+            await downloadDispatchedExport(file, fallbackName);
           } catch {
             failed += 1;
           }
@@ -541,7 +597,7 @@ const OnboardingModule: React.FC = () => {
           message.error('导出失败');
         }
       } else {
-        await downloadDispatchedExport(result, `${moduleLabel}子工单.xlsx`);
+        await downloadDispatchedExport(result, isResignationCertificateModule ? '离职证明批量导出.xlsx' : `${moduleLabel}子工单.xlsx`);
         message.success('导出成功');
       }
     } catch {
@@ -620,7 +676,7 @@ const OnboardingModule: React.FC = () => {
         key={currentModule}
         getPopupContainer={() => document.body}
         actionRef={actionRef}
-        columns={columnConfig.columns}
+        columns={resolvedColumns}
         request={requestFn}
         onChange={handleTableChange}
         rowKey="id"
@@ -638,7 +694,7 @@ const OnboardingModule: React.FC = () => {
             </Button>,
           ] : []),
           canBatchExport && <Button key="export" icon={<ExportOutlined />} loading={exporting} disabled={selectedRows.length === 0} onClick={() => handleBatchExport()}>
-            按固定模板导出
+            {batchExportLabel}
           </Button>,
           canBatchAccept && <Button
             key="batch-accept"
@@ -700,7 +756,7 @@ const OnboardingModule: React.FC = () => {
               <Button size="small" onClick={() => { onCleanSelected(); setSelectedRows([]); }}>取消</Button>
               {canBatchExport && (
                 <Button size="small" icon={<ExportOutlined />} loading={exporting} disabled={selected.length === 0} onClick={() => handleBatchExport(selected)}>
-                  按固定模板导出{selected.length > 0 ? `（${selected.length}）` : ''}
+                  {batchExportLabel}{selected.length > 0 ? `（${selected.length}）` : ''}
                 </Button>
               )}
               {canBatchAccept && (

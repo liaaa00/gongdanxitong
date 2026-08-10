@@ -27,7 +27,7 @@ test('admin saves route permission edits as an inactive version', async ({ page 
   let createPayload: any;
   let activateCalls = 0;
 
-  await page.route('**/api/permission-center/config', async (route) => {
+  await page.route('**/api/permission-center/config*', async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 0, message: 'ok', data: config }) });
       return;
@@ -36,10 +36,10 @@ test('admin saves route permission edits as an inactive version', async ({ page 
     versions = [{ id: 'version-2', version: createPayload.config.version, config: createPayload.config, is_active: false, created_at: '2026-08-02T01:00:00Z', description: createPayload.description }, ...versions];
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 0, message: 'ok', data: versions[0] }) });
   });
-  await page.route('**/api/permission-center/versions', async (route) => {
+  await page.route('**/api/permission-center/versions*', async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 0, message: 'ok', data: versions }) });
   });
-  await page.route('**/api/permission-center/config/*/activate', async (route) => {
+  await page.route('**/api/permission-center/config/*/activate*', async (route) => {
     activateCalls += 1;
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 0, message: 'ok', data: { message: 'ok' } }) });
   });

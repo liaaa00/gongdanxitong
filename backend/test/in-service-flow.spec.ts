@@ -4,6 +4,7 @@ import {
 } from 'src/entities';
 import {
   getDefaultInServiceFlowDefinition,
+  getDefaultInServiceOrderTransitions,
   getInServiceFlowKey,
 } from 'src/modules/in-service-orders/in-service-flow';
 
@@ -16,17 +17,49 @@ describe('in-service flow definitions', () => {
     expect(getInServiceFlowKey(orderKind)).toBe(flowKey);
   });
 
-  it('keeps the three default definitions independent', () => {
+  it('keeps single business, renewal and certificate transitions independent', () => {
     const single = getDefaultInServiceFlowDefinition('single_business');
     const renewal = getDefaultInServiceFlowDefinition('contract_renewal');
     const certificate = getDefaultInServiceFlowDefinition('certificate');
 
     expect(new Set([single.name, renewal.name, certificate.name]).size).toBe(3);
-    expect(single.flow_key).toBe('single_business');
-    expect(renewal.flow_key).toBe('contract_renewal');
-    expect(certificate.flow_key).toBe('certificate');
-    expect(single.status_transitions).not.toBe(renewal.status_transitions);
-    expect(renewal.status_transitions).not.toBe(certificate.status_transitions);
-    expect(single.status_transitions[InServiceOrderStatus.PROCESSING]).toContain(InServiceOrderStatus.COMPLETED);
+    expect(single.status_transitions[InServiceOrderStatus.ACCEPTED]).toContain(InServiceOrderStatus.READY);
+    expect(single.status_transitions[InServiceOrderStatus.PROCESSING]).toContain(InServiceOrderStatus.FAILED);
+
+    expect(renewal.status_transitions[InServiceOrderStatus.DISPATCHED]).toEqual(expect.arrayContaining([
+      InServiceOrderStatus.ACCEPTED,
+      InServiceOrderStatus.PENDING_INFO,
+    ]));
+    expect(renewal.status_transitions[InServiceOrderStatus.ACCEPTED]).toEqual(expect.arrayContaining([
+      InServiceOrderStatus.PENDING_INFO,
+      InServiceOrderStatus.COMPLETED,
+    ]));
+    expect(renewal.status_transitions[InServiceOrderStatus.ACCEPTED]).not.toContain(InServiceOrderStatus.DISPATCHED);
+    expect(renewal.status_transitions[InServiceOrderStatus.ACCEPTED]).not.toContain(InServiceOrderStatus.READY);
+    expect(renewal.status_transitions[InServiceOrderStatus.PROCESSING]).not.toContain(InServiceOrderStatus.FAILED);
+
+    expect(certificate.status_transitions[InServiceOrderStatus.DISPATCHED]).toContain(InServiceOrderStatus.PROCESSING);
+    expect(certificate.status_transitions[InServiceOrderStatus.PROCESSING]).toContain(InServiceOrderStatus.COMPLETED);
+    expect(certificate.status_transitions[InServiceOrderStatus.PROCESSING]).not.toContain(InServiceOrderStatus.FAILED);
+  });
+
+  it.each([
+    InServiceOrderKind.OUT_OF_PROVINCE_INCREASE,
+    InServiceOrderKind.OUT_OF_PROVINCE_DECREASE,
+  ])('reuses the Beilun social-insurance accept-and-complete flow for %s', (orderKind) => {
+    const transitions = getDefaultInServiceOrderTransitions(orderKind);
+
+    expect(transitions[InServiceOrderStatus.DISPATCHED]).toEqual(expect.arrayContaining([
+      InServiceOrderStatus.ACCEPTED,
+      InServiceOrderStatus.PENDING_INFO,
+    ]));
+    expect(transitions[InServiceOrderStatus.ACCEPTED]).toEqual(expect.arrayContaining([
+      InServiceOrderStatus.PENDING_INFO,
+      InServiceOrderStatus.COMPLETED,
+    ]));
+    expect(transitions[InServiceOrderStatus.ACCEPTED]).not.toContain(InServiceOrderStatus.DISPATCHED);
+    expect(transitions[InServiceOrderStatus.ACCEPTED]).not.toContain(InServiceOrderStatus.READY);
+    expect(transitions[InServiceOrderStatus.ACCEPTED]).not.toContain(InServiceOrderStatus.PROCESSING);
+    expect(transitions[InServiceOrderStatus.PROCESSING]).not.toContain(InServiceOrderStatus.FAILED);
   });
 });

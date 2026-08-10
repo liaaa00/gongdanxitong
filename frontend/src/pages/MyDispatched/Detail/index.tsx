@@ -87,6 +87,52 @@ const FIELD_GROUPS: Array<{ title: string; codes: string[] }> = [
   },
 ];
 
+const SOCIAL_INCREASE_FIELD_GROUPS: Array<{ title: string; codes: string[] }> = [
+  {
+    title: '社保公积金',
+    codes: [
+      'insured_unit',
+      'social_insurance_remark',
+      'social_pay_region',
+      'start_month',
+      'social_base',
+      'fund_start_month',
+      'fund_base',
+      'fund_ratio',
+      ...HANDLING_FEEDBACK_FIELDS.map((item) => item.result),
+    ],
+  },
+];
+
+const SOCIAL_DECREASE_FIELD_GROUPS: Array<{ title: string; codes: string[] }> = [
+  {
+    title: '社保公积金',
+    codes: [
+      ...HANDLING_FEEDBACK_FIELDS.map((item) => item.result),
+      'social_pay_region',
+      'social_insurance_remark',
+    ],
+  },
+  {
+    title: '其他字段',
+    codes: [
+      'insured_unit',
+      'social_insurance_remark',
+      'social_stop_month',
+      'fund_stop_month',
+      'last_work_date',
+    ],
+  },
+];
+
+export const getDispatchedDetailFieldGroups = (moduleCode?: string): Array<{ title: string; codes: string[] }> => {
+  if (moduleCode === 'social_insurance') return SOCIAL_INCREASE_FIELD_GROUPS;
+  if (moduleCode === 'resignation_social_insurance' || moduleCode === 'social_insurance_resign') {
+    return SOCIAL_DECREASE_FIELD_GROUPS;
+  }
+  return FIELD_GROUPS;
+};
+
 const FEEDBACK_FIELD_MAP: Record<string, string> = {
   contract: 'contract_feedback', onboarding_contact: 'onboarding_feedback',
   data_entry: 'data_entry_feedback', social_insurance: 'social_insurance_feedback',
@@ -127,6 +173,22 @@ const formatDetailValue = (value: unknown): string => {
   return String(value);
 };
 
+const SOCIAL_DETAIL_VALUE_ALIASES: Record<string, string[]> = {
+  insured_unit: [
+    'insured_unit', 'insuredUnit', 'payment_institution', 'paymentInstitution',
+    'social_location', 'socialLocation', '参保机构名称', '参保单位',
+  ],
+};
+
+function readDetailFieldValue(extraData: Record<string, unknown> | undefined, fieldCode: string): unknown {
+  const source = extraData ?? {};
+  for (const key of SOCIAL_DETAIL_VALUE_ALIASES[fieldCode] ?? [fieldCode]) {
+    const value = source[key];
+    if (value !== undefined && value !== null && String(value).trim() !== '') return value;
+  }
+  return source[fieldCode];
+};
+
 const getTeamCode = (order?: DispatchedOrderItem | null) => order?.team_code || order?.module_code || 'shared_team';
 
 // 部分子工单 module_code 存在别名（如 resignation_social_insurance 与 social_insurance_resign
@@ -157,7 +219,22 @@ function getOperatorDisplay(order: DispatchedOrderItem) {
 }
 
 const withRequiredLabel = (field: FieldConfig): FieldConfig => field;
-const GROUPED_FIELD_CODES = new Set(FIELD_GROUPS.flatMap((group) => group.codes));
+
+const toSocialDetailFieldConfig = (
+  field: NonNullable<DispatchedOrderItem['fields']>[number],
+  index: number,
+): FieldConfig => ({
+  field_code: field.fieldCode,
+  field_name: field.fieldName,
+  field_type: field.fieldType,
+  is_required: Boolean(field.validation?.required),
+  default_required: Boolean(field.validation?.required),
+  validation_regex: field.validation?.regex ?? null,
+  validation_msg: field.validation?.regexMsg ?? null,
+  dropdown_options: field.dropdownOptions ?? null,
+  display_order: index + 1,
+  is_active: field.permission !== 'hidden',
+});
 
 const filterByVisibleFields = (allFields: FieldConfig[], visibleFields?: string[]) => {
   const visibleSet = new Set((visibleFields || []).filter(Boolean));
@@ -249,10 +326,16 @@ const MyDispatchedDetail: React.FC = () => {
       } catch {
         backendFields = [];
       }
-      const fieldList = backendFields.length > 0 ? backendFields : fallbackFields;
+      const configuredFields = backendFields.length > 0 ? backendFields : fallbackFields;
+      const socialDetailFields = isSocialInsuranceModule(moduleCode)
+        ? (orderData.fields ?? [])
+          .filter((field) => field.permission !== 'hidden')
+          .map(toSocialDetailFieldConfig)
+        : [];
+      const fieldList = socialDetailFields.length > 0 ? socialDetailFields : configuredFields;
 
       let visibleFieldCodes: string[] | undefined;
-      if (moduleCode) {
+      if (moduleCode && !isSocialInsuranceModule(moduleCode)) {
         try {
           const template = await getActiveDetailViewTemplate(moduleCode);
           if (template && typeof template === 'object') {
@@ -270,8 +353,15 @@ const MyDispatchedDetail: React.FC = () => {
       setSupplementLogs(logs);
       setDirtyCleared(false);
 
+      if (isSocialInsuranceModule(moduleCode)) {
+        const fieldMap = new Map(fieldList.map((field) => [field.field_code, field]));
+        const orderedFields = (orderData.visible_fields ?? [])
+          .map((code) => fieldMap.get(code))
+          .filter((field): field is FieldConfig => Boolean(field));
+        setFields(orderedFields.length > 0 ? orderedFields : fieldList);
+        setDetailTemplateApplied(false);
       // 如果有模板配置，按模板字段顺序过滤。
-      if (visibleFieldCodes && visibleFieldCodes.length > 0) {
+      } else if (visibleFieldCodes && visibleFieldCodes.length > 0) {
         const fieldMap = new Map(fieldList.map(f => [f.field_code, f]));
         const orderedFields: FieldConfig[] = [];
         visibleFieldCodes.forEach(code => {
@@ -327,10 +417,28 @@ const MyDispatchedDetail: React.FC = () => {
     [detailTemplateApplied, order?.visible_fields],
   );
   const visibleDetailFields = useMemo(() => filterByVisibleFields(fields, visibleFields), [fields, visibleFields]);
-  const ungroupedVisibleDetailFields = useMemo(
-    () => visibleDetailFields.filter((field) => !GROUPED_FIELD_CODES.has(field.field_code)),
-    [visibleDetailFields],
+  const detailFieldGroups = useMemo(
+    () => getDispatchedDetailFieldGroups(order?.module_code),
+    [order?.module_code],
   );
+  const groupedFieldCodes = useMemo(
+    () => new Set(detailFieldGroups.flatMap((group) => group.codes)),
+    [detailFieldGroups],
+  );
+  const ungroupedVisibleDetailFields = useMemo(
+    () => visibleDetailFields.filter((field) => !groupedFieldCodes.has(field.field_code)),
+    [groupedFieldCodes, visibleDetailFields],
+  );
+  const detailFieldGroupsToRender = useMemo(() => {
+    if (ungroupedVisibleDetailFields.length === 0) return detailFieldGroups;
+    const fallbackTitle = detailFieldGroups.some((group) => group.title === '其他字段')
+      ? '补充字段'
+      : '其他字段';
+    return [
+      ...detailFieldGroups,
+      { title: fallbackTitle, codes: ungroupedVisibleDetailFields.map((field) => field.field_code) },
+    ];
+  }, [detailFieldGroups, ungroupedVisibleDetailFields]);
   const dynamicVisibleFields = useMemo(() => visibleDetailFields.map(withRequiredLabel), [visibleDetailFields]);
   const visibleFieldPermissions = useMemo(() => {
     if (!visibleFields.length) return permissions;
@@ -930,16 +1038,18 @@ const MyDispatchedDetail: React.FC = () => {
 
         <Card title="工单信息">
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-            {[...FIELD_GROUPS, { title: '其他字段', codes: ungroupedVisibleDetailFields.map((field) => field.field_code) }].map((group) => {
-              const groupFields = visibleDetailFields.filter((f) => (
-                group.codes.includes(f.field_code) && visibleFieldPermissions[f.field_code] !== 'hidden'
-              ));
+            {detailFieldGroupsToRender.map((group) => {
+              const groupFields = group.codes
+                .map((fieldCode) => visibleDetailFields.find((field) => field.field_code === fieldCode))
+                .filter((field): field is FieldConfig => (
+                  field !== undefined && visibleFieldPermissions[field.field_code] !== 'hidden'
+                ));
               if (groupFields.length === 0) return null;
               return (
                 <Card key={group.title} title={group.title} size="small" type="inner">
                   <Descriptions column={{ xs: 1, sm: 2, md: 3 }} size="small" bordered>
-                    {groupFields.map((f) => {
-                      const raw = (order.extra_data as Record<string, unknown> | undefined)?.[f.field_code];
+                    {groupFields.map((f, fieldIndex) => {
+                      const raw = readDetailFieldValue(order.extra_data as Record<string, unknown> | undefined, f.field_code);
                       const masked = visibleFieldPermissions[f.field_code] === 'masked';
                       const value = masked ? '******' : formatDetailValue(raw);
                       const dirty = hasUnreadDirty && dirtyFieldCodes.has(f.field_code);
@@ -954,6 +1064,7 @@ const MyDispatchedDetail: React.FC = () => {
                               {dirty && <Tag color="red">已变更</Tag>}
                             </Space>
                           }
+                          span={fieldIndex === groupFields.length - 1 ? 'filled' : 1}
                           contentStyle={dirty ? { borderLeft: '3px solid #ff4d4f', background: '#fff1f0' } : undefined}
                         >
                           <Space direction="vertical" size={2}>

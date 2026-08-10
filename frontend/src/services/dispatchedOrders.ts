@@ -39,6 +39,20 @@ export interface DirtyFieldMark {
   is_active?: boolean;
 }
 
+export interface DispatchedOrderDetailField {
+  fieldCode: string;
+  fieldName: string;
+  fieldType: 'text' | 'number' | 'date' | 'dropdown' | 'textarea';
+  value?: unknown;
+  permission?: 'visible' | 'hidden' | 'readonly' | 'masked';
+  dropdownOptions?: { label: string; value: string }[] | null;
+  validation?: {
+    required?: boolean;
+    regex?: string;
+    regexMsg?: string;
+  };
+}
+
 export interface DispatchedOrderItem {
   id: string;
   parent_order_id: string;
@@ -61,6 +75,7 @@ export interface DispatchedOrderItem {
   parent_order_status?: string;
   order_type?: string;
   visible_fields: string[];
+  fields?: DispatchedOrderDetailField[];
   return_reason: string | null;
   returned_fields?: string[];
   dispatched_at: string | null;
@@ -662,6 +677,18 @@ export async function batchApproveModifyDispatchedOrders(
   return request.post('/dispatched-orders/batch-approve-modify', { ids, approved, comment }) as Promise<BatchApproveModifyResult>;
 }
 
+export async function readDownloadError(response: Response, fallback: string): Promise<string> {
+  const text = await response.text().catch(() => '');
+  if (!text) return `${fallback} (${response.status})`;
+  try {
+    const parsed = JSON.parse(text) as { message?: unknown };
+    const message = typeof parsed.message === 'string' ? parsed.message.trim() : '';
+    return message || fallback;
+  } catch {
+    return text;
+  }
+}
+
 export async function downloadResignationCertificate(
   id: string,
   orderNo: string,
@@ -673,7 +700,7 @@ export async function downloadResignationCertificate(
     base + '/api/dispatched-orders/' + encodeURIComponent(id) + '/resignation-certificate',
     { headers: token ? { Authorization: 'Bearer ' + token } : undefined },
   );
-  if (!response.ok) throw new Error('离职证明导出失败');
+  if (!response.ok) throw new Error(await readDownloadError(response, '离职证明导出失败'));
   const blob = await response.blob();
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
@@ -1065,8 +1092,7 @@ async function downloadBinaryFile(url: string, fileName: string): Promise<void> 
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   });
   if (!response.ok) {
-    const message = await response.text().catch(() => '');
-    throw new Error(message || `导出文件下载失败 (${response.status})`);
+    throw new Error(await readDownloadError(response, '导出文件下载失败'));
   }
   const blob = await response.blob();
   const blobUrl = window.URL.createObjectURL(blob);

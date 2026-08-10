@@ -50,6 +50,7 @@ const DATE_FIELDS = new Set([
 ]);
 
 const INCREASE_FIELD_NAMES: Record<string, string> = {
+  insured_unit: '参保单位',
   customer_name: '客户/项目名称',
   employee_name: '员工姓名',
   id_card_no: '身份证号',
@@ -94,6 +95,7 @@ const INCREASE_FIELD_NAMES: Record<string, string> = {
 };
 
 const DECREASE_FIELD_NAMES: Record<string, string> = {
+  insured_unit: '参保单位',
   customer_name: '客户/项目名称',
   employee_name: '员工姓名',
   id_card_no: '身份证号',
@@ -118,6 +120,9 @@ const DECREASE_FIELD_NAMES: Record<string, string> = {
 };
 
 const INCREASE_HEADER_MAPPING: Record<string, string> = {
+  参保单位: 'insured_unit',
+  参保机构名称: 'insured_unit',
+  单位名称: 'insured_unit',
   标签: 'customer_name',
   员工姓名: 'employee_name',
   身份证号: 'id_card_no',
@@ -160,6 +165,9 @@ const INCREASE_HEADER_MAPPING: Record<string, string> = {
 };
 
 const DECREASE_HEADER_MAPPING: Record<string, string> = {
+  参保单位: 'insured_unit',
+  参保机构名称: 'insured_unit',
+  单位名称: 'insured_unit',
   标签: 'customer_name',
   员工姓名: 'employee_name',
   身份证号: 'id_card_no',
@@ -267,6 +275,13 @@ export function normalizeOutOfProvinceRow(row: Record<string, unknown>): Record<
     // ponytail: 养老基数仅作为缺失社保基数的回退；省级差异出现后再配置化。
     next.social_base = next.pension_base;
   }
+  next.insured_unit = readText(next.insured_unit)
+    ?? readText(next.insuredUnit)
+    ?? readText(next.social_location)
+    ?? readText(next.socialLocation)
+    ?? readText(next['参保机构名称'])
+    ?? readText(next['参保单位'])
+    ?? next.insured_unit;
   next.paymentInstitution = readText(next.paymentInstitution) ?? readText(next.payment_institution) ?? readText(next.fund_payment_institution) ?? next.paymentInstitution;
   next.contractStartDate = readText(next.contractStartDate) ?? readText(next.contract_start_date) ?? next.contractStartDate;
   next.contractEndDate = readText(next.contractEndDate) ?? readText(next.contract_end_date) ?? next.contractEndDate;

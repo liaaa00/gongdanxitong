@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { canAccessBusinessScopePath, canAccessPath, setDynamicPermissionConfig } from './routeVisibility';
+import {
+  canAccessBusinessScopePath,
+  canAccessPath,
+  resolveVisibilityRoute,
+  setDynamicPermissionConfig,
+} from './routeVisibility';
 import { ROLE } from '@/constants/roles';
 import { DEFAULT_MATRIX } from '@/services/roleActionPermissions';
 
@@ -406,5 +411,19 @@ describe('routeVisibility structured permission baseline', () => {
     expect(canAccessPath('/onboarding/renewal_contract', adminRoles, adminPermissions)).toBe(false);
     expect(canAccessPath('/onboarding/benefit_apply', adminRoles, adminPermissions)).toBe(false);
     expect(canAccessPath('/in-service/contract-renewal', adminRoles, adminPermissions)).toBe(false);
+  });
+
+  it('resolves renewal and certificate details to their independent routes', () => {
+    expect(resolveVisibilityRoute('/renewal')).toBe('/renewal');
+    expect(resolveVisibilityRoute('/renewal/renewal-1')).toBe('/renewal/:id');
+    expect(resolveVisibilityRoute('/in-service/certificates')).toBe('/in-service/certificates');
+    expect(resolveVisibilityRoute('/in-service/certificates/certificate-1'))
+      .toBe('/in-service/certificates/:id');
+    expect(resolveVisibilityRoute('/out-of-province/increase/increase-1'))
+      .toBe('/out-of-province/increase/:id');
+    expect(resolveVisibilityRoute('/out-of-province/decrease/decrease-1'))
+      .toBe('/out-of-province/decrease/:id');
+    expect(resolveVisibilityRoute('/out-of-province/single-business/single-1'))
+      .toBe('/out-of-province/single-business/:id');
   });
 });

@@ -388,7 +388,9 @@ function isDetailOrEditPath(pathname: string): boolean {
   const normalized = normalizeMenuUrl(pathname).pathname;
   if (/^\/work-orders\/[^/]+$/.test(normalized)) return true;
   if (/^\/my-dispatched\/[^/]+$/.test(normalized)) return true;
-  if (/^\/in-service\/[^/]+(\/audit)?$/.test(normalized)) return true;
+  if (/^\/out-of-province\/(increase|decrease|single-business)\/[^/]+$/.test(normalized)) return true;
+  if (/^\/in-service\/certificates\/[^/]+$/.test(normalized)) return true;
+  if (/^\/in-service\/(?!certificates(?:\/|$))[^/]+(\/audit)?$/.test(normalized)) return true;
   if (/^\/resignation\/[^/]+(\/cert)?$/.test(normalized)) return true;
   return false;
 }
@@ -585,10 +587,17 @@ const BasicLayout: React.FC = () => {
     if (location.pathname === '/notifications') title = '消息通知 - 工单管理系统';
     if (location.pathname === '/in-service') title = '单项业务办理 - 工单管理系统';
     else if (location.pathname === '/in-service/new') title = '新建单项业务 - 工单管理系统';
+    else if (location.pathname === '/in-service/certificates') title = '证明开具 - 工单管理系统';
+    else if (/^\/in-service\/certificates\/[^/]+$/.test(location.pathname)) title = '证明开具详情 - 工单管理系统';
     else if (/^\/in-service\/[^/]+$/.test(location.pathname)) title = '单项业务详情 - 工单管理系统';
+    if (location.pathname === '/renewal') title = '劳动合同续签 - 工单管理系统';
+    if (/^\/renewal\/[^/]+$/.test(location.pathname)) title = '劳动合同续签详情 - 工单管理系统';
     if (location.pathname === '/out-of-province/increase') title = '省外增员 - 工单管理系统';
+    if (/^\/out-of-province\/increase\/[^/]+$/.test(location.pathname)) title = '省外增员详情 - 工单管理系统';
     if (location.pathname === '/out-of-province/decrease') title = '省外减员 - 工单管理系统';
+    if (/^\/out-of-province\/decrease\/[^/]+$/.test(location.pathname)) title = '省外减员详情 - 工单管理系统';
     if (location.pathname === '/out-of-province/single-business') title = '省外单项业务 - 工单管理系统';
+    if (/^\/out-of-province\/single-business\/[^/]+$/.test(location.pathname)) title = '省外单项业务详情 - 工单管理系统';
     if (location.pathname === '/out-of-province/import') title = '省外增减员导入 - 工单管理系统';
     if (location.pathname === '/admin/users') title = '用户管理 - 工单管理系统';
     if (location.pathname === '/admin/module-config') title = '子工单字段配置 - 工单管理系统';

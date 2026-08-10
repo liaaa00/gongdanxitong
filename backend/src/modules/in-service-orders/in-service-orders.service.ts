@@ -42,6 +42,10 @@ import { ExportTemplatesService } from 'src/modules/admin/export-templates/expor
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { HandlerPickerService } from 'src/modules/dispatch-engine/handler-picker.service';
 import { assertInServiceOrderTransition } from 'src/modules/dispatched-orders/dispatched-order.service';
+import {
+  HANDLING_RESULT_COMPLETED,
+  normalizeHandlingResult,
+} from 'src/modules/dispatched-orders/handling-feedback';
 import { buildContractTermText } from 'src/modules/dispatched-orders/resignation-certificate';
 import { WorkflowDefinition, WorkflowDefinitionStatus } from 'src/modules/workflows/workflow.entity';
 import {
@@ -66,9 +70,12 @@ import {
   ReviewMaterialChangeDto,
 } from './dto/material-change.dto';
 import {
-  getDefaultInServiceFlowDefinition,
+  getDefaultInServiceOrderTransitions,
   getInServiceFlowKey,
+  usesBeilunChildOrderFlow,
 } from './in-service-flow';
+import { createOutOfProvinceExportWorkbook } from './out-of-province-export';
+import { OUT_OF_PROVINCE_ACCOUNTS } from './out-of-province-account-data';
 
 const MATERIAL_CHANGE_REQUEST_KEY = '__materialChangeRequest';
 const MATERIAL_CHANGE_HISTORY_KEY = '__materialChangeHistory';
@@ -258,6 +265,15 @@ export class InServiceOrdersService {
     return { items: results, total: results.length };
   }
 
+  listOutOfProvinceAccounts(keyword?: string) {
+    const normalized = keyword?.trim().toLocaleLowerCase();
+    return OUT_OF_PROVINCE_ACCOUNTS.filter((account) => {
+      if (!normalized) return true;
+      return [account.unitName, account.province, account.city, account.socialHandler, account.businessOwner]
+        .some((value) => value.toLocaleLowerCase().includes(normalized));
+    });
+  }
+
   async list(
     query: ListInServiceOrderQueryDto,
     user: JwtUserPayload,
@@ -305,8 +321,12 @@ export class InServiceOrdersService {
       }));
     }
 
+    const isOutOfProvinceList = query.orderKind === InServiceOrderKind.OUT_OF_PROVINCE_INCREASE
+      || query.orderKind === InServiceOrderKind.OUT_OF_PROVINCE_DECREASE;
     qb.addSelect(
-      "CASE WHEN order.status = 'pending_info' THEN 0 ELSE 1 END",
+      isOutOfProvinceList
+        ? `CASE WHEN order.extra_data ? '${MATERIAL_CHANGE_REQUEST_KEY}' THEN 0 ELSE 1 END`
+        : "CASE WHEN order.status = 'pending_info' THEN 0 ELSE 1 END",
       'status_priority',
     );
     qb.orderBy('status_priority', 'ASC');
@@ -519,15 +539,14 @@ export class InServiceOrdersService {
   async accept(id: string, user: JwtUserPayload): Promise<InServiceOrderResponseDto> {
     const order = await this.findEntity(id);
     this.assertHandlerOrManagement(order, user);
-    await this.assertFlowTransition(order, InServiceOrderStatus.ACCEPTED);
+    const target = order.orderKind === InServiceOrderKind.CERTIFICATE
+      ? InServiceOrderStatus.PROCESSING
+      : InServiceOrderStatus.ACCEPTED;
+    await this.assertFlowTransition(order, target);
     const acceptedAt = new Date();
     order.acceptedAt = acceptedAt;
-    if (order.orderKind === InServiceOrderKind.CERTIFICATE) {
-      order.status = InServiceOrderStatus.PROCESSING;
-      order.processingAt = acceptedAt;
-    } else {
-      order.status = InServiceOrderStatus.ACCEPTED;
-    }
+    order.status = target;
+    if (target === InServiceOrderStatus.PROCESSING) order.processingAt = acceptedAt;
     return this.saveAndRespond(order);
   }
 
@@ -549,6 +568,9 @@ export class InServiceOrdersService {
     const order = await this.findEntity(id);
     this.assertHandlerOrManagement(order, user);
     this.assertNoPendingMaterialChange(order);
+    if (usesBeilunChildOrderFlow(order.orderKind)) {
+      throw businessException(4808, HttpStatus.BAD_REQUEST, '当前工单复用北仑子工单流程，不支持转派');
+    }
     if (![InServiceOrderStatus.DISPATCHED, InServiceOrderStatus.ACCEPTED].includes(order.status)) {
       throw businessException(4808, HttpStatus.BAD_REQUEST, '仅待受理或已受理工单可转派');
     }
@@ -592,8 +614,16 @@ export class InServiceOrdersService {
     const order = await this.findEntity(id);
     this.assertHandlerOrManagement(order, user);
     this.assertNoPendingMaterialChange(order);
-    if (![InServiceOrderStatus.ACCEPTED, InServiceOrderStatus.PROCESSING].includes(order.status)) {
-      throw businessException(4809, HttpStatus.BAD_REQUEST, '当前节点不可发起补充材料');
+    const allowedReturnStatuses = usesBeilunChildOrderFlow(order.orderKind)
+      ? [
+          InServiceOrderStatus.DISPATCHED,
+          InServiceOrderStatus.ACCEPTED,
+          InServiceOrderStatus.READY,
+          InServiceOrderStatus.PROCESSING,
+        ]
+      : [InServiceOrderStatus.ACCEPTED, InServiceOrderStatus.PROCESSING];
+    if (!allowedReturnStatuses.includes(order.status)) {
+      throw businessException(4809, HttpStatus.BAD_REQUEST, '当前节点不可退回');
     }
     const returnStatus = order.status;
     await this.assertFlowTransition(order, InServiceOrderStatus.PENDING_INFO);
@@ -748,6 +778,18 @@ export class InServiceOrdersService {
         incomeConfirmedAt: new Date().toISOString(),
       };
     }
+
+    const provinceFeedback = this.normalizeOutOfProvinceCompletionFeedback(order, dto.extraData ?? {});
+    if (provinceFeedback) {
+      order.extraData = { ...(order.extraData ?? {}), ...provinceFeedback.patch };
+      order.completionRemark = dto.remark?.trim() || null;
+      order.attachments = this.mergeAttachments(order.attachments, dto.attachments);
+      if (!provinceFeedback.complete) {
+        order.completedAt = null;
+        return this.saveAndRespond(order);
+      }
+    }
+
     await this.assertFlowTransition(order, InServiceOrderStatus.COMPLETED);
     order.status = InServiceOrderStatus.COMPLETED;
     order.completionRemark = dto.remark?.trim() || null;
@@ -808,6 +850,37 @@ export class InServiceOrdersService {
     const order = await this.findEntity(id);
     this.assertHandlerOrManagement(order, user);
     return this.exportTemplatesService.exportContractRenewal(order, user);
+  }
+
+  async exportOutOfProvinceBatch(
+    ids: string[],
+    user: JwtUserPayload,
+  ): Promise<{ buffer: Buffer; fileName: string }> {
+    const uniqueIds = Array.from(new Set(ids));
+    const orders = await Promise.all(uniqueIds.map((id) => this.findEntity(id)));
+    orders.forEach((order) => this.assertCanView(order, user));
+    if (orders.some((order) => ![
+      InServiceOrderKind.OUT_OF_PROVINCE_INCREASE,
+      InServiceOrderKind.OUT_OF_PROVINCE_DECREASE,
+    ].includes(order.orderKind))) {
+      throw businessException(4812, HttpStatus.BAD_REQUEST, '仅省外增员或减员工单可导出');
+    }
+    return createOutOfProvinceExportWorkbook(orders);
+  }
+
+  async exportOutOfProvince(
+    id: string,
+    user: JwtUserPayload,
+  ): Promise<{ buffer: Buffer; fileName: string }> {
+    const order = await this.findEntity(id);
+    this.assertCanView(order, user);
+    if (![
+      InServiceOrderKind.OUT_OF_PROVINCE_INCREASE,
+      InServiceOrderKind.OUT_OF_PROVINCE_DECREASE,
+    ].includes(order.orderKind)) {
+      throw businessException(4812, HttpStatus.BAD_REQUEST, '仅省外增员或减员工单可导出');
+    }
+    return createOutOfProvinceExportWorkbook(order);
   }
 
   async generateCertificate(
@@ -1050,6 +1123,44 @@ export class InServiceOrdersService {
     }
   }
 
+  private normalizeOutOfProvinceCompletionFeedback(
+    order: InServiceOrder,
+    input: Record<string, unknown>,
+  ): { patch: Record<string, unknown>; complete: boolean } | null {
+    if (
+      order.orderKind !== InServiceOrderKind.OUT_OF_PROVINCE_INCREASE
+      && order.orderKind !== InServiceOrderKind.OUT_OF_PROVINCE_DECREASE
+    ) return null;
+
+    const source = { ...(order.extraData ?? {}), ...input };
+    const aliases: Record<string, readonly string[]> = {
+      social_insurance_result: ['social_insurance_result', 'socialInsuranceResult', '社保是否办结'],
+      medical_insurance_result: ['medical_insurance_result', 'medicalInsuranceResult', '医保是否办结'],
+      housing_fund_result: ['housing_fund_result', 'housingFundResult', '公积金是否办结'],
+    };
+    const patch: Record<string, unknown> = {};
+    let complete = true;
+    for (const [fieldCode, fieldAliases] of Object.entries(aliases)) {
+      const raw = fieldAliases
+        .map((alias) => source[alias])
+        .find((value) => value !== undefined && value !== null && String(value).trim() !== '');
+      const normalized = normalizeHandlingResult(raw);
+      if (raw !== undefined && !normalized) {
+        throw businessException(4811, HttpStatus.BAD_REQUEST, '社保、医保和公积金办结结果仅允许填写是或否');
+      }
+      if (normalized) patch[fieldCode] = normalized;
+      if (normalized !== HANDLING_RESULT_COMPLETED) complete = false;
+    }
+
+    const remark = [
+      source.social_insurance_remark,
+      source.socialInsuranceRemark,
+      source['社保公积金办理备注'],
+    ].find((value) => value !== undefined && value !== null && String(value).trim() !== '');
+    if (remark !== undefined) patch.social_insurance_remark = String(remark).trim();
+    return { patch, complete };
+  }
+
   private mergeAttachments(current: string[] = [], next?: string[]): string[] {
     const merged = Array.from(new Set([...current, ...(next ?? [])]));
     if (merged.length > 5) {
@@ -1161,20 +1272,51 @@ export class InServiceOrdersService {
       return;
     }
 
-    if (!payload.province || !PROVINCE_SET.has(payload.province) || !payload.city?.trim() || !extraData.paymentInstitution) {
-      throw businessException(4811, HttpStatus.BAD_REQUEST, '参保省份、城市和缴纳机构不能为空');
-    }
+    const insuredUnit = extraData.insured_unit
+      ?? extraData.insuredUnit
+      ?? extraData.social_location
+      ?? extraData.socialLocation
+      ?? extraData['参保机构名称']
+      ?? extraData['参保单位']
+      ?? extraData.payment_institution
+      ?? extraData.paymentInstitution;
+    const socialPayRegion = extraData.social_pay_region
+      ?? extraData.socialPayRegion
+      ?? [payload.province, payload.city].filter(Boolean).join('/');
     if (
-      orderKind === InServiceOrderKind.OUT_OF_PROVINCE_INCREASE
-      && (!extraData.contractStartDate || !extraData.contractEndDate)
+      !payload.province
+      || !PROVINCE_SET.has(payload.province)
+      || !payload.city?.trim()
+      || !insuredUnit
+      || !socialPayRegion
     ) {
-      throw businessException(4811, HttpStatus.BAD_REQUEST, '省外增员需填写合同开始和结束时间');
+      throw businessException(4811, HttpStatus.BAD_REQUEST, '参保单位和缴纳地不能为空');
     }
-    if (
-      orderKind === InServiceOrderKind.OUT_OF_PROVINCE_DECREASE
-      && !extraData.lastWorkDate
-    ) {
-      throw businessException(4811, HttpStatus.BAD_REQUEST, '省外减员需填写最后工作日');
+    const hasValue = (value: unknown) => (
+      value !== undefined
+      && value !== null
+      && (typeof value !== 'string' || value.trim().length > 0)
+    );
+    if (orderKind === InServiceOrderKind.OUT_OF_PROVINCE_INCREASE) {
+      const requiredIncreaseValues = [
+        extraData.start_month ?? extraData.startMonth ?? extraData.social_start_month ?? extraData.socialStartMonth,
+        extraData.social_base ?? extraData.socialBase ?? extraData.social_security_base ?? extraData.socialSecurityBase,
+        extraData.fund_start_month ?? extraData.fundStartMonth,
+        extraData.fund_base ?? extraData.fundBase ?? extraData.housing_fund_base ?? extraData.housingFundBase,
+      ];
+      if (requiredIncreaseValues.some((value) => !hasValue(value))) {
+        throw businessException(4811, HttpStatus.BAD_REQUEST, '省外增员需填写社保、公积金起缴月和缴费工资');
+      }
+    }
+    if (orderKind === InServiceOrderKind.OUT_OF_PROVINCE_DECREASE) {
+      const requiredDecreaseValues = [
+        extraData.social_stop_month ?? extraData.socialStopMonth,
+        extraData.fund_stop_month ?? extraData.fundStopMonth,
+        extraData.last_work_date ?? extraData.lastWorkDate,
+      ];
+      if (requiredDecreaseValues.some((value) => !hasValue(value))) {
+        throw businessException(4811, HttpStatus.BAD_REQUEST, '省外减员需填写社保停缴月、公积金停缴月和最后工作日');
+      }
     }
   }
 
@@ -1281,25 +1423,40 @@ export class InServiceOrdersService {
   }
 
   private async assertFlowTransition(order: InServiceOrder, next: InServiceOrderStatus): Promise<void> {
-    const flowKey = getInServiceFlowKey(order.orderKind ?? InServiceOrderKind.SINGLE_BUSINESS);
-    if (!flowKey) {
+    const orderKind = order.orderKind ?? InServiceOrderKind.SINGLE_BUSINESS;
+    const flowKey = getInServiceFlowKey(orderKind);
+    const isProvinceSocialOrder = orderKind === InServiceOrderKind.OUT_OF_PROVINCE_INCREASE
+      || orderKind === InServiceOrderKind.OUT_OF_PROVINCE_DECREASE;
+    if (!flowKey && !isProvinceSocialOrder) {
       assertInServiceOrderTransition(order.status, next);
       return;
     }
 
-    let transitions = getDefaultInServiceFlowDefinition(flowKey).status_transitions;
-    if (this.workflowRepository) {
+    let transitions = getDefaultInServiceOrderTransitions(orderKind);
+    if (flowKey && flowKey !== 'contract_renewal' && this.workflowRepository) {
       const workflow = await this.workflowRepository.findOne({
         where: {
           flowKey,
-          businessScope: order.businessScope ?? BusinessScope.BEILUN,
+          businessScope: flowKey === 'single_business'
+            ? BusinessScope.BEILUN
+            : order.businessScope ?? BusinessScope.BEILUN,
           status: WorkflowDefinitionStatus.PUBLISHED,
         },
         order: { updatedAt: 'DESC' },
       });
       const published = workflow?.publishedDefinitionJson?.status_transitions;
       if (published && typeof published === 'object' && !Array.isArray(published)) {
-        transitions = published as typeof transitions;
+        const publishedRecord = published as Record<string, unknown>;
+        const staysWithinBusinessFlow = Object.entries(publishedRecord).every(([status, candidates]) => {
+          const ceiling = transitions[status as InServiceOrderStatus];
+          return Array.isArray(candidates)
+            && Boolean(ceiling)
+            && candidates.every((candidate) => (
+              typeof candidate === 'string'
+              && ceiling.includes(candidate as InServiceOrderStatus)
+            ));
+        });
+        if (staysWithinBusinessFlow) transitions = published as typeof transitions;
       }
     }
 
@@ -1308,7 +1465,7 @@ export class InServiceOrdersService {
       throw businessException(
         4801,
         HttpStatus.BAD_REQUEST,
-        `在职流程 ${flowKey} 不允许状态 ${order.status} -> ${next}`,
+        `流程 ${flowKey ?? orderKind} 不允许状态 ${order.status} -> ${next}`,
       );
     }
   }

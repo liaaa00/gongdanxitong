@@ -27,7 +27,6 @@ import {
   IN_SERVICE_BUSINESS_TYPE_OPTIONS,
   IN_SERVICE_ORDER_KINDS,
   IN_SERVICE_PROVINCES,
-  PROVINCES_27,
   getInServiceProcessOptions,
   getInServiceRequirementOptions,
   type InServiceBusinessType,
@@ -36,6 +35,7 @@ import {
 } from '@/constants/inService';
 import { getRenewalHistory, type InServiceOrderPayload, type RenewalHistoryResult } from '@/services/inServiceOrders';
 import { getContractSubjects, type ContractSubjectItem } from '@/services/contractSubjects';
+import { getOutOfProvinceAccounts, type OutOfProvinceAccount } from '@/services/outOfProvinceAccounts';
 
 export type InServiceOrderFormValues = InServiceOrderPayload;
 
@@ -53,8 +53,14 @@ interface AttachmentFieldProps {
 }
 
 const formCol = { xs: 24, lg: 12 };
+const thirdCol = { xs: 24, lg: 8 };
 const dateValueProps = (value?: string) => ({ value: value ? dayjs(value) : null });
 const normalizeDate = (value: Dayjs | null) => value?.format('YYYY-MM-DD');
+const normalizeMonth = (value: Dayjs | null) => value?.format('YYYY-MM');
+const YES_NO_OPTIONS = [
+  { label: '是', value: '是' },
+  { label: '否', value: '否' },
+];
 
 const RENEWAL_LEGACY_FIELD_CODES = [
   'renewal_reason',
@@ -184,10 +190,71 @@ export function normalizeRenewalExtraData(
   };
 }
 
+function readExtraAlias(extraData: Record<string, unknown>, ...keys: string[]): unknown {
+  for (const key of keys) {
+    const value = extraData[key];
+    if (value !== undefined && value !== null && String(value).trim() !== '') return value;
+  }
+  return undefined;
+}
+
+function parsePayRegion(value: unknown): { province?: string; city?: string } {
+  const parts = String(value ?? '')
+    .split(/[\\/／|｜,，\\s-]+/g)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (parts.length < 2) return {};
+  const province = parts[0].replace(/省$|市$|自治区$/g, '');
+  return { province, city: parts[1] };
+}
+
+export function normalizeOutOfProvinceExtraData(
+  extraData: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const source = { ...(extraData || {}) };
+  const next = { ...source };
+  const aliases: Record<string, string[]> = {
+    insured_unit: ['insured_unit', 'insuredUnit', 'payment_institution', 'paymentInstitution', 'social_location', 'socialLocation', '参保机构名称', '参保单位'],
+    social_pay_region: ['social_pay_region', 'socialPayRegion'],
+    payment_institution: ['payment_institution', 'paymentInstitution'],
+    start_month: ['start_month', 'startMonth'],
+    fund_start_month: ['fund_start_month', 'fundStartMonth'],
+    social_base: ['social_base', 'socialBase'],
+    fund_base: ['fund_base', 'fundBase'],
+    fund_ratio: ['fund_ratio', 'fundRatio'],
+    social_insurance_result: ['social_insurance_result', 'socialInsuranceResult'],
+    medical_insurance_result: ['medical_insurance_result', 'medicalInsuranceResult'],
+    housing_fund_result: ['housing_fund_result', 'housingFundResult'],
+    social_insurance_remark: ['social_insurance_remark', 'socialInsuranceRemark'],
+    contract_start_date: ['contract_start_date', 'contractStartDate'],
+    contract_end_date: ['contract_end_date', 'contractEndDate'],
+    last_work_date: ['last_work_date', 'lastWorkDate'],
+    social_stop_month: ['social_stop_month', 'socialStopMonth'],
+    fund_stop_month: ['fund_stop_month', 'fundStopMonth'],
+    resignation_reason: ['resignation_reason', 'resignationReason'],
+  };
+  for (const [target, keys] of Object.entries(aliases)) {
+    const value = readExtraAlias(source, ...keys);
+    if (value !== undefined) next[target] = value;
+  }
+  return next;
+}
+
 export function normalizeInServiceOrderFormValues(
   values: InServiceOrderFormValues,
   orderKind: InServiceOrderKind,
 ): InServiceOrderFormValues {
+  if (orderKind === IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_INCREASE
+    || orderKind === IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_DECREASE) {
+    const extraData = normalizeOutOfProvinceExtraData(values.extraData);
+    const region = parsePayRegion(extraData.social_pay_region);
+    return {
+      ...values,
+      province: values.province || region.province as InServiceOrderFormValues['province'],
+      city: values.city || region.city,
+      extraData,
+    };
+  }
   if (orderKind !== IN_SERVICE_ORDER_KINDS.CONTRACT_RENEWAL) return values;
   return {
     ...values,
@@ -293,6 +360,7 @@ export default function InServiceOrderForm({
   const { message } = App.useApp();
   const [customers, setCustomers] = useState<CustomerItem[]>([]);
   const [departments, setDepartments] = useState<DepartmentItem[]>([]);
+  const [outOfProvinceAccounts, setOutOfProvinceAccounts] = useState<OutOfProvinceAccount[]>([]);
   const [optionsLoaded, setOptionsLoaded] = useState(false);
   const [renewalConfiguredFields, setRenewalConfiguredFields] = useState<ImportTemplateFieldItem[]>([]);
   const [contractSubjects, setContractSubjects] = useState<ContractSubjectItem[]>([]);
@@ -335,6 +403,32 @@ export default function InServiceOrderForm({
   const isOutIncrease = effectiveKind === IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_INCREASE;
   const isOutDecrease = effectiveKind === IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_DECREASE;
   const isOutOfProvince = isOutIncrease || isOutDecrease;
+
+  useEffect(() => {
+    if (!isOutOfProvince) {
+      setOutOfProvinceAccounts([]);
+      return;
+    }
+    getOutOfProvinceAccounts()
+      .then(setOutOfProvinceAccounts)
+      .catch(() => message.warning('省外账户目录加载失败，请稍后刷新'));
+  }, [isOutOfProvince, message]);
+
+  const insuredUnitValue = String(readExtraAlias(
+    watchedExtraData || {},
+    'insured_unit', 'insuredUnit', 'social_location', 'socialLocation', '参保机构名称', '参保单位',
+    'payment_institution', 'paymentInstitution',
+  ) ?? '');
+  const insuredUnitOptions = useMemo(() => {
+    const options = outOfProvinceAccounts.map((account) => ({
+      value: account.unitName,
+      label: `${account.unitName}（${account.province}/${account.city}）`,
+    }));
+    if (insuredUnitValue && !options.some((option) => option.value === insuredUnitValue)) {
+      options.unshift({ value: insuredUnitValue, label: insuredUnitValue });
+    }
+    return options;
+  }, [insuredUnitValue, outOfProvinceAccounts]);
 
   useEffect(() => {
     if (!isRenewal) {
@@ -507,6 +601,30 @@ export default function InServiceOrderForm({
     );
   };
 
+  const syncProvinceCity = (value: string) => {
+    const parsed = parsePayRegion(value);
+    if (parsed.province || parsed.city) {
+      form.setFieldsValue({
+        province: parsed.province || form.getFieldValue('province'),
+        city: parsed.city || form.getFieldValue('city'),
+      });
+    }
+  };
+
+  const selectOutOfProvinceAccount = (unitName: string) => {
+    const account = outOfProvinceAccounts.find((item) => item.unitName === unitName);
+    if (!account) return;
+    form.setFieldsValue({
+      province: account.province as InServiceOrderFormValues['province'],
+      city: account.city,
+      extraData: {
+        ...(form.getFieldValue('extraData') || {}),
+        insured_unit: account.unitName,
+        social_pay_region: `${account.province}/${account.city}`,
+      },
+    });
+  };
+
   return (
     <Form<InServiceOrderFormValues>
       form={form}
@@ -516,6 +634,7 @@ export default function InServiceOrderForm({
         orderKind: effectiveKind,
         ...initialValues,
         ...(isRenewal ? { extraData: normalizeRenewalExtraData(initialValues?.extraData) } : {}),
+        ...(isOutOfProvince ? { extraData: normalizeOutOfProvinceExtraData(initialValues?.extraData) } : {}),
       }}
       disabled={readOnly}
       requiredMark
@@ -761,51 +880,164 @@ export default function InServiceOrderForm({
         </>
       ) : null}
 
-      {isOutOfProvince ? (
+      {isOutIncrease ? (
         <>
-          <Divider orientation="left">省外参保信息</Divider>
+          <Divider orientation="left">社保公积金</Divider>
           <Row gutter={16}>
-            <Col {...formCol}>
-              <Form.Item name="province" label="参保省份" rules={[{ required: true, message: '请选择参保省份' }]}>
-                <Select showSearch optionFilterProp="label" options={PROVINCES_27.map((value) => ({ value, label: value }))} />
+            <Col {...thirdCol}>
+              <Form.Item
+                name={['extraData', 'insured_unit']}
+                label="参保单位"
+                rules={[{ required: true, message: '请选择参保单位' }]}
+              >
+                <Select
+                  showSearch
+                  allowClear
+                  optionFilterProp="label"
+                  options={insuredUnitOptions}
+                  onChange={selectOutOfProvinceAccount}
+                  placeholder="请选择参保单位"
+                />
               </Form.Item>
             </Col>
-            <Col {...formCol}>
-              <Form.Item name="city" label="参保城市" rules={[{ required: true, message: '请输入参保城市' }]}>
-                <Input maxLength={50} />
+            <Col {...thirdCol}>
+              <Form.Item
+                name={['extraData', 'social_pay_region']}
+                label="缴纳地"
+                rules={[{ required: true, message: '请输入缴纳地' }]}
+              >
+                <Input
+                  maxLength={200}
+                  placeholder="例如：广东/深圳"
+                  onChange={(event) => syncProvinceCity(event.currentTarget.value)}
+                />
               </Form.Item>
             </Col>
-            <Col {...formCol}>
-              <Form.Item name={['extraData', 'paymentInstitution']} label="缴纳机构" rules={[{ required: true, message: '请输入缴纳机构' }]}>
-                <Input maxLength={200} />
+            <Col {...thirdCol}>
+              <Form.Item name={['extraData', 'social_insurance_remark']} label="社保公积金办理备注">
+                <Input.TextArea rows={2} maxLength={2000} />
               </Form.Item>
             </Col>
-            {isOutIncrease ? (
-              <>
-                <Col {...formCol}>
-                  <Form.Item name={['extraData', 'contractStartDate']} label="合同开始时间" rules={[{ required: true }]} getValueProps={dateValueProps} normalize={normalizeDate}>
-                    <DatePicker style={{ width: '100%' }} />
-                  </Form.Item>
-                </Col>
-                <Col {...formCol}>
-                  <Form.Item name={['extraData', 'contractEndDate']} label="合同结束时间" rules={[{ required: true }]} getValueProps={dateValueProps} normalize={normalizeDate}>
-                    <DatePicker style={{ width: '100%' }} />
-                  </Form.Item>
-                </Col>
-              </>
-            ) : null}
-            {isOutDecrease ? (
-              <Col {...formCol}>
-                <Form.Item name={['extraData', 'lastWorkDate']} label="最后工作日" rules={[{ required: true }]} getValueProps={dateValueProps} normalize={normalizeDate}>
-                  <DatePicker style={{ width: '100%' }} />
-                </Form.Item>
-              </Col>
-            ) : null}
-            <Col {...formCol}><Form.Item name={['extraData', 'ethnicity']} label="民族"><Input maxLength={50} /></Form.Item></Col>
-            <Col {...formCol}><Form.Item name={['extraData', 'education']} label="学历"><Input maxLength={50} /></Form.Item></Col>
-            <Col {...formCol}><Form.Item name={['extraData', 'householdType']} label="户籍类型"><Input maxLength={50} /></Form.Item></Col>
-            <Col {...formCol}><Form.Item name={['extraData', 'householdAddress']} label="户籍地"><Input maxLength={256} /></Form.Item></Col>
+            <Col {...thirdCol}>
+              <Form.Item name={['extraData', 'start_month']} label="社保起缴月" rules={[{ required: true, message: '请选择社保起缴月' }]} getValueProps={dateValueProps} normalize={normalizeMonth}>
+                <DatePicker picker="month" style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col {...thirdCol}>
+              <Form.Item name={['extraData', 'social_base']} label="社保缴费工资" rules={[{ required: true, message: '请输入社保缴费工资' }]}>
+                <InputNumber min={0} precision={2} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col {...thirdCol}>
+              <Form.Item name={['extraData', 'fund_start_month']} label="公积金起缴月" rules={[{ required: true, message: '请选择公积金起缴月' }]} getValueProps={dateValueProps} normalize={normalizeMonth}>
+                <DatePicker picker="month" style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col {...thirdCol}>
+              <Form.Item name={['extraData', 'fund_base']} label="公积金缴费工资" rules={[{ required: true, message: '请输入公积金缴费工资' }]}>
+                <InputNumber min={0} precision={2} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col {...thirdCol}>
+              <Form.Item name={['extraData', 'fund_ratio']} label="公积金比例">
+                <Input placeholder="按现有配置填写，例如：单位12%+个人12%" />
+              </Form.Item>
+            </Col>
+            <Col {...thirdCol}>
+              <Form.Item name={['extraData', 'social_insurance_result']} label="社保是否办结">
+                <Select allowClear options={YES_NO_OPTIONS} />
+              </Form.Item>
+            </Col>
+            <Col {...thirdCol}>
+              <Form.Item name={['extraData', 'medical_insurance_result']} label="医保是否办结">
+                <Select allowClear options={YES_NO_OPTIONS} />
+              </Form.Item>
+            </Col>
+            <Col {...thirdCol}>
+              <Form.Item name={['extraData', 'housing_fund_result']} label="公积金是否办结">
+                <Select allowClear options={YES_NO_OPTIONS} />
+              </Form.Item>
+            </Col>
           </Row>
+          <Form.Item name="province" hidden><Input /></Form.Item>
+          <Form.Item name="city" hidden><Input /></Form.Item>
+        </>
+      ) : null}
+      {isOutDecrease ? (
+        <>
+          <Divider orientation="left">社保公积金</Divider>
+          <Row gutter={16}>
+            <Col {...thirdCol}>
+              <Form.Item name={['extraData', 'social_insurance_result']} label="社保是否办结">
+                <Select allowClear options={YES_NO_OPTIONS} />
+              </Form.Item>
+            </Col>
+            <Col {...thirdCol}>
+              <Form.Item name={['extraData', 'medical_insurance_result']} label="医保是否办结">
+                <Select allowClear options={YES_NO_OPTIONS} />
+              </Form.Item>
+            </Col>
+            <Col {...thirdCol}>
+              <Form.Item name={['extraData', 'housing_fund_result']} label="公积金是否办结">
+                <Select allowClear options={YES_NO_OPTIONS} />
+              </Form.Item>
+            </Col>
+            <Col {...thirdCol}>
+              <Form.Item
+                name={['extraData', 'social_pay_region']}
+                label="缴纳地"
+                rules={[{ required: true, message: '请输入缴纳地' }]}
+              >
+                <Input maxLength={200} placeholder="例如：广东/深圳" onChange={(event) => syncProvinceCity(event.currentTarget.value)} />
+              </Form.Item>
+            </Col>
+            <Col {...thirdCol}>
+              <Form.Item name={['extraData', 'social_insurance_remark']} label="社保公积金办理备注">
+                <Input.TextArea rows={2} maxLength={2000} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Divider orientation="left">其他字段</Divider>
+          <Row gutter={16}>
+            <Col {...thirdCol}>
+              <Form.Item
+                name={['extraData', 'insured_unit']}
+                label="参保单位"
+                rules={[{ required: true, message: '请选择参保单位' }]}
+              >
+                <Select
+                  showSearch
+                  allowClear
+                  optionFilterProp="label"
+                  options={insuredUnitOptions}
+                  onChange={selectOutOfProvinceAccount}
+                  placeholder="请选择参保单位"
+                />
+              </Form.Item>
+            </Col>
+            <Col {...thirdCol}>
+              <Form.Item name={['extraData', 'social_insurance_remark']} label="社保公积金办理备注">
+                <Input.TextArea rows={2} maxLength={2000} />
+              </Form.Item>
+            </Col>
+            <Col {...thirdCol}>
+              <Form.Item name={['extraData', 'social_stop_month']} label="社保停缴月" rules={[{ required: true, message: '请选择社保停缴月' }]} getValueProps={dateValueProps} normalize={normalizeMonth}>
+                <DatePicker picker="month" style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col {...thirdCol}>
+              <Form.Item name={['extraData', 'fund_stop_month']} label="公积金停缴月" rules={[{ required: true, message: '请选择公积金停缴月' }]} getValueProps={dateValueProps} normalize={normalizeMonth}>
+                <DatePicker picker="month" style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col {...thirdCol}>
+              <Form.Item name={['extraData', 'last_work_date']} label="最后工作日" rules={[{ required: true, message: '请选择最后工作日' }]} getValueProps={dateValueProps} normalize={normalizeDate}>
+                <DatePicker style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Form.Item name="province" hidden><Input /></Form.Item>
+          <Form.Item name="city" hidden><Input /></Form.Item>
         </>
       ) : null}
 

@@ -34,6 +34,7 @@ import {
   ReviewMaterialChangeDto,
 } from './dto/material-change.dto';
 import { InjuryWarningQueryDto } from './dto/injury-warning-query.dto';
+import { OutOfProvinceExportDto } from './dto/out-of-province-export.dto';
 import { InServiceOrdersService } from './in-service-orders.service';
 
 @Controller('in-service-orders')
@@ -60,6 +61,11 @@ export class InServiceOrdersController {
     return this.service.list(query, user);
   }
 
+  @Get('out-of-province-accounts')
+  outOfProvinceAccounts(@Query('keyword') keyword?: string) {
+    return this.service.listOutOfProvinceAccounts(keyword);
+  }
+
   @Get('renewal/history')
   renewalHistory(
     @Query('customerId') customerId: string,
@@ -71,6 +77,33 @@ export class InServiceOrdersController {
   @Get('injury-warning')
   injuryWarning(@Query() query: InjuryWarningQueryDto) {
     return this.service.getInjuryWarning(query.idCardNo);
+  }
+
+  @Post('out-of-province-export')
+  @HttpCode(HttpStatus.OK)
+  async batchOutOfProvinceExport(
+    @Body() dto: OutOfProvinceExportDto,
+    @CurrentUser() user: JwtUserPayload,
+  ) {
+    const result = await this.service.exportOutOfProvinceBatch(dto.ids, user);
+    return new StreamableFile(result.buffer, {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      disposition: `attachment; filename*=UTF-8''${encodeURIComponent(result.fileName)}`,
+      length: result.buffer.length,
+    });
+  }
+
+  @Get(':id/out-of-province-export')
+  async outOfProvinceExport(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: JwtUserPayload,
+  ) {
+    const result = await this.service.exportOutOfProvince(id, user);
+    return new StreamableFile(result.buffer, {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      disposition: `attachment; filename*=UTF-8''${encodeURIComponent(result.fileName)}`,
+      length: result.buffer.length,
+    });
   }
 
   @Get(':id')

@@ -222,8 +222,13 @@ export class DispatchedOrderService {
     );
     this.applyCommonFilters(qb, { ...query, __currentUserId: user.sub } as ListDispatchedOrderQueryDto & { __currentUserId: string });
 
+    const requestedModules = this.normalizeQueryList(query.moduleCode ?? query.module_code);
+    const isSocialFundList = requestedModules.length > 0
+      && requestedModules.every((moduleCode) => isHandlingFeedbackModule(moduleCode));
     qb.addSelect(
-      "CASE WHEN d.status IN ('returned','modify_pending') THEN 0 ELSE 1 END",
+      isSocialFundList
+        ? "CASE WHEN d.status IN ('modify_pending','withdraw_pending','void_pending') THEN 0 WHEN d.status = 'returned' THEN 1 ELSE 2 END"
+        : "CASE WHEN d.status IN ('returned','modify_pending') THEN 0 ELSE 1 END",
       'status_priority',
     );
     qb.orderBy('status_priority', 'ASC');
@@ -421,7 +426,7 @@ export class DispatchedOrderService {
     const nextCompleted = completionEvaluation.nextStatus === DispatchedOrderStatus.COMPLETED;
     if (nextCompleted && order.moduleCode === DispatchModuleCode.RESIGNATION_CERT) {
       await this.assertResignationCertificateMaterialsReady(order);
-      const certificate = await this.createResignationCertificateDocument(order, extraDataPatch);
+      const certificate = await this.createResignationCertificateDocument(order, extraDataPatch, true);
       extraDataPatch.resignation_reason_code = certificate.replacements.resignationReasonCode;
       if (certificate.replacements.resignationReasonCode === '4') {
         extraDataPatch.resignation_other_reason = certificate.replacements.otherReason;
@@ -2344,6 +2349,7 @@ export class DispatchedOrderService {
   private async createResignationCertificateDocument(
     order: DispatchedOrder,
     extraDataPatch: Record<string, unknown> = {},
+    requireStructuredReason = false,
   ): Promise<{
     buffer: Buffer;
     fileName: string;
@@ -2374,6 +2380,7 @@ export class DispatchedOrderService {
     }
     if (
       replacements.resignationReasonCode === '4'
+      && (requireStructuredReason || explicitReasonCode === '4')
       && !firstText(
         extraData.resignation_legal_article,
         extraData.legal_article,
@@ -2485,13 +2492,42 @@ export class DispatchedOrderService {
     throw error;
   }
 
+  private normalizeSocialFundExtraData(
+    moduleCode: string,
+    extraData: Record<string, unknown>,
+  ): Record<string, unknown> {
+    if (!isHandlingFeedbackModule(moduleCode)) return extraData;
+    const normalized = { ...extraData };
+    if (moduleCode === 'social_insurance') {
+      normalized.social_pay_region ??= normalized.social_location;
+      normalized.fund_start_month ??= normalized.start_month;
+    }
+    if (moduleCode === 'resignation_social_insurance') {
+      normalized.fund_stop_month ??= normalized.social_stop_month;
+    }
+    return normalized;
+  }
+
   private async toDetailItem(
     order: DispatchedOrder,
     clearedDirtyCount = 0,
     user?: JwtUserPayload,
   ): Promise<DispatchedOrderDetailItem> {
-    const extraData = this.normalizeImportedContactData(order.parentOrder.extraData ?? {});
+    const extraData = this.normalizeSocialFundExtraData(
+      order.moduleCode,
+      this.normalizeImportedContactData(order.parentOrder.extraData ?? {}),
+    );
     const fields = await this.fieldConfigRepository.find({ where: { isActive: true }, order: { displayOrder: 'ASC' } });
+    const moduleBusinessScope = order.parentOrder.businessScope ?? BusinessScope.BEILUN;
+    const moduleFieldRows = this.moduleFieldRepository
+      ? await this.moduleFieldRepository.find({
+        where: { moduleCode: order.moduleCode, businessScope: moduleBusinessScope, isActive: true },
+        order: { displayOrder: 'ASC' },
+      })
+      : [];
+    const moduleFieldByCode = new Map(moduleFieldRows.map((row) => [row.fieldCode, row]));
+    const moduleConfiguredFieldCodes = moduleFieldRows.map((row) => row.fieldCode);
+    const hasAuthoritativeSocialFields = isHandlingFeedbackModule(order.moduleCode) && moduleConfiguredFieldCodes.length > 0;
     const pendingModify = order.status === DispatchedOrderStatus.MODIFY_PENDING
       ? await this.readPendingModify(order.id)
       : null;
@@ -2522,7 +2558,9 @@ export class DispatchedOrderService {
     // 离职证明字段由正式证明字段白名单定义，忽略历史子单上的旧字段快照。
     const effectiveVisibleSet = order.moduleCode === DispatchModuleCode.RESIGNATION_CERT
       ? null
-      : visibleSet;
+      : hasAuthoritativeSocialFields
+        ? new Set(moduleConfiguredFieldCodes)
+        : visibleSet;
     const configuredHandlerNames = (await this.getConfiguredHandlerNamesByModule([order.moduleCode])).get(order.moduleCode) ?? [];
     const syncSummary = await this.buildFieldSyncSummary(order.id);
     const filteredFields = fields.filter((field) => {
@@ -2538,16 +2576,24 @@ export class DispatchedOrderService {
         && (order.moduleCode !== DispatchModuleCode.RESIGNATION_CERT || RESIGNATION_CERTIFICATE_VISIBLE_FIELDS.has(field.fieldCode))
         && (!hasConfiguredPermissions || permission !== FieldPermissionMode.HIDDEN);
     });
-    const dynamicSupplementFieldCodes = filteredFields
+    const orderedFilteredFields = hasAuthoritativeSocialFields
+      ? [...filteredFields].sort((left, right) => (
+        (moduleFieldByCode.get(left.fieldCode)?.displayOrder ?? 0)
+        - (moduleFieldByCode.get(right.fieldCode)?.displayOrder ?? 0)
+      ))
+      : filteredFields;
+    const dynamicSupplementFieldCodes = orderedFilteredFields
       .filter((field) => isBusinessCreator
         && this.isDynamicConfiguredFieldCode(field.fieldCode)
         && field.isIncludedInTemplate !== false)
       .map((field) => field.fieldCode);
-    const detailVisibleFields = order.moduleCode === DispatchModuleCode.RESIGNATION_CERT
-      ? filteredFields.map((field) => field.fieldCode)
-      : order.visibleFields
-        ? Array.from(new Set([...order.visibleFields, ...dynamicSupplementFieldCodes]))
-        : null;
+    const detailVisibleFields = hasAuthoritativeSocialFields
+      ? orderedFilteredFields.map((field) => field.fieldCode)
+      : order.moduleCode === DispatchModuleCode.RESIGNATION_CERT
+        ? orderedFilteredFields.map((field) => field.fieldCode)
+        : order.visibleFields
+          ? Array.from(new Set([...order.visibleFields, ...dynamicSupplementFieldCodes]))
+          : null;
     return {
       ...this.toListItem(order, configuredHandlerNames),
       handlerName: order.handler?.realName ?? null,
@@ -2567,7 +2613,7 @@ export class DispatchedOrderService {
       pending_modify: pendingModify,
       syncSummary,
       sync_summary: syncSummary,
-      fields: filteredFields.map((field) => ({
+      fields: orderedFilteredFields.map((field) => ({
         fieldCode: field.fieldCode,
         fieldName: field.fieldName,
         fieldType: field.fieldType,
@@ -2580,7 +2626,8 @@ export class DispatchedOrderService {
         dirty_info: this.toDirtyInfo(dirtyByField.get(field.fieldCode)),
         dropdownOptions: field.dropdownOptions?.map((option) => ({ label: option, value: option })),
         validation: {
-          required: field.isRequired || field.defaultRequired,
+          required: moduleFieldByCode.get(field.fieldCode)?.isRequiredOverride
+            ?? (field.isRequired || field.defaultRequired),
           regex: field.validationRegex ?? undefined,
           regexMsg: field.validationMsg ?? undefined,
         },

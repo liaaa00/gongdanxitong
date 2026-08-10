@@ -2,7 +2,7 @@ import React from 'react';
 import { cleanup, render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import MyDispatchedDetail, { inferResignationReasonCode } from './index';
+import MyDispatchedDetail, { getDispatchedDetailFieldGroups, inferResignationReasonCode } from './index';
 
 const mocks = vi.hoisted(() => ({
   getDispatchedOrder: vi.fn(),
@@ -899,6 +899,35 @@ describe('MyDispatchedDetail readonly and creator repair actions', () => {
     expect(mocks.supplementField).not.toHaveBeenCalled();
   });
 
+  it('keeps the workbook social fund detail groups for increase and decrease', () => {
+    expect(getDispatchedDetailFieldGroups('social_insurance')).toEqual([
+      {
+        title: '社保公积金',
+        codes: [
+          'insured_unit', 'social_insurance_remark', 'social_pay_region', 'start_month',
+          'social_base', 'fund_start_month', 'fund_base', 'fund_ratio',
+          'social_insurance_result', 'medical_insurance_result', 'housing_fund_result',
+        ],
+      },
+    ]);
+    expect(getDispatchedDetailFieldGroups('resignation_social_insurance')).toEqual([
+      {
+        title: '社保公积金',
+        codes: [
+          'social_insurance_result', 'medical_insurance_result', 'housing_fund_result',
+          'social_pay_region', 'social_insurance_remark',
+        ],
+      },
+      {
+        title: '其他字段',
+        codes: [
+          'insured_unit', 'social_insurance_remark', 'social_stop_month',
+          'fund_stop_month', 'last_work_date',
+        ],
+      },
+    ]);
+  });
+
   it('maps existing resignation types to the formal certificate reason numbers', () => {
     expect(inferResignationReasonCode({ resignation_type: '合同到期' })).toBe('1');
     expect(inferResignationReasonCode({ resignation_type: '主动辞职' })).toBe('2');
@@ -940,5 +969,33 @@ describe('MyDispatchedDetail readonly and creator repair actions', () => {
     expect(within(dialog).getByLabelText('其他原因')).toHaveValue('公司经营调整');
     expect(within(dialog).getByLabelText('适用的劳动合同法条款')).toBeInTheDocument();
     expect(screen.queryByText('离职材料收集')).not.toBeInTheDocument();
+  });
+
+  it('shows the backend resignation certificate export error', async () => {
+    mocks.currentUser = {
+      id: 'handler-yangchun',
+      username: 'yangchun',
+      real_name: '杨纯',
+      roles: [{ code: 'labor_contract_member' }],
+    };
+    mocks.downloadResignationCertificate.mockRejectedValue(
+      new Error('选择第 4 项原因时必须填写适用的劳动合同法条款'),
+    );
+    mocks.getDispatchedOrder.mockResolvedValue({
+      ...baseOrder,
+      order_no: 'RS-002',
+      module_code: 'resignation_cert',
+      module_name: '离职证明',
+      status: 'processing',
+      handler_id: 'handler-yangchun',
+      extra_data: { resignation_reason: '公司经营调整' },
+    });
+
+    renderDetail('/my-dispatched/d-1');
+    fireEvent.click(await screen.findByRole('button', { name: /导出离职证明/ }));
+
+    await waitFor(() => expect(mocks.message.error).toHaveBeenCalledWith(
+      '选择第 4 项原因时必须填写适用的劳动合同法条款',
+    ));
   });
 });

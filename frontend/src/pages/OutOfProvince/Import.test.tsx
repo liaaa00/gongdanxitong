@@ -9,9 +9,9 @@ vi.mock('@/components/ExcelUploader', () => ({
   default: () => <div data-testid="excel-uploader">Excel 上传组件</div>,
 }));
 
-function renderImport() {
+function renderImport(initialEntry = '/out-of-province/import') {
   return render(
-    <MemoryRouter initialEntries={['/out-of-province/import']}>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <Routes>
         <Route path="/out-of-province/import" element={<OutOfProvinceImport />} />
         <Route path="/out-of-province/increase" element={<div>省外增员列表页</div>} />
@@ -30,12 +30,19 @@ describe('OutOfProvinceImport', () => {
     });
   });
 
-  it('explains that province imports create independent direct orders', () => {
+  it('keeps the import controls without exposing internal dispatch explanations', () => {
     renderImport();
 
-    expect(screen.getByText('省外导入与北仑数据独立')).toBeInTheDocument();
-    expect(screen.getByText(/Excel 每条记录会直接生成一张工单/)).toBeInTheDocument();
+    expect(screen.queryByText('省外导入与北仑数据独立')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Excel 每条记录会直接生成一张工单/)).not.toBeInTheDocument();
+    expect(screen.getByTestId('excel-uploader')).toBeInTheDocument();
     expect(screen.getByText('返回省外增员列表')).toBeInTheDocument();
+  });
+
+  it('uses the list-provided decrease type when opening the import page', () => {
+    renderImport('/out-of-province/import?orderType=out_of_province_decrease');
+
+    expect(screen.getByText('返回省外减员列表')).toBeInTheDocument();
   });
 
   it('returns to the list matching the selected import type', async () => {

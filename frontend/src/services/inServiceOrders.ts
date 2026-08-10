@@ -2,6 +2,7 @@ import request from './request';
 import { isMockMode, mockDelay } from './mock';
 import type { DispatchedOrderExportResult } from './dispatchedOrders';
 import {
+  IN_SERVICE_ORDER_KINDS,
   IN_SERVICE_STATUSES,
   type InServiceBusinessType,
   type InServiceHandleChannel,
@@ -433,6 +434,25 @@ export async function exportInServiceRenewalTemplate(
   ) as Promise<DispatchedOrderExportResult>;
 }
 
+export async function downloadOutOfProvinceOrderExport(
+  id: string,
+  orderNo: string,
+  typeLabel: '省外增员' | '省外减员',
+): Promise<void> {
+  const token = localStorage.getItem('token');
+  const base = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || '';
+  const response = await fetch(base + '/api/in-service-orders/' + encodeURIComponent(id) + '/out-of-province-export', {
+    headers: token ? { Authorization: 'Bearer ' + token } : undefined,
+  });
+  if (!response.ok) throw new Error(typeLabel + '导出失败');
+  const blob = await response.blob();
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = typeLabel + '-' + orderNo + '.xlsx';
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
 export async function downloadInServiceCertificate(
   id: string,
   orderNo: string,
@@ -465,8 +485,17 @@ async function postAction(id: string, action: string, payload: RawRecord = {}): 
   const actor = readMockActor();
   const now = new Date().toISOString();
   const next = updateMock(id, (order) => {
-    if (action === 'accept') return { ...order, status: 'accepted', acceptedAt: now };
-    if (action === 'confirm') return { ...order, status: 'ready', confirmedAt: now };
+    const usesSingleBusinessFlow = order.orderKind === IN_SERVICE_ORDER_KINDS.SINGLE_BUSINESS
+      || order.orderKind === IN_SERVICE_ORDER_KINDS.RESIGNATION_CERTIFICATE;
+    if (action === 'accept') {
+      return order.orderKind === IN_SERVICE_ORDER_KINDS.CERTIFICATE
+        ? { ...order, status: 'processing', acceptedAt: now, processingAt: now }
+        : { ...order, status: 'accepted', acceptedAt: now };
+    }
+    if (action === 'confirm') {
+      if (!usesSingleBusinessFlow) throw new Error('当前流程没有材料确认节点');
+      return { ...order, status: 'ready', confirmedAt: now };
+    }
     if (action === 'transfer') return {
       ...order,
       status: 'dispatched',
@@ -481,12 +510,15 @@ async function postAction(id: string, action: string, payload: RawRecord = {}): 
         transferredAt: now,
       }],
     };
-    if (action === 'start-processing') return {
-      ...order,
-      status: 'processing',
-      handleChannel: payload.handleChannel,
-      processingAt: now,
-    };
+    if (action === 'start-processing') {
+      if (!usesSingleBusinessFlow) throw new Error('当前流程没有办理渠道选择节点');
+      return {
+        ...order,
+        status: 'processing',
+        handleChannel: payload.handleChannel,
+        processingAt: now,
+      };
+    }
     if (action === 'material-change-request') return {
       ...order,
       extraData: {
@@ -533,12 +565,15 @@ async function postAction(id: string, action: string, payload: RawRecord = {}): 
       pendingReturnStatus: null,
       pendingInfoReason: null,
     };
-    if (action === 'complete' || action === 'fail') return {
-      ...order,
-      status: action === 'complete' ? 'completed' : 'failed',
-      completionRemark: payload.remark ? String(payload.remark) : null,
-      completedAt: now,
-    };
+    if (action === 'complete' || action === 'fail') {
+      if (action === 'fail' && !usesSingleBusinessFlow) throw new Error('当前流程没有办理失败动作');
+      return {
+        ...order,
+        status: action === 'complete' ? 'completed' : 'failed',
+        completionRemark: payload.remark ? String(payload.remark) : null,
+        completedAt: now,
+      };
+    }
     if (action === 'cancel') return {
       ...order,
       status: 'cancelled',

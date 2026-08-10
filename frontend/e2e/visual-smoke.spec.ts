@@ -53,13 +53,13 @@ test.describe('视觉截图巡检', () => {
     await expect(page).toHaveTitle(/入职主工单列表/);
     await expectPageText(page, '入职主工单列表');
     await expect(page.getByRole('button', { name: /新建入职工单/ })).toBeVisible();
-    await expect(page.getByRole('button', { name: /入职导入/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /入职批量导入/ })).toBeVisible();
 
     await capturePage(page, '/work-orders?orderType=resignation', '03-resignation-work-orders');
     await expect(page).toHaveTitle(/离职主工单列表/);
     await expectPageText(page, '离职主工单列表');
     await expect(page.getByRole('button', { name: /新建离职工单/ })).toBeVisible();
-    await expect(page.getByRole('button', { name: /离职导入/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /离职批量导入/ })).toBeVisible();
 
     await capturePage(page, '/notifications', '04-notifications');
     await expectPageText(page, '消息通知');
@@ -72,9 +72,9 @@ test.describe('视觉截图巡检', () => {
     await expectPageText(page, '办理环节设置');
 
     await capturePage(page, '/admin/fields', '07-admin-fields');
-    await expectPageText(page, '表单字段库');
+    await expectPageText(page, '表单字段管理');
 
     await capturePage(page, '/admin/dispatch-config', '08-admin-dispatch-config');
-    await expectPageText(page, '负责人派发设置');
+    await expectPageText(page, '派发配置');
   });
 });
