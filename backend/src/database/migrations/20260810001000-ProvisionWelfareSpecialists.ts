@@ -1,4 +1,17 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { MigrationInterface, QueryRunner } from 'typeorm';
+import {
+  buildLegacyPermissionConfig,
+  LegacyFieldPermissionRow,
+  LegacyPermissionBaseline,
+  LegacyRoleRow,
+  parseStoredRoleActionPermissions,
+} from '../legacy-permission-import';
+import {
+  PermissionConfig,
+  RoleDefinition,
+} from 'src/modules/permission-center/types/permission-config.types';
 
 const WELFARE_ROLE_CODE = 'welfare_specialist';
 const WELFARE_PERMISSION_VERSIONS = {
@@ -57,42 +70,20 @@ const WELFARE_HANDLER_ROWS = [
   { moduleCode: 'out_of_province_dispatch__福建__厦门', username: 'yangjie' },
 ] as const;
 
-interface RoleDefinition {
-  id: string;
-  code: string;
-  name: string;
-  canonicalCode: string;
-  isActive: boolean;
-  description?: string;
-  level?: string;
-}
-
-interface RoutePermission {
-  path: string;
-  allowedRoles: string[];
-  backendActions?: string[];
-  menu?: Record<string, unknown>;
-}
-
-interface FieldPermissionRule {
-  scenario: string;
-  description?: string;
-  roleFieldRules: Record<string, Record<string, string>>;
-}
-
-interface PermissionConfig {
-  version: string;
-  roles: RoleDefinition[];
-  routePermissions: RoutePermission[];
-  fieldPermissions: FieldPermissionRule[];
-  metadata?: Record<string, unknown>;
-}
 
 interface ActivePermissionRow {
   id: string;
   config: PermissionConfig;
   business_scope: 'beilun' | 'out_of_province';
   created_by: string | null;
+}
+
+const BUSINESS_SCOPES = ['beilun', 'out_of_province'] as const;
+
+function loadLegacyPermissionBaseline(): LegacyPermissionBaseline {
+  return JSON.parse(
+    readFileSync(join(__dirname, 'legacy-permission-baseline.json'), 'utf8'),
+  ) as LegacyPermissionBaseline;
 }
 
 const SHARED_ROUTES: ReadonlyArray<readonly [string, readonly string[]]> = [
@@ -454,6 +445,56 @@ export class ProvisionWelfareSpecialists20260810001000 implements MigrationInter
        ORDER BY business_scope, activated_at DESC NULLS LAST, created_at DESC`,
     ) as ActivePermissionRow[];
 
+    const activeScopes = new Set(activeRows.map((row) => row.business_scope));
+    if (activeScopes.size < BUSINESS_SCOPES.length) {
+      const baseline = loadLegacyPermissionBaseline();
+      const roles = await queryRunner.query(
+        `SELECT id, code, name, level, description, is_active
+         FROM roles
+         ORDER BY code`,
+      ) as LegacyRoleRow[];
+
+      for (const businessScope of BUSINESS_SCOPES) {
+        if (activeScopes.has(businessScope)) continue;
+
+        const fieldPermissions = await queryRunner.query(
+          `SELECT role_row.code AS role_code,
+                  permission.scenario,
+                  permission.field_code,
+                  permission.permission
+           FROM field_permissions permission
+           JOIN roles role_row ON role_row.id = permission.role_id
+           WHERE permission.business_scope = $1
+           ORDER BY permission.scenario, role_row.code, permission.field_code`,
+          [businessScope],
+        ) as LegacyFieldPermissionRow[];
+        const settingRows = await queryRunner.query(
+          `SELECT value
+           FROM system_settings
+           WHERE key = $1
+           LIMIT 1`,
+          [`roleActionPermissions.v1.${businessScope}`],
+        ) as Array<{ value: string }>;
+
+        activeRows.push({
+          id: `bootstrap-${businessScope}`,
+          config: buildLegacyPermissionConfig({
+            version: businessScope === 'beilun'
+              ? '1.1.0-bootstrap-beilun'
+              : '1.1.0-bootstrap-province',
+            baseline,
+            roles,
+            fieldPermissions,
+            storedRoleActionPermissions: parseStoredRoleActionPermissions(
+              settingRows[0]?.value,
+            ),
+          }),
+          business_scope: businessScope,
+          created_by: null,
+        });
+      }
+    }
+
     for (const active of activeRows) {
       const permissionVersion = WELFARE_PERMISSION_VERSIONS[active.business_scope];
       const nextConfig = addWelfareRoleToPermissionConfig(active.config, {
@@ -463,7 +504,7 @@ export class ProvisionWelfareSpecialists20260810001000 implements MigrationInter
         canonicalCode: WELFARE_ROLE_CODE,
         isActive: roleRow.is_active,
         description: roleRow.description ?? undefined,
-        level: roleRow.level,
+        level: roleRow.level as RoleDefinition['level'],
       }, active.business_scope);
 
       await queryRunner.query(

@@ -56,7 +56,6 @@ describe('ProvisionWelfareSpecialists20260810001000 migration', () => {
     await migration.up(queryRunner);
 
     const calls = queryRunner.query.mock.calls;
-    expect(calls).toHaveLength(10);
     expect(calls[0][0]).toContain('INSERT INTO roles');
     expect(calls[2][0]).toContain('INSERT INTO users');
     expect(calls[2][0]).toContain('ON CONFLICT (username) DO UPDATE');
@@ -71,6 +70,22 @@ describe('ProvisionWelfareSpecialists20260810001000 migration', () => {
     expect(calls[6][0]).toContain("admin_role.code = 'admin'");
     expect(calls[6][0]).toContain('ON CONFLICT (role_id, field_code, scenario, business_scope)');
     expect(calls[7][0]).toContain('conflicting_mapping_count');
+
+    const versionCalls = calls.filter(
+      ([sql]) => String(sql).includes('INSERT INTO permission_config_versions'),
+    );
+    expect(versionCalls).toHaveLength(2);
+    expect(versionCalls.map(([, params]) => params[0])).toEqual([
+      '1.1.1-welfare-beilun',
+      '1.1.1-welfare-province',
+    ]);
+    const settingCalls = calls.filter(
+      ([sql]) => String(sql).includes('SELECT value') && String(sql).includes('FROM system_settings'),
+    );
+    expect(settingCalls.map(([, params]) => params[0])).toEqual([
+      'roleActionPermissions.v1.beilun',
+      'roleActionPermissions.v1.out_of_province',
+    ]);
   });
 
   it('derives scope-specific active permission versions without broadening Beilun access', async () => {
