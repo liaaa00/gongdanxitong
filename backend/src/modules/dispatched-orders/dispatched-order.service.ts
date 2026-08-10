@@ -1,6 +1,7 @@
 import { ForbiddenException, HttpStatus, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { readFile } from 'fs/promises';
 import { join } from 'path';
+import * as JSZip from 'jszip';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, In, MoreThan, QueryFailedError, Repository, SelectQueryBuilder } from 'typeorm';
 import {
@@ -1706,11 +1707,98 @@ export class DispatchedOrderService {
 
   async batchExport(payload: BatchExportDispatchedOrderDto, user: JwtUserPayload): Promise<DispatchedOrderExportResult> {
     const ids = Array.from(new Set(payload.ids));
+    const orders: DispatchedOrder[] = [];
     for (const id of ids) {
       const order = await this.loadDispatchedOrder(id);
       await this.assertCanRead(order, user);
+      orders.push(order);
     }
+
+    const resignationCertificates = orders.filter(
+      (order) => order.moduleCode === DispatchModuleCode.RESIGNATION_CERT,
+    );
+    if (resignationCertificates.length > 0) {
+      if (resignationCertificates.length !== orders.length) {
+        throw businessException(4231, HttpStatus.BAD_REQUEST, '离职证明不能与其他子工单混合导出');
+      }
+      return this.exportResignationCertificateDocuments(resignationCertificates, user);
+    }
+
     return this.exportTemplatesService.exportDispatchedOrdersAuto(ids, payload.templateId ?? payload.template_id, user);
+  }
+
+  private async exportResignationCertificateDocuments(
+    orders: DispatchedOrder[],
+    user: JwtUserPayload,
+  ): Promise<DispatchedOrderExportResult> {
+    if (!this.uploadsService) {
+      throw businessException(4231, HttpStatus.INTERNAL_SERVER_ERROR, '离职证明文件服务不可用');
+    }
+
+    const documents = await Promise.all(orders.map(async (order) => ({
+      order,
+      document: await this.createResignationCertificateDocument(order),
+    })));
+
+    let buffer: Buffer;
+    let fileName: string;
+    let mimeType: string;
+    let fileType: 'word' | 'word_zip';
+    if (documents.length === 1) {
+      buffer = documents[0].document.buffer;
+      fileName = documents[0].document.fileName;
+      mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      fileType = 'word';
+    } else {
+      const zip = new JSZip();
+      for (const { order, document } of documents) {
+        const employeeName = (order.parentOrder.employeeName || '未命名员工')
+          .replace(/[\\/:*?"<>|]/g, '_');
+        zip.file(`离职证明-${employeeName}-${order.parentOrder.orderNo}.docx`, document.buffer);
+      }
+      buffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+      fileName = `离职证明-${documents.length}人.zip`;
+      mimeType = 'application/zip';
+      fileType = 'word_zip';
+    }
+
+    const saved = await this.uploadsService.save({
+      ownerId: user.sub,
+      kind: 'attachment',
+      buffer,
+      originalName: fileName,
+      mimeType,
+    });
+    await this.writeLog(
+      'dispatched_order',
+      orders[0].id,
+      user.sub,
+      'batch_export_resignation_certificates',
+      null,
+      { dispatchedOrderIds: orders.map((order) => order.id), fileId: saved.fileId, count: orders.length },
+    );
+
+    const file = {
+      fileId: saved.fileId,
+      fileName: saved.originalName,
+      downloadUrl: `/api/files/${saved.fileId}`,
+      moduleCode: DispatchModuleCode.RESIGNATION_CERT,
+      signPlatform: null,
+      count: orders.length,
+      fileType,
+    };
+    return {
+      templateId: null,
+      templateName: '离职证明 Word 文档',
+      moduleCode: DispatchModuleCode.RESIGNATION_CERT,
+      columns: [],
+      rows: [],
+      rowCount: orders.length,
+      fileId: file.fileId,
+      fileName: file.fileName,
+      downloadUrl: file.downloadUrl,
+      files: [file],
+    };
   }
 
   async remove(id: string, user: JwtUserPayload): Promise<{ success: boolean; id: string }> {

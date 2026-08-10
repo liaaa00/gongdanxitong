@@ -194,17 +194,42 @@ describe('routeVisibility admin-only configuration routes', () => {
     expect(canAccessPath('/onboarding/social_insurance_resign', leaderRoles)).toBe(true);
   });
 
-  it('opens out-of-province list/import/TODO form only to configured business roles', () => {
+  it('opens province lists and details to welfare specialists without granting create or import', () => {
     const adminRoles = roles([ROLE.ADMIN]);
     const leaderRoles = roles([ROLE.BUSINESS_GROUP_LEADER]);
     const memberRoles = roles([ROLE.BUSINESS_GROUP_MEMBER]);
+    const welfareRoles = roles([ROLE.WELFARE_SPECIALIST]);
     const backendRoles = roles([ROLE.SOCIAL_INSURANCE_SPECIALIST]);
 
-    for (const path of ['/out-of-province', '/out-of-province/import', '/out-of-province/new']) {
+    for (const path of [
+      '/out-of-province',
+      '/out-of-province/orders',
+      '/out-of-province/orders/order-1',
+      '/out-of-province/increase',
+      '/out-of-province/increase/order-1',
+      '/out-of-province/decrease',
+      '/out-of-province/decrease/order-1',
+      '/out-of-province/single-business',
+      '/out-of-province/single-business/order-1',
+    ]) {
       expect(canAccessPath(path, adminRoles), path).toBe(true);
       expect(canAccessPath(path, leaderRoles), path).toBe(true);
       expect(canAccessPath(path, memberRoles), path).toBe(true);
+      expect(canAccessPath(path, welfareRoles), path).toBe(true);
       expect(canAccessPath(path, backendRoles), path).toBe(false);
+    }
+
+    for (const path of [
+      '/out-of-province/import',
+      '/out-of-province/new',
+      '/out-of-province/increase/new',
+      '/out-of-province/decrease/new',
+      '/out-of-province/single-business/new',
+    ]) {
+      expect(canAccessPath(path, adminRoles), path).toBe(true);
+      expect(canAccessPath(path, leaderRoles), path).toBe(true);
+      expect(canAccessPath(path, memberRoles), path).toBe(true);
+      expect(canAccessPath(path, welfareRoles), path).toBe(false);
     }
   });
 
@@ -216,6 +241,7 @@ describe('routeVisibility admin-only configuration routes', () => {
     const contractRoles = roles([ROLE.LABOR_CONTRACT_MEMBER]);
     const sharedOwnerRoles = roles([ROLE.SHARED_TEAM_OWNER]);
     const socialRoles = roles([ROLE.SOCIAL_INSURANCE_SPECIALIST]);
+    const welfareRoles = roles([ROLE.WELFARE_SPECIALIST]);
 
     expect(canAccessPath('/in-service', adminRoles)).toBe(true);
     expect(canAccessPath('/in-service/new', memberRoles)).toBe(true);
@@ -228,8 +254,13 @@ describe('routeVisibility admin-only configuration routes', () => {
     expect(canAccessPath('/renewal/new', memberRoles)).toBe(true);
     expect(canAccessPath('/renewal/order-1', contractRoles)).toBe(true);
     expect(canAccessPath('/in-service/certificates', contractRoles)).toBe(true);
+    expect(canAccessPath('/in-service/certificates', welfareRoles)).toBe(false);
+    expect(canAccessPath('/in-service/certificates/cert-1', welfareRoles)).toBe(false);
     expect(canAccessPath('/in-service/certificates/new', memberRoles)).toBe(true);
     expect(canAccessPath('/in-service/certificates/new', contractRoles)).toBe(false);
+    expect(canAccessPath('/in-service/certificates/new', welfareRoles)).toBe(false);
+    expect(canAccessPath('/renewal', welfareRoles)).toBe(false);
+    expect(canAccessPath('/in-service', welfareRoles)).toBe(false);
     expect(canAccessPath('/resignation-certificates', contractRoles)).toBe(false);
     expect(canAccessPath('/resignation-certificates/new', memberRoles)).toBe(false);
     expect(canAccessPath('/onboarding/resignation_cert', adminRoles)).toBe(true);
@@ -380,6 +411,12 @@ describe('routeVisibility structured permission baseline', () => {
       roleCode: 'social_insurance_specialist',
       canonicalRole: ROLE.SOCIAL_INSURANCE_SPECIALIST,
       paths: ['/dashboard', '/notifications', '/my-dispatched/child-1', '/onboarding', '/onboarding/social_insurance', '/onboarding/social_insurance_resign', '/offboarding/social-insurance-resign-pool', '/onboarding/contract', '/onboarding/data_entry', '/dashboards/leader'],
+    },
+    {
+      label: 'welfare specialist',
+      roleCode: 'welfare_specialist',
+      canonicalRole: ROLE.WELFARE_SPECIALIST,
+      paths: ['/dashboard', '/out-of-province/increase', '/out-of-province/increase/order-1', '/out-of-province/decrease', '/out-of-province/single-business', '/in-service/certificates', '/renewal'],
     },
   ];
 

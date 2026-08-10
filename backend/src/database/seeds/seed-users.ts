@@ -209,10 +209,26 @@ export async function seedUsers(dataSource: DataSource): Promise<void> {
 
     for (const relation of seed.roles) {
       const role = await roleRepository.findOne({ where: { code: relation.roleCode } });
-      const department = await departmentRepository.findOne({ where: { code: relation.departmentCode } });
+      const relationBusinessScope = seed.businessScope ?? BusinessScope.BEILUN;
+      const department = await departmentRepository.findOne({
+        where: { code: relation.departmentCode, businessScope: relationBusinessScope },
+      });
 
       if (!role || !department) {
         throw new Error(`Seed relation target missing: ${seed.username} -> ${relation.roleCode}/${relation.departmentCode}`);
+      }
+
+      if (seed.businessScope) {
+        await dataSource.query(
+          `DELETE FROM user_roles relation
+           USING departments department
+           WHERE relation.department_id = department.id
+             AND relation.user_id = $1
+             AND relation.role_id = $2
+             AND department.code = $3
+             AND department.business_scope <> $4`,
+          [user.id, role.id, relation.departmentCode, relationBusinessScope],
+        );
       }
 
       const existedRelation = await userRoleRepository.findOne({

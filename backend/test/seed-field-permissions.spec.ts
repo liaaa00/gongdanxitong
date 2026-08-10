@@ -124,4 +124,43 @@ describe('seedFieldPermissions contract business permissions', () => {
       expect(rows.every((item) => item.permission === FieldPermissionMode.VISIBLE)).toBe(true);
     }
   });
+
+  it('gives welfare specialists editable permissions wherever the scenario exposes a field', async () => {
+    const roles = [{ id: 'role-welfare', code: 'welfare_specialist' }];
+    const fields = [
+      { fieldCode: 'employee_name', orderType: OrderType.ONBOARDING, businessContext: [OrderType.ONBOARDING] },
+      { fieldCode: 'social_insurance_result', orderType: OrderType.ONBOARDING, businessContext: [OrderType.ONBOARDING] },
+    ];
+    const savedPermissions: Array<Record<string, unknown>> = [];
+    const permissionRepo = {
+      findOne: jest.fn().mockResolvedValue(null),
+      create: jest.fn((value) => value),
+      save: jest.fn(async (value) => {
+        savedPermissions.push(value);
+        return value;
+      }),
+    };
+    const dataSource = {
+      getRepository: jest.fn((entity) => {
+        if (entity === Role) return { find: jest.fn().mockResolvedValue(roles) };
+        if (entity === FieldConfig) return { find: jest.fn().mockResolvedValue(fields) };
+        if (entity === FieldPermission) return permissionRepo;
+        if (entity === DetailViewTemplate) return { findOne: jest.fn().mockResolvedValue(null) };
+        throw new Error('unexpected repository');
+      }),
+    };
+
+    await seedFieldPermissions(dataSource as any);
+
+    const exposed = savedPermissions.filter((item) => (
+      item.roleId === 'role-welfare'
+      && ['create:onboarding', 'dispatched:social_insurance'].includes(String(item.scenario))
+      && item.permission !== FieldPermissionMode.HIDDEN
+    ));
+    expect(exposed.length).toBeGreaterThan(0);
+    expect(exposed.every((item) => item.permission === FieldPermissionMode.VISIBLE)).toBe(true);
+    expect(exposed.every((item) => (
+      item.businessScope === 'beilun' || item.businessScope === 'out_of_province'
+    ))).toBe(true);
+  });
 });

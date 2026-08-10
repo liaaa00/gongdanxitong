@@ -259,6 +259,27 @@ describe('BasicLayout menu visibility', () => {
     expect(menuText()).not.toContain('我的工单');
   });
 
+  it('shows only approved welfare specialist menus in each business scope', () => {
+    window.localStorage.setItem('business_scope_v1', 'out_of_province');
+    mockUserState.user = mockUserState.makeUser(['welfare_specialist'], 'out_of_province');
+
+    const provinceView = renderLayout(['/out-of-province/increase']);
+    expect(menuText()).toContain('社保公积金增员');
+    expect(menuText()).toContain('社保公积金减员');
+    expect(menuText()).toContain('单项业务办理');
+    expect(menuText()).not.toContain('增减员批量导入');
+    expect(menuText()).not.toContain('劳动合同续签');
+    expect(menuText()).not.toContain('管理后台');
+    provinceView.unmount();
+
+    window.localStorage.setItem('business_scope_v1', 'beilun');
+    renderLayout(['/dashboard']);
+    expect(menuText()).not.toContain('证明开具');
+    expect(menuText()).not.toContain('劳动合同续签');
+    expect(menuText()).not.toContain('单项业务办理');
+    expect(menuText()).not.toContain('管理后台');
+  });
+
   it('selects onboarding and offboarding main work-order menu entries by orderType query', () => {
     mockUserState.user = mockUserState.makeUser(['business_group_member']);
 

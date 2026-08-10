@@ -1,6 +1,7 @@
 ﻿import { HttpStatus, ValidationPipe } from '@nestjs/common';
 import { validateSync } from 'class-validator';
 import { Repository } from 'typeorm';
+import * as JSZip from 'jszip';
 import { BusinessScope, DispatchedOrder, DispatchedOrderStatus, FieldConfig, FieldPermissionMode, ModuleField, ModuleHandler, Notification, OperationLog, OrderType, RoleLevel, User, UserRole, WorkOrder, WorkOrderFieldDirtyMark, WorkOrderStatus } from 'src/entities';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { FieldPermissionService } from 'src/modules/field-permissions/field-permission.service';
@@ -61,7 +62,10 @@ describe('DispatchedOrderService', () => {
     const operationLogRepo = repoMock<OperationLog>();
     const fieldPermissionService = { getPermissionsForUser: jest.fn(), applyExtraData: jest.fn(), applyFieldViews: jest.fn() } as unknown as FieldPermissionService;
     const fieldSupplementService = { supplement: jest.fn(), getLogs: jest.fn() } as unknown as FieldSupplementService;
-    const exportTemplatesService = { exportSingleDispatchedOrder: jest.fn() };
+    const exportTemplatesService = {
+      exportSingleDispatchedOrder: jest.fn(),
+      exportDispatchedOrdersAuto: jest.fn(),
+    };
     const validationService = { resolveUserDepartmentIds: jest.fn(async () => ['d1']) };
     const service = new DispatchedOrderService(dispatchedOrderRepo, workOrderRepo, moduleHandlerRepo, userRoleRepo, fieldConfigRepo, notificationRepo, operationLogRepo, fieldPermissionService, fieldSupplementService, exportTemplatesService as never, validationService as never);
     return { service, queryBuilder };
@@ -592,6 +596,129 @@ describe('DispatchedOrderService', () => {
     });
 
     expect(validateSync(dto).some((error) => error.property === 'ids')).toBe(true);
+  });
+
+  it('exports one resignation certificate as a filled Word document', async () => {
+    const { service } = makeService();
+    const order = {
+      ...makeDispatchedOrder(),
+      id: 'cert-1',
+      moduleCode: 'resignation_cert',
+      parentOrder: {
+        ...makeDispatchedOrder().parentOrder,
+        orderNo: 'RS-001',
+        employeeName: '张三',
+      },
+    } as DispatchedOrder;
+    const uploadsService = {
+      save: jest.fn(async (input: { originalName: string; mimeType: string; buffer: Buffer }) => ({
+        fileId: 'word-1',
+        originalName: input.originalName,
+        mimeType: input.mimeType,
+        size: input.buffer.length,
+      })),
+    };
+    Object.defineProperty(service, 'uploadsService', { value: uploadsService });
+    jest.spyOn(service as never, 'loadDispatchedOrder' as never).mockResolvedValue(order as never);
+    jest.spyOn(service as never, 'assertCanRead' as never).mockResolvedValue(undefined as never);
+    jest.spyOn(service as never, 'createResignationCertificateDocument' as never).mockResolvedValue({
+      buffer: Buffer.from('filled-docx'),
+      fileName: '离职证明-RS-001.docx',
+      replacements: {},
+    } as never);
+    jest.spyOn(service as never, 'writeLog' as never).mockResolvedValue(undefined as never);
+
+    const result = await service.batchExport(
+      { ids: ['cert-1'] },
+      { sub: 'handler-1', username: 'handler', roles: ['labor_contract_member'] } as JwtUserPayload,
+    );
+
+    expect(result.files).toEqual([
+      expect.objectContaining({
+        fileId: 'word-1',
+        fileName: '离职证明-RS-001.docx',
+        fileType: 'word',
+        moduleCode: 'resignation_cert',
+      }),
+    ]);
+    expect(uploadsService.save).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'attachment',
+      originalName: '离职证明-RS-001.docx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      buffer: Buffer.from('filled-docx'),
+    }));
+    expect((service as never as { exportTemplatesService: { exportDispatchedOrdersAuto: jest.Mock } })
+      .exportTemplatesService.exportDispatchedOrdersAuto).not.toHaveBeenCalled();
+  });
+
+  it('exports multiple resignation certificates as a ZIP containing only filled Word documents', async () => {
+    const { service } = makeService();
+    const orders = [
+      {
+        ...makeDispatchedOrder(),
+        id: 'cert-1',
+        moduleCode: 'resignation_cert',
+        parentOrder: {
+          ...makeDispatchedOrder().parentOrder,
+          orderNo: 'RS-001',
+          employeeName: '张三',
+        },
+      },
+      {
+        ...makeDispatchedOrder(),
+        id: 'cert-2',
+        moduleCode: 'resignation_cert',
+        parentOrder: {
+          ...makeDispatchedOrder().parentOrder,
+          orderNo: 'RS-002',
+          employeeName: '李四',
+        },
+      },
+    ] as DispatchedOrder[];
+    let savedBuffer: Buffer<ArrayBufferLike> = Buffer.alloc(0);
+    const uploadsService = {
+      save: jest.fn(async (input: { originalName: string; mimeType: string; buffer: Buffer }) => {
+        savedBuffer = input.buffer;
+        return {
+          fileId: 'word-zip-1',
+          originalName: input.originalName,
+          mimeType: input.mimeType,
+          size: input.buffer.length,
+        };
+      }),
+    };
+    Object.defineProperty(service, 'uploadsService', { value: uploadsService });
+    jest.spyOn(service as any, 'loadDispatchedOrder')
+      .mockImplementation(async (...args: unknown[]) => orders.find((order) => order.id === String(args[0])));
+    jest.spyOn(service as any, 'assertCanRead').mockResolvedValue(undefined);
+    jest.spyOn(service as any, 'createResignationCertificateDocument')
+      .mockImplementation(async (...args: unknown[]) => {
+        const order = args[0] as DispatchedOrder;
+        return {
+          buffer: Buffer.from(`filled-${order.id}`),
+          fileName: `离职证明-${order.parentOrder.orderNo}.docx`,
+          replacements: {},
+        };
+      });
+    jest.spyOn(service as any, 'writeLog').mockResolvedValue(undefined);
+
+    const result = await service.batchExport(
+      { ids: ['cert-1', 'cert-2'] },
+      { sub: 'handler-1', username: 'handler', roles: ['labor_contract_member'] } as JwtUserPayload,
+    );
+
+    expect(result.files).toEqual([
+      expect.objectContaining({
+        fileId: 'word-zip-1',
+        fileName: '离职证明-2人.zip',
+        fileType: 'word_zip',
+        count: 2,
+      }),
+    ]);
+    const zip = await JSZip.loadAsync(savedBuffer);
+    expect(zip.file('离职证明-张三-RS-001.docx')).toBeTruthy();
+    expect(zip.file('离职证明-李四-RS-002.docx')).toBeTruthy();
+    expect(Object.keys(zip.files)).toHaveLength(2);
   });
 
   it('forbids deleting a dispatched order directly', async () => {

@@ -197,7 +197,7 @@ export interface DispatchedOrderExportFile {
   moduleCode: string;
   signPlatform: string | null;
   count: number;
-  fileType?: 'excel' | 'attachments_zip';
+  fileType?: 'excel' | 'attachments_zip' | 'word' | 'word_zip';
 }
 
 export interface DispatchedOrderExportResult {

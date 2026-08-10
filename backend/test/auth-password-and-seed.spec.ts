@@ -1,7 +1,7 @@
 import * as bcrypt from 'bcrypt';
 import { validateSync } from 'class-validator';
 import { Repository } from 'typeorm';
-import { Department, DispatchedOrder, OperationLog, Role, RoleLevel, User, UserRole } from 'src/entities';
+import { BusinessScope, Department, DispatchedOrder, OperationLog, Role, RoleLevel, User, UserRole } from 'src/entities';
 import { UsersService } from 'src/modules/admin/users/users.service';
 import { AuthService } from 'src/modules/auth/auth.service';
 import { ChangePasswordDto } from 'src/modules/auth/dto/change-password.dto';
@@ -338,10 +338,11 @@ describe('seedUsers password preservation', () => {
       })),
     });
     const departmentRepo = repoMock<Department>({
-      findOne: jest.fn(async ({ where }: { where: { code: string } }) => Object.assign(new Department(), {
+      findOne: jest.fn(async ({ where }: { where: { code: string; businessScope: BusinessScope } }) => Object.assign(new Department(), {
         id: `dept-${where.code}`,
         code: where.code,
         name: where.code,
+        businessScope: where.businessScope,
         isActive: true,
       })),
     });
@@ -353,8 +354,9 @@ describe('seedUsers password preservation', () => {
       }),
       delete: jest.fn(async () => ({ affected: 1 })),
     });
+    const query = jest.fn(async () => []);
     const dataSource = {
-      query: jest.fn(async () => []),
+      query,
       getRepository: jest.fn((entity: unknown) => {
         if (entity === User) return userRepo;
         if (entity === Role) return roleRepo;
@@ -381,5 +383,12 @@ describe('seedUsers password preservation', () => {
       roleId: 'role-biz_member',
       departmentId: 'dept-BUSINESS_GROUP_4',
     }));
+    expect(departmentRepo.findOne).toHaveBeenCalledWith({
+      where: { code: 'WELFARE_SECURITY', businessScope: BusinessScope.OUT_OF_PROVINCE },
+    });
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('DELETE FROM user_roles relation'),
+      expect.arrayContaining(['role-welfare_specialist', 'WELFARE_SECURITY', BusinessScope.OUT_OF_PROVINCE]),
+    );
   });
 });

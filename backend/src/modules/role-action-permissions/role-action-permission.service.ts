@@ -159,6 +159,7 @@ export const DEFAULT_ROLE_ACTION_PERMISSIONS: RoleActionPermissionMatrix = {
   onboarding_specialist: ['work_order.view', 'work_order.export', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, ...ONBOARDING_CONTACT_MODULE_ACTIONS, ...RESIGNATION_CONTACT_MODULE_ACTIONS],
   onboarding_resignation_member: ['work_order.view', 'work_order.export', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, ...ONBOARDING_CONTACT_MODULE_ACTIONS, ...RESIGNATION_CONTACT_MODULE_ACTIONS],
   social_insurance_specialist: ['work_order.view', 'work_order.export', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, ...SOCIAL_INSURANCE_MODULE_ACTIONS, ...SOCIAL_INSURANCE_RESIGN_MODULE_ACTIONS],
+  welfare_specialist: ['work_order.view', 'work_order.export', ...DASHBOARD_ACTIONS, 'route.work_orders', 'route.work_order_detail'],
   social_security_team: ['work_order.view', 'work_order.export'],
 };
 

@@ -216,7 +216,7 @@ async function upsertPermission(
 
 function createPermission(roleCode: string, field: FieldConfig, targets: OrderType[]): FieldPermissionMode {
   if (!belongsAny(field, targets)) return HIDDEN;
-  if (roleCode === 'admin') return VISIBLE;
+  if (roleCode === 'admin' || roleCode === 'welfare_specialist') return VISIBLE;
   if (BUSINESS_ROLE_CODES.includes(roleCode)) return VISIBLE;
   return READONLY;
 }
@@ -232,7 +232,7 @@ function dispatchedPermission(
 ): FieldPermissionMode {
   if (!belongsAny(field, targets)) return HIDDEN;
   if (visibleFields && !visibleFields.has(field.fieldCode)) return HIDDEN;
-  if (roleCode === 'admin') return VISIBLE;
+  if (roleCode === 'admin' || roleCode === 'welfare_specialist') return VISIBLE;
   if (BUSINESS_ROLE_CODES.includes(roleCode)) {
     return businessCanEditVisibleFields && BUSINESS_MEMBER_ROLE_CODES.includes(roleCode) ? VISIBLE : READONLY;
   }

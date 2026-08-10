@@ -285,6 +285,7 @@ describe('InServiceOrdersService', () => {
       DispatchModuleCode.IN_SERVICE_SINGLE_BUSINESS,
       undefined,
       { province: '江苏', mappingSource: 'sheet4' },
+      BusinessScope.BEILUN,
     );
   });
 
@@ -648,6 +649,7 @@ describe('InServiceOrdersService', () => {
       DispatchModuleCode.OUT_OF_PROVINCE_DISPATCH,
       undefined,
       { province: '江苏', mappingSource: 'sheet5' },
+      BusinessScope.OUT_OF_PROVINCE,
     );
   });
 

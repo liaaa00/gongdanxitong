@@ -579,7 +579,11 @@ const OnboardingModule: React.FC = () => {
         let failed = 0;
         for (const file of files) {
           const platform = file.signPlatform ? `-${file.signPlatform}` : '';
-          const extension = file.fileType === 'attachments_zip' ? '.zip' : '.xlsx';
+          const extension = file.fileType === 'attachments_zip' || file.fileType === 'word_zip'
+            ? '.zip'
+            : file.fileType === 'word'
+              ? '.docx'
+              : '.xlsx';
           const fallbackName = isResignationCertificateModule
             ? `离职证明批量导出${extension}`
             : `${moduleLabel}子工单${platform}${extension}`;
@@ -597,7 +601,7 @@ const OnboardingModule: React.FC = () => {
           message.error('导出失败');
         }
       } else {
-        await downloadDispatchedExport(result, isResignationCertificateModule ? '离职证明批量导出.xlsx' : `${moduleLabel}子工单.xlsx`);
+        await downloadDispatchedExport(result, isResignationCertificateModule ? '离职证明.docx' : `${moduleLabel}子工单.xlsx`);
         message.success('导出成功');
       }
     } catch {

@@ -49,6 +49,17 @@ describe('role action permission default baseline', () => {
     expect(actionsOf('social_insurance_specialist').has('dispatched_order.batch_complete')).toBe(false);
   });
 
+  it('keeps welfare specialists on read/export and dashboard actions only', () => {
+    expect(actionsOf('welfare_specialist')).toEqual(new Set([
+      'work_order.view',
+      'work_order.export',
+      'route.dashboard',
+      'route.dispatched_detail',
+      'route.work_orders',
+      'route.work_order_detail',
+    ]));
+  });
+
   it('keeps multi-role effective permissions as a union of role actions', () => {
     const union = new Set([
       ...DEFAULT_ROLE_ACTION_PERMISSIONS.shared_leader,

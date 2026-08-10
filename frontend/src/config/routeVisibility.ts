@@ -38,6 +38,7 @@ const ALL_ROLES = [
   ROLE.LABOR_CONTRACT_MEMBER,
   ROLE.ONBOARDING_RESIGNATION_MEMBER,
   ROLE.SOCIAL_INSURANCE_SPECIALIST,
+  ROLE.WELFARE_SPECIALIST,
 ] as const satisfies readonly CanonicalRole[];
 
 const BUSINESS_ORDER_ROLES = [
@@ -53,7 +54,10 @@ const WORK_ORDER_CREATE_ROLES = [
   ROLE.BUSINESS_GROUP_MEMBER,
 ] as const satisfies readonly CanonicalRole[];
 
-const OUT_OF_PROVINCE_ROLES = BUSINESS_ORDER_ROLES;
+const OUT_OF_PROVINCE_ROLES = [
+  ...BUSINESS_ORDER_ROLES,
+  ROLE.WELFARE_SPECIALIST,
+] as const satisfies readonly CanonicalRole[];
 
 const ONBOARDING_ROLES = [
   ROLE.ADMIN,
@@ -387,6 +391,13 @@ const RESTRICTED_DYNAMIC_PERMISSION_ROUTES: Partial<Record<CanonicalRole, readon
   [ROLE.LABOR_CONTRACT_MEMBER]: BACKEND_DYNAMIC_ROUTES,
   [ROLE.ONBOARDING_RESIGNATION_MEMBER]: BACKEND_DYNAMIC_ROUTES,
   [ROLE.SOCIAL_INSURANCE_SPECIALIST]: BACKEND_DYNAMIC_ROUTES,
+  [ROLE.WELFARE_SPECIALIST]: [
+    '/dashboard',
+    '/out-of-province', '/out-of-province/orders', '/out-of-province/orders/:id',
+    '/out-of-province/increase', '/out-of-province/increase/:id',
+    '/out-of-province/decrease', '/out-of-province/decrease/:id',
+    '/out-of-province/single-business', '/out-of-province/single-business/:id',
+  ],
   [ROLE.SHARED_TEAM_OWNER]: [
     '/dashboard', '/notifications', ...BACKEND_DYNAMIC_ROUTES, '/dispatched-orders',
     '/onboarding', '/onboarding/onboarding_contact', '/onboarding/contract',
