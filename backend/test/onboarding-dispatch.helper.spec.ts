@@ -186,6 +186,68 @@ describe('onboarding-dispatch helper', () => {
     });
   });
 
+  it('creates payroll bank card directly when all bank fields are complete', async () => {
+    const { manager } = createDefaultManager();
+    const fieldPermissionService = {
+      getVisibleFieldsForScenario: jest.fn(async () => ['employee_name', 'id_card_no', 'bank_name', 'bank_account', 'bank_location', 'payroll_location']),
+    };
+
+    const children = await buildOnboardingChildren(
+      makeWorkOrder({
+        extraData: {
+          need_payroll_slip: '是',
+          need_onboarding_contact: '否',
+          bank_name: '测试银行',
+          bank_account: '62220001',
+          bank_location: '宁波',
+          payroll_location: '北仑',
+        },
+      }),
+      manager,
+      fieldPermissionService as never,
+    );
+
+    expect(children.map((child) => child.moduleCode)).toEqual([
+      DispatchModuleCode.DATA_ENTRY,
+      DispatchModuleCode.PAYROLL_BANK_CARD,
+      DispatchModuleCode.SOCIAL_INSURANCE,
+    ]);
+    expect(children.map((child) => child.moduleCode)).not.toContain(DispatchModuleCode.ONBOARDING_CONTACT);
+  });
+
+  it('creates a focused onboarding contact child when payroll bank fields are missing', async () => {
+    const { manager } = createDefaultManager();
+    const fieldPermissionService = {
+      getVisibleFieldsForScenario: jest.fn(async () => ['employee_name', 'id_card_no', 'bank_name', 'bank_account', 'bank_location', 'payroll_location']),
+    };
+
+    const children = await buildOnboardingChildren(
+      makeWorkOrder({
+        extraData: {
+          need_payroll_slip: '是',
+          need_onboarding_contact: '否',
+          bank_name: '测试银行',
+        },
+      }),
+      manager,
+      fieldPermissionService as never,
+    );
+
+    expect(children.map((child) => child.moduleCode)).toEqual([
+      DispatchModuleCode.DATA_ENTRY,
+      DispatchModuleCode.ONBOARDING_CONTACT,
+      DispatchModuleCode.PAYROLL_BANK_CARD,
+      DispatchModuleCode.SOCIAL_INSURANCE,
+    ]);
+    expect(children.find((child) => child.moduleCode === DispatchModuleCode.ONBOARDING_CONTACT)?.visibleFields).toEqual([
+      'employee_name',
+      'id_card_no',
+      'bank_account',
+      'bank_location',
+      'payroll_location',
+    ]);
+  });
+
   it.skip('routes non-onboarding orders by overall work order module', async () => {
     const { manager } = createDefaultManager({
       handlers: [

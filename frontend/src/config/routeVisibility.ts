@@ -172,6 +172,7 @@ export const ROUTE_VISIBILITY = {
   // 入职管理：业务侧看主列表；后道只看授权子模块。
   '/onboarding': ONBOARDING_ROLES,
   '/onboarding/onboarding_contact': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.ONBOARDING_RESIGNATION_MEMBER, ROLE.SHARED_TEAM_OWNER],
+  '/onboarding/payroll_bank_card': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.DATA_ENTRY_LEADER, ROLE.SHARED_TEAM_OWNER],
   '/onboarding/contract': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.LABOR_CONTRACT_MEMBER, ROLE.SHARED_TEAM_OWNER],
   '/onboarding/data_entry': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.DATA_ENTRY_LEADER],
   '/onboarding/social_insurance': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SOCIAL_INSURANCE_SPECIALIST],
@@ -260,6 +261,7 @@ const ROUTE_ACTION_PERMISSIONS: Partial<Record<VisibilityRoute, readonly string[
   '/onboarding': ['route.onboarding'],
   '/onboarding/contract': ['route.onboarding_contract', 'module.contract.manage'],
   '/onboarding/onboarding_contact': ['route.onboarding_contact', 'module.onboarding_contact.manage'],
+  '/onboarding/payroll_bank_card': ['route.onboarding_payroll_bank_card', 'module.payroll_bank_card.manage'],
   '/onboarding/data_entry': ['route.onboarding_data_entry', 'module.data_entry.manage'],
   '/onboarding/social_insurance': ['route.onboarding_social_insurance', 'module.social_insurance.manage'],
   '/onboarding/resignation_contact': ['route.resignation_contact', 'module.resignation_contact.manage'],
@@ -383,7 +385,7 @@ const RESTRICTED_DYNAMIC_PERMISSION_ROUTES: Partial<Record<CanonicalRole, readon
   [ROLE.BUSINESS_GROUP_LEADER]: [
     '/dashboard', '/work-orders', '/work-orders/create', '/work-orders/import', '/work-orders/:id',
     '/out-of-province', '/out-of-province/import', '/out-of-province/new', '/my-dispatched/:id',
-    '/onboarding', '/onboarding/onboarding_contact', '/onboarding/contract', '/onboarding/data_entry', '/onboarding/social_insurance',
+    '/onboarding', '/onboarding/onboarding_contact', '/onboarding/payroll_bank_card', '/onboarding/contract', '/onboarding/data_entry', '/onboarding/social_insurance',
     '/offboarding', '/onboarding/resignation_contact', '/onboarding/data_entry_resign', '/onboarding/social_insurance_resign',
   ],
   [ROLE.BUSINESS_GROUP_MEMBER]: BUSINESS_MEMBER_DYNAMIC_ROUTES,

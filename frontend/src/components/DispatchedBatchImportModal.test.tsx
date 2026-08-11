@@ -196,6 +196,43 @@ describe('DispatchedBatchImportModal', () => {
     expect(screen.queryByText('已作废工单属于终止状态，系统已自动拦截，不会被批量导入完成、退回或修改。请查看下方失败明细。')).toBeNull();
   });
 
+  it('imports all payroll bank-card fields from the workbook', async () => {
+    xlsxMockState.rowsBySheet = {
+      Sheet1: [{
+        工单编号: 'WO-PAYROLL',
+        证件号码: '330102199001010011',
+        开户行: '中国银行',
+        银行账号: '6222000012345678',
+        开户地: '宁波',
+        发薪地: '北仑',
+      }],
+    };
+
+    render(
+      <DispatchedBatchImportModal
+        open
+        mode="fields"
+        moduleOptions={[{ label: '入职联系', value: 'onboarding_contact' }]}
+        defaultModuleCode="onboarding_contact"
+        hideModuleSelect
+        onClose={vi.fn()}
+      />,
+    );
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [makeFile()] } });
+    await waitFor(() => expect(screen.getByText('WO-PAYROLL')).toBeTruthy());
+    fireEvent.click(screen.getByText('确认导入'));
+
+    await waitFor(() => expect(batchImportDispatchedOrders).toHaveBeenCalled());
+    expect(vi.mocked(batchImportDispatchedOrders).mock.calls[0][0].rows[0].fields).toEqual({
+      bank_name: '中国银行',
+      bank_account: '6222000012345678',
+      bank_location: '宁波',
+      payroll_location: '北仑',
+    });
+  });
+
   it('keeps parsed rows when parent page refreshes module option references while modal stays open', async () => {
     const { rerender } = render(
       <DispatchedBatchImportModal

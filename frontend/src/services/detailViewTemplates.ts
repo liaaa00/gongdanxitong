@@ -10,6 +10,8 @@ export interface DetailViewTemplateItem {
   field_list?: Array<{ fieldCode: string; kind?: string; value?: string }>;
   isActive: boolean;
   is_active?: boolean;
+  businessScope?: 'beilun' | 'out_of_province';
+  business_scope?: 'beilun' | 'out_of_province';
   createdBy?: string;
   created_by?: string;
   createdAt: string;
@@ -18,12 +20,12 @@ export interface DetailViewTemplateItem {
   updated_at?: string;
 }
 
-export async function getDetailViewTemplates(params?: { moduleCode?: string }) {
+export async function getDetailViewTemplates(params?: { moduleCode?: string; businessScope?: 'beilun' | 'out_of_province' }) {
   return request.get<DetailViewTemplateItem[]>('/admin/detail-view-templates', { params });
 }
 
-export async function getDetailViewTemplate(id: string) {
-  return request.get<DetailViewTemplateItem>(`/admin/detail-view-templates/${id}`);
+export async function getDetailViewTemplate(id: string, businessScope: 'beilun' | 'out_of_province' = 'beilun') {
+  return request.get<DetailViewTemplateItem>(`/admin/detail-view-templates/${id}`, { params: { businessScope } });
 }
 
 export async function getActiveDetailViewTemplate(
@@ -51,8 +53,10 @@ export async function createDetailViewTemplate(data: {
   moduleCode: string;
   fieldList: Array<{ fieldCode: string; kind?: string; value?: string }>;
   isActive?: boolean;
+  businessScope?: 'beilun' | 'out_of_province';
 }) {
-  return request.post<DetailViewTemplateItem>('/admin/detail-view-templates', data);
+  const businessScope = data.businessScope ?? 'beilun';
+  return request.post<DetailViewTemplateItem>('/admin/detail-view-templates', data, { params: { businessScope } });
 }
 
 export async function updateDetailViewTemplate(
@@ -62,11 +66,13 @@ export async function updateDetailViewTemplate(
     moduleCode: string;
     fieldList: Array<{ fieldCode: string; kind?: string; value?: string }>;
     isActive: boolean;
+    businessScope: 'beilun' | 'out_of_province';
   }>,
+  businessScope: 'beilun' | 'out_of_province' = 'beilun',
 ) {
-  return request.put<DetailViewTemplateItem>(`/admin/detail-view-templates/${id}`, data);
+  return request.put<DetailViewTemplateItem>(`/admin/detail-view-templates/${id}`, data, { params: { businessScope } });
 }
 
-export async function deleteDetailViewTemplate(id: string) {
-  return request.delete(`/admin/detail-view-templates/${id}`);
+export async function deleteDetailViewTemplate(id: string, businessScope: 'beilun' | 'out_of_province' = 'beilun') {
+  return request.delete(`/admin/detail-view-templates/${id}`, { params: { businessScope } });
 }

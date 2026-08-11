@@ -1,4 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put, Query, Res, UseInterceptors } from '@nestjs/common';
+import { IsBoolean, IsIn } from 'class-validator';
 import { Response } from 'express';
 import { ApiResponse } from 'src/common/decorators/api-response.decorator';
 import { BusinessPermission } from 'src/common/decorators/business-permission.decorator';
@@ -22,6 +23,14 @@ import { VoidWorkOrderDto } from './dto/void.dto';
 import { WithdrawApproveWorkOrderDto } from './dto/withdraw-approve.dto';
 import { WithdrawWorkOrderDto } from './dto/withdraw.dto';
 import { WorkOrderService } from './work-order.service';
+
+class SetHistoricalResignationCertificateDto {
+  @IsIn(['是', '否'])
+  needResignationCert!: '是' | '否';
+
+  @IsBoolean()
+  confirmed!: boolean;
+}
 
 @Controller('work-orders')
 @UseInterceptors(AuditInterceptor)
@@ -96,6 +105,22 @@ export class WorkOrderController {
     @CurrentUser() user: JwtUserPayload,
   ) {
     return this.workOrderService.update(assertUuidParam(id, '工单不存在'), payload, user);
+  }
+
+  @Post(':id/historical-resignation-certificate')
+  @Roles('admin')
+  @Audit('work_orders', 'set-historical-resignation-certificate')
+  setHistoricalResignationCertificate(
+    @Param('id') id: string,
+    @Body() payload: SetHistoricalResignationCertificateDto,
+    @CurrentUser() user: JwtUserPayload,
+  ) {
+    return this.workOrderService.setHistoricalResignationCertificate(
+      assertUuidParam(id, '工单不存在'),
+      payload.needResignationCert,
+      payload.confirmed,
+      user,
+    );
   }
 
   @Post(':id/submit')

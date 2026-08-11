@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PageContainer } from '@ant-design/pro-components';
-import { Table, Button, Space, Modal, Form, Input, Switch, Select, Popconfirm, App, Tag, Checkbox, Divider, Typography } from 'antd';
+import { Table, Button, Space, Modal, Form, Input, Switch, Select, Popconfirm, App, Segmented, Tag, Checkbox, Divider, Typography } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, ArrowUpOutlined, ArrowDownOutlined } from '@ant-design/icons';
 import { getDetailViewTemplates, createDetailViewTemplate, updateDetailViewTemplate, deleteDetailViewTemplate, type DetailViewTemplateItem } from '../../../services/detailViewTemplates';
 import { getFields, type FieldConfigItem } from '../../../services/fields';
 import { getExportTemplates } from '../../../services/exportTemplates';
 import { getImportTemplateConfig, getAvailableImportTemplateFields } from '../../../services/importTemplates';
 import { getModuleFields as getConfiguredModuleFields } from '../../../services/moduleConfigs';
+import type { BusinessScope } from '@/utils/businessScope';
 
 const DEFAULT_MODULE_CODE = 'onboarding';
 const MAIN_ORDER_MODULE_CODES = new Set(['onboarding', 'resignation']);
@@ -23,6 +24,7 @@ export const MODULE_SELECT_GROUPS = [
     label: '入职管理',
     options: [
       { label: '入职联系', value: 'onboarding_contact' },
+      { label: '薪酬银行卡', value: 'payroll_bank_card' },
       { label: '劳动合同新签', value: 'contract' },
       { label: '增员报岗录入', value: 'data_entry' },
       { label: '社保公积金增员', value: 'social_insurance' },
@@ -34,7 +36,7 @@ export const MODULE_SELECT_GROUPS = [
       { label: '离职材料收集', value: 'resignation_contact' },
       { label: '减员报岗录入', value: 'data_entry_resign' },
       { label: '社保公积金减员', value: 'resignation_social_insurance' },
-      { label: '离职证明', value: 'resignation_certificate' },
+      { label: '离职证明', value: 'resignation_cert' },
     ],
   },
   {
@@ -56,6 +58,10 @@ export const MODULE_SELECT_GROUPS = [
 ];
 
 const MODULES = MODULE_SELECT_GROUPS.flatMap((g) => g.options);
+const MODULE_SELECT_GROUPS_BY_SCOPE: Record<BusinessScope, typeof MODULE_SELECT_GROUPS> = {
+  beilun: MODULE_SELECT_GROUPS.filter((group) => group.label !== '省外工单'),
+  out_of_province: MODULE_SELECT_GROUPS.filter((group) => group.label === '省外工单'),
+};
 
 function readString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
@@ -80,10 +86,10 @@ function resolveTemplateFieldCode(item: Record<string, unknown>): string | undef
     ?? readString(item.sameAs);
 }
 
-async function resolveMainOrderFieldCodes(orderType: string): Promise<{ codes: string[]; source: string }> {
+async function resolveMainOrderFieldCodes(orderType: string, businessScope: BusinessScope): Promise<{ codes: string[]; source: string }> {
   const source = orderType === 'resignation' ? '离职批导入模板' : '入职批导入模板';
   try {
-    const configured = await getImportTemplateConfig(orderType);
+    const configured = await getImportTemplateConfig(orderType, businessScope);
     const codes = uniqueCodes(configured.map((field) => field.field_code));
     if (codes.length > 0) return { codes, source };
   } catch {
@@ -98,8 +104,8 @@ async function resolveMainOrderFieldCodes(orderType: string): Promise<{ codes: s
   }
 }
 
-async function resolveSubOrderFieldCodes(moduleCode: string): Promise<{ codes: string[]; source: string }> {
-  const templates = await getExportTemplates(moduleCode);
+async function resolveSubOrderFieldCodes(moduleCode: string, businessScope: BusinessScope): Promise<{ codes: string[]; source: string }> {
+  const templates = await getExportTemplates(moduleCode, businessScope);
   const exportCodes = uniqueCodes(
     templates.flatMap((template) => (template.field_list || []).map((field) => resolveTemplateFieldCode(field as Record<string, unknown>))),
   );
@@ -107,22 +113,24 @@ async function resolveSubOrderFieldCodes(moduleCode: string): Promise<{ codes: s
     return { codes: exportCodes, source: '批导出模板' };
   }
 
-  const configuredFields = await getConfiguredModuleFields(moduleCode);
+  const configuredFields = await getConfiguredModuleFields(moduleCode, businessScope);
   return {
     codes: uniqueCodes(configuredFields.map((field) => field.field_code)),
     source: '模块字段配置（未找到批导出模板时兜底）',
   };
 }
 
-async function resolveDetailFieldCodes(moduleCode: string): Promise<{ codes: string[]; source: string }> {
+async function resolveDetailFieldCodes(moduleCode: string, businessScope: BusinessScope): Promise<{ codes: string[]; source: string }> {
   if (MAIN_ORDER_MODULE_CODES.has(moduleCode)) {
-    return resolveMainOrderFieldCodes(moduleCode);
+    return resolveMainOrderFieldCodes(moduleCode, businessScope);
   }
-  return resolveSubOrderFieldCodes(moduleCode);
+  return resolveSubOrderFieldCodes(moduleCode, businessScope);
 }
 
 const AdminDetailViewTemplates = () => {
   const { message } = App.useApp();
+  const [businessScope, setBusinessScope] = useState<BusinessScope>('beilun');
+  const moduleSelectGroups = MODULE_SELECT_GROUPS_BY_SCOPE[businessScope];
   const [data, setData] = useState<DetailViewTemplateItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [systemFieldLoading, setSystemFieldLoading] = useState(false);
@@ -159,7 +167,7 @@ const AdminDetailViewTemplates = () => {
   const load = async () => {
     setLoading(true);
     try {
-      const res = await getDetailViewTemplates();
+      const res = await getDetailViewTemplates({ businessScope });
       setData(Array.isArray(res) ? res : (res as any)?.list ?? (res as any)?.items ?? []);
     } catch {
       message.error('加载失败');
@@ -184,13 +192,13 @@ const AdminDetailViewTemplates = () => {
   useEffect(() => {
     load();
     loadSystemFields();
-  }, []);
+  }, [businessScope]);
 
   useEffect(() => {
     if (!open || !currentModuleCode) return;
     let cancelled = false;
     setAvailableFieldLoading(true);
-    resolveDetailFieldCodes(currentModuleCode)
+    resolveDetailFieldCodes(currentModuleCode, businessScope)
       .then((result) => {
         if (cancelled) return;
         setAvailableFieldCodes(result.codes);
@@ -206,7 +214,7 @@ const AdminDetailViewTemplates = () => {
         if (!cancelled) setAvailableFieldLoading(false);
       });
     return () => { cancelled = true; };
-  }, [currentModuleCode, message, open]);
+  }, [businessScope, currentModuleCode, message, open]);
 
   const handleCreate = () => {
     setEditing(null);
@@ -214,7 +222,7 @@ const AdminDetailViewTemplates = () => {
     setAvailableFieldCodes([]);
     setAvailableFieldSource('');
     form.resetFields();
-    form.setFieldsValue({ is_active: true, module_code: DEFAULT_MODULE_CODE });
+    form.setFieldsValue({ is_active: true, module_code: moduleSelectGroups.flatMap((group) => group.options)[0]?.value || DEFAULT_MODULE_CODE });
     setOpen(true);
   };
 
@@ -233,7 +241,7 @@ const AdminDetailViewTemplates = () => {
 
   const handleDelete = async (id: string) => {
     try {
-      await deleteDetailViewTemplate(id);
+      await deleteDetailViewTemplate(id, businessScope);
       message.success('删除成功');
       load();
     } catch {
@@ -249,10 +257,11 @@ const AdminDetailViewTemplates = () => {
         moduleCode: values.module_code,
         fieldList: selectedFieldCodes.map((code) => ({ fieldCode: code, kind: 'field' })),
         isActive: values.is_active ?? true,
+        businessScope,
       };
 
       if (editing) {
-        await updateDetailViewTemplate(editing.id, payload);
+        await updateDetailViewTemplate(editing.id, payload, businessScope);
         message.success('更新成功');
       } else {
         await createDetailViewTemplate(payload);
@@ -348,6 +357,9 @@ const AdminDetailViewTemplates = () => {
   return (
     <PageContainer title="详情页字段配置">
       <div style={{ background: '#fff', padding: 24 }}>
+        <Space style={{ marginBottom: 16 }}>
+          <Segmented value={businessScope} options={[{ label: '北仑配置', value: 'beilun' }, { label: '省外配置', value: 'out_of_province' }]} onChange={(value) => setBusinessScope(value as BusinessScope)} />
+        </Space>
         <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate} style={{ marginBottom: 16 }}>
           新建配置
         </Button>
@@ -384,7 +396,7 @@ const AdminDetailViewTemplates = () => {
           <Form.Item label="模块" name="module_code" rules={[{ required: true, message: '请选择模块' }]}>
             <Select
               placeholder="请选择模块"
-              options={MODULE_SELECT_GROUPS}
+              options={moduleSelectGroups}
               disabled={!!editing}
             />
           </Form.Item>

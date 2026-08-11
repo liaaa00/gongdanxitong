@@ -533,7 +533,7 @@ const AVAILABLE_FIELDS_MOCK = [
   { field_code: 'probation_other_salary', field_name: '试用期其他工资' },
   { field_code: 'payroll_cycle', field_name: '发薪周期', is_required: true },
   { field_code: 'payroll_date', field_name: '发薪日期', is_required: true },
-  { field_code: 'social_location', field_name: '参保机构名称', is_required: true },
+  { field_code: 'social_location', field_name: '缴纳地', is_required: true },
   { field_code: 'start_month', field_name: '参保起始月', is_required: true },
   { field_code: 'social_base', field_name: '社保基数', is_required: true },
   { field_code: 'fund_base', field_name: '公积金基数', is_required: true },
@@ -541,6 +541,7 @@ const AVAILABLE_FIELDS_MOCK = [
   { field_code: 'bank_location', field_name: '开户地' },
   { field_code: 'bank_name', field_name: '开户银行信息' },
   { field_code: 'bank_account', field_name: '银行借记卡帐号' },
+  { field_code: 'need_payroll_slip', field_name: '是否需要工资单', is_required: true, dropdown_options: ['是', '否'] },
   { field_code: 'remark', field_name: '备注' },
   { field_code: 'business_mode', field_name: '业务模式', is_required: true },
   { field_code: 'employee_type', field_name: '人员类型', is_required: true },
@@ -996,6 +997,7 @@ export async function createWorkOrder(data: Record<string, unknown>): Promise<Wo
         { id: `d-n2`, module_code: 'social_insurance', module_name: '社保公积金增员', status: 'pending', handler_name: '傅倩雯', dispatched_at: new Date().toISOString(), accepted_at: null, completed_at: null },
         ...(mergedExtra.need_company_contract === '是' ? [{ id: `d-n3`, module_code: 'contract', module_name: '劳动合同新签', status: 'pending', handler_name: null, dispatched_at: new Date().toISOString(), accepted_at: null, completed_at: null }] : []),
         ...(mergedExtra.need_onboarding_contact === '是' ? [{ id: `d-n4`, module_code: 'onboarding_contact', module_name: '入职联系', status: 'pending', handler_name: null, dispatched_at: new Date().toISOString(), accepted_at: null, completed_at: null }] : []),
+        ...(mergedExtra.need_payroll_slip === '是' ? [{ id: `d-n5`, module_code: 'payroll_bank_card', module_name: '薪酬银行卡', status: 'pending', handler_name: null, dispatched_at: new Date().toISOString(), accepted_at: null, completed_at: null }] : []),
       ]) : [],
     };
     mockWorkOrders.unshift(newOrder);
@@ -1053,6 +1055,27 @@ export async function updateWorkOrder(id: string, data: Record<string, unknown>)
   return request.put(`/work-orders/${id}`, payload) as Promise<WorkOrderItem>;
 }
 
+export async function setHistoricalResignationCertificate(
+  id: string,
+  needResignationCert: '是' | '否',
+): Promise<{ workOrderId: string; needResignationCert: '是' | '否'; certificateOrderId: string | null }> {
+  if (isMockMode) {
+    const order = mockWorkOrders.find((item) => item.id === id);
+    if (!order) throw new Error('工单不存在');
+    order.extra_data = { ...(order.extra_data ?? {}), need_resignation_cert: needResignationCert };
+    saveMockWorkOrders();
+    return mockDelay({
+      workOrderId: id,
+      needResignationCert,
+      certificateOrderId: needResignationCert === '是' ? `mock-resignation-cert-${id}` : null,
+    });
+  }
+  return request.post(`/work-orders/${id}/historical-resignation-certificate`, {
+    needResignationCert,
+    confirmed: true,
+  }) as Promise<{ workOrderId: string; needResignationCert: '是' | '否'; certificateOrderId: string | null }>;
+}
+
 export async function submitWorkOrder(id: string): Promise<WorkOrderItem> {
   if (isMockMode) {
     const idx = mockWorkOrders.findIndex((w) => w.id === id);
@@ -1060,6 +1083,7 @@ export async function submitWorkOrder(id: string): Promise<WorkOrderItem> {
     const found = mockWorkOrders[idx];
     const needContract = found.extra_data.need_company_contract === '是';
     const needContact = found.extra_data.need_onboarding_contact === '是';
+    const needPayrollBankCard = found.extra_data.need_payroll_slip === '是';
     const now = new Date().toISOString();
     const updated: WorkOrderItem = {
       ...found, status: 'processing', submitted_at: now, updated_at: now,
@@ -1068,6 +1092,7 @@ export async function submitWorkOrder(id: string): Promise<WorkOrderItem> {
         { id: `d-s2-${id}`, module_code: 'social_insurance', module_name: '社保公积金增员', status: 'pending', handler_name: '傅倩雯', dispatched_at: now, accepted_at: null, completed_at: null },
         ...(needContract ? [{ id: `d-s3-${id}`, module_code: 'contract', module_name: '劳动合同新签', status: 'pending' as const, handler_name: null, dispatched_at: now, accepted_at: null, completed_at: null }] : []),
         ...(needContact ? [{ id: `d-s4-${id}`, module_code: 'onboarding_contact', module_name: '入职联系', status: 'pending' as const, handler_name: null, dispatched_at: now, accepted_at: null, completed_at: null }] : []),
+        ...(needPayrollBankCard ? [{ id: `d-s5-${id}`, module_code: 'payroll_bank_card', module_name: '薪酬银行卡', status: 'pending' as const, handler_name: null, dispatched_at: now, accepted_at: null, completed_at: null }] : []),
       ],
     };
     mockWorkOrders[idx] = updated;
@@ -1310,6 +1335,7 @@ const HEADER_SUGGESTIONS: Record<string, { code: string; name: string; confidenc
   '银行借记卡帐号': { code: 'bank_account', name: '银行借记卡帐号', confidence: 0.95 },
   '银行账号': { code: 'bank_account', name: '银行借记卡帐号', confidence: 0.9 },
   '银行卡号': { code: 'bank_account', name: '银行借记卡帐号', confidence: 0.9 },
+  '是否需要工资单': { code: 'need_payroll_slip', name: '是否需要工资单', confidence: 0.98 },
   '备注': { code: 'remark', name: '备注', confidence: 0.85 },
   '业务模式': { code: 'business_mode', name: '业务模式', confidence: 0.94 },
   '人员类型': { code: 'employee_type', name: '人员类型', confidence: 0.94 },
@@ -1563,14 +1589,14 @@ async function downloadMockImportTemplate(orderType = 'onboarding'): Promise<{ f
   return { fieldCount: fields.length, fileName };
 }
 
-export async function downloadServerImportTemplate(orderType = 'onboarding'): Promise<{ fieldCount: number; fileName: string }> {
+export async function downloadServerImportTemplate(orderType = 'onboarding', businessScope?: 'beilun' | 'out_of_province'): Promise<{ fieldCount: number; fileName: string }> {
   if (isMockMode) {
     return downloadMockImportTemplate(orderType);
   }
 
   const token = localStorage.getItem('token');
   const base = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || '';
-  const url = `${base}/api/work-orders/import/template?orderType=${encodeURIComponent(orderType)}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
+  const url = `${base}/api/work-orders/import/template?orderType=${encodeURIComponent(orderType)}${businessScope ? `&businessScope=${encodeURIComponent(businessScope)}` : ''}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
   const response = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
   if (!response.ok) {
     const text = await response.text().catch(() => '');
@@ -1676,11 +1702,13 @@ export async function getImportJob(jobId: string): Promise<ImportJob> {
           const id = `${Date.now()}-imp${i}`;
           const needContract = String(r.need_company_contract ?? '是') === '是';
           const needContact = String(r.need_onboarding_contact ?? '是') === '是';
+          const needPayrollBankCard = String(r.need_payroll_slip ?? '否') === '是';
           const dispatched = [
             { id: `${id}-d1`, module_code: 'data_entry', module_name: '增员报岗录入', status: 'pending' as const, handler_name: null, dispatched_at: now, accepted_at: null, completed_at: null },
             { id: `${id}-d2`, module_code: 'social_insurance', module_name: '社保公积金增员', status: 'pending' as const, handler_name: '傅倩雯', dispatched_at: now, accepted_at: null, completed_at: null },
             ...(needContract ? [{ id: `${id}-d3`, module_code: 'contract', module_name: '劳动合同新签', status: 'pending' as const, handler_name: null, dispatched_at: now, accepted_at: null, completed_at: null }] : []),
             ...(needContact ? [{ id: `${id}-d4`, module_code: 'onboarding_contact', module_name: '入职联系', status: 'pending' as const, handler_name: null, dispatched_at: now, accepted_at: null, completed_at: null }] : []),
+            ...(needPayrollBankCard ? [{ id: `${id}-d5`, module_code: 'payroll_bank_card', module_name: '薪酬银行卡', status: 'pending' as const, handler_name: null, dispatched_at: now, accepted_at: null, completed_at: null }] : []),
           ];
           mockWorkOrders.unshift({
             id,

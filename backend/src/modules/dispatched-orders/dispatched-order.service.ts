@@ -85,6 +85,7 @@ import { ReassignDispatchedOrderDto } from './dto/reassign.dto';
 import { ReturnDispatchedOrderDto } from './dto/return.dto';
 import { ResubmitDispatchedOrderDto } from './dto/resubmit.dto';
 import { SupplementFieldDto } from './dto/supplement.dto';
+import { getMissingPayrollBankCardFields } from './payroll-bank-card';
 import {
   DispatchedOrderDetailItem,
   DispatchedOrderExportResult,
@@ -331,6 +332,7 @@ export class DispatchedOrderService {
     const order = await this.loadDispatchedOrder(id);
     this.assertParentAllowsDispatchedHandling(order);
     await this.assertResignationCertificateMaterialsReady(order);
+    this.assertPayrollBankCardReady(order);
     if (order.status !== DispatchedOrderStatus.PENDING) {
       throw businessException(4201, HttpStatus.CONFLICT, '子工单状态不允许接单');
     }
@@ -389,6 +391,7 @@ export class DispatchedOrderService {
     const order = await this.loadDispatchedOrder(id);
     this.assertParentAllowsDispatchedHandling(order);
     await this.assertResignationCertificateMaterialsReady(order);
+    this.assertPayrollBankCardReady(order);
     if (order.handlerId) {
       throw businessException(4220, HttpStatus.CONFLICT, '认领失败：已被认领');
     }
@@ -419,6 +422,7 @@ export class DispatchedOrderService {
     const order = await this.loadDispatchedOrder(id);
     this.assertParentAllowsDispatchedHandling(order);
     await this.assertCanHandle(order, user);
+    this.assertPayrollBankCardReady(order);
     const remark = payload.remark?.trim() ?? '';
     const extraDataPatch = this.buildCompletionExtraDataPatch(order, payload.extraData ?? {});
     const completionEvaluation = this.evaluateOrderCompletion(order, extraDataPatch);
@@ -1718,6 +1722,7 @@ export class DispatchedOrderService {
   ): Promise<DispatchedOrderExportResult> {
     const order = await this.loadDispatchedOrder(id);
     await this.assertCanRead(order, user);
+    this.assertPayrollBankCardReady(order);
     return this.exportTemplatesService.exportSingleDispatchedOrder(id, payload.templateId, user);
   }
 
@@ -1727,6 +1732,7 @@ export class DispatchedOrderService {
     for (const id of ids) {
       const order = await this.loadDispatchedOrder(id);
       await this.assertCanRead(order, user);
+      this.assertPayrollBankCardReady(order);
       orders.push(order);
     }
 
@@ -1918,6 +1924,8 @@ export class DispatchedOrderService {
     const aliasMap: Record<string, string[]> = {
       bank_name: ['bank_name', '开户银行信息', '开户银行', '银行名称', '开户行', '开户行名称'],
       bank_account: ['bank_account', '银行借记卡帐号', '银行借记卡账号', '银行账号', '银行卡号', '银行卡账号', '工资卡号'],
+      bank_location: ['bank_location', '开户地', '银行开户地', '开户地区'],
+      payroll_location: ['payroll_location', '发薪地', '发薪城市', '工资发放地', '薪资发放地'],
     };
     const fields: Record<string, unknown> = {};
     for (const [fieldCode, aliases] of Object.entries(aliasMap)) {
@@ -2052,7 +2060,7 @@ export class DispatchedOrderService {
       throw businessException(4201, HttpStatus.CONFLICT, blockedReason);
     }
     await this.assertCanHandle(order, user);
-    const allowed = new Set(['bank_name', 'bank_account']);
+    const allowed = new Set(['bank_name', 'bank_account', 'bank_location', 'payroll_location']);
     const entries = Object.entries(fields).filter(([fieldCode]) => allowed.has(fieldCode));
     if (entries.length === 0) {
       throw businessException(4301, HttpStatus.BAD_REQUEST, '未读取到允许批量修改的银行卡字段');
@@ -2544,6 +2552,13 @@ export class DispatchedOrderService {
     return latest?.extraData ?? {};
   }
 
+  private assertPayrollBankCardReady(order: DispatchedOrder): void {
+    if (order.moduleCode !== DispatchModuleCode.PAYROLL_BANK_CARD) return;
+    const missingFields = getMissingPayrollBankCardFields(order.parentOrder?.extraData);
+    if (missingFields.length === 0) return;
+    throw businessException(4233, HttpStatus.CONFLICT, `银行卡资料未完整，缺少：${missingFields.join('、')}`);
+  }
+
   private async assertResignationCertificateMaterialsReady(order: DispatchedOrder): Promise<void> {
     if (canStartResignationCertificate(order.moduleCode, order.parentOrder?.extraData, null)) return;
     const materialOrder = await this.dispatchedOrderRepository.findOne({
@@ -2603,16 +2618,14 @@ export class DispatchedOrderService {
     if (!isHandlingFeedbackModule(moduleCode)) return extraData;
     const normalized = { ...extraData };
     const insuredUnit = this.readImportString(
-      normalized.social_location
-      ?? normalized.socialLocation
-      ?? normalized['参保机构名称']
+      normalized.contract_subject
+      ?? normalized.contractSubject
       ?? normalized.insured_unit
       ?? normalized.insuredUnit
-      ?? normalized.payment_institution
-      ?? normalized.paymentInstitution
       ?? normalized['参保单位'],
     );
     if (insuredUnit) normalized.insured_unit = insuredUnit;
+    normalized.social_location ??= normalized.social_pay_region;
     if (moduleCode === 'social_insurance') {
       normalized.social_pay_region ??= normalized.social_location;
       normalized.fund_start_month ??= normalized.start_month;
@@ -2632,6 +2645,9 @@ export class DispatchedOrderService {
       order.moduleCode,
       this.normalizeImportedContactData(order.parentOrder.extraData ?? {}),
     );
+    if (order.moduleCode === DispatchModuleCode.PAYROLL_BANK_CARD) {
+      extraData.branch_code ??= order.parentOrder.branchCode ?? extraData.customer_code ?? null;
+    }
     const fields = await this.fieldConfigRepository.find({ where: { isActive: true }, order: { displayOrder: 'ASC' } });
     const moduleBusinessScope = order.parentOrder.businessScope ?? BusinessScope.BEILUN;
     const moduleFieldRows = this.moduleFieldRepository
@@ -2814,6 +2830,9 @@ export class DispatchedOrderService {
       order.moduleCode,
       this.normalizeImportedContactData(order.parentOrder.extraData ?? {}),
     );
+    if (order.moduleCode === DispatchModuleCode.PAYROLL_BANK_CARD) {
+      extraData.branch_code ??= order.parentOrder.branchCode ?? extraData.customer_code ?? null;
+    }
     const employeeName = this.readImportString(extraData.employee_name) ?? order.parentOrder.employeeName;
     const employeeIdCard = this.readImportString(extraData.id_card_no ?? extraData.employee_id_card) ?? order.parentOrder.employeeIdCard;
     const customerCode = this.readImportString(extraData.customer_code) ?? order.parentOrder.customerCode;

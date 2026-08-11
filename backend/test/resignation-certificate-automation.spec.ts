@@ -100,6 +100,9 @@ describe('ResignationCertificateAutomationService', () => {
       expect(picker.pick).toHaveBeenCalledWith(
         DispatchStrategy.TEAM_CLAIM,
         DispatchModuleCode.RESIGNATION_CERT,
+        manager,
+        undefined,
+        BusinessScope.BEILUN,
       );
       expect(repository.create).toHaveBeenCalledWith(expect.objectContaining({
         orderType: OrderType.IN_SERVICE,
@@ -146,6 +149,17 @@ describe('ResignationCertificateAutomationService', () => {
       expect(picker.pick).not.toHaveBeenCalled();
     },
   );
+
+  it('allows an explicit manual dispatch when the historical share flag is missing', async () => {
+    const { manager, repository } = makeManager();
+    const source = makeSource({ extraData: { need_resignation_cert: '是' } });
+
+    await expect(service.ensureManualForWorkOrder(source, manager))
+      .resolves.toEqual(expect.objectContaining({ id: 'certificate-1' }));
+
+    expect(repository.save).toHaveBeenCalledTimes(1);
+    expect(picker.pick).toHaveBeenCalledTimes(1);
+  });
 
   it('returns the existing source certificate after taking the idempotency lock', async () => {
     const existing = Object.assign(new InServiceOrder(), { id: 'existing-certificate' });

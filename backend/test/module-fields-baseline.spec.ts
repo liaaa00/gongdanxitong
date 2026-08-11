@@ -26,6 +26,11 @@ describe('onboarding module_fields baseline', () => {
       'need_onboarding_contact', 'onboarding_feedback',
     ]);
 
+    expect(extractFields('payroll_bank_card')).toEqual([
+      'employee_name', 'id_card_no', 'bank_name', 'bank_account',
+      'bank_location', 'payroll_location',
+    ]);
+
     expect(extractFields('contract')).toEqual([
       'customer_name', 'customer_code', 'outsource_type', 'position',
       'employee_name', 'id_card_no', 'gender',
@@ -47,7 +52,7 @@ describe('onboarding module_fields baseline', () => {
       'education', 'graduation_school', 'major', 'graduation_date',
       'mobile', 'email', 'current_address', 'household_address', 'postal_code',
       'social_location', 'start_month', 'social_base', 'fund_base', 'fund_ratio',
-      'bank_name', 'bank_account', 'remark',
+      'bank_name', 'bank_account', 'need_payroll_slip', 'remark',
       'business_mode',
       'need_company_payroll', 'payroll_location',
       'data_entry_feedback',

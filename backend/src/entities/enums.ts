@@ -219,6 +219,7 @@ export enum DispatchModuleCode {
   DATA_ENTRY = 'data_entry',
   SOCIAL_INSURANCE = 'social_insurance',
   ONBOARDING_CONTACT = 'onboarding_contact',
+  PAYROLL_BANK_CARD = 'payroll_bank_card',
   CONTRACT = 'contract',
   RENEWAL_CONTRACT = 'renewal_contract',
   BENEFIT_APPLY = 'benefit_apply',
@@ -238,6 +239,7 @@ export const ONBOARDING_DISPATCH_MODULE_CODES: readonly DispatchModuleCode[] = [
   DispatchModuleCode.DATA_ENTRY,
   DispatchModuleCode.SOCIAL_INSURANCE,
   DispatchModuleCode.ONBOARDING_CONTACT,
+  DispatchModuleCode.PAYROLL_BANK_CARD,
   DispatchModuleCode.CONTRACT,
 ];
 
@@ -245,6 +247,7 @@ export const ALL_DISPATCH_MODULE_CODES: readonly DispatchModuleCode[] = [
   DispatchModuleCode.DATA_ENTRY,
   DispatchModuleCode.SOCIAL_INSURANCE,
   DispatchModuleCode.ONBOARDING_CONTACT,
+  DispatchModuleCode.PAYROLL_BANK_CARD,
   DispatchModuleCode.CONTRACT,
   DispatchModuleCode.RENEWAL_CONTRACT,
   DispatchModuleCode.BENEFIT_APPLY,

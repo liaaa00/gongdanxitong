@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { PageContainer } from '@ant-design/pro-components';
-import { Alert, App, Button, Card, Input, Popconfirm, Select, Space, Table, Tag, Typography } from 'antd';
+import { Alert, App, Button, Card, Input, Popconfirm, Segmented, Select, Space, Table, Tag, Typography } from 'antd';
 import { ArrowDownOutlined, ArrowUpOutlined, DeleteOutlined, DownloadOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, SettingOutlined } from '@ant-design/icons';
 import {
   getAvailableImportTemplateFields,
@@ -9,13 +9,20 @@ import {
   type ImportTemplateFieldItem,
 } from '@/services/importTemplates';
 import { downloadServerImportTemplate } from '@/services/workOrders';
+import type { BusinessScope } from '@/utils/businessScope';
 
 const { Text } = Typography;
 
-const ORDER_OPTIONS = [
-  { label: '入职导入模板', value: 'onboarding' },
-  { label: '离职导入模板', value: 'resignation' },
-];
+const ORDER_OPTIONS: Record<BusinessScope, Array<{ label: string; value: string }>> = {
+  beilun: [
+    { label: '入职导入模板', value: 'onboarding' },
+    { label: '离职导入模板', value: 'resignation' },
+  ],
+  out_of_province: [
+    { label: '省外增员导入模板', value: 'out_of_province_increase' },
+    { label: '省外减员导入模板', value: 'out_of_province_decrease' },
+  ],
+};
 
 function normalizeOptions(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -54,7 +61,9 @@ function reorder(items: ImportTemplateFieldItem[]): ImportTemplateFieldItem[] {
 
 const AdminImportTemplates: React.FC = () => {
   const { message } = App.useApp();
+  const [businessScope, setBusinessScope] = useState<BusinessScope>('beilun');
   const [orderType, setOrderType] = useState('onboarding');
+  const orderOptions = ORDER_OPTIONS[businessScope];
   const [fields, setFields] = useState<ImportTemplateFieldItem[]>([]);
   const [availableFields, setAvailableFields] = useState<ImportTemplateFieldItem[]>([]);
   const [addingField, setAddingField] = useState<string | undefined>();
@@ -77,8 +86,8 @@ const AdminImportTemplates: React.FC = () => {
     setLoading(true);
     try {
       const [configured, available] = await Promise.all([
-        getImportTemplateConfig(orderType),
-        getAvailableImportTemplateFields(orderType),
+        getImportTemplateConfig(orderType, businessScope),
+        getAvailableImportTemplateFields(orderType, businessScope),
       ]);
       setFields(reorder([...configured].sort((a, b) => (a.display_order || 0) - (b.display_order || 0))));
       setAvailableFields(available.sort((a, b) => (a.display_order || 0) - (b.display_order || 0)));
@@ -92,7 +101,14 @@ const AdminImportTemplates: React.FC = () => {
     }
   };
 
-  useEffect(() => { load(); }, [orderType]);
+  useEffect(() => {
+    const firstOrderType = ORDER_OPTIONS[businessScope][0].value;
+    if (!ORDER_OPTIONS[businessScope].some((item) => item.value === orderType)) {
+      setOrderType(firstOrderType);
+      return;
+    }
+    load();
+  }, [businessScope, orderType]);
 
   const updateField = (index: number, patch: Partial<ImportTemplateFieldItem>) => {
     setFields((prev) => prev.map((field, i) => i === index ? { ...field, ...patch } : field));
@@ -147,7 +163,7 @@ const AdminImportTemplates: React.FC = () => {
         headerAlias: field.header_alias?.trim() || null,
         isRequiredOverride: field.is_required_override ?? null,
         isActive: true,
-      })));
+      })), businessScope);
       setFields(reorder(saved));
       message.success('导入模板字段配置已保存');
     } catch (error: any) {
@@ -160,8 +176,8 @@ const AdminImportTemplates: React.FC = () => {
   const downloadTemplate = async () => {
     setDownloading(true);
     try {
-      const result = await downloadServerImportTemplate(orderType);
-      message.success(`已下载${ORDER_OPTIONS.find((item) => item.value === orderType)?.label || '导入模板'}（${result.fieldCount || fields.length} 个字段）`);
+      const result = await downloadServerImportTemplate(orderType, businessScope);
+      message.success(`已下载${orderOptions.find((item) => item.value === orderType)?.label || '导入模板'}（${result.fieldCount || fields.length} 个字段）`);
     } catch (error: any) {
       message.error(error?.message || '下载导入模板失败');
     } finally {
@@ -174,7 +190,13 @@ const AdminImportTemplates: React.FC = () => {
       header={{
         title: '导入模板配置',
         extra: [
-          <Select key="orderType" style={{ width: 180 }} value={orderType} options={ORDER_OPTIONS} onChange={setOrderType} />,
+          <Segmented
+            key="businessScope"
+            value={businessScope}
+            options={[{ label: '北仑配置', value: 'beilun' }, { label: '省外配置', value: 'out_of_province' }]}
+            onChange={(value) => setBusinessScope(value as BusinessScope)}
+          />,
+          <Select key="orderType" style={{ width: 190 }} value={orderType} options={orderOptions} onChange={setOrderType} />,
           <Button key="reload" icon={<ReloadOutlined />} loading={loading} onClick={load}>刷新</Button>,
           <Button key="save" type="primary" icon={<SaveOutlined />} loading={saving} onClick={save}>保存配置</Button>,
           <Button key="download" icon={<DownloadOutlined />} loading={downloading} onClick={downloadTemplate}>下载当前模板</Button>,

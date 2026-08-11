@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PageContainer } from '@ant-design/pro-components';
-import { Table, Button, Space, Modal, Form, Input, Switch, Select, Popconfirm, App, Tag, Checkbox, Divider, Typography } from 'antd';
+import { Table, Button, Space, Modal, Form, Input, Switch, Select, Popconfirm, App, Tag, Checkbox, Divider, Segmented, Typography } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, ArrowUpOutlined, ArrowDownOutlined } from '@ant-design/icons';
 import { getExportTemplates, createExportTemplate, updateExportTemplate, deleteExportTemplate } from '@/services/exportTemplates';
 import type { ExportTemplateItem } from '@/services/exportTemplates';
 import { getFields } from '@/services/fields';
 import type { FieldConfigItem } from '@/services/fields';
+import type { BusinessScope } from '@/utils/businessScope';
 import {
   buildExportFieldOptions,
   buildTemplateFieldPayload,
@@ -21,6 +22,7 @@ const MODULE_GROUPS = [
       { label: '增员报岗录入', value: 'data_entry' },
       { label: '社保公积金增员', value: 'social_insurance' },
       { label: '入职联系', value: 'onboarding_contact' },
+      { label: '薪酬银行卡', value: 'payroll_bank_card' },
       { label: '劳动合同新签', value: 'contract' },
     ],
   },
@@ -39,9 +41,21 @@ const MODULE_GROUPS = [
       { label: '社保公积金减员', value: 'resignation_social_insurance' },
     ],
   },
+  {
+    label: '省外工单',
+    options: [
+      { label: '省外增员', value: 'out_of_province_increase' },
+      { label: '省外减员', value: 'out_of_province_decrease' },
+      { label: '省外单项业务', value: 'out_of_province_single_business' },
+    ],
+  },
 ];
 
 const MODULES = MODULE_GROUPS.flatMap((g) => g.options);
+const MODULE_GROUPS_BY_SCOPE: Record<BusinessScope, typeof MODULE_GROUPS> = {
+  beilun: MODULE_GROUPS.filter((group) => group.label !== '省外工单'),
+  out_of_province: MODULE_GROUPS.filter((group) => group.label === '省外工单'),
+};
 
 const FIELD_KIND_LABEL: Record<SelectedField['kind'], string> = {
   field: '业务字段',
@@ -57,6 +71,9 @@ const FIELD_KIND_COLOR: Record<SelectedField['kind'], string> = {
 
 const AdminExportTemplates = () => {
   const { message } = App.useApp();
+  const [businessScope, setBusinessScope] = useState<BusinessScope>('beilun');
+  const moduleGroups = MODULE_GROUPS_BY_SCOPE[businessScope];
+  const moduleOptions = moduleGroups.flatMap((group) => group.options);
   const [data, setData] = useState<ExportTemplateItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [fieldLoading, setFieldLoading] = useState(false);
@@ -80,7 +97,7 @@ const AdminExportTemplates = () => {
   const load = async () => {
     setLoading(true);
     try {
-      const res = await getExportTemplates();
+      const res = await getExportTemplates(undefined, businessScope);
       setData(Array.isArray(res) ? res : (res as any)?.list ?? (res as any)?.items ?? []);
     } catch {
       message.error('加载失败');
@@ -105,7 +122,7 @@ const AdminExportTemplates = () => {
   useEffect(() => {
     load();
     loadSystemFields();
-  }, []);
+  }, [businessScope]);
 
   const resetModalState = () => {
     setEditing(null);
@@ -121,6 +138,7 @@ const AdminExportTemplates = () => {
         module_code: record.module_code,
         is_shared: record.is_shared,
         sign_platform: record.sign_platform ?? undefined,
+        is_active: record.is_active !== false,
       });
       const fieldsForRecord = buildExportFieldOptions(systemFields, record.module_code).flatMap((group) => group.fields);
       setSelectedFields(normalizeTemplateFields(record.field_list || [], fieldsForRecord));
@@ -179,10 +197,11 @@ const AdminExportTemplates = () => {
       field_list: fieldList,
       is_shared: v.is_shared,
       sign_platform: v.module_code === 'contract' ? (v.sign_platform ?? null) : null,
+      is_active: v.is_active !== false,
     };
     try {
-      if (editing) await updateExportTemplate(editing.id, payload);
-      else await createExportTemplate(payload);
+      if (editing) await updateExportTemplate(editing.id, payload, businessScope);
+      else await createExportTemplate(payload, businessScope);
       message.success('保存成功');
       setOpen(false);
       resetModalState();
@@ -194,8 +213,8 @@ const AdminExportTemplates = () => {
 
   const onDel = async (id: string) => {
     try {
-      await deleteExportTemplate(id);
-      message.success('已删除');
+      await deleteExportTemplate(id, businessScope);
+      message.success('已停用归档');
       load();
     } catch {
       message.error('删除失败');
@@ -204,6 +223,7 @@ const AdminExportTemplates = () => {
 
   return (
     <PageContainer header={{ title: '导出模板配置' }} extra={[
+      <Segmented key="businessScope" value={businessScope} options={[{ label: '北仑配置', value: 'beilun' }, { label: '省外配置', value: 'out_of_province' }]} onChange={(value) => setBusinessScope(value as BusinessScope)} />,
       <Button key="add" type="primary" icon={<PlusOutlined />} onClick={() => openModal()}>新建模板</Button>,
     ]}>
       <Table
@@ -216,6 +236,7 @@ const AdminExportTemplates = () => {
           { title: '字段数', dataIndex: 'field_list', width: 100, render: (v: unknown[]) => v?.length || 0 },
           { title: '创建人', dataIndex: 'created_by', width: 120 },
           { title: '共享', dataIndex: 'is_shared', width: 90, render: (v) => v ? <Tag color="blue">共享</Tag> : <Tag>私有</Tag> },
+          { title: '状态', dataIndex: 'is_active', width: 90, render: (v) => v === false ? <Tag>已归档</Tag> : <Tag color="green">启用</Tag> },
           { title: '创建时间', dataIndex: 'created_at', width: 180 },
           {
             title: '操作',
@@ -223,8 +244,8 @@ const AdminExportTemplates = () => {
             render: (_, r) => (
               <Space>
                 <Button size="small" icon={<EditOutlined />} onClick={() => openModal(r)}>编辑</Button>
-                <Popconfirm title="确定删除？" onConfirm={() => onDel(r.id)}>
-                  <Button size="small" danger icon={<DeleteOutlined />}>删除</Button>
+                <Popconfirm title="停用后不再参与业务导出，确认归档？" onConfirm={() => onDel(r.id)}>
+                  <Button size="small" danger icon={<DeleteOutlined />}>归档</Button>
                 </Popconfirm>
               </Space>
             ),
@@ -240,12 +261,12 @@ const AdminExportTemplates = () => {
         onCancel={() => { setOpen(false); resetModalState(); }}
         destroyOnHidden
       >
-        <Form form={form} layout="vertical" initialValues={{ is_shared: false, module_code: 'contract' }}>
+        <Form form={form} layout="vertical" initialValues={{ is_shared: false, is_active: true, module_code: moduleOptions[0]?.value || 'contract' }}>
           <Space style={{ width: '100%' }} align="start" size={24}>
             <div style={{ flex: 1, minWidth: 220 }}>
               <Form.Item name="template_name" label="模板名" rules={[{ required: true }]}><Input /></Form.Item>
               <Form.Item name="module_code" label="适用模块" rules={[{ required: true }]}>
-                <Select options={MODULE_GROUPS as any} placeholder="选择模块" />
+                <Select options={moduleGroups as any} placeholder="选择模块" />
               </Form.Item>
               <Form.Item
                 name="sign_platform"
@@ -255,6 +276,7 @@ const AdminExportTemplates = () => {
                 <Select allowClear placeholder="不限平台" options={[{ label: '速创', value: '速创' }, { label: 'E签宝', value: 'E签宝' }]} />
               </Form.Item>
               <Form.Item name="is_shared" label="团队共享" valuePropName="checked"><Switch /></Form.Item>
+              <Form.Item name="is_active" label="是否启用" valuePropName="checked"><Switch /></Form.Item>
             </div>
           </Space>
         </Form>

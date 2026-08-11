@@ -56,7 +56,7 @@ const INCREASE_FIELD_NAMES: Record<string, string> = {
   id_card_no: '身份证号',
   province: '参保省份',
   city: '参保城市',
-  social_pay_region: '参保地（福利地）',
+  social_pay_region: '缴纳地',
   work_location: '工作地点',
   payment_institution: '社保缴纳机构',
   fund_payment_institution: '公积金缴纳机构',
@@ -101,7 +101,7 @@ const DECREASE_FIELD_NAMES: Record<string, string> = {
   id_card_no: '身份证号',
   province: '参保省份',
   city: '参保城市',
-  social_pay_region: '参保地（福利地）',
+  social_pay_region: '缴纳地',
   work_location: '工作地点',
   payment_institution: '社保缴纳机构',
   fund_payment_institution: '公积金缴纳机构',
@@ -109,6 +109,7 @@ const DECREASE_FIELD_NAMES: Record<string, string> = {
   fund_stop_month: '公积金最后缴纳月份',
   last_work_date: '最后工作日',
   expected_last_work_date: '预计最后工作日',
+  contract_subject: '合同主体',
   resignation_reason: '离职原因',
   applicant: '申报人',
   dispatch_date: '派单日期',
@@ -127,6 +128,8 @@ const INCREASE_HEADER_MAPPING: Record<string, string> = {
   员工姓名: 'employee_name',
   身份证号: 'id_card_no',
   福利地: 'social_pay_region',
+  缴纳地: 'social_pay_region',
+  参保地: 'social_pay_region',
   工作地点: 'work_location',
   社保缴纳机构: 'payment_institution',
   公积金缴纳机构: 'fund_payment_institution',
@@ -172,6 +175,8 @@ const DECREASE_HEADER_MAPPING: Record<string, string> = {
   员工姓名: 'employee_name',
   身份证号: 'id_card_no',
   福利地: 'social_pay_region',
+  缴纳地: 'social_pay_region',
+  参保地: 'social_pay_region',
   工作地点: 'work_location',
   社保缴纳机构: 'payment_institution',
   公积金缴纳机构: 'fund_payment_institution',
@@ -179,6 +184,8 @@ const DECREASE_HEADER_MAPPING: Record<string, string> = {
   公积金最后缴纳月份: 'fund_stop_month',
   最后工作日: 'last_work_date',
   预计最后工作日: 'expected_last_work_date',
+  合同主体: 'contract_subject',
+  劳动合同主体: 'contract_subject',
   离职原因: 'resignation_reason',
   申报人: 'applicant',
   派单日期: 'dispatch_date',
@@ -275,11 +282,10 @@ export function normalizeOutOfProvinceRow(row: Record<string, unknown>): Record<
     // ponytail: 养老基数仅作为缺失社保基数的回退；省级差异出现后再配置化。
     next.social_base = next.pension_base;
   }
-  next.insured_unit = readText(next.insured_unit)
+  next.insured_unit = readText(next.contract_subject)
+    ?? readText(next.contractSubject)
+    ?? readText(next.insured_unit)
     ?? readText(next.insuredUnit)
-    ?? readText(next.social_location)
-    ?? readText(next.socialLocation)
-    ?? readText(next['参保机构名称'])
     ?? readText(next['参保单位'])
     ?? next.insured_unit;
   next.paymentInstitution = readText(next.paymentInstitution) ?? readText(next.payment_institution) ?? readText(next.fund_payment_institution) ?? next.paymentInstitution;

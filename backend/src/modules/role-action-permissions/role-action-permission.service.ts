@@ -27,6 +27,7 @@ export const ROLE_ACTIONS = [
   'route.onboarding',
   'route.onboarding_contract',
   'route.onboarding_contact',
+  'route.onboarding_payroll_bank_card',
   'route.onboarding_data_entry',
   'route.onboarding_social_insurance',
   'route.resignation_contact',
@@ -39,6 +40,7 @@ export const ROLE_ACTIONS = [
   'system.admin',
   'module.contract.manage',
   'module.onboarding_contact.manage',
+  'module.payroll_bank_card.manage',
   'module.resignation_contact.manage',
   'module.data_entry.manage',
   'module.data_entry_resign.manage',
@@ -72,6 +74,7 @@ const WORK_ORDER_BUSINESS_ACTIONS: RoleActionCode[] = [
 ];
 const BUSINESS_SUB_ROUTE_ACTIONS: RoleActionCode[] = [
   'route.onboarding_contact',
+  'route.onboarding_payroll_bank_card',
   'route.onboarding_contract',
   'route.onboarding_data_entry',
   'route.onboarding_social_insurance',
@@ -115,6 +118,12 @@ const DATA_ENTRY_MODULE_ACTIONS: RoleActionCode[] = [
   'module.data_entry.manage',
   ...STANDARD_MODULE_BATCH_ACTIONS,
 ];
+const PAYROLL_BANK_CARD_MODULE_ACTIONS: RoleActionCode[] = [
+  'route.onboarding',
+  'route.onboarding_payroll_bank_card',
+  'module.payroll_bank_card.manage',
+  ...STANDARD_MODULE_BATCH_ACTIONS,
+];
 const DATA_ENTRY_RESIGN_MODULE_ACTIONS: RoleActionCode[] = [
   'route.onboarding',
   'route.offboarding',
@@ -153,7 +162,7 @@ export const DEFAULT_ROLE_ACTION_PERMISSIONS: RoleActionPermissionMatrix = {
 
   shared_leader: ['work_order.view_team', 'work_order.export', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, 'route.leader_dashboard', ...CONTRACT_MODULE_ACTIONS, ...ONBOARDING_CONTACT_MODULE_ACTIONS, ...RESIGNATION_CONTACT_MODULE_ACTIONS],
   shared_team_owner: ['work_order.view_team', 'work_order.export', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, 'route.leader_dashboard', ...CONTRACT_MODULE_ACTIONS, ...ONBOARDING_CONTACT_MODULE_ACTIONS, ...RESIGNATION_CONTACT_MODULE_ACTIONS],
-  data_entry_leader: ['work_order.view_team', 'work_order.export', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, 'route.leader_dashboard', ...DATA_ENTRY_MODULE_ACTIONS, ...DATA_ENTRY_RESIGN_MODULE_ACTIONS],
+  data_entry_leader: ['work_order.view_team', 'work_order.export', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, 'route.leader_dashboard', ...DATA_ENTRY_MODULE_ACTIONS, ...PAYROLL_BANK_CARD_MODULE_ACTIONS, ...DATA_ENTRY_RESIGN_MODULE_ACTIONS],
   contract_specialist: ['work_order.view', 'work_order.export', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, ...CONTRACT_MODULE_ACTIONS],
   labor_contract_member: ['work_order.view', 'work_order.export', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, ...CONTRACT_MODULE_ACTIONS],
   onboarding_specialist: ['work_order.view', 'work_order.export', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, ...ONBOARDING_CONTACT_MODULE_ACTIONS, ...RESIGNATION_CONTACT_MODULE_ACTIONS],
@@ -242,6 +251,7 @@ export class RoleActionPermissionService {
       { code: 'route.onboarding', name: '入职管理入口', description: '允许访问入职管理分组入口' },
       { code: 'route.onboarding_contract', name: '劳动合同新签入口', description: '允许访问劳动合同新签子工单入口' },
       { code: 'route.onboarding_contact', name: '入职联系入口', description: '允许访问入职联系子工单入口' },
+      { code: 'route.onboarding_payroll_bank_card', name: '薪酬银行卡入口', description: '允许访问薪酬银行卡子工单入口' },
       { code: 'route.onboarding_data_entry', name: '增员报岗录入入口', description: '允许访问增员报岗录入子工单入口' },
       { code: 'route.onboarding_social_insurance', name: '社保公积金增员入口', description: '允许访问社保公积金增员子工单入口' },
       { code: 'route.resignation_contact', name: '离职材料收集入口', description: '允许访问离职材料收集子工单入口' },
@@ -254,6 +264,7 @@ export class RoleActionPermissionService {
       { code: 'system.admin', name: '后台管理入口', description: '允许访问后台管理配置入口' },
       { code: 'module.contract.manage', name: '劳动合同新签模块', description: '允许访问劳动合同新签子工单模块' },
       { code: 'module.onboarding_contact.manage', name: '入职联系模块', description: '允许访问入职联系子工单模块' },
+      { code: 'module.payroll_bank_card.manage', name: '薪酬银行卡模块', description: '允许办理和导出薪酬银行卡子工单' },
       { code: 'module.resignation_contact.manage', name: '离职材料收集模块', description: '允许访问离职材料收集子工单模块' },
       { code: 'module.data_entry.manage', name: '增员报岗录入模块', description: '允许访问增员报岗录入子工单模块' },
       { code: 'module.data_entry_resign.manage', name: '减员报岗录入模块', description: '允许访问减员报岗录入子工单模块' },

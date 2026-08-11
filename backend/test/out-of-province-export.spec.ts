@@ -21,7 +21,8 @@ function makeOrder(orderKind: InServiceOrderKind): InServiceOrder {
     city: '深圳',
     createdBy: 'user-1',
     extraData: {
-      insured_unit: '测试参保单位',
+      insured_unit: '旧参保单位',
+      contract_subject: '测试参保单位',
       social_pay_region: '深圳',
       start_month: '2026-08',
       fund_start_month: '2026-08',
@@ -62,16 +63,23 @@ describe('省外增减员导出', () => {
     ]);
   });
 
-  it('uses 参保机构名称/social_location as the historical insured-unit value', () => {
+  it('uses contract_subject as the insured unit without falling back to social_location', () => {
     const order = makeOrder(InServiceOrderKind.OUT_OF_PROVINCE_INCREASE);
-    order.extraData = { ...order.extraData, insured_unit: undefined, social_location: '参保机构名称值' };
-    expect(buildOutOfProvinceExport(order).values[2]).toBe('参保机构名称值');
+    order.extraData = {
+      ...order.extraData,
+      contract_subject: '劳动合同主体值',
+      insured_unit: undefined,
+      social_location: '缴纳地值',
+    };
+    expect(buildOutOfProvinceExport(order).values[2]).toBe('劳动合同主体值');
+    order.extraData.contract_subject = undefined;
+    expect(buildOutOfProvinceExport(order).values[2]).toBe('');
   });
 
   it('maps and normalizes the 参保机构名称 header', () => {
     const suggestion = suggestOutOfProvinceMapping(OrderType.OUT_OF_PROVINCE_INCREASE, ['参保机构名称']);
     expect(suggestion.suggestion['参保机构名称']).toBe('insured_unit');
-    expect(normalizeOutOfProvinceRow({ social_location: '参保机构名称值' }).insured_unit).toBe('参保机构名称值');
+    expect(normalizeOutOfProvinceRow({ contract_subject: '劳动合同主体值', social_location: '缴纳地值' }).insured_unit).toBe('劳动合同主体值');
   });
 
   it('builds multiple rows with one fixed sheet and rejects mixed order kinds', () => {

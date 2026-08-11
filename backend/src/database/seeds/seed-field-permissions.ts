@@ -15,6 +15,7 @@ export const FIELD_PERMISSION_SCENARIOS = [
   'dispatched:data_entry',
   'dispatched:social_insurance',
   'dispatched:onboarding_contact',
+  'dispatched:payroll_bank_card',
   'dispatched:contract',
   'dispatched:renewal_contract',
   'dispatched:benefit',
@@ -108,8 +109,14 @@ const ONBOARDING_EDITABLE = new Set([
   'bank_name', 'bank_account', 'onboarding_feedback', 'special_remark',
 ]);
 
+const PAYROLL_BANK_CARD_VISIBLE = new Set([
+  'employee_name', 'id_card_no', 'bank_name', 'bank_account',
+  'bank_location', 'payroll_location',
+]);
+const PAYROLL_BANK_CARD_EDITABLE = new Set<string>([]);
+
 const DATA_ENTRY_VISIBLE = new Set([
-  'customer_name','customer_code','outsource_type','position','position_type','employee_name','id_card_type','id_card_no','gender','birth_date','age','household_type','ethnicity','education','graduation_school','major','graduation_date','marital_status','mobile','email','current_address','household_address','postal_code','social_location','start_month','social_base','fund_base','fund_ratio','bank_name','bank_account','remark','business_mode','need_company_payroll','payroll_location',
+  'customer_name','customer_code','outsource_type','position','position_type','employee_name','id_card_type','id_card_no','gender','birth_date','age','household_type','ethnicity','education','graduation_school','major','graduation_date','marital_status','mobile','email','current_address','household_address','postal_code','social_location','start_month','social_base','fund_base','fund_ratio','bank_name','bank_account','need_payroll_slip','remark','business_mode','need_company_payroll','payroll_location',
 ]);
 const DATA_ENTRY_EDITABLE = new Set(['data_entry_feedback']);
 const HANDLING_FEEDBACK_FIELDS = [
@@ -296,6 +303,13 @@ export async function seedFieldPermissions(dataSource: DataSource): Promise<void
         field.fieldCode,
         'dispatched:onboarding_contact',
         dispatchedPermission(role.code, field, [OrderType.ONBOARDING], ONBOARDING_ROLE_CODES, ONBOARDING_EDITABLE, ONBOARDING_VISIBLE),
+      );
+      await upsertPermission(
+        permRepo,
+        role.id,
+        field.fieldCode,
+        'dispatched:payroll_bank_card',
+        dispatchedPermission(role.code, field, [OrderType.ONBOARDING], DATA_ENTRY_ROLE_CODES, PAYROLL_BANK_CARD_EDITABLE, PAYROLL_BANK_CARD_VISIBLE),
       );
       await upsertPermission(
         permRepo,

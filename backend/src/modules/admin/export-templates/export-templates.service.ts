@@ -59,6 +59,7 @@ export interface ExportTemplateView {
   fieldList: Array<Record<string, unknown>>;
   createdBy: string;
   isShared: boolean;
+  isActive: boolean;
   signPlatform: string | null;
   createdAt: Date;
   businessScope: BusinessScope;
@@ -99,8 +100,8 @@ export class ExportTemplatesService {
   async listSharedContractTemplates(businessScope: BusinessScope = BusinessScope.BEILUN): Promise<ExportTemplateView[]> {
     const rows = await this.repository.find({
       where: [
-        { moduleCode: 'contract', isShared: true, signPlatform: '速创', businessScope },
-        { moduleCode: 'contract', isShared: true, signPlatform: 'E签宝', businessScope },
+        { moduleCode: 'contract', isShared: true, isActive: true, signPlatform: '速创', businessScope },
+        { moduleCode: 'contract', isShared: true, isActive: true, signPlatform: 'E签宝', businessScope },
       ],
       order: { createdAt: 'DESC' },
     });
@@ -125,6 +126,7 @@ export class ExportTemplatesService {
     fieldList: Array<Record<string, unknown>>;
     createdBy: string;
     isShared?: boolean;
+    isActive?: boolean;
     signPlatform?: string | null;
     businessScope?: BusinessScope;
   }): Promise<ExportTemplateView> {
@@ -136,13 +138,14 @@ export class ExportTemplatesService {
       fieldList: this.normalizeFieldList(input.fieldList, fieldNameMap),
       createdBy: input.createdBy,
       isShared: input.isShared ?? false,
+      isActive: input.isActive ?? true,
       signPlatform: this.normalizeSignPlatform(input.signPlatform),
       businessScope,
     }));
     return this.toTemplateView(saved, fieldNameMap);
   }
 
-  async update(id: string, input: Partial<{ templateName: string; moduleCode: string; fieldList: Array<Record<string, unknown>>; isShared: boolean; signPlatform: string | null; businessScope?: BusinessScope }>): Promise<ExportTemplateView> {
+  async update(id: string, input: Partial<{ templateName: string; moduleCode: string; fieldList: Array<Record<string, unknown>>; isShared: boolean; isActive: boolean; signPlatform: string | null; businessScope?: BusinessScope }>): Promise<ExportTemplateView> {
     const row = await this.loadTemplate(id, input.businessScope ?? BusinessScope.BEILUN);
     const fieldNameMap = await this.loadFieldNameMap();
     Object.assign(
@@ -156,7 +159,8 @@ export class ExportTemplatesService {
 
   async remove(id: string, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<{ success: boolean }> {
     const row = await this.loadTemplate(id, businessScope);
-    await this.repository.remove(row);
+    row.isActive = false;
+    await this.repository.save(row);
     return { success: true };
   }
 
@@ -486,12 +490,12 @@ export class ExportTemplatesService {
       if (!platform) {
         throw new BadRequestException('劳动合同子工单缺少电子签平台，无法自动匹配速创/E签宝导出模板');
       }
-      shared = await this.repository.findOne({ where: { moduleCode, isShared: true, signPlatform: platform, businessScope }, order: { createdAt: 'DESC' } });
+      shared = await this.repository.findOne({ where: { moduleCode, isShared: true, isActive: true, signPlatform: platform, businessScope }, order: { createdAt: 'DESC' } });
       if (!shared) {
         throw new BadRequestException(`未找到电子签平台“${platform}”对应的劳动合同导出模板，请先重启后端或执行 seed 同步后台导出模板配置`);
       }
     } else {
-      shared = await this.repository.findOne({ where: { moduleCode, isShared: true, businessScope }, order: { createdAt: 'DESC' } });
+      shared = await this.repository.findOne({ where: { moduleCode, isShared: true, isActive: true, businessScope }, order: { createdAt: 'DESC' } });
     }
     if (shared) {
       shared.fieldList = this.prepareExportFieldList(shared.fieldList);
@@ -794,8 +798,11 @@ export class ExportTemplatesService {
     const worksheet = workbook.worksheets.find((sheet) => sheet.state === 'visible') ?? workbook.worksheets[0];
     if (!worksheet) return workbook;
     const platform = this.normalizeSignPlatform(template.signPlatform);
-    for (const sheet of workbook.worksheets) this.clearWorksheetDataValidations(sheet);
-    const dataStartRow = platform === 'E签宝' ? 5 : 4;
+    const isPayrollBankCard = template.moduleCode === 'payroll_bank_card';
+    if (!isPayrollBankCard) {
+      for (const sheet of workbook.worksheets) this.clearWorksheetDataValidations(sheet);
+    }
+    const dataStartRow = isPayrollBankCard ? 2 : platform === 'E签宝' ? 5 : 4;
     // 母版原始列数：物理 xlsx 里固定的列（含合并表头/公式）。后台模板新增字段排在这之后。
     const templateColumnCount = worksheet.columnCount;
     const columns = this.resolveRichColumns(
@@ -844,6 +851,7 @@ export class ExportTemplatesService {
   }
 
   private resolveStandardTemplateFileName(template: ExportTemplate): string | null {
+    if (template.moduleCode === 'payroll_bank_card') return '北仑卡号提供模板.xlsx';
     if (template.moduleCode !== 'contract') return null;
     const platform = this.normalizeSignPlatform(template.signPlatform);
     if (platform === '速创') return '劳动合同签订批导出模板-速创.xlsx';
@@ -1090,6 +1098,7 @@ export class ExportTemplatesService {
       fieldList: this.normalizeFieldList(template.fieldList, fieldNameMap),
       createdBy: template.createdBy,
       isShared: template.isShared,
+      isActive: template.isActive ?? true,
       signPlatform: template.signPlatform ?? null,
       createdAt: template.createdAt,
       businessScope: template.businessScope,
@@ -1161,6 +1170,7 @@ export class ExportTemplatesService {
       employee_name: order.parentOrder.employeeName,
       employee_id_card: order.parentOrder.employeeIdCard,
       id_card_no: extraData.id_card_no ?? extraData.idCardNo ?? order.parentOrder.employeeIdCard,
+      branch_code: order.parentOrder.branchCode ?? extraData.branch_code ?? extraData.customer_code ?? '',
       module_code: order.moduleCode,
       status: order.status,
       dispatched_at: order.dispatchedAt?.toISOString() ?? '',
@@ -1173,7 +1183,7 @@ export class ExportTemplatesService {
 
     const aliases: Record<string, string[]> = {
       customer_name: ['customer_name', 'customerName'],
-      insured_unit: ['insured_unit', 'insuredUnit', 'payment_institution', 'paymentInstitution', 'social_location', 'socialLocation', '参保机构名称', '参保单位'],
+      insured_unit: ['contract_subject', 'contractSubject', 'insured_unit', 'insuredUnit', '参保单位'],
       social_location: ['social_location', 'socialLocation', 'social_pay_region', 'socialPayRegion'],
       social_pay_region: ['social_pay_region', 'socialPayRegion', 'social_location', 'socialLocation'],
       start_month: ['start_month', 'startMonth', 'social_start_month', 'socialStartMonth'],

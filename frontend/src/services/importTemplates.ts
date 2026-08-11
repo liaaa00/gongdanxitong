@@ -42,7 +42,10 @@ const RESIGNATION_DEFAULT_FIELDS = [
   'template_name',
 ];
 
+type TemplateBusinessScope = 'beilun' | 'out_of_province';
+
 const mockConfig = new Map<string, ImportTemplateFieldItem[]>();
+const mockConfigKey = (orderType: string, businessScope: TemplateBusinessScope) => `${businessScope}:${orderType}`;
 
 function normalizeField(raw: any, orderType: string): ImportTemplateFieldItem {
   return {
@@ -112,12 +115,13 @@ function getMockAvailable(orderType: string): ImportTemplateFieldItem[] {
     .map((field, index) => toMockTemplateField(field, orderType, index));
 }
 
-export async function getImportTemplateConfig(orderType: string): Promise<ImportTemplateFieldItem[]> {
+export async function getImportTemplateConfig(orderType: string, businessScope: TemplateBusinessScope = 'beilun'): Promise<ImportTemplateFieldItem[]> {
   if (isMockMode) {
-    if (!mockConfig.has(orderType)) mockConfig.set(orderType, buildMockConfig(orderType));
-    return mockDelay([...(mockConfig.get(orderType) || [])]);
+    const key = mockConfigKey(orderType, businessScope);
+    if (!mockConfig.has(key)) mockConfig.set(key, buildMockConfig(orderType));
+    return mockDelay([...(mockConfig.get(key) || [])]);
   }
-  const result = await request.get('/work-orders/import/template-config', { params: { orderType } }) as any;
+  const result = await request.get('/work-orders/import/template-config', { params: { orderType, businessScope } }) as any;
   const list = Array.isArray(result) ? result : (result?.list || result?.items || result?.data || []);
   return (Array.isArray(list) ? list : []).map((item) => normalizeField(item, orderType));
 }
@@ -132,14 +136,14 @@ export async function getCreateWorkOrderFields(orderType: string): Promise<Impor
   return (Array.isArray(list) ? list : []).map((item) => normalizeField(item, orderType));
 }
 
-export async function getAvailableImportTemplateFields(orderType: string): Promise<ImportTemplateFieldItem[]> {
+export async function getAvailableImportTemplateFields(orderType: string, businessScope: TemplateBusinessScope = 'beilun'): Promise<ImportTemplateFieldItem[]> {
   if (isMockMode) return mockDelay(getMockAvailable(orderType));
-  const result = await request.get('/work-orders/import/template-config/available-fields', { params: { orderType } }) as any;
+  const result = await request.get('/work-orders/import/template-config/available-fields', { params: { orderType, businessScope } }) as any;
   const list = Array.isArray(result) ? result : (result?.list || result?.items || result?.data || []);
   return (Array.isArray(list) ? list : []).map((item) => normalizeField(item, orderType));
 }
 
-export async function replaceImportTemplateConfig(orderType: string, fields: SaveImportTemplateFieldItem[]): Promise<ImportTemplateFieldItem[]> {
+export async function replaceImportTemplateConfig(orderType: string, fields: SaveImportTemplateFieldItem[], businessScope: TemplateBusinessScope = 'beilun'): Promise<ImportTemplateFieldItem[]> {
   if (isMockMode) {
     const available = getMockAvailable(orderType);
     const byCode = new Map(available.map((field) => [field.field_code, field]));
@@ -155,10 +159,10 @@ export async function replaceImportTemplateConfig(orderType: string, fields: Sav
         source: 'configured',
       });
     });
-    mockConfig.set(orderType, next);
+    mockConfig.set(mockConfigKey(orderType, businessScope), next);
     return mockDelay(next);
   }
-  const result = await request.put('/work-orders/import/template-config', { fields }, { params: { orderType } }) as any;
+  const result = await request.put('/work-orders/import/template-config', { fields }, { params: { orderType, businessScope } }) as any;
   const list = Array.isArray(result) ? result : (result?.fields || result?.list || result?.items || result?.data || []);
   return (Array.isArray(list) ? list : []).map((item) => normalizeField(item, orderType));
 }

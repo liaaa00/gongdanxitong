@@ -4,7 +4,7 @@ import { FieldType } from 'src/entities';
 import { ONBOARDING_TEMPLATE_ORDER, seedImportTemplateFields } from 'src/database/seeds/seed-import-template-fields';
 
 describe('onboarding import template seeds', () => {
-  it('keeps the confirmed 60-field order without postal_code', async () => {
+  it('keeps the confirmed 61-field order without postal_code', async () => {
     const saved: Array<Record<string, unknown>> = [];
     const repository = {
       delete: jest.fn().mockResolvedValue(undefined),
@@ -21,9 +21,10 @@ describe('onboarding import template seeds', () => {
 
     await seedImportTemplateFields(dataSource);
 
-    expect(ONBOARDING_TEMPLATE_ORDER).toHaveLength(60);
-    expect(new Set(ONBOARDING_TEMPLATE_ORDER)).toHaveProperty('size', 60);
-    expect(ONBOARDING_TEMPLATE_ORDER.slice(34, 51)).toEqual([
+    expect(ONBOARDING_TEMPLATE_ORDER).toHaveLength(61);
+    expect(new Set(ONBOARDING_TEMPLATE_ORDER)).toHaveProperty('size', 61);
+    expect(ONBOARDING_TEMPLATE_ORDER.indexOf('need_payroll_slip')).toBe(ONBOARDING_TEMPLATE_ORDER.indexOf('remark') - 1);
+    expect(ONBOARDING_TEMPLATE_ORDER.slice(35, 52)).toEqual([
       'current_address',
       'household_address',
       'bank_location',
@@ -50,7 +51,10 @@ describe('onboarding import template seeds', () => {
     ]));
     expect(saved.map((row) => row.fieldCode)).toEqual(ONBOARDING_TEMPLATE_ORDER);
     expect(saved.find((row) => row.fieldCode === 'social_location')).toMatchObject({
-      headerAlias: '参保机构名称',
+      headerAlias: null,
+    });
+    expect(saved.find((row) => row.fieldCode === 'need_payroll_slip')).toMatchObject({
+      isRequiredOverride: null,
     });
     expect(saved.find((row) => row.fieldCode === 'company_address')).toMatchObject({
       headerAlias: '劳动合同主体注册地',
@@ -110,7 +114,13 @@ describe('onboarding import template seeds', () => {
       fieldName: '劳动合同主体注册地',
     });
     expect(byCode.get('social_location')).toMatchObject({
-      fieldName: '参保机构名称',
+      fieldName: '缴纳地',
+    });
+    expect(byCode.get('need_payroll_slip')).toMatchObject({
+      fieldName: '是否需要工资单',
+      fieldType: FieldType.DROPDOWN,
+      isRequired: true,
+      defaultRequired: true,
     });
     expect(byCode.get('education')).toMatchObject({ isIncludedInTemplate: true });
     expect(byCode.get('postal_code')).toMatchObject({ isIncludedInTemplate: false, isActive: true });

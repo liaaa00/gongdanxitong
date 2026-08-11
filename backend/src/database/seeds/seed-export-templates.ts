@@ -151,7 +151,24 @@ const contractEsignFieldList = contractEsignColumns.map(([r1, r2, r3, r4, source
 // ── 3D. 社保公积金增员导出：与用户确认的35列正式模板共用唯一字段定义 ──────────────
 const socialInsuranceFieldList = getSocialFundExportFieldList('social_insurance') ?? [];
 
-// ── 3E. 离职材料收集导出（resignation_contact，11 列）─────────────────────────
+// ── 3E. 薪酬银行卡导出：严格对应《北仑卡号提供模板》13 个物理列 ─────────────
+const payrollBankCardFieldList: Array<Record<string, unknown>> = [
+  { fieldCode: 'employee_name', alias: '姓名', header: ['姓名'], order: 1 },
+  { fieldCode: 'id_card_no', alias: '证件号码', header: ['证件号码'], order: 2 },
+  { fieldCode: 'bank_name', alias: '开户行', header: ['开户行'], order: 3 },
+  { fieldCode: 'bank_account', alias: '银行账号', header: ['银行账号'], order: 4 },
+  { const: '', alias: '省', header: ['省'], order: 5 },
+  { fieldCode: 'bank_location', alias: '开户地', header: ['开户地'], order: 6 },
+  { const: '', alias: '区域代码', header: ['区域代码'], order: 7 },
+  { const: '', alias: '', header: [''], order: 8 },
+  { const: '', alias: '', header: [''], order: 9 },
+  { fieldCode: 'branch_code', alias: '商社代码', header: ['商社代码'], order: 10 },
+  { fieldCode: 'payroll_location', alias: '发薪地', header: ['发薪地'], order: 11 },
+  { const: '', alias: '', header: [''], order: 12 },
+  { const: '', alias: '', header: [''], order: 13 },
+];
+
+// ── 3F. 离职材料收集导出（resignation_contact，11 列）─────────────────────────
 const resignationContactColumns: Array<[string, string]> = [
   ['employee_name', '姓名'],
   ['id_card_no', '身份证号'],
@@ -200,6 +217,12 @@ const templateSeeds: TemplateSeed[] = [
     moduleCode: 'onboarding_contact',
     signPlatform: null,
     fieldList: onboardingContactFieldList,
+  },
+  {
+    templateName: '薪酬银行卡批导出模板',
+    moduleCode: 'payroll_bank_card',
+    signPlatform: null,
+    fieldList: payrollBankCardFieldList,
   },
   {
     templateName: '劳动合同签订批导出模板-速创',
@@ -261,7 +284,7 @@ export async function seedExportTemplates(dataSource: DataSource): Promise<void>
       },
     });
     if (existed) {
-      if (['social_insurance', 'resignation_social_insurance'].includes(seed.moduleCode)) {
+      if (['payroll_bank_card', 'social_insurance', 'resignation_social_insurance'].includes(seed.moduleCode)) {
         existed.fieldList = seed.fieldList;
         existed.isShared = true;
         await templateRepo.save(existed);

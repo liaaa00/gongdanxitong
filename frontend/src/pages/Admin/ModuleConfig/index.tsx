@@ -1,9 +1,10 @@
 import { useMemo, useRef, useState } from 'react';
 import { PageContainer, ProTable } from '@ant-design/pro-components';
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
-import { Alert, App, Button, Checkbox, Divider, Modal, Popconfirm, Space, Spin, Switch, Tag, Typography } from 'antd';
+import { Alert, App, Button, Checkbox, Divider, Modal, Popconfirm, Segmented, Space, Spin, Switch, Tag, Typography } from 'antd';
 import { getModuleConfigs, getModuleFields, replaceModuleFields, updateModuleConfig } from '@/services/moduleConfigs';
 import type { ModuleConfigItem } from '@/services/moduleConfigs';
+import type { BusinessScope } from '@/utils/businessScope';
 import { getFields, type FieldConfigItem } from '@/services/fields';
 
 const { Text } = Typography;
@@ -38,6 +39,7 @@ function getModuleTypeLabel(record: ModuleConfigItem) {
 
 const AdminModuleConfig: React.FC = () => {
   const { message } = App.useApp();
+  const [businessScope, setBusinessScope] = useState<BusinessScope>('beilun');
   const actionRef = useRef<ActionType>();
   const [fieldModalOpen, setFieldModalOpen] = useState(false);
   const [fieldLoading, setFieldLoading] = useState(false);
@@ -51,7 +53,7 @@ const AdminModuleConfig: React.FC = () => {
   const toggleModule = async (record: ModuleConfigItem) => {
     const nextActive = !record.is_active;
     try {
-      await updateModuleConfig(record.id, { is_active: nextActive });
+      await updateModuleConfig(record.id, { is_active: nextActive, businessScope });
       message.success(nextActive ? '已启用' : '已停用');
       actionRef.current?.reload();
     } catch (err) {
@@ -72,7 +74,7 @@ const AdminModuleConfig: React.FC = () => {
     try {
       const [fields, moduleFields] = await Promise.all([
         getFields(),
-        getModuleFields(moduleCode),
+        getModuleFields(moduleCode, businessScope),
       ]);
       setAllFields(fields);
       setSelectedFieldCodes(moduleFields.map((item) => item.field_code).filter(Boolean));
@@ -96,7 +98,7 @@ const AdminModuleConfig: React.FC = () => {
         group_name: moduleName ? `${moduleName}字段` : null,
         display_order: index + 1,
         is_active: true,
-      })));
+      })), businessScope);
       message.success('办理字段已保存');
       setFieldModalOpen(false);
       setSelectedModule(null);
@@ -167,6 +169,9 @@ const AdminModuleConfig: React.FC = () => {
 
   return (
     <PageContainer header={{ title: '办理环节设置' }}>
+      <Space style={{ marginBottom: 16 }}>
+        <Segmented value={businessScope} options={[{ label: '北仑配置', value: 'beilun' }, { label: '省外配置', value: 'out_of_province' }]} onChange={(value) => setBusinessScope(value as BusinessScope)} />
+      </Space>
       <Alert
         type="info"
         showIcon
@@ -180,7 +185,7 @@ const AdminModuleConfig: React.FC = () => {
         search={false}
         pagination={{ defaultPageSize: 20, showSizeChanger: true }}
         request={async () => {
-          const list = await getModuleConfigs();
+          const list = await getModuleConfigs({ businessScope });
           return { data: list, success: true, total: list.length };
         }}
         headerTitle="办理环节列表"

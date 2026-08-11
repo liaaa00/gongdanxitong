@@ -74,6 +74,7 @@ describe('福保社保公积金导出模板', () => {
     const result = (service as any).buildResult(template, [
       makeOrder('social_insurance', {
         paymentInstitution: '历史参保单位',
+        contractSubject: '北仑劳动合同主体',
         socialLocation: '宁波',
         customerName: '测试客户',
         startMonth: '2026-08',
@@ -97,7 +98,7 @@ describe('福保社保公积金导出模板', () => {
     expect(result.rows[0]).toMatchObject({
       姓名: '张三',
       身份证号: '330206199001011234',
-      参保单位: '历史参保单位',
+      参保单位: '北仑劳动合同主体',
       参保地: '宁波',
       缴纳地: '宁波',
       社保起缴月: '2026-08',
@@ -117,6 +118,7 @@ describe('福保社保公积金导出模板', () => {
     const result = (service as any).buildResult(template, [
       makeOrder('resignation_social_insurance', {
         paymentInstitution: '历史参保单位',
+        contractSubject: '北仑劳动合同主体',
         socialLocation: '宁波',
         customerName: '测试客户',
         socialStopMonth: '2026-08',
@@ -133,7 +135,7 @@ describe('福保社保公积金导出模板', () => {
       '公积金是否办结', '社保公积金办理备注', '备注', '发起人',
     ]);
     expect(result.rows[0]).toMatchObject({
-      参保单位: '历史参保单位',
+      参保单位: '北仑劳动合同主体',
       缴纳地: '宁波',
       社保停缴月: '2026-08',
       公积金停缴月: '2026-08',

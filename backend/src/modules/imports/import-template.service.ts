@@ -2,7 +2,7 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import { Workbook, Worksheet } from 'exceljs';
 import * as JSZip from 'jszip';
 import { businessException } from 'src/common/exceptions/business-exception';
-import { FieldConfig, FieldType, OrderType } from 'src/entities';
+import { BusinessScope, FieldConfig, FieldType, OrderType } from 'src/entities';
 import { ImportTemplateConfigService, ImportTemplateFieldView } from './import-template-config.service';
 
 export interface ImportTemplateResult {
@@ -41,8 +41,8 @@ const FONT_ELEMENT_ORDER = [
 export class ImportTemplateService {
   constructor(private readonly templateConfigService: ImportTemplateConfigService) {}
 
-  async generate(orderType: OrderType): Promise<ImportTemplateResult> {
-    const configuredFields = await this.templateConfigService.list(orderType);
+  async generate(orderType: OrderType, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<ImportTemplateResult> {
+    const configuredFields = await this.templateConfigService.list(orderType, businessScope);
     const fields = configuredFields.map((item) => this.toTemplateField(item));
     if (fields.length === 0) {
       throw businessException(4400, HttpStatus.BAD_REQUEST, 'NO_FIELDS');

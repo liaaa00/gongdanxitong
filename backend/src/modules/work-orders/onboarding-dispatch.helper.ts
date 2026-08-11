@@ -13,6 +13,10 @@ import {
   isDispatchModuleCode,
 } from 'src/entities';
 import { FieldPermissionService } from 'src/modules/field-permissions/field-permission.service';
+import {
+  getMissingPayrollBankCardFields,
+  PAYROLL_BANK_CARD_VISIBLE_FIELDS,
+} from 'src/modules/dispatched-orders/payroll-bank-card';
 
 export type OnboardingChild = {
   moduleCode: DispatchModuleCode;
@@ -30,6 +34,7 @@ export type TxManager = {
 const MODULE_SORT: Record<string, number> = {
   data_entry: 10,
   onboarding_contact: 20,
+  payroll_bank_card: 25,
   contract: 30,
   social_insurance: 40,
 };
@@ -131,7 +136,11 @@ export async function buildOnboardingChildren(
     DispatchModuleCode.DATA_ENTRY,
     DispatchModuleCode.SOCIAL_INSURANCE,
   ];
-  if (isYes(extra['need_onboarding_contact'])) targets.push(DispatchModuleCode.ONBOARDING_CONTACT);
+  const needsPayrollBankCard = isYes(extra['need_payroll_slip']);
+  const missingPayrollFields = needsPayrollBankCard ? getMissingPayrollBankCardFields(extra) : [];
+  const needsOnboardingContact = isYes(extra['need_onboarding_contact']);
+  if (needsOnboardingContact || missingPayrollFields.length > 0) targets.push(DispatchModuleCode.ONBOARDING_CONTACT);
+  if (needsPayrollBankCard) targets.push(DispatchModuleCode.PAYROLL_BANK_CARD);
   if (isYes(extra['need_company_contract'])) targets.push(DispatchModuleCode.CONTRACT);
 
   const children: OnboardingChild[] = [];
@@ -140,7 +149,15 @@ export async function buildOnboardingChildren(
       throw businessException(4203, HttpStatus.INTERNAL_SERVER_ERROR, `非法 module_code: ${moduleCode}`);
     }
     const handlerId = await resolveModuleHandler(moduleCode, manager, customerCode, workOrder.businessScope);
-    const visibleFields = await resolveVisibleFields(moduleCode, manager, fieldPermissionService, workOrder.businessScope);
+    let visibleFields = await resolveVisibleFields(moduleCode, manager, fieldPermissionService, workOrder.businessScope);
+    if (moduleCode === DispatchModuleCode.ONBOARDING_CONTACT && missingPayrollFields.length > 0) {
+      visibleFields = needsOnboardingContact
+        ? Array.from(new Set([...visibleFields, ...missingPayrollFields]))
+        : PAYROLL_BANK_CARD_VISIBLE_FIELDS.filter((fieldCode) => (
+          missingPayrollFields.includes(fieldCode as (typeof missingPayrollFields)[number])
+          || ['employee_name', 'id_card_no'].includes(fieldCode)
+        ));
+    }
     children.push({ moduleCode, handlerId, visibleFields });
   }
   children.sort((a, b) => getModuleSortOrder(a.moduleCode) - getModuleSortOrder(b.moduleCode));

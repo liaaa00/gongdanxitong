@@ -75,6 +75,7 @@ import {
   WorkOrderTimelineItem,
   WorkOrderTimelineResponse,
 } from './work-order.types';
+import { ResignationCertificateAutomationService } from './resignation-certificate-automation.service';
 import { WorkOrderResubmitService } from './work-order-resubmit.service';
 import { WorkOrderValidationService } from './work-order-validation.service';
 
@@ -114,6 +115,8 @@ export class WorkOrderService {
     private readonly userRoleRepository?: Repository<UserRole>,
     @Optional()
     private readonly dispatchEngineService?: DispatchEngineService,
+    @Optional()
+    private readonly resignationCertificateAutomationService?: ResignationCertificateAutomationService,
   ) {}
 
   async createDraft(payload: CreateWorkOrderDto, user: JwtUserPayload): Promise<WorkOrderDetailItem> {
@@ -270,6 +273,65 @@ export class WorkOrderService {
     }
 
     return this.loadDetail(workOrder.id);
+  }
+
+  async setHistoricalResignationCertificate(
+    id: string,
+    needResignationCert: '是' | '否',
+    confirmed: boolean,
+    user: JwtUserPayload,
+  ): Promise<{ workOrderId: string; needResignationCert: '是' | '否'; certificateOrderId: string | null }> {
+    if (!isAdminRole(user.roles)) {
+      throw new ForbiddenException('仅管理员可处理历史离职证明派发');
+    }
+    if (needResignationCert === '是' && !confirmed) {
+      throw businessException(4400, HttpStatus.BAD_REQUEST, '请确认后再派发离职证明子工单');
+    }
+    if (!this.resignationCertificateAutomationService) {
+      throw businessException(1000, HttpStatus.INTERNAL_SERVER_ERROR, '离职证明派发服务未就绪');
+    }
+
+    return this.workOrderRepository.manager.transaction(async (manager) => {
+      await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`work_order:historical-resignation-cert:${id}`]);
+      const workOrderRepo = manager.getRepository(WorkOrder);
+      const operationLogRepo = manager.getRepository(OperationLog);
+      const workOrder = await workOrderRepo.findOne({ where: { id } });
+      if (!workOrder) throw businessException(4100, HttpStatus.NOT_FOUND, '工单不存在');
+      if (workOrder.orderType !== OrderType.RESIGNATION) {
+        throw businessException(4400, HttpStatus.BAD_REQUEST, '仅离职主工单可补派离职证明');
+      }
+
+      const before = snapshotWorkOrder(workOrder);
+      workOrder.extraData = {
+        ...(workOrder.extraData ?? {}),
+        need_resignation_cert: needResignationCert,
+      };
+      workOrder.lastModifiedAt = new Date();
+      workOrder.lastModifiedBy = user.sub;
+      await workOrderRepo.save(workOrder);
+
+      const certificate = needResignationCert === '是'
+        ? await this.resignationCertificateAutomationService!.ensureManualForWorkOrder(workOrder, manager)
+        : null;
+      await operationLogRepo.save(operationLogRepo.create({
+        entityType: 'work_order',
+        entityId: workOrder.id,
+        userId: user.sub,
+        actionType: 'set_historical_resignation_certificate',
+        beforeData: before,
+        afterData: {
+          ...snapshotWorkOrder(workOrder),
+          certificateOrderId: certificate?.id ?? null,
+        },
+        ipAddress: null,
+      }));
+
+      return {
+        workOrderId: workOrder.id,
+        needResignationCert,
+        certificateOrderId: certificate?.id ?? null,
+      };
+    });
   }
 
   async submit(

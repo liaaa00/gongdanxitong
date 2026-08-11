@@ -39,6 +39,14 @@ const dispatchRuleSeeds: Array<{
     priority: 30,
   },
   {
+    name: 'payroll-bank-card-when-needed',
+    orderType: OrderType.ONBOARDING,
+    triggerConditions: yesCondition('need_payroll_slip'),
+    targetModule: 'payroll_bank_card',
+    strategy: DispatchStrategy.FIXED,
+    priority: 35,
+  },
+  {
     name: 'onboarding-contract-when-needed',
     orderType: OrderType.ONBOARDING,
     triggerConditions: yesCondition('need_company_contract'),

@@ -49,6 +49,15 @@ const HANDLING_RESULT_OPTIONS = [
   { label: '否', value: '否' },
 ];
 const ACTIVE_DISPATCHED_STATUSES = new Set(['pending', 'processing']);
+const PAYROLL_BANK_CARD_REQUIRED_FIELDS = ['bank_name', 'bank_account', 'bank_location', 'payroll_location'] as const;
+
+export function getMissingPayrollBankCardFields(record: Pick<DispatchedOrderItem, 'extra_data'>): string[] {
+  const extraData = record.extra_data ?? {};
+  return PAYROLL_BANK_CARD_REQUIRED_FIELDS.filter((fieldCode) => {
+    const value = extraData[fieldCode];
+    return value === undefined || value === null || String(value).trim() === '';
+  });
+}
 const DISPATCHED_PROCESSING_FILTER_STATUSES = ['pending', 'processing'] as const;
 
 
@@ -69,6 +78,7 @@ export interface OnboardingModulePermissionState {
 export function getOnboardingModuleManageAction(currentModule: string): string {
   if (['contract', 'renewal_contract', 'resignation_cert'].includes(currentModule)) return 'module.contract.manage';
   if (currentModule === 'onboarding_contact') return 'module.onboarding_contact.manage';
+  if (currentModule === 'payroll_bank_card') return 'module.payroll_bank_card.manage';
   if (currentModule === 'resignation_contact') return 'module.resignation_contact.manage';
   if (currentModule === 'data_entry') return 'module.data_entry.manage';
   if (currentModule === 'data_entry_resign') return 'module.data_entry_resign.manage';
@@ -96,6 +106,7 @@ export function getOnboardingModulePermissionState({
   ));
   const moduleManageAction = getOnboardingModuleManageAction(currentModule);
   const legacyCanOperateCurrentModule = hasRole('admin')
+    || (currentModule === 'payroll_bank_card' && hasRole('admin'))
     || (['contract', 'renewal_contract', 'resignation_cert'].includes(currentModule) && (hasRole('labor_contract_member') || hasRole('shared_team_owner')))
     || (['onboarding_contact', 'resignation_contact'].includes(currentModule) && (hasRole('onboarding_resignation_member') || hasRole('shared_team_owner')))
     || (['data_entry', 'data_entry_resign'].includes(currentModule) && hasRole('data_entry_leader'))
@@ -280,8 +291,8 @@ const selectHeaderFilter = (
 });
 
 const SOCIAL_FUND_VALUE_ALIASES: Record<string, string[]> = {
-  insured_unit: ['social_location', 'socialLocation', '参保机构名称', 'insured_unit', 'insuredUnit', 'payment_institution', 'paymentInstitution', '参保单位'],
-  social_pay_region: ['social_pay_region', 'socialPayRegion', 'social_location', 'socialLocation'],
+  insured_unit: ['contract_subject', 'contractSubject', 'insured_unit', 'insuredUnit', '参保单位'],
+  social_pay_region: ['social_location', 'socialLocation', 'social_pay_region', 'socialPayRegion'],
   start_month: ['start_month', 'startMonth', 'social_start_month', 'socialStartMonth'],
   fund_start_month: ['fund_start_month', 'fundStartMonth', 'start_month', 'startMonth'],
   social_stop_month: ['social_stop_month', 'socialStopMonth', 'stop_month', 'stopMonth'],
@@ -418,6 +429,28 @@ const OnboardingModule: React.FC = () => {
         search: { transform: (value) => ({ completedFrom: value?.[0], completedTo: value?.[1] }) },
       },
     ];
+
+    if (currentModule === 'payroll_bank_card') {
+      const value = (record: DispatchedOrderItem, fieldCode: string) => record.extra_data?.[fieldCode] ?? '-';
+      return [
+        actionColumn,
+        statusColumn,
+        { title: '姓名', dataIndex: 'employee_name', key: 'employee_name', width: 120, filteredValue: tableFilters.employee_name || null, ...textHeaderFilter('输入员工姓名') },
+        { title: '证件号码', dataIndex: 'employee_id_card', key: 'employee_id_card', width: 190, filteredValue: tableFilters.employee_id_card || null, ...textHeaderFilter('输入证件号码') },
+        { title: '开户行', key: 'bank_name', width: 180, renderText: (_: unknown, record) => value(record, 'bank_name') },
+        { title: '银行账号', key: 'bank_account', width: 210, renderText: (_: unknown, record) => value(record, 'bank_account') },
+        { title: '开户地', key: 'bank_location', width: 130, renderText: (_: unknown, record) => value(record, 'bank_location') },
+        { title: '商社代码', key: 'branch_code', width: 130, renderText: (_: unknown, record) => value(record, 'branch_code') },
+        { title: '发薪地', key: 'payroll_location', width: 160, renderText: (_: unknown, record) => value(record, 'payroll_location') },
+        { title: '资料状态', key: 'payroll_ready', width: 110, render: (_, record) => {
+          const missing = getMissingPayrollBankCardFields(record);
+          return <Tag color={missing.length === 0 ? 'green' : 'orange'}>{missing.length === 0 ? '资料齐全' : `缺 ${missing.length} 项`}</Tag>;
+        } },
+        { title: '派发时间', dataIndex: 'dispatched_at', key: 'dispatched_at', width: 160, valueType: 'dateTime', sorter: true },
+        { title: '完成时间', dataIndex: 'completed_at', key: 'completed_at', width: 160, valueType: 'dateTime' },
+        ...dateRangeColumns,
+      ];
+    }
 
     if (isSocialModule) {
       const increase = currentModule === 'social_insurance';

@@ -21,13 +21,12 @@ export class DetailViewTemplatesService {
     private readonly fieldPermissionRepo: Repository<FieldPermission>,
   ) {}
 
-  async list(moduleCode?: string, businessScope?: BusinessScope) {
-    const qb = this.repo.createQueryBuilder('t').orderBy('t.created_at', 'DESC');
+  async list(moduleCode?: string, businessScope: BusinessScope = BusinessScope.BEILUN) {
+    const qb = this.repo.createQueryBuilder('t')
+      .where('t.business_scope = :businessScope', { businessScope })
+      .orderBy('t.created_at', 'DESC');
     if (moduleCode) {
       qb.andWhere('t.module_code = :moduleCode', { moduleCode });
-    }
-    if (businessScope) {
-      qb.andWhere('t.business_scope = :businessScope', { businessScope });
     }
     return qb.getMany();
   }
@@ -40,9 +39,9 @@ export class DetailViewTemplatesService {
     return item;
   }
 
-  async getActiveByModule(moduleCode: string, businessScope?: BusinessScope) {
+  async getActiveByModule(moduleCode: string, businessScope: BusinessScope = BusinessScope.BEILUN) {
     return this.repo.findOne({
-      where: { moduleCode, ...(businessScope ? { businessScope } : {}), isActive: true },
+      where: { moduleCode, businessScope, isActive: true },
       order: { createdAt: 'DESC' },
     });
   }

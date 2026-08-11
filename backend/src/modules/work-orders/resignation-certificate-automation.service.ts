@@ -26,7 +26,23 @@ export class ResignationCertificateAutomationService {
     manager: EntityManager,
   ): Promise<InServiceOrder | null> {
     if (!this.shouldCreate(source, trigger)) return null;
+    return this.ensureCertificate(source, trigger, manager);
+  }
 
+  async ensureManualForWorkOrder(
+    source: WorkOrder,
+    manager: EntityManager,
+  ): Promise<InServiceOrder | null> {
+    if (source.orderType !== OrderType.RESIGNATION) return null;
+    if (this.readText(source.extraData?.need_resignation_cert) !== '是') return null;
+    return this.ensureCertificate(source, 'submission', manager);
+  }
+
+  private async ensureCertificate(
+    source: WorkOrder,
+    trigger: ResignationCertificateTrigger,
+    manager: EntityManager,
+  ): Promise<InServiceOrder> {
     await manager.query(
       'SELECT pg_advisory_xact_lock(hashtext($1))',
       [`resignation_certificate:${source.id}`],
@@ -47,6 +63,9 @@ export class ResignationCertificateAutomationService {
     const handlerId = await this.handlerPicker.pick(
       DispatchStrategy.TEAM_CLAIM,
       DispatchModuleCode.RESIGNATION_CERT,
+      manager,
+      undefined,
+      source.businessScope ?? BusinessScope.BEILUN,
     );
     const now = new Date();
     const extraData = source.extraData ?? {};

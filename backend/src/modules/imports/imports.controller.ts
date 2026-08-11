@@ -9,7 +9,7 @@ import { BusinessPermission } from 'src/common/decorators/business-permission.de
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { businessException } from 'src/common/exceptions/business-exception';
-import { OrderType } from 'src/entities';
+import { BusinessScope, OrderType } from 'src/entities';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { UploadsService } from 'src/modules/uploads/uploads.service';
 import { FieldsService } from 'src/modules/admin/fields/fields.service';
@@ -42,6 +42,7 @@ export class ImportsController {
   @BusinessPermission('work_order.import')
   async downloadTemplate(
     @Query('orderType') orderTypeRaw: string | undefined,
+    @Query('businessScope') requestedScope: BusinessScope | undefined,
     @CurrentUser() user: JwtUserPayload,
     @Res() res: Response,
   ) {
@@ -50,7 +51,8 @@ export class ImportsController {
       throw businessException(4400, 400, '当前阶段仅开放入职、离职导入模板');
     }
     assertCanImportWorkOrder(user, orderType);
-    const result = await this.importTemplateService.generate(orderType);
+    const businessScope = requestedScope ?? user.businessScope ?? BusinessScope.BEILUN;
+    const result = await this.importTemplateService.generate(orderType, businessScope);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(result.fileName)}"`);
     res.setHeader('X-Field-Count', String(result.fieldCount));
@@ -121,38 +123,45 @@ export class ImportsController {
 
   @Get('import/template-config')
   @Roles('admin')
-  async getTemplateConfig(@Query('orderType') orderTypeRaw: string | undefined) {
+  async getTemplateConfig(
+    @Query('orderType') orderTypeRaw: string | undefined,
+    @Query('businessScope') businessScope: BusinessScope = BusinessScope.BEILUN,
+  ) {
     const orderType = this.parseImportTemplateOrderType(orderTypeRaw);
-    return this.importTemplateConfigService.list(orderType);
+    return this.importTemplateConfigService.list(orderType, businessScope);
   }
 
   @Get('import/template-config/available-fields')
   @Roles('admin')
-  async getAvailableTemplateFields(@Query('orderType') orderTypeRaw: string | undefined) {
+  async getAvailableTemplateFields(
+    @Query('orderType') orderTypeRaw: string | undefined,
+    @Query('businessScope') businessScope: BusinessScope = BusinessScope.BEILUN,
+  ) {
     const orderType = this.parseImportTemplateOrderType(orderTypeRaw);
-    return this.importTemplateConfigService.listAvailableFields(orderType);
+    return this.importTemplateConfigService.listAvailableFields(orderType, businessScope);
   }
 
   @Put('import/template-config')
   @Roles('admin')
   async replaceTemplateConfig(
     @Query('orderType') orderTypeRaw: string | undefined,
+    @Query('businessScope') businessScope: BusinessScope = BusinessScope.BEILUN,
     @Body() payload: ReplaceImportTemplateFieldsDto,
   ) {
     const orderType = this.parseImportTemplateOrderType(orderTypeRaw);
     const fields: ImportTemplateFieldItemDto[] = Array.isArray(payload.fields) ? payload.fields : [];
-    const result = await this.importTemplateConfigService.replace(orderType, fields);
+    const result = await this.importTemplateConfigService.replace(orderType, fields, businessScope);
     return {
       ...result,
-      fields: await this.importTemplateConfigService.list(orderType),
+      fields: await this.importTemplateConfigService.list(orderType, businessScope),
     };
   }
 
   private parseImportTemplateOrderType(orderTypeRaw: string | undefined, allowRenewal = false): OrderType {
     const orderType = (orderTypeRaw as OrderType) || OrderType.ONBOARDING;
     const allowed = allowRenewal
-      ? [OrderType.ONBOARDING, OrderType.RENEWAL, OrderType.RESIGNATION]
-      : [OrderType.ONBOARDING, OrderType.RESIGNATION];
+      ? [OrderType.ONBOARDING, OrderType.RENEWAL, OrderType.RESIGNATION, OrderType.OUT_OF_PROVINCE_INCREASE, OrderType.OUT_OF_PROVINCE_DECREASE]
+      : [OrderType.ONBOARDING, OrderType.RESIGNATION, OrderType.OUT_OF_PROVINCE_INCREASE, OrderType.OUT_OF_PROVINCE_DECREASE];
     if (!allowed.includes(orderType)) {
       throw businessException(4400, 400, '当前阶段仅开放入职、离职导入模板配置');
     }

@@ -32,6 +32,8 @@ const RETURN_REASON_ALIASES = ['退回原因', '原因', 'returnReason', 'return
 const REMARK_ALIASES = ['办理备注', '完成备注', '备注', 'remark'];
 const BANK_NAME_ALIASES = ['开户银行信息', '开户银行', '开户行', '开户行名称', '银行名称', 'bank_name', 'bankName'];
 const BANK_ACCOUNT_ALIASES = ['银行借记卡帐号', '银行借记卡账号', '银行账号', '银行卡号', '银行卡账号', '工资卡号', 'bank_account', 'bankAccount'];
+const BANK_LOCATION_ALIASES = ['开户地', '开户地区', '开户省市', 'bank_location', 'bankLocation'];
+const PAYROLL_LOCATION_ALIASES = ['发薪地', '工资发放地', '工资单发放地', 'payroll_location', 'payrollLocation'];
 const HANDLING_FEEDBACK_ALIASES: Record<string, string[]> = {
   social_insurance_result: ['social_insurance_result', 'social_security_result', '社保是否办结', '社保办理结果', '社保结果', '社保状态'],
   social_insurance_remark: ['social_insurance_remark', 'social_security_remark', '社保公积金办理备注', '社保办理备注', '社保备注', '医保办理备注', '医保备注', '公积金办理备注', '公积金备注'],
@@ -74,9 +76,13 @@ function normalizeRow(row: Record<string, unknown>): DispatchedBatchImportRow {
   const remark = readCell(row, REMARK_ALIASES);
   const bankName = readCell(row, BANK_NAME_ALIASES);
   const bankAccount = readCell(row, BANK_ACCOUNT_ALIASES);
+  const bankLocation = readCell(row, BANK_LOCATION_ALIASES);
+  const payrollLocation = readCell(row, PAYROLL_LOCATION_ALIASES);
   const fields: Record<string, unknown> = {};
   if (bankName) fields.bank_name = bankName;
   if (bankAccount) fields.bank_account = bankAccount;
+  if (bankLocation) fields.bank_location = bankLocation;
+  if (payrollLocation) fields.payroll_location = payrollLocation;
   for (const [fieldCode, aliases] of Object.entries(HANDLING_FEEDBACK_ALIASES)) {
     const value = readCell(row, aliases);
     if (value) fields[fieldCode] = value;

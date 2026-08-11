@@ -1,7 +1,7 @@
 import { DataSource } from 'typeorm';
 import { ImportTemplateField, OrderType } from 'src/entities';
 
-// 入职模板 60 字段，邮编保留为系统字段但不进入客户标准模板。
+// 入职模板 61 字段，邮编保留为系统字段但不进入客户标准模板。
 export const ONBOARDING_TEMPLATE_ORDER = [
   'customer_name',
   'employee_name',
@@ -32,6 +32,7 @@ export const ONBOARDING_TEMPLATE_ORDER = [
   'social_base',
   'fund_base',
   'fund_ratio',
+  'need_payroll_slip',
   'remark',
   'household_type',
   'ethnicity',
@@ -66,7 +67,6 @@ export const ONBOARDING_TEMPLATE_ORDER = [
 ];
 
 const ONBOARDING_TEMPLATE_HEADER_ALIASES: Partial<Record<(typeof ONBOARDING_TEMPLATE_ORDER)[number], string>> = {
-  social_location: '参保机构名称',
   company_address: '劳动合同主体注册地',
 };
 

@@ -25,6 +25,10 @@ import {
   RuleHit,
 } from './dispatch-engine.types';
 import { HandlerPickerService } from './handler-picker.service';
+import {
+  getMissingPayrollBankCardFields,
+  PAYROLL_BANK_CARD_VISIBLE_FIELDS,
+} from 'src/modules/dispatched-orders/payroll-bank-card';
 
 @Injectable()
 export class DispatchEngineService {
@@ -298,6 +302,11 @@ export class DispatchEngineService {
         '是否企服发起劳动合同',
         '企服发起劳动合同',
       ],
+      need_payroll_slip: [
+        'need_payroll_slip',
+        '是否需要工资单',
+        '是否生成工资单',
+      ],
     };
 
     for (const [target, keys] of Object.entries(aliases)) {
@@ -323,8 +332,26 @@ export class DispatchEngineService {
     await this.ensureChild(childrenToCreate, 'data_entry', manager, 'onboarding-default-data-entry-fallback', businessScope);
     await this.ensureChild(childrenToCreate, 'social_insurance', manager, 'onboarding-default-social-insurance-fallback', businessScope);
 
-    if (this.isTruthyYes(workOrder.extraData.need_onboarding_contact)) {
+    const needsOnboardingContact = this.isTruthyYes(workOrder.extraData.need_onboarding_contact);
+    if (needsOnboardingContact) {
       await this.ensureChild(childrenToCreate, 'onboarding_contact', manager, 'onboarding-contact-when-needed-fallback', businessScope);
+    }
+
+    if (this.isTruthyYes(workOrder.extraData.need_payroll_slip)) {
+      await this.ensureChild(childrenToCreate, 'payroll_bank_card', manager, 'payroll-bank-card-when-needed-fallback', businessScope);
+      const missingFields = getMissingPayrollBankCardFields(workOrder.extraData);
+      if (missingFields.length > 0) {
+        await this.ensureChild(childrenToCreate, 'onboarding_contact', manager, 'onboarding-contact-for-payroll-bank-fallback', businessScope);
+        const contactChild = childrenToCreate.find((child) => child.moduleCode === 'onboarding_contact');
+        if (contactChild) {
+          contactChild.visibleFields = needsOnboardingContact
+            ? Array.from(new Set([...contactChild.visibleFields, ...missingFields]))
+            : PAYROLL_BANK_CARD_VISIBLE_FIELDS.filter((fieldCode) => (
+              missingFields.includes(fieldCode as (typeof missingFields)[number])
+              || ['employee_name', 'id_card_no'].includes(fieldCode)
+            ));
+        }
+      }
     }
 
     if (this.isTruthyYes(workOrder.extraData.need_company_contract)) {

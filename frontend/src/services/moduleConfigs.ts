@@ -111,6 +111,7 @@ function packModuleConfig(data: Partial<ModuleConfigItem>): Record<string, unkno
   if (data.sla_hours !== undefined || data.slaHours !== undefined) body.slaHours = data.sla_hours ?? data.slaHours;
   if (data.sla_reminder_before_hours !== undefined || data.slaReminderBeforeHours !== undefined) body.slaReminderBeforeHours = data.sla_reminder_before_hours ?? data.slaReminderBeforeHours;
   if (data.is_active !== undefined || data.isActive !== undefined) body.isActive = data.is_active ?? data.isActive;
+  if (data.business_scope !== undefined || data.businessScope !== undefined) body.businessScope = data.business_scope ?? data.businessScope;
   return body;
 }
 
@@ -197,19 +198,19 @@ function normalizeModuleField(raw: any): ModuleFieldItem {
   };
 }
 
-export async function getModuleFields(moduleCode: string): Promise<ModuleFieldItem[]> {
+export async function getModuleFields(moduleCode: string, businessScope: 'beilun' | 'out_of_province' = 'beilun'): Promise<ModuleFieldItem[]> {
   if (isMockMode) {
-    const list = loadList<ModuleFieldItem>(MODULE_FIELD_KEY, []);
-    return mockDelay(list.filter((item) => item.module_code === moduleCode && item.is_active !== false));
+    const list = loadList<ModuleFieldItem & { business_scope?: string }>(MODULE_FIELD_KEY, []);
+    return mockDelay(list.filter((item) => item.module_code === moduleCode && (item.business_scope ?? 'beilun') === businessScope && item.is_active !== false));
   }
-  const result = await request.get(`/admin/modules/${moduleCode}/fields`) as any;
+  const result = await request.get(`/admin/modules/${moduleCode}/fields`, { params: { businessScope } }) as any;
   const rawList = Array.isArray(result) ? result : (result?.list || result?.items || result?.data || []);
   return (Array.isArray(rawList) ? rawList : []).map(normalizeModuleField).filter((item) => item.is_active !== false);
 }
 
-export async function replaceModuleFields(moduleCode: string, fields: Array<Pick<ModuleFieldItem, 'field_code' | 'group_name' | 'display_order' | 'is_required_override' | 'is_active'>>): Promise<{ affected: number }> {
+export async function replaceModuleFields(moduleCode: string, fields: Array<Pick<ModuleFieldItem, 'field_code' | 'group_name' | 'display_order' | 'is_required_override' | 'is_active'>>, businessScope: 'beilun' | 'out_of_province' = 'beilun'): Promise<{ affected: number }> {
   if (isMockMode) {
-    const list = loadList<ModuleFieldItem>(MODULE_FIELD_KEY, []).filter((item) => item.module_code !== moduleCode);
+    const list = loadList<ModuleFieldItem & { business_scope?: string }>(MODULE_FIELD_KEY, []).filter((item) => item.module_code !== moduleCode || (item.business_scope ?? 'beilun') !== businessScope);
     const next = fields.map((item, index) => ({
       id: `${moduleCode}-${item.field_code}`,
       module_code: moduleCode,
@@ -218,6 +219,7 @@ export async function replaceModuleFields(moduleCode: string, fields: Array<Pick
       display_order: item.display_order ?? index + 1,
       is_required_override: item.is_required_override ?? null,
       is_active: item.is_active ?? true,
+      business_scope: businessScope,
     }));
     saveList(MODULE_FIELD_KEY, [...list, ...next]);
     return mockDelay({ affected: next.length });
@@ -230,5 +232,5 @@ export async function replaceModuleFields(moduleCode: string, fields: Array<Pick
       isRequiredOverride: item.is_required_override ?? null,
       isActive: item.is_active ?? true,
     })),
-  }) as Promise<{ affected: number }>;
+  }, { params: { businessScope } }) as Promise<{ affected: number }>;
 }

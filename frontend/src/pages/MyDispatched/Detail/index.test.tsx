@@ -982,6 +982,18 @@ describe('MyDispatchedDetail readonly and creator repair actions', () => {
     expect(mocks.supplementField).not.toHaveBeenCalled();
   });
 
+  it('shows only the payroll bank-card identity and export fields', () => {
+    expect(getDispatchedDetailFieldGroups('payroll_bank_card')).toEqual([
+      {
+        title: '薪酬银行卡信息',
+        codes: [
+          'employee_name', 'id_card_no', 'bank_name', 'bank_account',
+          'bank_location', 'branch_code', 'payroll_location',
+        ],
+      },
+    ]);
+  });
+
   it('keeps the workbook social fund detail groups for increase and decrease', () => {
     expect(getDispatchedDetailFieldGroups('social_insurance')).toEqual([
       {

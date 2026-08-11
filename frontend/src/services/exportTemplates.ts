@@ -25,7 +25,10 @@ export interface ExportTemplateItem {
   field_list: ExportTemplateFieldItem[];
   created_by: string;
   is_shared: boolean;
+  is_active?: boolean;
   sign_platform?: string | null;
+  business_scope?: 'beilun' | 'out_of_province';
+  businessScope?: 'beilun' | 'out_of_province';
   created_at: string;
 }
 
@@ -54,18 +57,24 @@ function normalizeExportTemplates(result: any): ExportTemplateItem[] {
     field_list: t.field_list ?? t.fieldList ?? [],
     created_by: t.created_by ?? t.createdBy ?? '',
     is_shared: t.is_shared ?? t.isShared ?? false,
+    is_active: t.is_active ?? t.isActive ?? true,
     sign_platform: t.sign_platform ?? t.signPlatform ?? null,
+    business_scope: t.business_scope ?? t.businessScope ?? 'beilun',
+    businessScope: t.businessScope ?? t.business_scope ?? 'beilun',
     created_at: t.created_at ?? t.createdAt ?? '',
   } as ExportTemplateItem));
 }
 
-export async function getExportTemplates(moduleCode?: string): Promise<ExportTemplateItem[]> {
+export async function getExportTemplates(moduleCode?: string, businessScope: 'beilun' | 'out_of_province' = 'beilun'): Promise<ExportTemplateItem[]> {
   if (isMockMode) {
-    const filtered = moduleCode ? mockTemplates.filter((t) => t.module_code === moduleCode) : mockTemplates;
+    const filtered = mockTemplates.filter((template) => (
+      (!moduleCode || template.module_code === moduleCode)
+      && (template.business_scope ?? 'beilun') === businessScope
+    ));
     return mockDelay(filtered);
   }
   try {
-    const result = await request.get('/admin/export-templates', { params: { moduleCode }, silentError: true } as any) as any;
+    const result = await request.get('/admin/export-templates', { params: { moduleCode, businessScope }, silentError: true } as any) as any;
     return normalizeExportTemplates(result);
   } catch {
     return [];
@@ -88,21 +97,25 @@ function packExportTemplate(data: Partial<ExportTemplateItem>): Record<string, u
   if (data.module_code !== undefined) body.moduleCode = data.module_code;
   if (data.field_list !== undefined) body.fieldList = data.field_list;
   if (data.is_shared !== undefined) body.isShared = data.is_shared;
+  if (data.is_active !== undefined) body.isActive = data.is_active;
   if (data.sign_platform !== undefined) body.signPlatform = data.sign_platform;
+  if (data.business_scope !== undefined || data.businessScope !== undefined) body.businessScope = data.business_scope ?? data.businessScope;
   return body;
 }
 
-export async function createExportTemplate(data: Partial<ExportTemplateItem>): Promise<ExportTemplateItem> {
-  if (isMockMode) return mockDelay({ ...mockTemplates[0], ...data });
-  return request.post('/admin/export-templates', packExportTemplate(data)) as Promise<ExportTemplateItem>;
+export async function createExportTemplate(data: Partial<ExportTemplateItem>, businessScope: 'beilun' | 'out_of_province' = 'beilun'): Promise<ExportTemplateItem> {
+  const scoped = { ...data, business_scope: businessScope };
+  if (isMockMode) return mockDelay({ ...mockTemplates[0], ...scoped });
+  return request.post('/admin/export-templates', packExportTemplate(scoped), { params: { businessScope } }) as Promise<ExportTemplateItem>;
 }
 
-export async function updateExportTemplate(id: string, data: Partial<ExportTemplateItem>): Promise<ExportTemplateItem> {
-  if (isMockMode) return mockDelay({ ...mockTemplates[0], ...data });
-  return request.put(`/admin/export-templates/${id}`, packExportTemplate(data)) as Promise<ExportTemplateItem>;
+export async function updateExportTemplate(id: string, data: Partial<ExportTemplateItem>, businessScope: 'beilun' | 'out_of_province' = 'beilun'): Promise<ExportTemplateItem> {
+  const scoped = { ...data, business_scope: businessScope };
+  if (isMockMode) return mockDelay({ ...mockTemplates[0], ...scoped });
+  return request.put(`/admin/export-templates/${id}`, packExportTemplate(scoped), { params: { businessScope } }) as Promise<ExportTemplateItem>;
 }
 
-export async function deleteExportTemplate(id: string): Promise<void> {
+export async function deleteExportTemplate(id: string, businessScope: 'beilun' | 'out_of_province' = 'beilun'): Promise<void> {
   if (isMockMode) return mockDelay(undefined);
-  return request.delete(`/admin/export-templates/${id}`) as Promise<void>;
+  return request.delete(`/admin/export-templates/${id}`, { params: { businessScope } }) as Promise<void>;
 }

@@ -87,6 +87,13 @@ const FIELD_GROUPS: Array<{ title: string; codes: string[] }> = [
   },
 ];
 
+const PAYROLL_BANK_CARD_FIELD_GROUPS: Array<{ title: string; codes: string[] }> = [
+  {
+    title: '薪酬银行卡信息',
+    codes: ['employee_name', 'id_card_no', 'bank_name', 'bank_account', 'bank_location', 'branch_code', 'payroll_location'],
+  },
+];
+
 const SOCIAL_INCREASE_FIELD_GROUPS: Array<{ title: string; codes: string[] }> = [
   {
     title: '社保公积金',
@@ -126,6 +133,7 @@ const SOCIAL_DECREASE_FIELD_GROUPS: Array<{ title: string; codes: string[] }> = 
 ];
 
 export const getDispatchedDetailFieldGroups = (moduleCode?: string): Array<{ title: string; codes: string[] }> => {
+  if (moduleCode === 'payroll_bank_card') return PAYROLL_BANK_CARD_FIELD_GROUPS;
   if (moduleCode === 'social_insurance') return SOCIAL_INCREASE_FIELD_GROUPS;
   if (moduleCode === 'resignation_social_insurance' || moduleCode === 'social_insurance_resign') {
     return SOCIAL_DECREASE_FIELD_GROUPS;
@@ -175,9 +183,10 @@ const formatDetailValue = (value: unknown): string => {
 
 const SOCIAL_DETAIL_VALUE_ALIASES: Record<string, string[]> = {
   insured_unit: [
-    'social_location', 'socialLocation', '参保机构名称',
-    'insured_unit', 'insuredUnit', 'payment_institution', 'paymentInstitution', '参保单位',
+    'contract_subject', 'contractSubject',
+    'insured_unit', 'insuredUnit', '参保单位',
   ],
+  social_pay_region: ['social_location', 'socialLocation', 'social_pay_region', 'socialPayRegion'],
 };
 
 function readDetailFieldValue(extraData: Record<string, unknown> | undefined, fieldCode: string): unknown {

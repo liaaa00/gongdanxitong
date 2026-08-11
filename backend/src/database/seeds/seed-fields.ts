@@ -61,7 +61,7 @@ const onboardingCollectionGroups: Record<string, string> = Object.fromEntries([
   ].map((code) => [code, '合同与用工信息']),
   ...[
     'salary_form', 'base_salary', 'other_salary', 'probation_salary', 'probation_other_salary',
-    'payroll_cycle', 'payroll_date', 'need_company_payroll', 'payroll_location',
+    'payroll_cycle', 'payroll_date', 'need_company_payroll', 'need_payroll_slip', 'payroll_location',
     'bank_location', 'bank_name', 'bank_account',
   ].map((code) => [code, '薪资与发薪信息']),
   ...[
@@ -127,7 +127,7 @@ const onboardingFields: FieldSeed[] = [
   { code: 'payroll_cycle',          name: '发薪周期',     type: FieldType.DROPDOWN, required: true,  defaultRequired: true,  options: ['当月', '次月'], orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'payroll_date',           name: '发薪日期',     type: FieldType.TEXT,     required: true,  defaultRequired: true,  helpText: '整数。', orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'insured_unit',           name: '参保单位',     type: FieldType.TEXT,     required: true,  defaultRequired: true,  orderType: ONBOARDING, businessContext: [ONBOARDING, RESIGNATION] },
-  { code: 'social_location',        name: '参保机构名称', type: FieldType.TEXT,     required: true,  defaultRequired: true,  orderType: ONBOARDING, businessContext: [ONBOARDING] },
+  { code: 'social_location',        name: '缴纳地',       type: FieldType.TEXT,     required: true,  defaultRequired: true,  orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'start_month',            name: '社保起缴月',   type: FieldType.DROPDOWN, required: true,  defaultRequired: true,  options: ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'], orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'social_base',            name: '社保缴费工资', type: FieldType.NUMBER,   required: true,  defaultRequired: true,  helpText: '数字格式：保留小数点后两位。', orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'fund_start_month',       name: '公积金起缴月', type: FieldType.DROPDOWN, required: true,  defaultRequired: true,  options: ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'], orderType: ONBOARDING, businessContext: [ONBOARDING] },
@@ -140,6 +140,7 @@ const onboardingFields: FieldSeed[] = [
   { code: 'bank_location',          name: '开户地',       type: FieldType.TEXT,     required: false, defaultRequired: false, helpText: '城市的名字（待确认）', orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'bank_name',              name: '开户银行信息', type: FieldType.TEXT,     required: false, defaultRequired: false, orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'bank_account',           name: '银行借记卡帐号', type: FieldType.TEXT,   required: false, defaultRequired: false, orderType: ONBOARDING, businessContext: [ONBOARDING] },
+  { code: 'need_payroll_slip',      name: '是否需要工资单', type: FieldType.DROPDOWN, required: true, defaultRequired: true, options: ['是', '否'], helpText: '选择“是”时生成薪酬银行卡子工单。', orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'remark',                 name: '备注',         type: FieldType.TEXT,     required: false, defaultRequired: false, orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'business_mode',          name: '业务模式',     type: FieldType.DROPDOWN, required: true,  defaultRequired: true,  options: ['北仑自营', '转外包', '转代理（非常规）'], orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'employee_type',          name: '人员类型',     type: FieldType.DROPDOWN, required: true,  defaultRequired: true,  options: ['全日制', '非全日制', '劳务合同', '退休返聘'], orderType: ONBOARDING, businessContext: [ONBOARDING] },

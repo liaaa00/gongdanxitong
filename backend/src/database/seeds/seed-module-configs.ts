@@ -15,6 +15,7 @@ const modules: Array<Partial<WorkOrderModuleConfig>> = [
   { moduleCode: 'in_service_single_business', moduleName: '单项业务办理', moduleType: 'sub_module', parentModuleCode: 'employment_management', displayOrder: 20, description: 'Sheet2 分类与 Sheet4 省份派单' },
   { moduleCode: 'resignation_management', moduleName: '离职管理', moduleType: 'business_module', parentModuleCode: null, displayOrder: 30, description: '第一阶段开放：离职办理事项配置' },
   { moduleCode: 'onboarding_contact', moduleName: '入职联系', moduleType: 'sub_module', parentModuleCode: 'onboarding_management', displayOrder: 11, description: '按是否需要入职联系条件生成' },
+  { moduleCode: 'payroll_bank_card', moduleName: '薪酬银行卡', moduleType: 'sub_module', parentModuleCode: 'onboarding_management', displayOrder: 12, description: '按是否需要工资单生成；银行卡资料完整后可办理和导出' },
   { moduleCode: 'contract', moduleName: '劳动合同新签', moduleType: 'sub_module', parentModuleCode: 'onboarding_management', displayOrder: 12, description: '按是否企服发起劳动合同条件生成' },
   { moduleCode: 'data_entry', moduleName: '增员报岗录入', moduleType: 'sub_module', parentModuleCode: 'onboarding_management', displayOrder: 13, description: '入职工单必生成' },
   { moduleCode: 'social_insurance', moduleName: '社保公积金增员', moduleType: 'sub_module', parentModuleCode: 'onboarding_management', displayOrder: 14, description: '入职社保公积金增员，负责人傅倩雯' },
@@ -30,6 +31,7 @@ const modules: Array<Partial<WorkOrderModuleConfig>> = [
 const defaultSlaByModule: Record<string, { slaHours: number; reminderBeforeHours: number }> = {
   data_entry: { slaHours: 24, reminderBeforeHours: 4 },
   onboarding_contact: { slaHours: 24, reminderBeforeHours: 4 },
+  payroll_bank_card: { slaHours: 24, reminderBeforeHours: 4 },
   contract: { slaHours: 48, reminderBeforeHours: 8 },
   social_insurance: { slaHours: 48, reminderBeforeHours: 8 },
   in_service_single_business: { slaHours: 48, reminderBeforeHours: 8 },
@@ -49,6 +51,11 @@ const onboardingContactFields = [
   'education', 'graduation_school', 'major', 'graduation_date',
   'bank_name', 'bank_account',
   'need_onboarding_contact', 'onboarding_feedback',
+];
+
+const payrollBankCardFields = [
+  'employee_name', 'id_card_no', 'bank_name', 'bank_account',
+  'bank_location', 'payroll_location',
 ];
 
 const contractFields = [
@@ -129,6 +136,7 @@ const moduleRequiredOverrides: Record<string, Record<string, boolean>> = {
 
 const moduleFields: Record<string, string[]> = {
   onboarding_contact: onboardingContactFields,
+  payroll_bank_card: payrollBankCardFields,
   contract: contractFields,
   data_entry: [
     'customer_name', 'customer_code', 'outsource_type', 'position',
@@ -137,7 +145,7 @@ const moduleFields: Record<string, string[]> = {
     'education', 'graduation_school', 'major', 'graduation_date',
     'mobile', 'email', 'current_address', 'household_address', 'postal_code',
     'social_location', 'start_month', 'social_base', 'fund_base', 'fund_ratio',
-    'bank_name', 'bank_account', 'remark',
+    'bank_name', 'bank_account', 'need_payroll_slip', 'remark',
     'business_mode',
     'need_company_payroll', 'payroll_location',
     'data_entry_feedback',
@@ -166,6 +174,7 @@ const supervisorSeeds: Array<{ moduleCode: string; usernames: string[] }> = [
 
 const actionSeeds: Array<Partial<ActionConfig>> = [
   { moduleCode: 'onboarding_contact', actionCode: 'complete', actionName: '完成', remarkRequired: false, formSchema: null },
+  { moduleCode: 'payroll_bank_card', actionCode: 'complete', actionName: '完成', remarkRequired: false, formSchema: null },
   { moduleCode: 'contract', actionCode: 'complete', actionName: '完成', remarkRequired: false, formSchema: null },
   { moduleCode: 'data_entry', actionCode: 'complete', actionName: '完成', remarkRequired: false, formSchema: null },
   { moduleCode: 'social_insurance', actionCode: 'complete', actionName: '完成', remarkRequired: true, formSchema: { fields: [{ fieldCode: 'remark', label: '办理备注', required: true }] } },
@@ -175,8 +184,8 @@ const actionSeeds: Array<Partial<ActionConfig>> = [
   { moduleCode: 'resignation_social_insurance', actionCode: 'complete', actionName: '完成', remarkRequired: true, formSchema: { fields: [{ fieldCode: 'remark', label: '办理备注', required: true }] } },
   { moduleCode: 'social_insurance', actionCode: 'batch_complete', actionName: '社保批量完成', remarkRequired: true, formSchema: { fields: [{ fieldCode: 'remark', label: '批量完成备注', required: true, helpText: '请填写月份、基数、操作类型等追溯信息' }] } },
   { moduleCode: 'resignation_social_insurance', actionCode: 'batch_complete', actionName: '社保批量完成', remarkRequired: true, formSchema: { fields: [{ fieldCode: 'remark', label: '批量完成备注', required: true, helpText: '请填写月份、基数、操作类型等追溯信息' }] } },
-  ...['onboarding_contact', 'contract', 'data_entry', 'social_insurance', 'resignation_contact', 'resignation_cert', 'data_entry_resign', 'resignation_social_insurance'].map((moduleCode) => ({ moduleCode, actionCode: 'confirm_read', actionName: '确认已阅', remarkRequired: false, formSchema: null })),
-  ...['onboarding_contact', 'contract', 'data_entry', 'social_insurance', 'resignation_contact', 'resignation_cert', 'data_entry_resign', 'resignation_social_insurance'].map((moduleCode) => ({ moduleCode, actionCode: 'return_completed', actionName: '退回已完成子单', remarkRequired: true, formSchema: { fields: [{ fieldCode: 'returnReason', label: '退回原因', required: true }] } })),
+  ...['onboarding_contact', 'payroll_bank_card', 'contract', 'data_entry', 'social_insurance', 'resignation_contact', 'resignation_cert', 'data_entry_resign', 'resignation_social_insurance'].map((moduleCode) => ({ moduleCode, actionCode: 'confirm_read', actionName: '确认已阅', remarkRequired: false, formSchema: null })),
+  ...['onboarding_contact', 'payroll_bank_card', 'contract', 'data_entry', 'social_insurance', 'resignation_contact', 'resignation_cert', 'data_entry_resign', 'resignation_social_insurance'].map((moduleCode) => ({ moduleCode, actionCode: 'return_completed', actionName: '退回已完成子单', remarkRequired: true, formSchema: { fields: [{ fieldCode: 'returnReason', label: '退回原因', required: true }] } })),
 ];
 
 export async function seedModuleConfigs(dataSource: DataSource): Promise<void> {

@@ -1,4 +1,4 @@
-export type OnboardingSubModuleCode = 'data_entry' | 'social_insurance' | 'onboarding_contact' | 'contract' | 'contract_signing';
+export type OnboardingSubModuleCode = 'data_entry' | 'social_insurance' | 'onboarding_contact' | 'payroll_bank_card' | 'contract' | 'contract_signing';
 
 export interface ModuleMeta {
   code: string;
@@ -20,6 +20,15 @@ export const MODULE_META: Record<string, ModuleMeta> = {
     group: 'onboarding',
     title: '入职联系子工单',
     desc: '按原条件生成，由共享团队办理员工入职联络、入职通知和资料确认。',
+  },
+  payroll_bank_card: {
+    code: 'payroll_bank_card',
+    label: '薪酬银行卡',
+    shortLabel: '薪酬银行卡',
+    color: 'gold',
+    group: 'onboarding',
+    title: '薪酬银行卡子工单',
+    desc: '选择是否需要工资单为“是”时生成；银行卡资料齐全后可办理和导出。',
   },
   contract: {
     code: 'contract',
@@ -79,6 +88,7 @@ export const IN_SERVICE_MODULE_CODES = new Set([
 
 export const PHASE_ONE_VISIBLE_MODULE_CODES = new Set([
   'onboarding_contact',
+  'payroll_bank_card',
   'contract',
   'contract_signing',
   'data_entry',
@@ -92,6 +102,7 @@ export const PHASE_ONE_VISIBLE_MODULE_CODES = new Set([
 
 export const ONBOARDING_SPLIT_MODULES: ModuleMeta[] = [
   MODULE_META.onboarding_contact,
+  MODULE_META.payroll_bank_card,
   MODULE_META.contract,
   MODULE_META.data_entry,
   MODULE_META.social_insurance,
@@ -107,6 +118,7 @@ export const MODULE_GROUPS: Array<{
     value: 'onboarding',
     options: [
       { label: MODULE_META.onboarding_contact.label, value: 'onboarding_contact' },
+      { label: MODULE_META.payroll_bank_card.label, value: 'payroll_bank_card' },
       { label: MODULE_META.contract.label, value: 'contract' },
       { label: MODULE_META.data_entry.label, value: 'data_entry' },
       { label: MODULE_META.social_insurance.label, value: 'social_insurance' },

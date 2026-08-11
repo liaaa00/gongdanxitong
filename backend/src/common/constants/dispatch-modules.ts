@@ -1,5 +1,6 @@
 export const DISPATCH_MODULE_LABELS: Record<string, string> = {
   onboarding_contact: '入职联系',
+  payroll_bank_card: '薪酬银行卡',
   contract: '劳动合同新签',
   data_entry: '增员报岗录入',
   social_insurance: '社保公积金增员',
@@ -17,6 +18,7 @@ export const DISPATCH_MODULE_LABELS: Record<string, string> = {
 
 export const PHASE1_VISIBLE_DISPATCH_MODULE_CODES = [
   'onboarding_contact',
+  'payroll_bank_card',
   'contract',
   'data_entry',
   'social_insurance',
