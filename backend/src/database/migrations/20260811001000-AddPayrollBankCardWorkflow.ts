@@ -103,9 +103,9 @@ export class AddPayrollBankCardWorkflow20260811001000 implements MigrationInterf
            is_required_override, is_active, business_scope, created_at, updated_at
          )
          VALUES (
-           'onboarding'::order_type_enum, $1, $2,
-           CASE WHEN $1 = 'company_address' THEN '劳动合同主体注册地' ELSE NULL END,
-           CASE WHEN $1 = 'feedback_deadline' THEN false ELSE NULL END,
+           'onboarding'::order_type_enum, $1::varchar, $2,
+           CASE WHEN $1::varchar = 'company_address' THEN '劳动合同主体注册地' ELSE NULL END,
+           CASE WHEN $1::varchar = 'feedback_deadline' THEN false ELSE NULL END,
            true, 'beilun', now(), now()
          )
          ON CONFLICT (order_type, field_code, business_scope) DO UPDATE SET
@@ -284,7 +284,7 @@ export class AddPayrollBankCardWorkflow20260811001000 implements MigrationInterf
         `UPDATE field_supplement_rules
             SET sync_to_modules = '["payroll_bank_card"]'::jsonb,
                 is_active = true
-          WHERE field_code = $1
+          WHERE field_code = $1::varchar
             AND supplementer_module = 'onboarding_contact'`,
         [fieldCode],
       );
@@ -292,10 +292,10 @@ export class AddPayrollBankCardWorkflow20260811001000 implements MigrationInterf
         `INSERT INTO field_supplement_rules (
            field_code, supplementer_module, sync_to_modules, is_active
          )
-         SELECT $1, 'onboarding_contact', '["payroll_bank_card"]'::jsonb, true
+         SELECT $1::varchar, 'onboarding_contact', '["payroll_bank_card"]'::jsonb, true
          WHERE NOT EXISTS (
            SELECT 1 FROM field_supplement_rules
-            WHERE field_code = $1
+            WHERE field_code = $1::varchar
               AND supplementer_module = 'onboarding_contact'
          )`,
         [fieldCode],
@@ -441,9 +441,9 @@ export class AddPayrollBankCardWorkflow20260811001000 implements MigrationInterf
           SET field_list = $1::jsonb,
               is_active = true,
               updated_at = now()
-        WHERE module_code = $2
+        WHERE module_code = $2::varchar
           AND business_scope = 'beilun'
-          AND template_name = $3`,
+          AND template_name = $3::varchar`,
       [JSON.stringify(fieldList), moduleCode, templateName],
     );
     await queryRunner.query(
@@ -451,12 +451,12 @@ export class AddPayrollBankCardWorkflow20260811001000 implements MigrationInterf
          template_name, module_code, business_scope, field_list,
          is_active, created_by, created_at, updated_at
        )
-       SELECT $3, $2, 'beilun', $1::jsonb, true, NULL, now(), now()
+       SELECT $3::varchar, $2::varchar, 'beilun', $1::jsonb, true, NULL, now(), now()
        WHERE NOT EXISTS (
          SELECT 1 FROM detail_view_templates
-          WHERE module_code = $2
+          WHERE module_code = $2::varchar
             AND business_scope = 'beilun'
-            AND template_name = $3
+            AND template_name = $3::varchar
        )`,
       [JSON.stringify(fieldList), moduleCode, templateName],
     );

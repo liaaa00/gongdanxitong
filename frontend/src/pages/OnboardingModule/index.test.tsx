@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import OnboardingModule, { getOnboardingModulePermissionState } from './index';
 import { DEFAULT_MATRIX } from '@/services/roleActionPermissions';
-import { KEEP_ALIVE_ROUTE_ACTIVATED_EVENT } from '@/utils/listPageState';
+
 
 const mocks = vi.hoisted(() => ({
   latestProTableProps: undefined as any,
@@ -123,10 +123,10 @@ describe('OnboardingModule header table filters', () => {
     ]);
     const insuredUnit = columns.find((column) => column.key === 'insured_unit');
     const fundStartMonth = columns.find((column) => column.key === 'fund_start_month');
-    expect(insuredUnit?.renderText(undefined, { extra_data: { paymentInstitution: '历史参保单位' } })).toBe('历史参保单位');
+    expect(insuredUnit?.renderText(undefined, { extra_data: { contract_subject: '劳动合同主体值' } })).toBe('劳动合同主体值');
     expect(insuredUnit?.renderText(undefined, {
-      extra_data: { socialLocation: '参保机构名称值', insured_unit: '历史参保单位' },
-    })).toBe('参保机构名称值');
+      extra_data: { contractSubject: '劳动合同主体驼峰值', insured_unit: '历史参保单位' },
+    })).toBe('劳动合同主体驼峰值');
     expect(fundStartMonth?.renderText(undefined, { extra_data: { startMonth: '2026-08' } })).toBe('2026-08');
   });
 
@@ -186,24 +186,6 @@ describe('OnboardingModule header table filters', () => {
     expect(params.statuses).toBeUndefined();
   });
 
-  it('reloads only when its cached module route is reactivated', async () => {
-    render(<OnboardingModule />);
-
-    act(() => {
-      window.dispatchEvent(new CustomEvent(KEEP_ALIVE_ROUTE_ACTIVATED_EVENT, {
-        detail: { pathname: '/onboarding/contract', search: '' },
-      }));
-    });
-    expect(mocks.reload).not.toHaveBeenCalled();
-
-    act(() => {
-      window.dispatchEvent(new CustomEvent(KEEP_ALIVE_ROUTE_ACTIVATED_EVENT, {
-        detail: { pathname: '/onboarding/data_entry', search: '' },
-      }));
-    });
-
-    await waitFor(() => expect(mocks.reload).toHaveBeenCalledTimes(1));
-  });
 });
 
 describe('OnboardingModule resignation certificate list', () => {

@@ -66,7 +66,7 @@ describe('可选字段模板生成测试', () => {
     it('应调用configService.list加载标准字段', async () => {
       await service.generate(OrderType.ONBOARDING);
 
-      expect(configService.list).toHaveBeenCalledWith(OrderType.ONBOARDING);
+      expect(configService.list).toHaveBeenCalledWith(OrderType.ONBOARDING, 'beilun');
     });
   });
 });

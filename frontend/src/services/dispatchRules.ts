@@ -38,13 +38,16 @@ const SEED: DispatchRuleItem[] = [
 const store = () => loadList<DispatchRuleItem>(KEY, SEED);
 const commit = (l: DispatchRuleItem[]) => saveList(KEY, l);
 
-export async function getDispatchRules(orderType?: string): Promise<DispatchRuleItem[]> {
+export async function getDispatchRules(
+  orderType?: string,
+  businessScope: 'beilun' | 'out_of_province' = 'beilun',
+): Promise<DispatchRuleItem[]> {
   if (isMockMode) {
     const list = store();
     return mockDelay(orderType ? list.filter((r) => r.order_type === orderType) : list);
   }
   try {
-    const result = await request.get('/admin/dispatch-rules', { params: { orderType, order_type: orderType } }) as any;
+    const result = await request.get('/admin/dispatch-rules', { params: { orderType, order_type: orderType, businessScope } }) as any;
     const rawList = Array.isArray(result) ? result : (result?.list || result?.items || result?.data || []);
     return (Array.isArray(rawList) ? rawList : []).map(normalizeRule);
   } catch {
@@ -71,7 +74,10 @@ function normalizeRule(r: any): DispatchRuleItem {
   };
 }
 
-export async function createDispatchRule(data: Partial<DispatchRuleItem>): Promise<DispatchRuleItem> {
+export async function createDispatchRule(
+  data: Partial<DispatchRuleItem>,
+  businessScope: 'beilun' | 'out_of_province' = 'beilun',
+): Promise<DispatchRuleItem> {
   if (isMockMode) {
     const list = store();
     const item: DispatchRuleItem = {
@@ -93,7 +99,7 @@ export async function createDispatchRule(data: Partial<DispatchRuleItem>): Promi
     list.push(item); commit(list);
     return mockDelay(item);
   }
-  return request.post('/admin/dispatch-rules', packDispatchRule(data)) as Promise<DispatchRuleItem>;
+  return request.post('/admin/dispatch-rules', packDispatchRule(data), { params: { businessScope } }) as Promise<DispatchRuleItem>;
 }
 
 function packDispatchRule(data: Partial<DispatchRuleItem>): Record<string, unknown> {
@@ -115,7 +121,11 @@ function packDispatchRule(data: Partial<DispatchRuleItem>): Record<string, unkno
   return body;
 }
 
-export async function updateDispatchRule(id: string, data: Partial<DispatchRuleItem>): Promise<DispatchRuleItem> {
+export async function updateDispatchRule(
+  id: string,
+  data: Partial<DispatchRuleItem>,
+  businessScope: 'beilun' | 'out_of_province' = 'beilun',
+): Promise<DispatchRuleItem> {
   if (isMockMode) {
     const list = store();
     const idx = list.findIndex((r) => r.id === id);
@@ -124,13 +134,16 @@ export async function updateDispatchRule(id: string, data: Partial<DispatchRuleI
     commit(list);
     return mockDelay(list[idx]);
   }
-  return request.put(`/admin/dispatch-rules/${id}`, packDispatchRule(data)) as Promise<DispatchRuleItem>;
+  return request.put(`/admin/dispatch-rules/${id}`, packDispatchRule(data), { params: { businessScope } }) as Promise<DispatchRuleItem>;
 }
 
-export async function deleteDispatchRule(id: string): Promise<void> {
+export async function deleteDispatchRule(
+  id: string,
+  businessScope: 'beilun' | 'out_of_province' = 'beilun',
+): Promise<void> {
   if (isMockMode) {
     commit(store().filter((r) => r.id !== id));
     return mockDelay(undefined);
   }
-  return request.delete(`/admin/dispatch-rules/${id}`) as Promise<void>;
+  return request.delete(`/admin/dispatch-rules/${id}`, { params: { businessScope } }) as Promise<void>;
 }

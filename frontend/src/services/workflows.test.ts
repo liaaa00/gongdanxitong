@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createDefaultWorkflowDefinition, createWorkflow, getWorkflow, publishWorkflow, updateWorkflow } from './workflows';
+import { createDefaultWorkflowDefinition, createWorkflow, getWorkflow, getWorkflows, publishWorkflow, updateWorkflow } from './workflows';
 
 describe('workflow configuration service mock contract', () => {
   it('persists definition_json including field bindings and publishes workflow', async () => {
@@ -53,5 +53,20 @@ describe('workflow configuration service mock contract', () => {
     expect(published.definition_json.nodes).toHaveLength(3);
     expect(published.version).toBe(1);
     expect(published.published_definition_json?.status_transitions).toEqual({ dispatched: ['accepted'], processing: ['completed'] });
+  });
+
+  it('isolates workflows by business scope', async () => {
+    const created = await createWorkflow({
+      name: '省外流程',
+      order_type: 'onboarding',
+      definition_json: createDefaultWorkflowDefinition(),
+    }, 'out_of_province');
+
+    const provinceList = await getWorkflows({ businessScope: 'out_of_province' });
+    const beilunList = await getWorkflows({ businessScope: 'beilun' });
+
+    expect(provinceList.list.some((item) => item.id === created.id)).toBe(true);
+    expect(beilunList.list.some((item) => item.id === created.id)).toBe(false);
+    expect((await getWorkflow(created.id, 'out_of_province')).business_scope).toBe('out_of_province');
   });
 });

@@ -401,7 +401,7 @@ export class ExportTemplatesService {
   ): Promise<DispatchedOrderExportResult> {
     const fieldNameMap = await this.loadFieldNameMap();
     const fieldOptionsMap = await this.loadFieldOptionsMap();
-    const exportTemplate = { ...template, fieldList: this.prepareExportFieldList(template.fieldList ?? []) } as ExportTemplate;
+    const exportTemplate = { ...template, fieldList: this.prepareExportFieldList(template.fieldList ?? [], template.moduleCode) } as ExportTemplate;
     const result = this.buildResult(exportTemplate, orders, fieldNameMap);
     const richCols = this.resolveRichColumns(exportTemplate, fieldNameMap, fieldOptionsMap);
     const needsAttachments = richCols.some((col) => col.valueCode === 'attachments_summary');
@@ -498,7 +498,7 @@ export class ExportTemplatesService {
       shared = await this.repository.findOne({ where: { moduleCode, isShared: true, isActive: true, businessScope }, order: { createdAt: 'DESC' } });
     }
     if (shared) {
-      shared.fieldList = this.prepareExportFieldList(shared.fieldList);
+      shared.fieldList = this.prepareExportFieldList(shared.fieldList, shared.moduleCode);
       return shared;
     }
 
@@ -517,16 +517,17 @@ export class ExportTemplatesService {
       });
     }
 
-    const fieldList = this.prepareExportFieldList(visibleFields.map((fieldCode, order) => ({ fieldCode, order: order + 10 })));
+    const fieldList = this.prepareExportFieldList(visibleFields.map((fieldCode, order) => ({ fieldCode, order: order + 10 })), moduleCode);
     return this.repository.create({ id: '', templateName: `${moduleCode}-default`, moduleCode, fieldList, createdBy: '', isShared: false, signPlatform: null, businessScope });
   }
 
   private readonly exportExcludedFieldCodes = new Set(['order_no', 'employee_id_card']);
 
-  private prepareExportFieldList(fieldList: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+  private prepareExportFieldList(fieldList: Array<Record<string, unknown>>, moduleCode?: string): Array<Record<string, unknown>> {
     const normalized = fieldList
       .filter((item) => !this.exportExcludedFieldCodes.has(this.resolveFieldCode(item)))
       .map((item, index) => ({ ...item, order: this.readNumber(item.order) ?? index + 10 }));
+    if (moduleCode === 'payroll_bank_card') return normalized;
     const hasCreator = normalized.some((item) => this.resolveFieldCode(item) === 'created_by_name');
     if (hasCreator) return normalized;
     const maxOrder = normalized.reduce((max, item, index) => Math.max(max, this.readNumber(item.order) ?? index + 1), 0);
@@ -545,7 +546,7 @@ export class ExportTemplatesService {
     orders: DispatchedOrder[],
     fieldNameMap: Map<string, string>,
   ): DispatchedOrderExportResult {
-    const exportTemplate = { ...template, fieldList: this.prepareExportFieldList(template.fieldList ?? []) } as ExportTemplate;
+    const exportTemplate = { ...template, fieldList: this.prepareExportFieldList(template.fieldList ?? [], template.moduleCode) } as ExportTemplate;
     const rich = this.resolveRichColumns(exportTemplate, fieldNameMap);
     const columns = rich.map((column) => ({ fieldCode: column.valueCode, title: column.publicTitle, order: column.order }));
     const rows = orders.map((order) => {
@@ -1078,7 +1079,7 @@ export class ExportTemplatesService {
   }
 
   private resolveColumns(template: ExportTemplate, fieldNameMap: Map<string, string>): ExportColumn[] {
-    return this.prepareExportFieldList(template.fieldList ?? [])
+    return this.prepareExportFieldList(template.fieldList ?? [], template.moduleCode)
       .map((item, index) => {
         const fieldCode = this.resolveFieldCode(item);
         const fallbackTitle = this.resolveFieldTitle(fieldCode, fieldNameMap);

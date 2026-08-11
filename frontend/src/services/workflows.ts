@@ -1,5 +1,6 @@
 import request from './request';
 import { isMockMode, mockDelay, type PageParams, type PageResult } from './mock';
+import type { BusinessScope } from '@/utils/businessScope';
 
 export type WorkflowNodeType = 'start' | 'process' | 'approval' | 'end';
 
@@ -94,6 +95,8 @@ export interface WorkflowItem {
   created_at?: string;
   updated_at?: string;
   published_at?: string | null;
+  business_scope?: BusinessScope;
+  businessScope?: BusinessScope;
   [key: string]: unknown;
 }
 
@@ -234,6 +237,8 @@ function normalizeWorkflow(raw: unknown): WorkflowItem {
     created_at: (row.created_at ?? row.createdAt) as string | undefined,
     updated_at: (row.updated_at ?? row.updatedAt) as string | undefined,
     published_at: (row.published_at ?? row.publishedAt ?? null) as string | null,
+    business_scope: (row.business_scope ?? row.businessScope ?? 'beilun') as BusinessScope,
+    businessScope: (row.businessScope ?? row.business_scope ?? 'beilun') as BusinessScope,
   };
 }
 
@@ -243,7 +248,8 @@ export function createDefaultWorkflowDefinition(): WorkflowDefinitionJson {
 
 export async function getWorkflows(params: PageParams = {}): Promise<PageResult<WorkflowItem>> {
   if (isMockMode) {
-    let list = [...mockWorkflows];
+    const businessScope = (params.businessScope ?? params.business_scope ?? 'beilun') as BusinessScope;
+    let list = mockWorkflows.filter((item) => (item.business_scope ?? item.businessScope ?? 'beilun') === businessScope);
     if (params.orderType || params.order_type) {
       const type = String(params.orderType || params.order_type);
       list = list.filter((item) => item.order_type === type);
@@ -259,14 +265,20 @@ export async function getWorkflows(params: PageParams = {}): Promise<PageResult<
   return { list, total: list.length, page: 1, pageSize: list.length || 20, totalPages: 1, success: true };
 }
 
-export async function getWorkflow(id: string): Promise<WorkflowItem> {
+export async function getWorkflow(
+  id: string,
+  businessScope: BusinessScope = 'beilun',
+): Promise<WorkflowItem> {
   if (isMockMode) {
     return mockDelay(mockWorkflows.find((item) => item.id === id) || mockWorkflows[0]);
   }
-  return normalizeWorkflow(await request.get(`/admin/workflows/${id}`));
+  return normalizeWorkflow(await request.get(`/admin/workflows/${id}`, { params: { businessScope } }));
 }
 
-export async function createWorkflow(data: Partial<WorkflowItem>): Promise<WorkflowItem> {
+export async function createWorkflow(
+  data: Partial<WorkflowItem>,
+  businessScope: BusinessScope = 'beilun',
+): Promise<WorkflowItem> {
   if (isMockMode) {
     const now = new Date().toISOString();
     const item: WorkflowItem = {
@@ -281,6 +293,8 @@ export async function createWorkflow(data: Partial<WorkflowItem>): Promise<Workf
       created_at: now,
       updated_at: now,
       published_at: null,
+      business_scope: businessScope,
+      businessScope,
     };
     mockWorkflows = [item, ...mockWorkflows];
     return mockDelay(item);
@@ -290,10 +304,14 @@ export async function createWorkflow(data: Partial<WorkflowItem>): Promise<Workf
     orderType: data.order_type,
     description: data.description,
     definitionJson: data.definition_json,
-  }));
+  }, { params: { businessScope } }));
 }
 
-export async function updateWorkflow(id: string, data: Partial<WorkflowItem>): Promise<WorkflowItem> {
+export async function updateWorkflow(
+  id: string,
+  data: Partial<WorkflowItem>,
+  businessScope: BusinessScope = 'beilun',
+): Promise<WorkflowItem> {
   if (isMockMode) {
     const idx = mockWorkflows.findIndex((item) => item.id === id);
     const next = normalizeWorkflow({ ...(mockWorkflows[idx] || {}), ...data, id, status: data.status || mockWorkflows[idx]?.status || 'draft', updated_at: new Date().toISOString() });
@@ -305,10 +323,14 @@ export async function updateWorkflow(id: string, data: Partial<WorkflowItem>): P
     orderType: data.order_type,
     description: data.description,
     definitionJson: data.definition_json,
-  }));
+  }, { params: { businessScope } }));
 }
 
-export async function publishWorkflow(id: string, definitionJson?: WorkflowDefinitionJson): Promise<WorkflowItem> {
+export async function publishWorkflow(
+  id: string,
+  definitionJson?: WorkflowDefinitionJson,
+  businessScope: BusinessScope = 'beilun',
+): Promise<WorkflowItem> {
   if (isMockMode) {
     const idx = mockWorkflows.findIndex((item) => item.id === id);
     const now = new Date().toISOString();
@@ -326,10 +348,13 @@ export async function publishWorkflow(id: string, definitionJson?: WorkflowDefin
     if (idx >= 0) mockWorkflows[idx] = next;
     return mockDelay(next);
   }
-  return normalizeWorkflow(await request.post(`/admin/workflows/${id}/publish`, definitionJson ? { definitionJson } : {}));
+  return normalizeWorkflow(await request.post(`/admin/workflows/${id}/publish`, definitionJson ? { definitionJson } : {}, { params: { businessScope } }));
 }
 
-export async function deactivateWorkflow(id: string): Promise<WorkflowItem> {
+export async function deactivateWorkflow(
+  id: string,
+  businessScope: BusinessScope = 'beilun',
+): Promise<WorkflowItem> {
   if (isMockMode) {
     const idx = mockWorkflows.findIndex((item) => item.id === id);
     const now = new Date().toISOString();
@@ -337,5 +362,5 @@ export async function deactivateWorkflow(id: string): Promise<WorkflowItem> {
     if (idx >= 0) mockWorkflows[idx] = next;
     return mockDelay(next);
   }
-  return normalizeWorkflow(await request.post(`/admin/workflows/${id}/deactivate`, {}));
+  return normalizeWorkflow(await request.post(`/admin/workflows/${id}/deactivate`, {}, { params: { businessScope } }));
 }

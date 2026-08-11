@@ -346,7 +346,8 @@ const MyDispatchedDetail: React.FC = () => {
       let visibleFieldCodes: string[] | undefined;
       if (moduleCode && !isSocialInsuranceModule(moduleCode)) {
         try {
-          const template = await getActiveDetailViewTemplate(moduleCode);
+          const businessScope = orderData.business_scope ?? orderData.businessScope ?? 'beilun';
+          const template = await getActiveDetailViewTemplate(moduleCode, businessScope);
           if (template && typeof template === 'object') {
             const list = (template as any).fieldList ?? (template as any).field_list ?? [];
             visibleFieldCodes = list

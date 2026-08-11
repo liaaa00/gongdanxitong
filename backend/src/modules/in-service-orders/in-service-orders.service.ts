@@ -1277,11 +1277,10 @@ export class InServiceOrdersService {
       return;
     }
 
-    const insuredUnit = extraData.insured_unit
+    const insuredUnit = extraData.contract_subject
+      ?? extraData.contractSubject
+      ?? extraData.insured_unit
       ?? extraData.insuredUnit
-      ?? extraData.social_location
-      ?? extraData.socialLocation
-      ?? extraData['参保机构名称']
       ?? extraData['参保单位']
       ?? extraData.payment_institution
       ?? extraData.paymentInstitution;

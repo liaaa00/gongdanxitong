@@ -13,6 +13,7 @@ import {
   Modal,
   Popconfirm,
   Select,
+  Segmented,
   Space,
   Switch,
   Tabs,
@@ -45,7 +46,7 @@ import { getCustomers } from '@/services/customers';
 import type { CustomerItem } from '@/services/customers';
 import { useAuth } from '@/hooks/useAuth';
 import { buildModuleLabelMap, getModuleConfigs } from '@/services/moduleConfigs';
-import { readBusinessScope } from '@/utils/businessScope';
+import type { BusinessScope } from '@/utils/businessScope';
 
 const { Text, Paragraph } = Typography;
 
@@ -244,6 +245,7 @@ const AdminDispatchConfig: React.FC = () => {
   const [customerExceptionOpen, setCustomerExceptionOpen] = useState(false);
   const [editingCustomerException, setEditingCustomerException] = useState<ExceptionModuleHandlerItem | null>(null);
   const [delegationOpen, setDelegationOpen] = useState(false);
+  const [businessScope, setBusinessScope] = useState<BusinessScope>('beilun');
   const [sourceHandlerOptions, setSourceHandlerOptions] = useState<Option[]>([]);
   const [moduleLabels, setModuleLabels] = useState<Record<string, string>>({});
   const [form] = Form.useForm();
@@ -255,7 +257,6 @@ const AdminDispatchConfig: React.FC = () => {
   const watchedStrategy = Form.useWatch('dispatch_strategy', form) as string | undefined;
   const watchedSla = Form.useWatch('sla_hours', form) as number | undefined;
   const watchedReminder = Form.useWatch('sla_reminder_before_hours', form) as number | undefined;
-  const businessScope = readBusinessScope();
 
   const subModuleOptions = useMemo(() => {
     const staticOptions = orderType ? SUB_MODULES.filter((item) => item.orderType === orderType) : SUB_MODULES;
@@ -281,7 +282,7 @@ const AdminDispatchConfig: React.FC = () => {
       try {
         const [u, c, modules] = await Promise.all([
           getUsers({ page: 1, pageSize: 50, isActive: true, businessScope }),
-          getCustomers({ page: 1, pageSize: 100 }),
+          getCustomers({ page: 1, pageSize: 100, businessScope }),
           getModuleConfigs({ businessScope, isActive: true }).catch(() => []),
         ]);
         const userList = Array.isArray(u) ? u : u?.list || [];
@@ -335,7 +336,7 @@ const AdminDispatchConfig: React.FC = () => {
   };
 
   const loadSourceHandlers = async (moduleCode: string) => {
-    const handlers = await getModuleHandlers(moduleCode, true);
+    const handlers = await getModuleHandlers(moduleCode, true, businessScope);
     setSourceHandlerOptions(handlers.map((handler) => ({
       value: handler.handler_id,
       label: userLabel(handler.handler_id) || handler.handler_name || handler.handler_id,
@@ -360,7 +361,7 @@ const AdminDispatchConfig: React.FC = () => {
         startsAt: startsAt.toISOString(),
         endsAt: endsAt.toISOString(),
         reason: values.reason.trim(),
-      });
+      }, businessScope);
       message.success(values.delegateHandlerId ? '临时代理已生效' : '暂停派单已生效');
       setDelegationOpen(false);
       delegationForm.resetFields();
@@ -372,7 +373,7 @@ const AdminDispatchConfig: React.FC = () => {
 
   const cancelDelegation = async (id: string) => {
     try {
-      await cancelModuleDelegation(id);
+      await cancelModuleDelegation(id, businessScope);
       message.success('代理安排已取消，原负责人恢复派单');
       delegationActionRef.current?.reload();
     } catch (error: any) {
@@ -382,7 +383,7 @@ const AdminDispatchConfig: React.FC = () => {
 
   const loadDelegations = async () => {
     try {
-      const data = await getModuleDelegations(undefined, true);
+      const data = await getModuleDelegations(undefined, true, businessScope);
       return { data, success: true, total: data.length };
     } catch {
       message.error('加载临时代理失败');
@@ -450,14 +451,14 @@ const AdminDispatchConfig: React.FC = () => {
     try {
       if (editingCustomerException) {
         const customerCode = customerCodes[0];
-        await updateExceptionModuleHandler(editingCustomerException.id, { moduleCode, customerCode, handlerId });
+        await updateExceptionModuleHandler(editingCustomerException.id, { moduleCode, customerCode, handlerId }, businessScope);
       } else {
         await Promise.all(customerCodes.map(async (customerCode) => {
-          const existing = await getExceptionModuleHandlers({ moduleCode, customerCode, pageSize: 1 });
+          const existing = await getExceptionModuleHandlers({ moduleCode, customerCode, pageSize: 1, businessScope });
           if (existing.list[0]) {
-            await updateExceptionModuleHandler(existing.list[0].id, { moduleCode, customerCode, handlerId });
+            await updateExceptionModuleHandler(existing.list[0].id, { moduleCode, customerCode, handlerId }, businessScope);
           } else {
-            await createExceptionModuleHandler({ moduleCode, customerCode, handlerId });
+            await createExceptionModuleHandler({ moduleCode, customerCode, handlerId }, businessScope);
           }
         }));
       }
@@ -473,7 +474,7 @@ const AdminDispatchConfig: React.FC = () => {
 
   const removeCustomerException = async (row: ExceptionModuleHandlerItem) => {
     try {
-      await deleteExceptionModuleHandler(row.id);
+      await deleteExceptionModuleHandler(row.id, businessScope);
       message.success('客户指定派发规则已删除');
       customerExceptionActionRef.current?.reload();
     } catch (err: any) {
@@ -486,6 +487,7 @@ const AdminDispatchConfig: React.FC = () => {
       const result = await getExceptionModuleHandlers({
         current: params?.current,
         pageSize: params?.pageSize,
+        businessScope,
       });
       return { data: result.list, success: result.success, total: result.total };
     } catch (err: any) {
@@ -594,9 +596,9 @@ const AdminDispatchConfig: React.FC = () => {
 
   const removeDefaultHandlers = async (moduleCode?: string) => {
     if (!moduleCode) throw new Error('缺少模块信息，无法删除默认负责人');
-    const list = await getModuleHandlers(moduleCode);
+    const list = await getModuleHandlers(moduleCode, undefined, businessScope);
     for (const record of sortModuleHandlers(list)) {
-      await deleteModuleHandler(record.id);
+      await deleteModuleHandler(record.id, businessScope);
     }
   };
 
@@ -639,7 +641,7 @@ const AdminDispatchConfig: React.FC = () => {
             allow_manual_override: values.allow_manual_override,
             trigger_conditions: normalizeCondition(values.trigger_conditions),
             is_active: values.is_active,
-          } as Partial<DispatchRuleItem>);
+          } as Partial<DispatchRuleItem>, businessScope);
         } else {
           const previousModuleCode = rowModuleCode(editing);
           const nextModuleCode = values.sub_module;
@@ -658,7 +660,7 @@ const AdminDispatchConfig: React.FC = () => {
             slaReminderBeforeHours: values.sla_reminder_before_hours ?? null,
             isActive: values.is_active ?? true,
             changeReason: values.change_reason,
-          });
+          }, businessScope);
         }
       } else {
         const moduleCode = values.sub_module;
@@ -674,7 +676,7 @@ const AdminDispatchConfig: React.FC = () => {
           slaReminderBeforeHours: values.sla_reminder_before_hours ?? null,
           isActive: values.is_active ?? true,
           changeReason: values.change_reason,
-        });
+        }, businessScope);
       }
       message.success(editing ? '保存成功' : '新增成功');
       setDefaultFormDirty(false);
@@ -690,7 +692,7 @@ const AdminDispatchConfig: React.FC = () => {
   const removeRow = async (row: DispatchConfigItem) => {
     try {
       if (row.source === 'rules') {
-        await deleteDispatchRule(row.id);
+        await deleteDispatchRule(row.id, businessScope);
       } else {
         await removeDefaultHandlers(rowModuleCode(row));
       }
@@ -703,7 +705,7 @@ const AdminDispatchConfig: React.FC = () => {
 
   const loadConfig = async (type: ConfigType) => {
     try {
-      const list = await getDispatchConfig();
+      const list = await getDispatchConfig(businessScope);
       setConfigLoadFailed(false);
       const data = list.filter((row) => type === 'exception' ? row.source === 'rules' : row.source !== 'rules');
       return { data, success: true, total: data.length };
@@ -814,7 +816,20 @@ const AdminDispatchConfig: React.FC = () => {
     : '新增默认负责人配置';
 
   return (
-    <PageContainer header={{ title: '派发配置' }}>
+    <PageContainer header={{ title: '派发配置', extra: [
+      <Segmented
+        key="businessScope"
+        value={businessScope}
+        options={[{ label: '北仑配置', value: 'beilun' }, { label: '省外配置', value: 'out_of_province' }]}
+        onChange={(value) => {
+          setOpen(false);
+          setCustomerExceptionOpen(false);
+          setDelegationOpen(false);
+          setDefaultFormDirty(false);
+          setBusinessScope(value as BusinessScope);
+        }}
+      />,
+    ] }}>
       <Alert
         style={{ marginBottom: 12 }}
         type="info"
@@ -848,6 +863,7 @@ const AdminDispatchConfig: React.FC = () => {
             label: '默认负责人配置',
             children: (
               <ProTable<DispatchConfigItem>
+                key={`default-${businessScope}`}
                 actionRef={defaultActionRef}
                 columns={defaultColumns}
                 request={() => loadConfig('default')}
@@ -876,6 +892,7 @@ const AdminDispatchConfig: React.FC = () => {
                   description="一个或多个客户在指定模块优先派给同一处理人；未配置则走默认固定负责人 + AB角。"
                 />
                 <ProTable<ExceptionModuleHandlerItem>
+                  key={`customer-exception-${businessScope}`}
                   actionRef={customerExceptionActionRef}
                   columns={customerExceptionColumns}
                   request={loadCustomerExceptionHandlers}
@@ -905,6 +922,7 @@ const AdminDispatchConfig: React.FC = () => {
                   description="可指定代理人，也可只暂停原负责人派单；不会修改默认负责人配置。"
                 />
                 <ProTable<ModuleDelegationItem>
+                  key={`delegations-${businessScope}`}
                   actionRef={delegationActionRef}
                   columns={delegationColumns}
                   request={loadDelegations}

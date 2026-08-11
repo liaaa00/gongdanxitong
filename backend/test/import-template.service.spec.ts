@@ -115,8 +115,8 @@ describe('Imports ImportTemplateService round-trip', () => {
       '客户名称', '姓名', '证件类型', '证件号码', '移动电话', '电子邮件', '岗位', '岗位类型',
       '合同期限形式', '合同期限', '合同开始日期', '合同终止日期', '试用期开始日期', '试用期（月）',
       '试用期结束日期', '工作城市', '工时制', '工资形式', '基本工资', '其他工资', '试用期工资',
-      '试用期其他工资', '发薪周期', '发薪日期', '参保机构名称', '参保起始月', '社保基数', '公积金基数',
-      '公积金比例', '备注', '户籍性质', '民族', '学历', '婚姻状况', '现住地址', '户籍地址',
+      '试用期其他工资', '发薪周期', '发薪日期', '缴纳地', '参保起始月', '社保基数', '公积金基数',
+      '公积金比例', '是否需要工资单', '备注', '户籍性质', '民族', '学历', '婚姻状况', '现住地址', '户籍地址',
       '开户地', '开户银行信息', '银行借记卡帐号', '客户代码', '外包类型', '业务模式', '人员类型',
       '是否企服发起劳动合同', '是否电子签', '电子签平台', '劳动合同主体', '劳动合同主体注册地',
       '项目名称', '安排或调整工作的情况', '劳动合同模板（标准模板/特殊模板）',
@@ -195,22 +195,22 @@ describe('Imports ImportTemplateService round-trip', () => {
     await workbook.xlsx.load(result.buffer as never);
     const sheet = workbook.getWorksheet('当前字段配置')!;
 
-    expect(result.fieldCount).toBe(60);
+    expect(result.fieldCount).toBe(61);
     expect(sheet.rowCount).toBe(5);
     expect((sheet.getRow(2).values as unknown[]).slice(2)).toEqual(referenceHeaders);
     expect(sheet.getCell('A1').value).toBe('填表说明：');
     expect(sheet.getCell('B1').value).toBe('B-AE列为客户必须填写');
-    expect(sheet.getCell('AF1').value).toBe('AF-AN列为客户填写或外服入职联系收集');
-    expect(sheet.getCell('AL1').value).toBeNull();
-    expect(sheet.getCell('AO1').value).toBe('AO-BI列为外服客户经理填写');
+    expect(sheet.getCell('AF1').value).toBe('AF-AO列为客户填写或外服入职联系收集');
+    expect(sheet.getCell('AO1').value).toBeNull();
+    expect(sheet.getCell('AP1').value).toBe('AP-BJ列为外服客户经理填写');
 
     const headerFills = referenceHeaders.map((_, index) => (
       sheet.getRow(2).getCell(index + 2).fill as { fgColor?: { argb?: string; theme?: number; tint?: number } }
     ).fgColor);
     expect(headerFills.filter((color) => color?.argb === 'FFFFFF00')).toHaveLength(30);
     expect(headerFills[30]).toMatchObject({ theme: 9, tint: 0.6 });
-    expect(headerFills[38]).toMatchObject({ theme: 9, tint: 0.6 });
-    expect(headerFills[39]).toBeUndefined();
+    expect(headerFills[39]).toMatchObject({ theme: 9, tint: 0.6 });
+    expect(headerFills[40]).toBeUndefined();
 
     expect(sheet.getCell('K3').value).toBe('条件必填');
     expect(sheet.getCell('K4').value).toBe('满足条件时必填；固定期限时必填，如3年。');
@@ -218,21 +218,21 @@ describe('Imports ImportTemplateService round-trip', () => {
     expect(sheet.getCell('M4').value).toBe('满足条件时必填；格式：YYYY-MM-DD；固定期限时必填。标准格式：年-月-日。');
     expect(sheet.getCell('T4').value).toBe('请填写数字；数字格式：保留小数点后两位。');
     expect(sheet.getCell('V4').value).toBe('满足条件时必填；请填写数字；数字格式：保留小数点后两位。');
-    expect(sheet.getCell('AL4').value).toBe('城市的名字（待确认）');
-    expect(sheet.getCell('BC3').value).toBe('非必填');
-    expect(sheet.getCell('BC4').value).toBe('格式：YYYY-MM-DD；标准格式：年-月-日。');
+    expect(sheet.getCell('AM4').value).toBe('城市的名字（待确认）');
+    expect(sheet.getCell('BD3').value).toBe('非必填');
+    expect(sheet.getCell('BD4').value).toBe('格式：YYYY-MM-DD；标准格式：年-月-日。');
     expect(sheet.getCell('T5').value).toBe(1000);
     expect(sheet.getCell('U5').value).toBe('绩效工资5000+岗位津贴2000');
     expect(sheet.getCell('V5').value).toBe(1000);
 
     const expectedWidths: Record<string, number> = {
       U: 21.7272727272727,
-      AM: 18.5454545454545,
-      AN: 18.4545454545455,
-      AV: 18.3636363636364,
-      AW: 20.6363636363636,
-      AX: 27.7272727272727,
-      AY: 26.8181818181818,
+      AN: 18.5454545454545,
+      AO: 18.4545454545455,
+      AW: 18.3636363636364,
+      AX: 20.6363636363636,
+      AY: 27.7272727272727,
+      AZ: 26.8181818181818,
     };
     for (const [column, width] of Object.entries(expectedWidths)) {
       expect(sheet.getColumn(column).width).toBeCloseTo(width, 10);

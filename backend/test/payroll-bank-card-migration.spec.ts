@@ -32,6 +32,13 @@ describe('AddPayrollBankCardWorkflow20260811001000', () => {
     expect(sql).toContain('need_payroll_slip');
     expect(sql).toContain('payroll_bank_card');
     expect(sql).toContain('resignation_cert');
+    expect(sql).toContain("$1::varchar = 'company_address'");
+    expect(sql).toContain("$1::varchar = 'feedback_deadline'");
+    expect(sql).toContain("SELECT $1::varchar, 'onboarding_contact'");
+    expect(sql).toContain('WHERE field_code = $1::varchar');
+    expect(sql).toContain('SELECT $3::varchar, $2::varchar');
+    expect(sql).toContain('WHERE module_code = $2::varchar');
+    expect(sql).toContain('AND template_name = $3::varchar');
     expect(sql).not.toMatch(/(?:INSERT INTO|UPDATE|DELETE FROM) work_orders\b/i);
     expect(sql).not.toMatch(/(?:INSERT INTO|UPDATE|DELETE FROM) dispatched_orders\b/i);
     expect(sql).not.toMatch(/(?:INSERT INTO|UPDATE|DELETE FROM) users\b/i);

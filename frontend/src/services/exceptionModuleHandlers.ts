@@ -32,6 +32,7 @@ export interface ExceptionModuleHandlerQuery {
   page?: number;
   current?: number;
   pageSize?: number;
+  businessScope?: 'beilun' | 'out_of_province';
 }
 
 export interface ExceptionModuleHandlerListResult {
@@ -146,6 +147,7 @@ function buildParams(query?: ExceptionModuleHandlerQuery): Record<string, unknow
   // Do not send page/pageSize/handlerId, otherwise forbidNonWhitelisted rejects the GET request.
   if (query.moduleCode) params.moduleCode = query.moduleCode;
   if (query.customerCode) params.customerCode = query.customerCode;
+  if (query.businessScope) params.businessScope = query.businessScope;
   return params;
 }
 
@@ -200,7 +202,10 @@ export async function getExceptionModuleHandlers(query?: ExceptionModuleHandlerQ
   return normalizePageResult(result, query);
 }
 
-export async function createExceptionModuleHandler(data: ExceptionModuleHandlerPayload): Promise<ExceptionModuleHandlerItem> {
+export async function createExceptionModuleHandler(
+  data: ExceptionModuleHandlerPayload,
+  businessScope: 'beilun' | 'out_of_province' = 'beilun',
+): Promise<ExceptionModuleHandlerItem> {
   const payload = normalizePayload(data);
   if (isMockMode) {
     const list = store();
@@ -215,11 +220,15 @@ export async function createExceptionModuleHandler(data: ExceptionModuleHandlerP
     commit(list);
     return mockDelay(normalizeExceptionModuleHandler(item));
   }
-  const result = await request.post('/admin/exception-module-handlers', payload) as any;
+  const result = await request.post('/admin/exception-module-handlers', payload, { params: { businessScope } }) as any;
   return normalizeExceptionModuleHandler(getEnvelope(result) || payload);
 }
 
-export async function updateExceptionModuleHandler(id: string, data: ExceptionModuleHandlerPayload): Promise<ExceptionModuleHandlerItem> {
+export async function updateExceptionModuleHandler(
+  id: string,
+  data: ExceptionModuleHandlerPayload,
+  businessScope: 'beilun' | 'out_of_province' = 'beilun',
+): Promise<ExceptionModuleHandlerItem> {
   const payload = normalizePayload(data);
   if (isMockMode) {
     const list = store();
@@ -235,14 +244,17 @@ export async function updateExceptionModuleHandler(id: string, data: ExceptionMo
     commit(list);
     return mockDelay(normalizeExceptionModuleHandler(merged));
   }
-  const result = await request.put(`/admin/exception-module-handlers/${id}`, payload) as any;
+  const result = await request.put(`/admin/exception-module-handlers/${id}`, payload, { params: { businessScope } }) as any;
   return normalizeExceptionModuleHandler(getEnvelope(result) || { id, ...payload });
 }
 
-export async function deleteExceptionModuleHandler(id: string): Promise<void> {
+export async function deleteExceptionModuleHandler(
+  id: string,
+  businessScope: 'beilun' | 'out_of_province' = 'beilun',
+): Promise<void> {
   if (isMockMode) {
     commit(store().filter((item) => item.id !== id));
     return mockDelay(undefined);
   }
-  return request.delete(`/admin/exception-module-handlers/${id}`) as Promise<void>;
+  return request.delete(`/admin/exception-module-handlers/${id}`, { params: { businessScope } }) as Promise<void>;
 }

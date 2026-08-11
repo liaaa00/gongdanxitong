@@ -3,15 +3,16 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { PageContainer } from '@ant-design/pro-components';
 import {
   Card, Tag, Space, Button, Descriptions, App, Alert,
-  Empty,
+  Empty, Modal, Radio,
 } from 'antd';
 import type { FieldConfig } from '@/components/DynamicForm';
-import { getWorkOrder } from '@/services/workOrders';
+import { getWorkOrder, setHistoricalResignationCertificate } from '@/services/workOrders';
 import type { WorkOrderItem } from '@/services/workOrders';
 import { getFields } from '@/services/fields';
 import { getStatusColor, getStatusText } from '@/constants/dictionaries';
 import { getModuleLabel } from '@/constants/modules';
 import MaterialsUpload from '@/components/MaterialsUpload';
+import { useAuth } from '@/hooks/useAuth';
 
 // 主工单详情展示：标准字段（is_included_in_template=true）+ 有值的可选字段
 function filterDisplayFields(allFields: FieldConfig[], extraData: Record<string, unknown>): FieldConfig[] {
@@ -29,9 +30,14 @@ const WorkOrdersDetail: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { message } = App.useApp();
+  const { hasRole } = useAuth();
+  const isAdmin = hasRole('admin');
   const [order, setOrder] = useState<WorkOrderItem | null>(null);
   const [fields, setFields] = useState<FieldConfig[]>([]);
   const [loading, setLoading] = useState(true);
+  const [historicalCertOpen, setHistoricalCertOpen] = useState(false);
+  const [historicalNeed, setHistoricalNeed] = useState<'是' | '否'>();
+  const [historicalSubmitting, setHistoricalSubmitting] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -72,6 +78,32 @@ const WorkOrdersDetail: React.FC = () => {
   const listPath = currentOrderTypeLabel ? `/work-orders?orderType=${currentOrderType === 'onboarding' ? 'onboarding' : 'resignation'}` : '/work-orders';
   const isReturned = order?.status === 'returned';
 
+  const openHistoricalCertificate = () => {
+    const current = order?.extra_data?.need_resignation_cert;
+    setHistoricalNeed(current === '是' || current === '否' ? current : undefined);
+    setHistoricalCertOpen(true);
+  };
+
+  const submitHistoricalCertificate = async () => {
+    if (!id || !historicalNeed) {
+      message.warning('请选择是否需要开具离职证明');
+      return;
+    }
+    setHistoricalSubmitting(true);
+    try {
+      const result = await setHistoricalResignationCertificate(id, historicalNeed);
+      setOrder(await getWorkOrder(id));
+      setHistoricalCertOpen(false);
+      message.success(result.needResignationCert === '是'
+        ? '已确认需要离职证明，子工单已创建或已存在'
+        : '已确认无需离职证明');
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '历史离职证明处理失败');
+    } finally {
+      setHistoricalSubmitting(false);
+    }
+  };
+
   const completionHintFields = useMemo(() => {
     if (!order) return [];
     const extraData = (order.extra_data || {}) as Record<string, unknown>;
@@ -105,7 +137,12 @@ const WorkOrdersDetail: React.FC = () => {
   if (!order) return <PageContainer header={{ title: '工单详情' }}><Empty description="工单不存在" /></PageContainer>;
 
   return (
-    <PageContainer header={{ title: '工单详情', extra: [<Button key="back" onClick={() => navigate(listPath)}>返回{currentOrderTypeLabel || ''}主工单列表</Button>] }}>
+    <PageContainer header={{ title: '工单详情', extra: [
+      <Button key="back" onClick={() => navigate(listPath)}>返回{currentOrderTypeLabel || ''}主工单列表</Button>,
+      ...(isAdmin && isResignationOrder ? [
+        <Button key="historical-cert" type="primary" onClick={openHistoricalCertificate}>历史离职证明处理</Button>,
+      ] : []),
+    ] }}>
       <Space direction="vertical" size="large" style={{ width: '100%' }}>
         {/* 基本信息 */}
         <Card>
@@ -189,6 +226,30 @@ const WorkOrdersDetail: React.FC = () => {
           />
         )}
       </Space>
+      <Modal
+        title="历史离职证明处理"
+        open={historicalCertOpen}
+        confirmLoading={historicalSubmitting}
+        okText="确认"
+        cancelText="取消"
+        onOk={submitHistoricalCertificate}
+        onCancel={() => setHistoricalCertOpen(false)}
+        destroyOnHidden
+      >
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="请由管理员根据实际情况明确选择"
+          description="选择“是”才会创建或复用离职证明子工单；选择“否”只记录决定，不会撤销或删除已经存在的子工单。"
+        />
+        <Radio.Group value={historicalNeed} onChange={(event) => setHistoricalNeed(event.target.value)}>
+          <Space direction="vertical">
+            <Radio value="是">是，需要开具并派发离职证明</Radio>
+            <Radio value="否">否，不需要开具离职证明</Radio>
+          </Space>
+        </Radio.Group>
+      </Modal>
     </PageContainer>
   );
 };

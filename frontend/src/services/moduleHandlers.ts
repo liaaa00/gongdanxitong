@@ -46,7 +46,11 @@ const SEED: ModuleHandlerItem[] = [
 const store = () => loadList<ModuleHandlerItem>(KEY, SEED);
 const commit = (l: ModuleHandlerItem[]) => saveList(KEY, l);
 
-export async function getModuleHandlers(moduleCode?: string, isActive?: boolean): Promise<ModuleHandlerItem[]> {
+export async function getModuleHandlers(
+  moduleCode?: string,
+  isActive?: boolean,
+  businessScope: 'beilun' | 'out_of_province' = 'beilun',
+): Promise<ModuleHandlerItem[]> {
   if (isMockMode) {
     const list = store();
     const filtered = list.filter((h) =>
@@ -55,7 +59,7 @@ export async function getModuleHandlers(moduleCode?: string, isActive?: boolean)
     );
     return mockDelay(filtered);
   }
-  const params: Record<string, unknown> = {};
+  const params: Record<string, unknown> = { businessScope };
   if (moduleCode) {
     params.moduleCode = moduleCode;
     params.module_code = moduleCode;
@@ -74,7 +78,10 @@ export async function getModuleHandlers(moduleCode?: string, isActive?: boolean)
   } as ModuleHandlerItem));
 }
 
-export async function createModuleHandler(data: Partial<ModuleHandlerItem>): Promise<ModuleHandlerItem> {
+export async function createModuleHandler(
+  data: Partial<ModuleHandlerItem>,
+  businessScope: 'beilun' | 'out_of_province' = 'beilun',
+): Promise<ModuleHandlerItem> {
   if (isMockMode) {
     const list = store();
     const handlerId = data.handler_id || '';
@@ -96,7 +103,7 @@ export async function createModuleHandler(data: Partial<ModuleHandlerItem>): Pro
     weight: data.weight,
     isBackup: data.is_backup ?? data.isBackup,
     isActive: data.is_active ?? data.isActive,
-  }) as Promise<ModuleHandlerItem>;
+  }, { params: { businessScope } }) as Promise<ModuleHandlerItem>;
 }
 
 export async function createModuleHandlersBatch(moduleCode: string, handlerIds: string[], opts?: { weight?: number; is_backup?: boolean; is_active?: boolean }): Promise<ModuleHandlerItem[]> {
@@ -136,7 +143,11 @@ export async function createModuleHandlersBatch(moduleCode: string, handlerIds: 
   return results;
 }
 
-export async function updateModuleHandler(id: string, data: Partial<ModuleHandlerItem>): Promise<ModuleHandlerItem> {
+export async function updateModuleHandler(
+  id: string,
+  data: Partial<ModuleHandlerItem>,
+  businessScope: 'beilun' | 'out_of_province' = 'beilun',
+): Promise<ModuleHandlerItem> {
   if (isMockMode) {
     const list = store();
     const idx = list.findIndex((h) => h.id === id);
@@ -153,13 +164,16 @@ export async function updateModuleHandler(id: string, data: Partial<ModuleHandle
   if (data.weight !== undefined) body.weight = data.weight;
   if (data.is_backup !== undefined || data.isBackup !== undefined) body.isBackup = data.is_backup ?? data.isBackup;
   if (data.is_active !== undefined || data.isActive !== undefined) body.isActive = data.is_active ?? data.isActive;
-  return request.put(`/admin/module-handlers/${id}`, body) as Promise<ModuleHandlerItem>;
+  return request.put(`/admin/module-handlers/${id}`, body, { params: { businessScope } }) as Promise<ModuleHandlerItem>;
 }
 
-export async function deleteModuleHandler(id: string): Promise<void> {
+export async function deleteModuleHandler(
+  id: string,
+  businessScope: 'beilun' | 'out_of_province' = 'beilun',
+): Promise<void> {
   if (isMockMode) {
     commit(store().filter((h) => h.id !== id));
     return mockDelay(undefined);
   }
-  return request.delete(`/admin/module-handlers/${id}`) as Promise<void>;
+  return request.delete(`/admin/module-handlers/${id}`, { params: { businessScope } }) as Promise<void>;
 }

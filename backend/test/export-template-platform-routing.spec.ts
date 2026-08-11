@@ -192,7 +192,7 @@ describe('ExportTemplatesService platform routing', () => {
     expect(result.moduleCode).toBe('contract');
     expect(result.rowCount).toBe(1);
     expect(templateRepo.findOne).toHaveBeenCalledWith(expect.objectContaining({
-      where: { moduleCode: 'contract', isShared: true, signPlatform: SUCHUANG, businessScope: 'beilun' },
+      where: { moduleCode: 'contract', isShared: true, signPlatform: SUCHUANG, businessScope: 'beilun', isActive: true },
     }));
     expect(dispatchedRepo.findOne).not.toHaveBeenCalled();
     expect(dispatchedRepo.createQueryBuilder).not.toHaveBeenCalled();

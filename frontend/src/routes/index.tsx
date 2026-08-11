@@ -61,7 +61,7 @@ const AdminPermissionCenter = lazy(() => import('@/pages/Admin/PermissionCenter'
 const WorkOrderPool = lazy(() => import('@/pages/WorkOrderPool'));
 
 const Loading: React.FC = () => (
-  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 160, width: '100%' }}>
     <Spin size="large" />
   </div>
 );

@@ -50,6 +50,10 @@ describe('payroll bank card standard export', () => {
       },
     } as unknown as DispatchedOrder;
 
+    const preparedFields = (service as any).prepareExportFieldList(template.fieldList, template.moduleCode);
+    expect(preparedFields).toHaveLength(13);
+    expect(preparedFields.some((field: Record<string, unknown>) => field.fieldCode === 'created_by_name')).toBe(false);
+
     const workbook = await (service as any).tryBuildStandardTemplateWorkbook(template, [order]);
     const cardSheet = workbook.getWorksheet('卡号');
 

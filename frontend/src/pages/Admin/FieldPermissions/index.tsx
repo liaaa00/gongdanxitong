@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PageContainer } from '@ant-design/pro-components';
-import { Table, Card, Select, App, Tag, Alert, Button, Popconfirm, Space } from 'antd';
+import { Table, Card, Select, App, Tag, Alert, Button, Popconfirm, Segmented, Space } from 'antd';
 import { SaveOutlined, RollbackOutlined } from '@ant-design/icons';
 import request from '@/services/request';
 import { isMockMode, mockDelay } from '@/services/mock';
@@ -8,6 +8,7 @@ import { getRoles, type RoleItem } from '@/services/roles';
 import { getFields, type FieldConfigItem } from '@/services/fields';
 import { useAuth } from '@/hooks/useAuth';
 import { canonicalRoleCode } from '@/constants/roles';
+import type { BusinessScope } from '@/utils/businessScope';
 
 // 后端 enum: visible | readonly | masked | hidden
 // 前端"可编辑" = visible（可见且可写），"仅可见" = readonly（可见只读）
@@ -174,7 +175,7 @@ function defaultPermission(roleCodeRaw: string, scenario: string, fieldCode: str
   return 'hidden';
 }
 
-async function loadMockMatrix(scenario: string): Promise<MatrixResp> {
+async function loadMockMatrix(scenario: string, _businessScope: BusinessScope): Promise<MatrixResp> {
   const [rolesResult, fieldsResult] = await Promise.all([getRoles(), getFields()]);
   const roles: RoleItem[] = Array.isArray(rolesResult) ? rolesResult : (rolesResult as any)?.list || [];
   const fields: FieldConfigItem[] = Array.isArray(fieldsResult) ? fieldsResult : (fieldsResult as any)?.list || [];
@@ -209,6 +210,7 @@ const AdminFieldPermissions: React.FC = () => {
     () => canonicalRoleCode(user?.roles?.[0]?.code || (isAdmin ? 'admin' : '')),
     [isAdmin, user?.roles],
   );
+  const [businessScope, setBusinessScope] = useState<BusinessScope>('beilun');
   const [scenario, setScenario] = useState<string>('create:onboarding');
   const [sourceFilter, setSourceFilter] = useState<string>('');
   const [scopeFilter, setScopeFilter] = useState<string>('');
@@ -223,10 +225,10 @@ const AdminFieldPermissions: React.FC = () => {
     setLoading(true);
     try {
       if (isMockMode) {
-        setData(await loadMockMatrix(scenario));
+        setData(await loadMockMatrix(scenario, businessScope));
       } else {
         const [res, rolesResult, fieldsResult] = await Promise.all([
-          request.get('/admin/field-permissions/matrix') as Promise<any>,
+          request.get('/admin/field-permissions/matrix', { params: { businessScope } }) as Promise<any>,
           getRoles(),
           getFields(),
         ]);
@@ -267,7 +269,7 @@ const AdminFieldPermissions: React.FC = () => {
     } catch { message.error('加载失败'); }
     finally { setLoading(false); }
   };
-  useEffect(() => { load(); setDirty({}); }, [scenario]);
+  useEffect(() => { load(); setDirty({}); }, [scenario, businessScope]);
 
   useEffect(() => {
     if (!data?.roles?.length) return;
@@ -319,7 +321,7 @@ const AdminFieldPermissions: React.FC = () => {
       if (isMockMode) {
         await mockDelay(undefined);
       } else {
-        await request.post('/admin/field-permissions/batch', { items });
+        await request.post('/admin/field-permissions/batch', { items }, { params: { businessScope } });
       }
       message.success(`已保存 ${items.length} 条权限变更`);
       setDirty({});
@@ -434,6 +436,12 @@ const AdminFieldPermissions: React.FC = () => {
 
   return (
     <PageContainer header={{ title: '字段填写权限' }} extra={[
+      <Segmented
+        key="businessScope"
+        value={businessScope}
+        options={[{ label: '北仑配置', value: 'beilun' }, { label: '省外配置', value: 'out_of_province' }]}
+        onChange={(value) => setBusinessScope(value as BusinessScope)}
+      />,
       <Select
         key="role"
         style={{ width: 240 }}

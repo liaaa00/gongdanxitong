@@ -1,7 +1,7 @@
 import { act, render, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import MyDispatched from './index';
-import { KEEP_ALIVE_ROUTE_ACTIVATED_EVENT } from '@/utils/listPageState';
+
 
 const mocks = vi.hoisted(() => ({
   latestProTableProps: undefined as any,
@@ -102,24 +102,6 @@ describe('MyDispatched processing status filter', () => {
     expect(params.statuses).toBeUndefined();
   });
 
-  it('reloads only when its cached my-work route is reactivated', async () => {
-    render(<MyDispatched mode="pending" />);
-
-    act(() => {
-      window.dispatchEvent(new CustomEvent(KEEP_ALIVE_ROUTE_ACTIVATED_EVENT, {
-        detail: { pathname: '/onboarding/data_entry', search: '' },
-      }));
-    });
-    expect(mocks.reload).not.toHaveBeenCalled();
-
-    act(() => {
-      window.dispatchEvent(new CustomEvent(KEEP_ALIVE_ROUTE_ACTIVATED_EVENT, {
-        detail: { pathname: '/my-work/pending', search: '' },
-      }));
-    });
-
-    await waitFor(() => expect(mocks.reload).toHaveBeenCalledTimes(1));
-  });
 
   it('clears status search without reusing stale statuses and keeps default todo statuses', async () => {
     render(<MyDispatched mode="pending" />);

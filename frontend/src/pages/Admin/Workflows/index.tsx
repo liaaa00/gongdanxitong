@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { PageContainer } from '@ant-design/pro-components';
-import { App, Button, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Typography } from 'antd';
+import { App, Button, Form, Input, Modal, Popconfirm, Segmented, Select, Space, Table, Tag, Typography } from 'antd';
 import { EditOutlined, EyeOutlined, PauseCircleOutlined, PlusOutlined, RocketOutlined } from '@ant-design/icons';
 import { createDefaultWorkflowDefinition, createWorkflow, deactivateWorkflow, getWorkflows, publishWorkflow } from '@/services/workflows';
 import type { WorkflowItem } from '@/services/workflows';
+import type { BusinessScope } from '@/utils/businessScope';
 
 const ORDER_TYPE_OPTIONS = [
   { label: '入职工单', value: 'onboarding' },
@@ -42,7 +43,11 @@ const STATUS_TEXT: Record<string, string> = {
 
 const AdminWorkflows: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { message } = App.useApp();
+  const [businessScope, setBusinessScope] = useState<BusinessScope>(() => (
+    searchParams.get('businessScope') === 'out_of_province' ? 'out_of_province' : 'beilun'
+  ));
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<WorkflowItem[]>([]);
   const [orderType, setOrderType] = useState<string>();
@@ -52,7 +57,7 @@ const AdminWorkflows: React.FC = () => {
   const load = async (nextOrderType = orderType) => {
     setLoading(true);
     try {
-      const res = await getWorkflows({ page: 1, pageSize: 100, orderType: nextOrderType });
+      const res = await getWorkflows({ page: 1, pageSize: 100, orderType: nextOrderType, businessScope });
       setData(res.list);
     } catch {
       message.error('加载流程配置失败');
@@ -61,7 +66,7 @@ const AdminWorkflows: React.FC = () => {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [businessScope]);
 
   const handleCreate = async () => {
     const values = await form.validateFields();
@@ -71,11 +76,11 @@ const AdminWorkflows: React.FC = () => {
         order_type: values.order_type,
         description: values.description,
         definition_json: createDefaultWorkflowDefinition(),
-      });
+      }, businessScope);
       message.success('流程配置已创建');
       setOpen(false);
       form.resetFields();
-      navigate(`/admin/workflows/${workflow.id}`);
+      navigate(`/admin/workflows/${workflow.id}?businessScope=${businessScope}`);
     } catch {
       message.error('创建流程配置失败');
     }
@@ -83,7 +88,7 @@ const AdminWorkflows: React.FC = () => {
 
   const handlePublish = async (record: WorkflowItem) => {
     try {
-      await publishWorkflow(record.id, record.definition_json);
+      await publishWorkflow(record.id, record.definition_json, businessScope);
       message.success('流程已发布');
       load();
     } catch {
@@ -93,7 +98,7 @@ const AdminWorkflows: React.FC = () => {
 
   const handleDeactivate = async (record: WorkflowItem) => {
     try {
-      await deactivateWorkflow(record.id);
+      await deactivateWorkflow(record.id, businessScope);
       message.success('流程已停用');
       load();
     } catch {
@@ -105,6 +110,16 @@ const AdminWorkflows: React.FC = () => {
     <PageContainer
       header={{ title: '工单流程配置', subTitle: '保存只更新编辑稿；发布后才生成正式版本并影响新流转' }}
       extra={[
+        <Segmented
+          key="businessScope"
+          value={businessScope}
+          options={[{ label: '北仑配置', value: 'beilun' }, { label: '省外配置', value: 'out_of_province' }]}
+          onChange={(value) => {
+            const nextScope = value as BusinessScope;
+            setBusinessScope(nextScope);
+            setSearchParams({ businessScope: nextScope });
+          }}
+        />,
         <Select
           key="filter"
           allowClear
@@ -134,8 +149,8 @@ const AdminWorkflows: React.FC = () => {
             width: 310,
             render: (_, record) => (
               <Space wrap>
-                <Button size="small" icon={<EyeOutlined />} onClick={() => navigate(`/admin/workflows/${record.id}?mode=view`)}>查看</Button>
-                <Button size="small" type="primary" icon={<EditOutlined />} onClick={() => navigate(`/admin/workflows/${record.id}`)}>编辑</Button>
+                <Button size="small" icon={<EyeOutlined />} onClick={() => navigate(`/admin/workflows/${record.id}?businessScope=${businessScope}&mode=view`)}>查看</Button>
+                <Button size="small" type="primary" icon={<EditOutlined />} onClick={() => navigate(`/admin/workflows/${record.id}?businessScope=${businessScope}`)}>编辑</Button>
                 <Popconfirm title="发布当前编辑稿？" description="发布后生成下一版本；未发布的保存不会影响正式工单。" onConfirm={() => handlePublish(record)}>
                   <Button size="small" icon={<RocketOutlined />}>发布</Button>
                 </Popconfirm>

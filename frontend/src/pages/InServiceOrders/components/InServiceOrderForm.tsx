@@ -214,7 +214,7 @@ export function normalizeOutOfProvinceExtraData(
   const source = { ...(extraData || {}) };
   const next = { ...source };
   const aliases: Record<string, string[]> = {
-    insured_unit: ['insured_unit', 'insuredUnit', 'payment_institution', 'paymentInstitution', 'social_location', 'socialLocation', '参保机构名称', '参保单位'],
+    insured_unit: ['contract_subject', 'contractSubject', 'insured_unit', 'insuredUnit', '参保单位', 'payment_institution', 'paymentInstitution'],
     social_pay_region: ['social_pay_region', 'socialPayRegion'],
     payment_institution: ['payment_institution', 'paymentInstitution'],
     start_month: ['start_month', 'startMonth'],
@@ -416,7 +416,7 @@ export default function InServiceOrderForm({
 
   const insuredUnitValue = String(readExtraAlias(
     watchedExtraData || {},
-    'insured_unit', 'insuredUnit', 'social_location', 'socialLocation', '参保机构名称', '参保单位',
+    'contract_subject', 'contractSubject', 'insured_unit', 'insuredUnit', '参保单位',
     'payment_institution', 'paymentInstitution',
   ) ?? '');
   const insuredUnitOptions = useMemo(() => {

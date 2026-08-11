@@ -452,7 +452,7 @@ describe('MyDispatchedDetail readonly and creator repair actions', () => {
 
     renderDetail('/my-dispatched/d-1');
 
-    await waitFor(() => expect(mocks.getActiveDetailViewTemplate).toHaveBeenCalledWith('contract'));
+    await waitFor(() => expect(mocks.getActiveDetailViewTemplate).toHaveBeenCalledWith('contract', 'beilun'));
     expect(document.body).toHaveTextContent('甲方住所');
     expect(document.body).toHaveTextContent('甲方地址');
     expect(document.body).toHaveTextContent('项目名称');
@@ -568,7 +568,7 @@ describe('MyDispatchedDetail readonly and creator repair actions', () => {
 
     renderDetail('/my-dispatched/d-1');
 
-    await waitFor(() => expect(mocks.getActiveDetailViewTemplate).toHaveBeenCalledWith('contract'));
+    await waitFor(() => expect(mocks.getActiveDetailViewTemplate).toHaveBeenCalledWith('contract', 'beilun'));
     fireEvent.click(await screen.findByRole('button', { name: /修改/ }));
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByLabelText('员工姓名')).toBeInTheDocument();

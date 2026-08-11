@@ -22,7 +22,7 @@ const FIELD_NAMES: Record<string, string> = {
   work_city: '工作城市', work_hour_system: '工时制', work_cycle: '工作制周期',
   salary_form: '工资形式', base_salary: '基本工资', other_salary: '其他工资', probation_salary: '试用期工资',
   payroll_cycle: '发薪周期', payroll_date: '发薪日期',
-  social_location: '参保机构名称', start_month: '起始月', social_base: '社保基数', fund_base: '公积金基数', fund_ratio: '公积金比例',
+  social_location: '缴纳地', start_month: '起始月', social_base: '社保基数', fund_base: '公积金基数', fund_ratio: '公积金比例',
   bank_name: '开户银行信息', bank_account: '银行借记卡帐号', remark: '备注',
   business_mode: '业务模式', employee_type: '人员类型',
   need_company_contract: '是否企服发起劳动合同', contract_subject: '劳动合同主体', contract_template: '劳动合同模板',

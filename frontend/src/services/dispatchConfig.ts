@@ -141,12 +141,15 @@ export interface SaveModuleDispatchConfigInput {
 export async function saveModuleDispatchConfig(
   moduleCode: string,
   input: SaveModuleDispatchConfigInput,
+  businessScope: 'beilun' | 'out_of_province' = 'beilun',
 ): Promise<void> {
-  await request.put(`/admin/dispatch-config/${moduleCode}`, input);
+  await request.put(`/admin/dispatch-config/${moduleCode}`, input, { params: { businessScope } });
 }
 
-export async function getDispatchConfig(): Promise<DispatchConfigItem[]> {
-  const result = await request.get('/admin/dispatch-config', { silentError: true } as any) as any;
+export async function getDispatchConfig(
+  businessScope: 'beilun' | 'out_of_province' = 'beilun',
+): Promise<DispatchConfigItem[]> {
+  const result = await request.get('/admin/dispatch-config', { params: { businessScope }, silentError: true } as any) as any;
   const rawList = Array.isArray(result) ? result : (result?.rows || result?.list || result?.items || result?.data || []);
   return (Array.isArray(rawList) ? rawList : []).map((item) => normalizeDispatchConfigItem(item));
 }

@@ -74,6 +74,8 @@ export interface DispatchedOrderItem {
   createdByName?: string;
   parent_order_status?: string;
   order_type?: string;
+  business_scope?: 'beilun' | 'out_of_province';
+  businessScope?: 'beilun' | 'out_of_province';
   visible_fields: string[];
   fields?: DispatchedOrderDetailField[];
   return_reason: string | null;

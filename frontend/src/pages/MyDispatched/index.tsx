@@ -36,14 +36,12 @@ import { isPhase1VisibleOrderType } from '@/utils/moduleAccess';
 import { useColumnConfig } from '@/components/MultiViewTable/useColumnConfig';
 import { mergeProTableFiltersIntoParams, selectHeaderFilter, textHeaderFilter } from '@/utils/proTableFilters';
 import {
-  KEEP_ALIVE_ROUTE_ACTIVATED_EVENT,
   applyCachedColumnFilters,
   getCachedListPageState,
   getCachedMonthOrNull,
   normalizeCachedFilters,
   toMonthKey,
   updateCachedListPageState,
-  type KeepAliveRouteActivatedDetail,
 } from '@/utils/listPageState';
 import {
   DISPATCHED_NINE_STATUS_OPTIONS,
@@ -116,14 +114,6 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
   const { hasAnyRole } = useAuth();
   const actionRef = useRef<ActionType>();
 
-  useEffect(() => {
-    const handleRouteActivated = (event: Event) => {
-      const detail = (event as CustomEvent<KeepAliveRouteActivatedDetail>).detail;
-      if (detail?.pathname === location.pathname) void actionRef.current?.reload();
-    };
-    window.addEventListener(KEEP_ALIVE_ROUTE_ACTIVATED_EVENT, handleRouteActivated);
-    return () => window.removeEventListener(KEEP_ALIVE_ROUTE_ACTIVATED_EVENT, handleRouteActivated);
-  }, [location.pathname]);
 
   const routeMode: MyDispatchedMode = location.pathname.includes('/my-work/done')
     ? 'done'

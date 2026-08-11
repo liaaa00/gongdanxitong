@@ -22,7 +22,7 @@ import { createDefaultWorkflowDefinition, getWorkflow, publishWorkflow, updateWo
 import type { WorkflowDefinitionJson, WorkflowEdgeConfig, WorkflowFieldBindingConfig, WorkflowItem, WorkflowNodeConfig, WorkflowNodeType } from '@/services/workflows';
 import { getFields, type FieldConfigItem } from '@/services/fields';
 import { buildModuleLabelMap, getModuleConfigs, getModuleFields } from '@/services/moduleConfigs';
-import { readBusinessScope } from '@/utils/businessScope';
+import type { BusinessScope } from '@/utils/businessScope';
 import { getRoles, type RoleItem } from '@/services/roles';
 import { getUsers, type UserItem } from '@/services/users';
 
@@ -262,6 +262,9 @@ const AdminWorkflowEditor: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
   const readOnly = searchParams.get('mode') === 'view';
+  const businessScope: BusinessScope = searchParams.get('businessScope') === 'out_of_province'
+    ? 'out_of_province'
+    : 'beilun';
   const navigate = useNavigate();
   const { message } = App.useApp();
   const [loading, setLoading] = useState(true);
@@ -318,12 +321,11 @@ const AdminWorkflowEditor: React.FC = () => {
       if (!id) return;
       setLoading(true);
       try {
-        const item = await getWorkflow(id);
-        const businessScope = readBusinessScope();
+        const item = await getWorkflow(id, businessScope);
         const [fieldList, moduleFieldEntries, roles, usersResult, moduleConfigs] = await Promise.all([
           getFields(item.order_type || 'onboarding').catch(() => [] as FieldConfigItem[]),
           Promise.all(MODULE_OPTIONS.map(async (module) => {
-            const rows = await getModuleFields(module.value).catch(() => []);
+            const rows = await getModuleFields(module.value, businessScope).catch(() => []);
             return [module.value, rows.map((row) => row.field_code).filter(Boolean)] as const;
           })),
           getRoles().catch(() => [] as RoleItem[]),
@@ -354,7 +356,7 @@ const AdminWorkflowEditor: React.FC = () => {
     };
     load();
     return () => { cancelled = true; };
-  }, [id, message]);
+  }, [businessScope, id, message]);
 
   useEffect(() => {
     if (selectedEdge) {
@@ -567,7 +569,7 @@ const AdminWorkflowEditor: React.FC = () => {
         order_type: workflow.order_type,
         description: workflow.description,
         definition_json: definition,
-      });
+      }, businessScope);
       setWorkflow(updated);
       message.success('流程定义已保存');
       return definition;
@@ -584,7 +586,7 @@ const AdminWorkflowEditor: React.FC = () => {
     const definition = await saveWorkflow();
     if (!definition) return;
     try {
-      const published = await publishWorkflow(id, definition);
+      const published = await publishWorkflow(id, definition, businessScope);
       setWorkflow(published);
       message.success('流程已发布');
     } catch {
@@ -606,7 +608,7 @@ const AdminWorkflowEditor: React.FC = () => {
             : '新版流程引擎预配置：先配置子工单生成条件、办理字段、SLA 与通知，暂不影响现有派发',
         tags: <Tag color={['active', 'published'].includes(workflow.status) ? 'green' : 'default'}>{['active', 'published'].includes(workflow.status) ? `已发布 v${workflow.version || 1}` : '草稿'}</Tag>,
         extra: [
-          <Button key="back" onClick={() => navigate('/admin/workflows')}>返回列表</Button>,
+          <Button key="back" onClick={() => navigate(`/admin/workflows?businessScope=${businessScope}`)}>返回列表</Button>,
           !readOnly && <Button key="add" icon={<PlusOutlined />} onClick={() => openNodeModal()}>新增节点</Button>,
           !readOnly && <Button key="save" type="primary" icon={<SaveOutlined />} loading={saving} onClick={saveWorkflow}>保存</Button>,
           !readOnly && <Button key="publish" icon={<RocketOutlined />} onClick={handlePublish}>发布</Button>,

@@ -102,14 +102,15 @@ describe('DispatchedOrderService', () => {
     expect(result.items[0].handlerId).toBe('handler-1');
   });
 
-  it('normalizes the insured unit from the confirmed social-location field in list results', async () => {
+  it('normalizes the insured unit from the labor contract subject in list results', async () => {
     const order = {
       ...makeDispatchedOrder(),
       moduleCode: 'social_insurance',
       parentOrder: {
         ...makeDispatchedOrder().parentOrder,
         extraData: {
-          social_location: '参保机构名称值',
+          contract_subject: '劳动合同主体值',
+          social_location: '缴纳地值',
           insured_unit: '历史参保单位',
         },
       },
@@ -128,8 +129,9 @@ describe('DispatchedOrderService', () => {
     } as never, user);
 
     expect(result.items[0].extra_data).toMatchObject({
-      social_location: '参保机构名称值',
-      insured_unit: '参保机构名称值',
+      contract_subject: '劳动合同主体值',
+      social_location: '缴纳地值',
+      insured_unit: '劳动合同主体值',
     });
   });
 

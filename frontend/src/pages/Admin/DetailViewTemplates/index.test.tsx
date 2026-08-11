@@ -9,7 +9,7 @@ describe('详情页字段配置模块选项', () => {
       'in_service_single_business',
       'renewal_contract',
       'in_service_certificate',
-      'resignation_certificate',
+      'resignation_cert',
       'out_of_province_increase',
       'out_of_province_decrease',
       'out_of_province_single_business',

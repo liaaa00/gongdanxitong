@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { App } from 'antd';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -10,6 +10,8 @@ const updateWorkOrderMock = vi.fn();
 const resubmitWorkOrderMock = vi.fn();
 const voidWorkOrderMock = vi.fn();
 const getWorkOrderMock = vi.fn();
+const setHistoricalResignationCertificateMock = vi.fn();
+let isAdminMock = true;
 
 const getFieldsMock = vi.fn();
 
@@ -25,6 +27,10 @@ vi.mock('@/hooks/useFieldPermissions', () => ({
   useFieldPermissions: () => ({ permissions: { employee_name: 'visible' } }),
 }));
 
+vi.mock('@/hooks/useAuth', () => ({
+  useAuth: () => ({ hasRole: (role: string) => role === 'admin' && isAdminMock }),
+}));
+
 
 vi.mock('@/services/fields', () => ({
   getFields: (...args: unknown[]) => getFieldsMock(...args),
@@ -37,6 +43,7 @@ vi.mock('@/services/workOrders', () => ({
   updateWorkOrder: (...args: unknown[]) => updateWorkOrderMock(...args),
   resubmitWorkOrder: (...args: unknown[]) => resubmitWorkOrderMock(...args),
   voidWorkOrder: (...args: unknown[]) => voidWorkOrderMock(...args),
+  setHistoricalResignationCertificate: (...args: unknown[]) => setHistoricalResignationCertificateMock(...args),
 }));
 
 const baseOrder = {
@@ -68,6 +75,7 @@ function renderDetail(initialEntry = '/work-orders/wo-1?edit=1') {
 describe('WorkOrdersDetail main order readonly mode', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    isAdminMock = true;
     vi.spyOn(App, 'useApp').mockReturnValue({
       message: { success: vi.fn(), error: messageErrorMock, info: messageInfoMock, warning: vi.fn(), loading: vi.fn(), open: vi.fn(), destroy: vi.fn() } as any,
       notification: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn(), open: vi.fn(), destroy: vi.fn() } as any,
@@ -83,6 +91,9 @@ describe('WorkOrdersDetail main order readonly mode', () => {
     updateWorkOrderMock.mockResolvedValue({ ...baseOrder, status: 'pending', extra_data: { employee_name: '修改后员工' } });
     resubmitWorkOrderMock.mockResolvedValue({ ...baseOrder, status: 'processing', extra_data: { employee_name: '修改后员工' } });
     voidWorkOrderMock.mockResolvedValue({ ...baseOrder, status: 'void_pending' });
+    setHistoricalResignationCertificateMock.mockResolvedValue({
+      workOrderId: 'wo-1', needResignationCert: '是', certificateOrderId: 'cert-1',
+    });
   });
 
   it('renders main work order fields once and hides submit controls', async () => {
@@ -170,5 +181,31 @@ describe('WorkOrdersDetail main order readonly mode', () => {
     expect(updateWorkOrderMock).not.toHaveBeenCalled();
     expect(resubmitWorkOrderMock).not.toHaveBeenCalled();
     expect(voidWorkOrderMock).not.toHaveBeenCalled();
+  });
+
+  it('lets an admin explicitly confirm a historical resignation certificate', async () => {
+    const resignationOrder = { ...baseOrder, order_type: 'resignation', extra_data: {} };
+    getWorkOrderMock
+      .mockResolvedValueOnce(resignationOrder)
+      .mockResolvedValueOnce({ ...resignationOrder, extra_data: { need_resignation_cert: '是' } });
+
+    renderDetail('/work-orders/wo-1');
+
+    fireEvent.click(await screen.findByRole('button', { name: '历史离职证明处理' }));
+    fireEvent.click(screen.getByLabelText('是，需要开具并派发离职证明'));
+    fireEvent.click(screen.getByRole('button', { name: /确\s*认/ }));
+
+    await waitFor(() => expect(setHistoricalResignationCertificateMock).toHaveBeenCalledWith('wo-1', '是'));
+    await waitFor(() => expect(getWorkOrderMock).toHaveBeenCalledTimes(2));
+  });
+
+  it('does not expose historical resignation handling to non-admin users', async () => {
+    isAdminMock = false;
+    getWorkOrderMock.mockResolvedValueOnce({ ...baseOrder, order_type: 'resignation' });
+
+    renderDetail('/work-orders/wo-1');
+
+    await screen.findByText('工单详情');
+    expect(screen.queryByRole('button', { name: '历史离职证明处理' })).not.toBeInTheDocument();
   });
 });

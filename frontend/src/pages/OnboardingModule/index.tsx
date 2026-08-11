@@ -25,11 +25,9 @@ import { useAuth } from '@/hooks/useAuth';
 import { useColumnConfig } from '@/components/MultiViewTable/useColumnConfig';
 import { DISPATCHED_NINE_STATUS_OPTIONS } from '@/utils/dispatchedStatusFilter';
 import {
-  KEEP_ALIVE_ROUTE_ACTIVATED_EVENT,
   getCachedMonthOrNull,
   toMonthKey,
   updateCachedListPageState,
-  type KeepAliveRouteActivatedDetail,
 } from '@/utils/listPageState';
 
 const RefButton = forwardRef<HTMLButtonElement, React.ComponentProps<typeof Button>>((props, ref) => (
@@ -339,14 +337,6 @@ const OnboardingModule: React.FC = () => {
   const isResignationCertificateModule = currentModule === 'resignation_cert';
   const batchExportLabel = isResignationCertificateModule ? '批量导出离职证明' : '按固定模板导出';
 
-  useEffect(() => {
-    const handleRouteActivated = (event: Event) => {
-      const detail = (event as CustomEvent<KeepAliveRouteActivatedDetail>).detail;
-      if (detail?.pathname === `/onboarding/${currentModule}`) void actionRef.current?.reload();
-    };
-    window.addEventListener(KEEP_ALIVE_ROUTE_ACTIVATED_EVENT, handleRouteActivated);
-    return () => window.removeEventListener(KEEP_ALIVE_ROUTE_ACTIVATED_EVENT, handleRouteActivated);
-  }, [currentModule]);
 
   useEffect(() => {
     setMonth(getCachedMonthOrNull(pageStateKey));

@@ -113,8 +113,8 @@ describe('work-order export template read permissions', () => {
     await expect(service.listSharedContractTemplates()).resolves.toEqual([]);
     expect(repository.find).toHaveBeenCalledWith({
       where: [
-        { moduleCode: 'contract', isShared: true, signPlatform: '速创', businessScope: 'beilun' },
-        { moduleCode: 'contract', isShared: true, signPlatform: 'E签宝', businessScope: 'beilun' },
+        { moduleCode: 'contract', isShared: true, signPlatform: '速创', businessScope: 'beilun', isActive: true },
+        { moduleCode: 'contract', isShared: true, signPlatform: 'E签宝', businessScope: 'beilun', isActive: true },
       ],
       order: { createdAt: 'DESC' },
     });

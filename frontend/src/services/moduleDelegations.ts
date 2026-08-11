@@ -44,13 +44,14 @@ function normalize(row: any): ModuleDelegationItem {
 export async function getModuleDelegations(
   moduleCode?: string,
   includeInactive = false,
+  businessScope: 'beilun' | 'out_of_province' = 'beilun',
 ): Promise<ModuleDelegationItem[]> {
   if (isMockMode) {
     return mockDelay(loadList<ModuleDelegationItem>(KEY, []).filter((row) =>
       (!moduleCode || row.moduleCode === moduleCode) && (includeInactive || row.isActive)));
   }
   const result = await request.get('/admin/module-delegations', {
-    params: { moduleCode, includeInactive },
+    params: { moduleCode, includeInactive, businessScope },
   }) as any;
   const list = Array.isArray(result) ? result : result?.list || result?.items || [];
   return list.map(normalize);
@@ -58,6 +59,7 @@ export async function getModuleDelegations(
 
 export async function createModuleDelegation(
   input: CreateModuleDelegationInput,
+  businessScope: 'beilun' | 'out_of_province' = 'beilun',
 ): Promise<ModuleDelegationItem> {
   if (isMockMode) {
     const list = loadList<ModuleDelegationItem>(KEY, []);
@@ -73,10 +75,13 @@ export async function createModuleDelegation(
     saveList(KEY, list);
     return mockDelay(item);
   }
-  return normalize(await request.post('/admin/module-delegations', input));
+  return normalize(await request.post('/admin/module-delegations', input, { params: { businessScope } }));
 }
 
-export async function cancelModuleDelegation(id: string): Promise<void> {
+export async function cancelModuleDelegation(
+  id: string,
+  businessScope: 'beilun' | 'out_of_province' = 'beilun',
+): Promise<void> {
   if (isMockMode) {
     const list = loadList<ModuleDelegationItem>(KEY, []);
     const row = list.find((item) => item.id === id);
@@ -84,5 +89,5 @@ export async function cancelModuleDelegation(id: string): Promise<void> {
     saveList(KEY, list);
     return mockDelay(undefined);
   }
-  await request.delete(`/admin/module-delegations/${id}`);
+  await request.delete(`/admin/module-delegations/${id}`, { params: { businessScope } });
 }

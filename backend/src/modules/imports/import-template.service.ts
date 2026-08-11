@@ -20,7 +20,7 @@ const MAIN_SHEET_NAME = '当前字段配置';
 const OPTIONS_SHEET_NAME = '__options';
 
 const ONBOARDING_CUSTOMER_FIELD_COUNT = 30;
-const ONBOARDING_ASSISTED_FIELD_COUNT = 9;
+const ONBOARDING_ASSISTED_FIELD_COUNT = 10;
 const ONBOARDING_COLUMN_WIDTHS: Partial<Record<string, number>> = {
   other_salary: 21.7272727272727,
   bank_name: 18.5454545454545,
@@ -137,9 +137,9 @@ export class ImportTemplateService {
     const instructionFont = { bold: true, italic: true, size: 11, name: '宋体', charset: 134, scheme: 'minor' as const };
     sheet.getCell('A1').value = '填表说明：';
     sheet.getCell('B1').value = 'B-AE列为客户必须填写';
-    sheet.getCell('AF1').value = 'AF-AN列为客户填写或外服入职联系收集';
-    sheet.getCell('AO1').value = 'AO-BI列为外服客户经理填写';
-    for (const address of ['A1', 'B1', 'AF1', 'AO1']) {
+    sheet.getCell('AF1').value = 'AF-AO列为客户填写或外服入职联系收集';
+    sheet.getCell('AP1').value = 'AP-BJ列为外服客户经理填写';
+    for (const address of ['A1', 'B1', 'AF1', 'AP1']) {
       sheet.getCell(address).font = instructionFont;
     }
   }
