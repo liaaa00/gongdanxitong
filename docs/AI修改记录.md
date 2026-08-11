@@ -1978,3 +1978,18 @@
 - 配置补偿：在单个 `ON_ERROR_STOP` 事务内按用户账号和业务范围幂等插入两行，仅修改 `module_handlers`；事务内校验目标用户数、模块总行数和精确配置数均为 2 后提交。最终杨纯、江璐均为 `weight=10`、`is_backup=false`、`is_active=true`。
 - 数据保护与验证：写入前后 `customers=111`、`dispatched_orders=227`、`import_jobs=53`、`in_service_orders=0`、`notifications=599`、`operation_logs=1390`、`order_attachments=1`、`users=42`、`work_orders=77`，全部不变；backend 健康探针连续成功，PostgreSQL 与 Nginx healthy，无需重启服务。
 - 回滚：如需撤销，仅删除本次两条 `resignation_cert/beilun` 配置或从 `module_handlers_before.sql` 恢复配置表；完整业务库回滚只作为最后手段，必须另行确认。
+
+## 2026-08-11 · 部署后配置闭环补偿与 LF 制品校正
+
+- 触发：首版提交派生制品在服务器解压后为 CRLF，规范化内容虽与提交 38/38 一致，但原始 Git blob 不一致；已用同一提交重新生成 LF 制品，SHA256 为 `c8f53ff2b0ea0b194709d661ecfda862215c342addcf8f5b813f2e249555b557`，服务器逐项 Git blob 校验最终 `38/38`。
+- 配置范围：生产 `AUTO_SEED=false`，上传 seed 文件不代表配置落库。按用户确认，仅补充配置表 `field_permissions` 与 `module_handlers`；不执行全量 seed、不恢复本地数据库、不写入任何业务/身份/交易表。
+- 配置 SQL：备份目录 `/data/apps/work-order-system/backups/predeploy_73c4a4f8_20260811_130105/config-extended`；SQL SHA256 为 `9cee47dca2a1b8defbf6ebbcf94f67143d7411483923728e75a5aed0607c385e`。单事务新增/更新社保权限目标 80 行、隐藏旧权限 204 行，处理池两行已存在并校正为主处理人；事务断言全部通过。
+- 运行态结果：`social_insurance_specialist` 在 `dispatched:social_insurance` 的北仑、省外两个范围均为 142 行，其中 40 个目标字段可见可编辑、102 个其他字段隐藏；`resignation_cert/beilun` 处理人为杨纯和江璐，均 `weight=10,is_backup=false,is_active=true`。目标 migration `MakeContractTermConditionallyRequired20260810002000`、`ConsolidateSocialFundExportTemplates20260810003000` 已在数据库记录为 `[X]`，本轮未重复执行。
+- 服务验证：backend/frontend 新镜像已构建并替换；backend healthy、frontend running、PostgreSQL/Nginx healthy；`http://127.0.0.1:8080/api/health` 返回 `status=ok`，首页 HTTP 200；backend 启动日志明确 seed 跳过。
+- 数据保护：本次 SQL 仅出现 `field_configs`（只读校验）、`field_permissions`、`module_handlers`；14 张业务/身份表未被引用或写入。提交后保护表计数快照为 customers=114、dispatched_orders=236、import_jobs=54、notifications=620、operation_logs=1459、order_attachments=1、users=42、work_orders=80 等，供后续继续对账。
+- 验证：固定 `回归测试.ps1 -SkipBuild` 通过，前端关键业务 10/10 文件、134/134 测试；工作树仍有既有无关未提交文件，未创建业务代码提交。
+
+## 2026-08-11 · safe-server-sync 部署经验固化
+
+- 更新 SpectrAI 技能 `dir:safe-server-sync`：新增 Windows 归档强制 LF、原始 Git blob 逐项校验、CRLF 诊断后必须重新生成制品、增量清单依赖闭包、seed 关闭时配置表事务补偿、已执行 migration 不重复运行、缓存构建必须核对镜像和真实端口等门禁。
+- 注册验证：通过 `install_skill(localDir)` dry-run 与正式安装，无警告；注册内容级检查 6/6 通过，临时副本已删除。
