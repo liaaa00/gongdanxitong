@@ -1970,3 +1970,11 @@
 - 数据保护：部署前后对 14 张业务/身份表按主键排序计算整行内容哈希，`14/14` 行数与哈希完全不变；其中工单 75、子工单 221、客户 110、用户 42。未上传数据库 dump，未运行 seed，未写入工单、客户、用户、附件、导入任务、通知、日志或字段同步记录。
 - 真实验证：backend/frontend production 镜像构建成功；`ticket_backend`、`ticket_postgres`、`ticket_nginx` healthy，`ticket_frontend` running，nginx 首页及 `/api/health` 均 200。生产服务生成的入职 Excel 为 60 字段、30 个黄色表头，合同期限/终止日期均显示“条件必填”，`__options` 为 `veryHidden`；运行时导出模板解析为数据库共享的 35/15 列。浏览器真实验证管理员批量导出按钮、`sort=created_at:asc` 200、详情模板新增在职/续签/证明/离职证明/省外模块；省外权限 API 返回活动版本 `1.1.1-welfare-province`，福保角色/路由/字段规则正常。
 - 范围外既有告警：nginx 的 Socket.IO WebSocket upgrade 返回 400，但 polling 握手为 200，通知连接可回退；仪表盘 `leader-trend` 出现 SQL fallback 警告但对应 API 为 200。两处代码/配置均未在本轮修改，未扩大范围处理。
+
+## 2026-08-11 · 离职证明处理池生产配置补偿
+
+- 根因：服务器运行源码中的 `seed-module-handlers.ts` 与本地去除 CRLF 后 SHA256 一致，均配置杨纯、江璐为 `resignation_cert/beilun` 共同池主处理人；但生产 Compose 默认 `AUTO_SEED=false`，backend 日志明确记录启动 seed 被跳过，因此代码同步没有自动写入 `module_handlers` 配置表。
+- 备份：写入前创建 `/data/apps/work-order-system/backups/resignation_cert_pool_20260811_140644`，包含完整 PostgreSQL custom dump、`module_handlers` 数据 SQL、Compose 和 `SOURCE_COMMIT`；备份 SHA256 已记录。
+- 配置补偿：在单个 `ON_ERROR_STOP` 事务内按用户账号和业务范围幂等插入两行，仅修改 `module_handlers`；事务内校验目标用户数、模块总行数和精确配置数均为 2 后提交。最终杨纯、江璐均为 `weight=10`、`is_backup=false`、`is_active=true`。
+- 数据保护与验证：写入前后 `customers=111`、`dispatched_orders=227`、`import_jobs=53`、`in_service_orders=0`、`notifications=599`、`operation_logs=1390`、`order_attachments=1`、`users=42`、`work_orders=77`，全部不变；backend 健康探针连续成功，PostgreSQL 与 Nginx healthy，无需重启服务。
+- 回滚：如需撤销，仅删除本次两条 `resignation_cert/beilun` 配置或从 `module_handlers_before.sql` 恢复配置表；完整业务库回滚只作为最后手段，必须另行确认。
