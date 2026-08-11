@@ -1961,3 +1961,12 @@
 - 自动验证：后端全量 `103` 个套件、`704` 项通过，另有 `3` 个套件、`20` 项项目既有跳过；前端页面 `219/219`、服务层 `81/81`、配置/Hooks/状态/工具 `88/88`、布局 `38/38`、其余组件 `30/30`，合并排除动态表单单文件后为 `69` 文件、`468/468`；根目录固定回归 `134/134`。Playwright 全套首轮 `31/32`，唯一失败为并发登录瞬时 `ECONNRESET`，后端持续健康且该用例单 worker 精确复跑通过，最终业务用例 `32/32`。前后端 production build 均通过，前端转换 `4646` 个模块。
 - 运行态核验：本地前端和后端健康接口均为 HTTP 200；TypeORM 迁移状态全部为 `[X]`，包含 `MakeContractTermConditionallyRequired20260810002000` 与 `ConsolidateSocialFundExportTemplates20260810003000`。真实业务员修改用的两个子单已恢复为 `pending/1000` 与 `processing/4197`，未停留在修改审批状态；工单号 `ON20260811001` 已被后续管理员真实处理中工单复用，含 3 个子单，不属于测试残留，未做删除。
 - 已知测试基础设施问题：`src/components/DynamicForm/index.test.tsx` 在当前 Windows/Vitest 4 环境中始终停留在测试收集阶段，单文件、单线程、10 分钟以及临时依赖别名均无法进入任何用例；生产 `DynamicForm` 模块可由 Vite 正常加载，production build 和真实浏览器表单流程均通过。临时配置、替身和查询脚本均已删除，原测试文件已恢复，无生产环境改动。
+
+## 2026-08-11 · 内网服务器安全部署
+
+- 目标与来源：仅连接已绑定的 `work-order-local-ssh`（`192.168.26.195:22/admin`），部署根为 `/data/apps/work-order-system`。运行代码来源提交为 `73c4a4f8f305756359f64e67932d3d9ae5fbb78b`，使用提交派生 LF 制品，SHA256 为 `c8f53ff2b0ea0b194709d661ecfda862215c342addcf8f5b813f2e249555b557`；38 个增量源文件逐项原始 Git blob 哈希 `38/38` 一致，最终 `backend/src` + `frontend/src` 整树 `654/654` 一致，服务器额外源文件为 0。依赖、Compose、`.env`、上传目录、测试/文档快照和本地业务数据均未同步。
+- 备份与回滚：备份目录为 `/data/apps/work-order-system/backups/predeploy_73c4a4f8_20260811_130105`，包含覆盖前源文件 tar、Compose/override、完整 PostgreSQL 压缩 dump（342 个归档条目）及三张目标配置表 SQL。回滚镜像为 `work-order-system-backend:predeploy-73c4a4f8-20260811_130105` 和 `work-order-system-frontend:predeploy-73c4a4f8-20260811_130105`。
+- 配置变更：backend entrypoint 在 `AUTO_SEED=false` 下仅执行 `MakeContractTermConditionallyRequired20260810002000` 与 `ConsolidateSocialFundExportTemplates20260810003000`，两份 migration 均为 `[X]`，无 pending。合同期限/终止日期改为 `contract_term_type != 无固定期限` 条件必填，入职模板 override 为 NULL；社保公积金增员/减员各收敛为一份后台共享模板，字段数为 35/15。
+- 数据保护：部署前后对 14 张业务/身份表按主键排序计算整行内容哈希，`14/14` 行数与哈希完全不变；其中工单 75、子工单 221、客户 110、用户 42。未上传数据库 dump，未运行 seed，未写入工单、客户、用户、附件、导入任务、通知、日志或字段同步记录。
+- 真实验证：backend/frontend production 镜像构建成功；`ticket_backend`、`ticket_postgres`、`ticket_nginx` healthy，`ticket_frontend` running，nginx 首页及 `/api/health` 均 200。生产服务生成的入职 Excel 为 60 字段、30 个黄色表头，合同期限/终止日期均显示“条件必填”，`__options` 为 `veryHidden`；运行时导出模板解析为数据库共享的 35/15 列。浏览器真实验证管理员批量导出按钮、`sort=created_at:asc` 200、详情模板新增在职/续签/证明/离职证明/省外模块；省外权限 API 返回活动版本 `1.1.1-welfare-province`，福保角色/路由/字段规则正常。
+- 范围外既有告警：nginx 的 Socket.IO WebSocket upgrade 返回 400，但 polling 握手为 200，通知连接可回退；仪表盘 `leader-trend` 出现 SQL fallback 警告但对应 API 为 200。两处代码/配置均未在本轮修改，未扩大范围处理。
