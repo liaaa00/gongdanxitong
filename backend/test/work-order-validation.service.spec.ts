@@ -1,5 +1,5 @@
 import { DataSource, Repository } from 'typeorm';
-import { FieldConfig, FieldType, OrderType, WorkOrder, WorkOrderStatus } from 'src/entities';
+import { BusinessScope, FieldConfig, FieldType, OrderType, WorkOrder, WorkOrderStatus } from 'src/entities';
 import { AstEvaluator } from 'src/modules/dispatch-engine/ast-evaluator';
 import { WorkOrderValidationService } from 'src/modules/work-orders/work-order-validation.service';
 
@@ -145,6 +145,62 @@ describe('WorkOrderValidationService submit validation', () => {
     }))).resolves.toBeUndefined();
   });
 
+  it('allows patching one field when an old strict required field was already missing', async () => {
+    const baselineExtraData = {
+      employee_name: '',
+      id_card_no: '330102199001010011',
+      need_company_contract: '否',
+      household_type: '',
+    };
+    await expect(service.validateWorkOrder(
+      makeWorkOrder({ ...baselineExtraData, household_type: '城镇户口' }),
+      {
+        baselineExtraData,
+        changedFieldCodes: ['household_type'],
+      },
+    )).resolves.toBeUndefined();
+  });
+
+  it('still blocks clearing a strict required field in patch mode', async () => {
+    const baselineExtraData = {
+      employee_name: '原姓名',
+      id_card_no: '330102199001010011',
+      need_company_contract: '否',
+    };
+    await expect(service.validateWorkOrder(
+      makeWorkOrder({ ...baselineExtraData, employee_name: '' }),
+      {
+        baselineExtraData,
+        changedFieldCodes: ['employee_name'],
+      },
+    )).rejects.toMatchObject({
+      response: expect.objectContaining({
+        details: expect.objectContaining({ missing: ['employee_name'] }),
+      }),
+    });
+  });
+
+  it('validates a conditional field when the patch newly activates its requirement', async () => {
+    const baselineExtraData = {
+      employee_name: '条件测试',
+      id_card_no: '330102199001010011',
+      need_company_contract: '否',
+      need_onboarding_contact: '是',
+      current_address: '',
+    };
+    await expect(service.validateWorkOrder(
+      makeWorkOrder({ ...baselineExtraData, need_onboarding_contact: '否' }),
+      {
+        baselineExtraData,
+        changedFieldCodes: ['need_onboarding_contact'],
+      },
+    )).rejects.toMatchObject({
+      response: expect.objectContaining({
+        details: expect.objectContaining({ missing: ['current_address'] }),
+      }),
+    });
+  });
+
   it('still blocks strict required fields during submit', async () => {
     await expect(service.validateWorkOrder(makeWorkOrder({
       employee_name: '',
@@ -185,6 +241,51 @@ describe('WorkOrderValidationService submit validation', () => {
     const validProvince = makeWorkOrder({ province: '福建' });
     validProvince.orderType = OrderType.OUT_OF_PROVINCE_DECREASE;
     await expect(service.validateWorkOrder(validProvince)).resolves.toBeUndefined();
+  });
+
+  it('resolves branches only inside the selected business scope', async () => {
+    const query = jest.fn().mockResolvedValueOnce([{ id: 'branch-out' }]);
+    const scopedService = new WorkOrderValidationService(
+      fieldConfigRepository,
+      { count: jest.fn() } as unknown as Repository<WorkOrder>,
+      { query } as unknown as DataSource,
+      new AstEvaluator(),
+    );
+
+    await expect(scopedService.resolveBranchId(
+      undefined,
+      'customer-out',
+      { branch_code: 'BR-001' },
+      BusinessScope.OUT_OF_PROVINCE,
+    )).resolves.toBe('branch-out');
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('business_scope = $2'),
+      ['BR-001', BusinessScope.OUT_OF_PROVINCE],
+    );
+  });
+
+  it('creates customers against the business-scope composite unique key', async () => {
+    const query = jest.fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 'customer-new' }]);
+    const scopedService = new WorkOrderValidationService(
+      fieldConfigRepository,
+      { count: jest.fn() } as unknown as Repository<WorkOrder>,
+      { query } as unknown as DataSource,
+      new AstEvaluator(),
+    );
+
+    await expect(scopedService.resolveCustomerId(
+      undefined,
+      { customer_code: 'C-NEW', customer_name: '新客户' },
+      BusinessScope.OUT_OF_PROVINCE,
+    )).resolves.toBe('customer-new');
+    expect(query).toHaveBeenNthCalledWith(
+      3,
+      expect.stringContaining('ON CONFLICT (customer_code, business_scope)'),
+      ['C-NEW', '新客户', BusinessScope.OUT_OF_PROVINCE],
+    );
   });
 
   it('reports the chinese field name when requireText fails', () => {

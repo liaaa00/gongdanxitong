@@ -480,21 +480,6 @@ export class ExportTemplatesService {
     signPlatform?: string | null,
     businessScope: BusinessScope = BusinessScope.BEILUN,
   ): Promise<ExportTemplate> {
-    const fixedFieldList = getSocialFundExportFieldList(moduleCode);
-    const fixedTemplateName = getSocialFundExportTemplateName(moduleCode);
-    if (fixedFieldList && fixedTemplateName) {
-      return this.repository.create({
-        id: '',
-        templateName: fixedTemplateName,
-        moduleCode,
-        fieldList: fixedFieldList.map((column) => ({ ...column })),
-        createdBy: '',
-        isShared: false,
-        signPlatform: null,
-        businessScope,
-      });
-    }
-
     const platform = this.normalizeSignPlatform(signPlatform);
     let shared: ExportTemplate | null = null;
     if (moduleCode === 'contract') {
@@ -512,6 +497,22 @@ export class ExportTemplatesService {
       shared.fieldList = this.prepareExportFieldList(shared.fieldList);
       return shared;
     }
+
+    const fixedFieldList = getSocialFundExportFieldList(moduleCode);
+    const fixedTemplateName = getSocialFundExportTemplateName(moduleCode);
+    if (fixedFieldList && fixedTemplateName) {
+      return this.repository.create({
+        id: '',
+        templateName: fixedTemplateName,
+        moduleCode,
+        fieldList: fixedFieldList.map((column) => ({ ...column })),
+        createdBy: '',
+        isShared: false,
+        signPlatform: null,
+        businessScope,
+      });
+    }
+
     const fieldList = this.prepareExportFieldList(visibleFields.map((fieldCode, order) => ({ fieldCode, order: order + 10 })));
     return this.repository.create({ id: '', templateName: `${moduleCode}-default`, moduleCode, fieldList, createdBy: '', isShared: false, signPlatform: null, businessScope });
   }

@@ -376,6 +376,8 @@ describe('InServiceOrdersService', () => {
       employeeName: '张三',
       idCardNo: '330206199001011234',
       extraData: {
+        contract_term_type: '固定期限',
+        contract_term: '2年',
         contractStartDate: '2026-08-01',
         contractEndDate: '2028-07-31',
         base_salary: 12000,
@@ -442,6 +444,7 @@ describe('InServiceOrdersService', () => {
       idCardNo: '330206199001011234',
       extraData: {
         contract_term_type: '固定期限',
+        contract_term: '2年',
         contract_start_date: '2026-08-01',
         contract_end_date: '2028-07-31',
         base_salary: 10000,
@@ -449,7 +452,7 @@ describe('InServiceOrdersService', () => {
     }, creator)).resolves.toEqual(expect.objectContaining({ orderKind: InServiceOrderKind.CONTRACT_RENEWAL }));
   });
 
-  it('allows an open-ended renewal without a contract end date', async () => {
+  it('allows an open-ended renewal without contract term or end date', async () => {
     const { service } = makeService();
     await expect(service.create({
       customerId: createDto.customerId,
@@ -466,6 +469,22 @@ describe('InServiceOrdersService', () => {
       orderKind: InServiceOrderKind.CONTRACT_RENEWAL,
       status: InServiceOrderStatus.DISPATCHED,
     });
+  });
+
+  it('requires contract term and end date for a fixed-term renewal', async () => {
+    const { service } = makeService();
+    await expect(service.create({
+      customerId: createDto.customerId,
+      departmentId: createDto.departmentId,
+      orderKind: InServiceOrderKind.CONTRACT_RENEWAL,
+      employeeName: '张三',
+      idCardNo: '330206199001011234',
+      extraData: {
+        contract_term_type: '固定期限',
+        contract_start_date: '2026-08-01',
+        base_salary: 12000,
+      },
+    }, creator)).rejects.toThrow('合同开始日期、合同期限和结束日期不能为空');
   });
 
   it('exports renewal from the direct order without creating main or child orders', async () => {

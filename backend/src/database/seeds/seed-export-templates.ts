@@ -1,5 +1,6 @@
 import { DataSource, IsNull } from 'typeorm';
-import { ExportTemplate, User } from 'src/entities';
+import { BusinessScope, ExportTemplate, User } from 'src/entities';
+import { getSocialFundExportFieldList, getSocialFundExportTemplateName } from 'src/modules/admin/export-templates/social-fund-export';
 
 // ⚠️ 本文件按 5 份会议表格「原样逐字复刻」生成 3 套导出模板，请勿擅自改动表头文案 / 列序 / 绑定串。
 // 列模型由 export-templates.service.ts 的 resolveRichColumns 解析：
@@ -147,33 +148,8 @@ const contractEsignFieldList = contractEsignColumns.map(([r1, r2, r3, r4, source
   order: index + 1,
 }));
 
-// ── 3D. 社保公积金增员导出（social_insurance，17 列）──────────────────────────
-const socialInsuranceColumns: Array<[string, string]> = [
-  ['employee_name', '姓名'],
-  ['id_card_no', '身份证号'],
-  ['customer_name', '客户名称'],
-  ['customer_code', '客户代码'],
-  ['education', '学历'],
-  ['graduation_school', '毕业院校'],
-  ['major', '专业'],
-  ['graduation_date', '毕业时间'],
-  ['social_location', '参保机构名称'],
-  ['start_month', '参保月份'],
-  ['social_base', '社保基数'],
-  ['fund_base', '公积金基数'],
-  ['fund_ratio', '公积金比例'],
-  ['social_insurance_result', '社保是否办结'],
-  ['medical_insurance_result', '医保是否办结'],
-  ['housing_fund_result', '公积金是否办结'],
-  ['social_insurance_remark', '社保公积金办理备注'],
-];
-
-const socialInsuranceFieldList = socialInsuranceColumns.map(([fieldCode, header], index) => ({
-  fieldCode,
-  alias: header,
-  header: [header],
-  order: index + 1,
-}));
+// ── 3D. 社保公积金增员导出：与用户确认的35列正式模板共用唯一字段定义 ──────────────
+const socialInsuranceFieldList = getSocialFundExportFieldList('social_insurance') ?? [];
 
 // ── 3E. 离职材料收集导出（resignation_contact，11 列）─────────────────────────
 const resignationContactColumns: Array<[string, string]> = [
@@ -215,27 +191,8 @@ const dataEntryResignFieldList = dataEntryResignColumns.map(([fieldCode, header]
   order: index + 1,
 }));
 
-// ── 3G. 社保公积金减员导出（resignation_social_insurance，12 列）─────────────
-const resignationSocialColumns: Array<[string, string]> = [
-  ['employee_name', '姓名'],
-  ['id_card_no', '身份证号'],
-  ['customer_name', '客户名称'],
-  ['customer_code', '客户代码'],
-  ['social_pay_region', '社保缴纳地区'],
-  ['social_stop_month', '停保月份'],
-  ['resignation_date', '离职日期'],
-  ['social_insurance_result', '社保是否办结'],
-  ['medical_insurance_result', '医保是否办结'],
-  ['housing_fund_result', '公积金是否办结'],
-  ['social_insurance_remark', '社保公积金办理备注'],
-];
-
-const resignationSocialFieldList = resignationSocialColumns.map(([fieldCode, header], index) => ({
-  fieldCode,
-  alias: header,
-  header: [header],
-  order: index + 1,
-}));
+// ── 3G. 社保公积金减员导出：与用户确认的15列正式模板共用唯一字段定义 ──────────────
+const resignationSocialFieldList = getSocialFundExportFieldList('resignation_social_insurance') ?? [];
 
 const templateSeeds: TemplateSeed[] = [
   {
@@ -257,13 +214,13 @@ const templateSeeds: TemplateSeed[] = [
     fieldList: contractEsignFieldList,
   },
   {
-    templateName: '社保公积金增员批导出模板',
+    templateName: getSocialFundExportTemplateName('social_insurance')!,
     moduleCode: 'social_insurance',
     signPlatform: null,
     fieldList: socialInsuranceFieldList,
   },
   {
-    templateName: '社保公积金减员批导出模板',
+    templateName: getSocialFundExportTemplateName('resignation_social_insurance')!,
     moduleCode: 'resignation_social_insurance',
     signPlatform: null,
     fieldList: resignationSocialFieldList,
@@ -300,9 +257,15 @@ export async function seedExportTemplates(dataSource: DataSource): Promise<void>
         templateName: seed.templateName,
         moduleCode: seed.moduleCode,
         signPlatform: seed.signPlatform === null ? IsNull() : seed.signPlatform,
+        businessScope: BusinessScope.BEILUN,
       },
     });
     if (existed) {
+      if (['social_insurance', 'resignation_social_insurance'].includes(seed.moduleCode)) {
+        existed.fieldList = seed.fieldList;
+        existed.isShared = true;
+        await templateRepo.save(existed);
+      }
       continue;
     }
 
@@ -313,6 +276,7 @@ export async function seedExportTemplates(dataSource: DataSource): Promise<void>
       createdBy: admin.id,
       isShared: true,
       signPlatform: seed.signPlatform,
+      businessScope: BusinessScope.BEILUN,
     }));
   }
 }

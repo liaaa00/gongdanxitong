@@ -818,7 +818,7 @@ export async function creatorUpdateDispatchedOrderFields(id: string, fields: Rec
     fields,
     reason,
     ...(workOrderUpdatedAt ? { workOrderUpdatedAt } : {}),
-  });
+  }, { silentError: true } as any);
   return normalizeDispatchedOrderItem(raw);
 }
 

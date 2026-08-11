@@ -11,7 +11,7 @@ import { getModuleFields as getConfiguredModuleFields } from '../../../services/
 const DEFAULT_MODULE_CODE = 'onboarding';
 const MAIN_ORDER_MODULE_CODES = new Set(['onboarding', 'resignation']);
 
-const MODULE_GROUPS = [
+export const MODULE_SELECT_GROUPS = [
   {
     label: '主工单',
     options: [
@@ -34,11 +34,28 @@ const MODULE_GROUPS = [
       { label: '离职材料收集', value: 'resignation_contact' },
       { label: '减员报岗录入', value: 'data_entry_resign' },
       { label: '社保公积金减员', value: 'resignation_social_insurance' },
+      { label: '离职证明', value: 'resignation_certificate' },
+    ],
+  },
+  {
+    label: '在职管理',
+    options: [
+      { label: '单项业务办理', value: 'in_service_single_business' },
+      { label: '劳动合同续签', value: 'renewal_contract' },
+      { label: '证明开具', value: 'in_service_certificate' },
+    ],
+  },
+  {
+    label: '省外工单',
+    options: [
+      { label: '省外增员', value: 'out_of_province_increase' },
+      { label: '省外减员', value: 'out_of_province_decrease' },
+      { label: '省外单项业务', value: 'out_of_province_single_business' },
     ],
   },
 ];
 
-const MODULES = MODULE_GROUPS.flatMap((g) => g.options);
+const MODULES = MODULE_SELECT_GROUPS.flatMap((g) => g.options);
 
 function readString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
@@ -367,7 +384,7 @@ const AdminDetailViewTemplates = () => {
           <Form.Item label="模块" name="module_code" rules={[{ required: true, message: '请选择模块' }]}>
             <Select
               placeholder="请选择模块"
-              options={MODULE_GROUPS}
+              options={MODULE_SELECT_GROUPS}
               disabled={!!editing}
             />
           </Form.Item>

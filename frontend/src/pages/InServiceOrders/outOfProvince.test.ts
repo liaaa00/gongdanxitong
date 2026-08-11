@@ -82,6 +82,15 @@ describe('省外增减员表格口径', () => {
     expect(normalized).not.toHaveProperty('fund_ratio_options');
   });
 
+  it('displays the confirmed social-location field as the insured unit', () => {
+    expect(displayOutOfProvinceExtra(order({
+      extraData: {
+        socialLocation: '参保机构名称值',
+        insured_unit: '历史参保单位',
+      },
+    }), 'insured_unit')).toBe('参保机构名称值');
+  });
+
   it('sorts material-change approvals first and keeps the source order within each group', () => {
     const items = [
       order({ id: 'completed', status: 'completed' }),

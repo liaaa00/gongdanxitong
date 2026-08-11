@@ -2,7 +2,6 @@ import { DataSource } from 'typeorm';
 import {
   ActionConfig,
   DispatchStrategy,
-  ExportTemplate,
   FieldConfig,
   ModuleField,
   ModuleSupervisor,
@@ -192,7 +191,7 @@ export async function seedModuleConfigs(dataSource: DataSource): Promise<void> {
   const supervisorRepo = dataSource.getRepository(ModuleSupervisor);
   const userRepo = dataSource.getRepository(User);
   const actionRepo = dataSource.getRepository(ActionConfig);
-  const exportTemplateRepo = dataSource.getRepository(ExportTemplate);
+  // 社保公积金导出模板由 seed-export-templates 独立维护。
 
   for (const seed of modules) {
     const defaults = defaultSlaByModule[seed.moduleCode!];
@@ -254,25 +253,7 @@ export async function seedModuleConfigs(dataSource: DataSource): Promise<void> {
     await actionRepo.save(actionRepo.create({ ...seed, isActive: true }));
   }
 
-  const admin = await userRepo.findOne({ where: { username: 'admin' } }) ?? await userRepo.findOne({ where: { isActive: true } });
-  if (admin) {
-    for (const moduleCode of ['social_insurance', 'resignation_social_insurance']) {
-      const templateName = moduleCode === 'social_insurance' ? '社保公积金增员导出模板'
-        : '社保公积金减员导出模板';
-      const existed = await exportTemplateRepo.findOne({ where: { templateName, moduleCode } });
-      const fieldList = (moduleFields[moduleCode] ?? []).map((fieldCode, order) => ({ fieldCode, alias: fieldCode, order }));
-      if (existed) {
-        continue;
-      }
-      await exportTemplateRepo.save(exportTemplateRepo.create({
-        templateName,
-        moduleCode,
-        fieldList,
-        createdBy: admin.id,
-        isShared: true,
-      }));
-    }
-  }
+  // 社保公积金正式导出模板由 seed-export-templates 统一维护，避免重复生成旧字段配置。
 }
 
 async function hasTable(dataSource: DataSource, tableName: string): Promise<boolean> {

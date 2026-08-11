@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put, Query, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put, Query, Res, UseInterceptors } from '@nestjs/common';
+import { Response } from 'express';
 import { ApiResponse } from 'src/common/decorators/api-response.decorator';
 import { BusinessPermission } from 'src/common/decorators/business-permission.decorator';
 import { Audit } from 'src/common/decorators/audit.decorator';
@@ -10,6 +11,7 @@ import { JwtUserPayload } from 'src/modules/auth/auth.types';
 
 import { FieldPermissionScenario } from 'src/modules/field-permissions/field-permission.decorator';
 import { BatchDeleteWorkOrderDto } from './dto/batch-delete.dto';
+import { BatchExportWorkOrderDto } from './dto/batch-export.dto';
 import { CreateWorkOrderDto } from './dto/create.dto';
 import { ListWorkOrderQueryDto } from './dto/list-query.dto';
 import { SubmitWorkOrderDto } from './dto/submit.dto';
@@ -45,6 +47,22 @@ export class WorkOrderController {
   @Audit('work_orders', 'batch-delete')
   batchDelete(@Body() payload: BatchDeleteWorkOrderDto, @CurrentUser() user: JwtUserPayload) {
     return this.workOrderService.batchRemove(payload.ids, user);
+  }
+
+  @Post('batch-export')
+  @HttpCode(200)
+  @Roles('admin')
+  @Audit('work_orders', 'batch-export')
+  async batchExport(
+    @Body() payload: BatchExportWorkOrderDto,
+    @CurrentUser() user: JwtUserPayload,
+    @Res() res: Response,
+  ): Promise<void> {
+    const result = await this.workOrderService.batchExport(payload.ids, payload.orderType, user);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(result.fileName)}`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.end(result.buffer);
   }
 
   @Get(':id/timeline')

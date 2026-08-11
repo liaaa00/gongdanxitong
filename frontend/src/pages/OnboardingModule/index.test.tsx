@@ -124,7 +124,9 @@ describe('OnboardingModule header table filters', () => {
     const insuredUnit = columns.find((column) => column.key === 'insured_unit');
     const fundStartMonth = columns.find((column) => column.key === 'fund_start_month');
     expect(insuredUnit?.renderText(undefined, { extra_data: { paymentInstitution: '历史参保单位' } })).toBe('历史参保单位');
-    expect(insuredUnit?.renderText(undefined, { extra_data: { socialLocation: '参保机构名称值' } })).toBe('参保机构名称值');
+    expect(insuredUnit?.renderText(undefined, {
+      extra_data: { socialLocation: '参保机构名称值', insured_unit: '历史参保单位' },
+    })).toBe('参保机构名称值');
     expect(fundStartMonth?.renderText(undefined, { extra_data: { startMonth: '2026-08' } })).toBe('2026-08');
   });
 

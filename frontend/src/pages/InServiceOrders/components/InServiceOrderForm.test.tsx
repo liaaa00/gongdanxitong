@@ -74,11 +74,14 @@ describe('InServiceOrderForm renewal rules', () => {
     ]));
   });
 
-  it('keeps an open-ended renewal end date optional', () => {
+  it('keeps contract term and end date optional only for open-ended renewals', () => {
+    const contractTerm = field('contract_term', '合同期限');
     const endDate = field('contract_end_date', '合同终止日期', 'date');
 
-    expect(isRenewalFieldRequired(endDate, { contract_term_type: '无固定期限' })).toBe(false);
-    expect(isRenewalFieldRequired(endDate, { contract_term_type: '固定期限' })).toBe(true);
+    for (const item of [contractTerm, endDate]) {
+      expect(isRenewalFieldRequired(item, { contract_term_type: '无固定期限' })).toBe(false);
+      expect(isRenewalFieldRequired(item, { contract_term_type: '固定期限' })).toBe(true);
+    }
   });
 
   it('requires probation details only after a probation start date is provided', () => {

@@ -38,6 +38,7 @@ describe('batch renewal creation', () => {
       idCardNo: '330206199001011234',
       extraData: {
         contract_term_type: '固定期限',
+        contract_term: '1年',
         contract_start_date: '2026-09-01',
         contract_end_date: '2027-08-31',
         base_salary: 8000,

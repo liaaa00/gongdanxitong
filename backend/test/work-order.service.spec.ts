@@ -1,4 +1,5 @@
 import { HttpException } from '@nestjs/common';
+import { Workbook } from 'exceljs';
 import { Repository } from 'typeorm';
 import {
   BusinessScope,
@@ -210,6 +211,7 @@ describe('WorkOrderService unit tests', () => {
     expect(validationService.resolveCustomerId).toHaveBeenCalledWith(
       undefined,
       expect.objectContaining({ need_company_contract: '是' }),
+      BusinessScope.BEILUN,
     );
     expect(workOrderRepository.create).toHaveBeenCalledWith(expect.objectContaining({
       orderNo: 'ON20260511001',
@@ -357,6 +359,58 @@ describe('WorkOrderService unit tests', () => {
     expect(qb.take).toHaveBeenCalledWith(10);
     expect(result).toMatchObject({ total: 2, page: 2, pageSize: 10 });
     expect(result.items).toHaveLength(2);
+  });
+
+  it('lets an explicit created-time sort override the default status priority', async () => {
+    const qb = createQueryBuilderMock([makeWorkOrder()], 1);
+    workOrderRepository.createQueryBuilder.mockReturnValue(qb);
+
+    await service.findAll(
+      { page: 1, pageSize: 20, sort: 'created_at:asc' },
+      makeUser({ roles: ['admin'] }),
+    );
+
+    expect(qb.orderBy).toHaveBeenCalledWith('w.createdAt', 'ASC');
+    expect(qb.orderBy).not.toHaveBeenCalledWith('status_priority', 'ASC');
+  });
+
+  it('exports only selected onboarding/resignation main orders for administrators', async () => {
+    const order = makeWorkOrder({
+      id: 'wo-export',
+      orderType: OrderType.RESIGNATION,
+      extraData: { position: '工程师', bank_name: '=危险公式' },
+    });
+    workOrderRepository.find.mockResolvedValue([order]);
+    fieldConfigRepository.find.mockResolvedValue([
+      { fieldCode: 'position', fieldName: '岗位', displayOrder: 1, isActive: true },
+      { fieldCode: 'bank_name', fieldName: '开户银行', displayOrder: 2, isActive: true },
+    ] as FieldConfig[]);
+
+    const result = await service.batchExport(
+      ['wo-export'],
+      OrderType.RESIGNATION,
+      makeUser({ roles: ['admin'] }),
+    );
+
+    expect(workOrderRepository.find).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ orderType: OrderType.RESIGNATION, businessScope: BusinessScope.BEILUN }),
+      relations: { creator: true },
+    }));
+    expect(result.fileName).toMatch(/^离职主工单批量导出-\d{8}\.xlsx$/);
+    expect(result.rowCount).toBe(1);
+    expect(result.buffer).toBeInstanceOf(Buffer);
+
+    const workbook = new Workbook();
+    await workbook.xlsx.load(result.buffer as never);
+    const sheet = workbook.worksheets[0];
+    expect(sheet.getRow(1).values).toEqual(expect.arrayContaining(['工单编号', '员工姓名', '岗位', '开户银行']));
+    expect(sheet.getCell('L2').value).toBe("'=危险公式");
+  });
+
+  it('rejects main-order export for non-administrators', async () => {
+    await expect(service.batchExport(['wo-1'], OrderType.ONBOARDING, makeUser())).rejects.toMatchObject({
+      status: 403,
+    });
   });
 
   it('includes dispatched order summaries in list response after parent pagination', async () => {

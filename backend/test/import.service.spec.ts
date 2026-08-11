@@ -97,6 +97,53 @@ describe('ImportFieldValidationService scenarios', () => {
     expect(result.ok).toBe(true);
   });
 
+  it('requires contract term and end date only outside open-ended contracts', async () => {
+    const contractFields = [
+      field({
+        fieldCode: 'contract_term_type',
+        fieldName: '合同期限形式',
+        fieldType: FieldType.DROPDOWN,
+        isRequired: true,
+        dropdownOptions: ['固定期限', '无固定期限'],
+      }),
+      field({
+        fieldCode: 'contract_term',
+        fieldName: '合同期限',
+        conditionalRequired: { field: 'contract_term_type', op: 'NEQ', value: '无固定期限' },
+      }),
+      field({
+        fieldCode: 'contract_end_date',
+        fieldName: '合同终止日期',
+        fieldType: FieldType.DATE,
+        conditionalRequired: { field: 'contract_term_type', op: 'NEQ', value: '无固定期限' },
+      }),
+    ];
+    const contractMapping: MappingItemInput[] = [
+      { header: '合同期限形式', fieldCode: 'contract_term_type' },
+      { header: '合同期限', fieldCode: 'contract_term' },
+      { header: '合同终止日期', fieldCode: 'contract_end_date' },
+    ];
+
+    const openEnded = await service.validateRow({
+      rowNo: 1,
+      raw: { 合同期限形式: '无固定期限', 合同期限: '', 合同终止日期: '' },
+      mapping: contractMapping,
+      fields: contractFields,
+    });
+    expect(openEnded.ok).toBe(true);
+
+    const fixedTerm = await service.validateRow({
+      rowNo: 2,
+      raw: { 合同期限形式: '固定期限', 合同期限: '', 合同终止日期: '' },
+      mapping: contractMapping,
+      fields: contractFields,
+    });
+    expect(fixedTerm.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ fieldCode: 'contract_term', reason: 'required' }),
+      expect.objectContaining({ fieldCode: 'contract_end_date', reason: 'required' }),
+    ]));
+  });
+
   it('keeps employee_name missing as a strict required error', async () => {
     const result = await service.validateRow({ rowNo: 2, raw: validRow({ 姓名: '' }), mapping, fields });
     expect(result.ok).toBe(false);

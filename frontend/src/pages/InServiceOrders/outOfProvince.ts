@@ -91,7 +91,7 @@ export const OUT_OF_PROVINCE_DECREASE_EXPORT_HEADERS = [
 ] as const;
 
 const EXTRA_ALIASES: Record<string, string[]> = {
-  insured_unit: ['insured_unit', 'insuredUnit', '参保单位'],
+  insured_unit: ['social_location', 'socialLocation', '参保机构名称', 'insured_unit', 'insuredUnit', '参保单位'],
   social_pay_region: ['social_pay_region', 'socialPayRegion', '缴纳地', '参保地'],
   start_month: ['start_month', 'startMonth', '社保起缴月', '社保生效月份'],
   fund_start_month: ['fund_start_month', 'fundStartMonth', '公积金起缴月', '公积金生效月份'],

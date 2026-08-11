@@ -55,8 +55,8 @@ describe('onboarding import template seeds', () => {
     expect(saved.find((row) => row.fieldCode === 'company_address')).toMatchObject({
       headerAlias: '劳动合同主体注册地',
     });
-    expect(saved.find((row) => row.fieldCode === 'contract_term')).toMatchObject({ isRequiredOverride: true });
-    expect(saved.find((row) => row.fieldCode === 'contract_end_date')).toMatchObject({ isRequiredOverride: true });
+    expect(saved.find((row) => row.fieldCode === 'contract_term')).toMatchObject({ isRequiredOverride: null });
+    expect(saved.find((row) => row.fieldCode === 'contract_end_date')).toMatchObject({ isRequiredOverride: null });
     expect(saved.find((row) => row.fieldCode === 'feedback_deadline')).toMatchObject({ isRequiredOverride: false });
   });
 
@@ -84,14 +84,14 @@ describe('onboarding import template seeds', () => {
       isIncludedInTemplate: true,
     });
     expect(byCode.get('contract_term')).toMatchObject({
-      isRequired: true,
-      defaultRequired: true,
-      conditionalRequired: null,
+      isRequired: false,
+      defaultRequired: false,
+      conditionalRequired: { field: 'contract_term_type', op: 'NEQ', value: '无固定期限' },
     });
     expect(byCode.get('contract_end_date')).toMatchObject({
-      isRequired: true,
-      defaultRequired: true,
-      conditionalRequired: null,
+      isRequired: false,
+      defaultRequired: false,
+      conditionalRequired: { field: 'contract_term_type', op: 'NEQ', value: '无固定期限' },
     });
     expect(byCode.get('base_salary')).toMatchObject({
       fieldType: FieldType.NUMBER,

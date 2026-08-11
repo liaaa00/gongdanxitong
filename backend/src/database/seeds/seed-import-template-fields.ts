@@ -71,8 +71,6 @@ const ONBOARDING_TEMPLATE_HEADER_ALIASES: Partial<Record<(typeof ONBOARDING_TEMP
 };
 
 const ONBOARDING_TEMPLATE_REQUIRED_OVERRIDES: Partial<Record<(typeof ONBOARDING_TEMPLATE_ORDER)[number], boolean>> = {
-  contract_term: true,
-  contract_end_date: true,
   feedback_deadline: false,
 };
 

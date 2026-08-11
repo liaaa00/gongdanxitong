@@ -99,7 +99,8 @@ function getFriendlyErrorMessage(error: AxiosError): string {
       return data?.message || '请求的资源不存在';
     }
     if (status === 403) {
-      return '没有权限执行此操作';
+      const data = error.response.data as ApiResponse | undefined;
+      return data?.message || '没有权限执行此操作';
     }
     if (status >= 400) {
       // 尝试读取后端返回的 message

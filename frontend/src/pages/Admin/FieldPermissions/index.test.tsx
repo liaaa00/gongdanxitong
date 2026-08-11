@@ -35,6 +35,13 @@ vi.mock('@/services/request', () => ({
   },
 }));
 
+vi.mock('@/hooks/useAuth', () => ({
+  useAuth: () => ({
+    user: { roles: [{ code: 'admin' }] },
+    hasRole: (role: string) => role === 'admin',
+  }),
+}));
+
 vi.mock('antd', async () => {
   const actual = await vi.importActual<typeof import('antd')>('antd');
   return {
@@ -146,23 +153,15 @@ describe('AdminFieldPermissions', () => {
     render(<AdminFieldPermissions />);
 
     expect(await screen.findByText('字段填写权限')).toBeInTheDocument();
-    expect(screen.getByText('按“业务场景 → 角色 → 字段分组”配置')).toBeInTheDocument();
-    expect(screen.getByText(/这不是展示页/)).toBeInTheDocument();
-    expect(screen.getByText('权限含义（给业务人员看）')).toBeInTheDocument();
-    expect(screen.getByText('这个角色最终能填写哪些字段')).toBeInTheDocument();
-    expect(screen.getByText('当前角色')).toBeInTheDocument();
-    expect((await screen.findAllByText('员工姓名')).length).toBeGreaterThan(1);
-    expect(screen.getAllByText('基本信息').length).toBeGreaterThan(0);
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('当前查看：业务员（business_group_member）'));
+    expect(screen.getByRole('alert')).toHaveTextContent('修改后点击右上角保存');
+    expect(screen.getByText('员工姓名')).toBeInTheDocument();
+    expect(screen.getByText('employee_name')).toBeInTheDocument();
     expect(screen.getAllByText('劳动合同新签').length).toBeGreaterThan(0);
     expect(screen.queryByText('停用字段')).not.toBeInTheDocument();
-    expect(screen.queryByText('字段标识：employee_name')).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: /展开技术信息/ }));
-    expect(screen.getByText('字段标识：employee_name')).toBeInTheDocument();
-
-    await userEvent.click(screen.getAllByRole('button', { name: '本组全部只读' })[0]);
-
-    await userEvent.click(screen.getByRole('button', { name: /保存并立即生效（1）/ }));
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: '员工姓名-业务员-权限' }), '只读');
+    await userEvent.click(screen.getByRole('button', { name: /保存（1）/ }));
 
     await waitFor(() => expect(mocks.requestPost).toHaveBeenCalledWith('/admin/field-permissions/batch', {
       items: [{
@@ -172,17 +171,17 @@ describe('AdminFieldPermissions', () => {
         permission: 'readonly',
       }],
     }));
-    expect(mocks.messageSuccess).toHaveBeenCalledWith('已保存 1 项字段填写权限，当前工单页面会按新规则执行。');
+    expect(mocks.messageSuccess).toHaveBeenCalledWith('已保存 1 条权限变更');
   });
 
-  it('updates final writable summary when a group is hidden', async () => {
+  it('tracks a field permission change to hidden before saving', async () => {
     render(<AdminFieldPermissions />);
 
-    expect((await screen.findAllByText('员工姓名')).length).toBeGreaterThan(1);
-    expect(screen.getByText('这个角色最终能填写哪些字段')).toBeInTheDocument();
+    const permissionSelect = await screen.findByRole('combobox', { name: '员工姓名-业务员-权限' });
+    await userEvent.selectOptions(permissionSelect, '隐藏');
 
-    await userEvent.click(screen.getAllByRole('button', { name: '本组全部隐藏' })[0]);
-
-    expect(screen.getByText('当前没有可填写字段')).toBeInTheDocument();
+    expect(permissionSelect).toHaveValue('隐藏');
+    expect(screen.getByRole('button', { name: /保存（1）/ })).toBeEnabled();
+    expect(mocks.requestPost).not.toHaveBeenCalled();
   });
 });

@@ -518,9 +518,9 @@ const AVAILABLE_FIELDS_MOCK = [
   { field_code: 'household_address', field_name: '户籍地址', is_required: true },
   { field_code: 'postal_code', field_name: '邮编' },
   { field_code: 'contract_term_type', field_name: '合同期限形式', is_required: true },
-  { field_code: 'contract_term', field_name: '合同期限', is_required: true },
+  { field_code: 'contract_term', field_name: '合同期限', is_required: false, conditional_required: { op: 'NEQ', field: 'contract_term_type', value: '无固定期限' } },
   { field_code: 'contract_start_date', field_name: '合同开始日期', is_required: true },
-  { field_code: 'contract_end_date', field_name: '合同终止日期', is_required: true },
+  { field_code: 'contract_end_date', field_name: '合同终止日期', is_required: false, conditional_required: { op: 'NEQ', field: 'contract_term_type', value: '无固定期限' } },
   { field_code: 'probation_start_date', field_name: '试用期开始日期' },
   { field_code: 'probation_months', field_name: '试用期（月）' },
   { field_code: 'probation_end_date', field_name: '试用期结束日期' },
@@ -1190,6 +1190,59 @@ export async function batchDeleteWorkOrders(ids: string[]): Promise<{ deleted: n
     return mockDelay({ deleted: before - mockWorkOrders.length }, 300);
   }
   return request.post('/work-orders/batch-delete', { ids }) as Promise<{ deleted: number }>;
+}
+
+export async function batchExportWorkOrders(
+  ids: string[],
+  orderType: 'onboarding' | 'resignation',
+): Promise<void> {
+  const fileName = `${orderType === 'onboarding' ? '入职' : '离职'}主工单批量导出.xlsx`;
+  if (isMockMode) {
+    const blobUrl = window.URL.createObjectURL(new Blob(['mock work-order export'], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    }));
+    try {
+      const anchor = document.createElement('a');
+      anchor.href = blobUrl;
+      anchor.download = fileName;
+      anchor.click();
+    } finally {
+      window.URL.revokeObjectURL(blobUrl);
+    }
+    return;
+  }
+
+  const base = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || '';
+  const token = typeof window !== 'undefined' ? window.localStorage.getItem('token') : null;
+  const response = await fetch(`${base}/api/work-orders/batch-export`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ ids, orderType }),
+  });
+  if (!response.ok) {
+    let message = `批量导出失败 (${response.status})`;
+    try {
+      const payload = await response.json() as { message?: string; data?: { message?: string } };
+      message = payload.message || payload.data?.message || message;
+    } catch {
+      // 服务器可能返回非 JSON 错误页，保留状态码提示。
+    }
+    throw new Error(message);
+  }
+
+  const blob = await response.blob();
+  const blobUrl = window.URL.createObjectURL(blob);
+  try {
+    const anchor = document.createElement('a');
+    anchor.href = blobUrl;
+    anchor.download = fileName;
+    anchor.click();
+  } finally {
+    window.URL.revokeObjectURL(blobUrl);
+  }
 }
 
 const HEADER_SUGGESTIONS: Record<string, { code: string; name: string; confidence: number }> = {

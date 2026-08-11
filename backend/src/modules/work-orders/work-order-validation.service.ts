@@ -2,7 +2,7 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, ILike, Repository } from 'typeorm';
 import { businessException } from 'src/common/exceptions/business-exception';
-import { FieldConfig, WorkOrder } from 'src/entities';
+import { BusinessScope, FieldConfig, WorkOrder } from 'src/entities';
 import { AstEvaluator } from 'src/modules/dispatch-engine/ast-evaluator';
 
 const STRICT_REQUIRED_FIELD_CODES = new Set([
@@ -46,11 +46,21 @@ export class WorkOrderValidationService {
     private readonly astEvaluator: AstEvaluator,
   ) {}
 
-  async validateWorkOrder(workOrder: WorkOrder): Promise<void> {
+  async validateWorkOrder(
+    workOrder: WorkOrder,
+    options: {
+      baselineExtraData?: Record<string, unknown>;
+      changedFieldCodes?: string[];
+    } = {},
+  ): Promise<void> {
     const fields = await this.fieldConfigRepository.find({
       where: { isActive: true },
       order: { displayOrder: 'ASC' },
     });
+    const changedFieldCodes = options.changedFieldCodes
+      ? new Set(options.changedFieldCodes.filter(Boolean))
+      : null;
+    const baselineExtraData = options.baselineExtraData ?? workOrder.extraData;
 
     const missing: string[] = [];
     const missingNames: string[] = [];
@@ -65,6 +75,16 @@ export class WorkOrderValidationService {
       }
 
       const required = await this.isRequiredField(field, workOrder.extraData);
+      const requiredBefore = changedFieldCodes
+        ? await this.isRequiredField(field, baselineExtraData)
+        : false;
+      const shouldValidate = !changedFieldCodes
+        || changedFieldCodes.has(field.fieldCode)
+        || (!requiredBefore && required);
+      if (!shouldValidate) {
+        continue;
+      }
+
       const value = workOrder.extraData[field.fieldCode];
       if (required && !this.hasValue(value)) {
         if (STRICT_REQUIRED_FIELD_CODES.has(field.fieldCode)) {
@@ -98,7 +118,10 @@ export class WorkOrderValidationService {
     // 问题5修复：检查证件号重复（仅对新增员工类工单）
     const isOnboardingOrder = ['ONBOARDING', 'INCREASE'].includes(workOrder.orderType);
     const idCardNo = this.readText(workOrder.extraData.id_card_no ?? workOrder.extraData.employee_id_card);
-    if (isOnboardingOrder && idCardNo) {
+    const shouldCheckIdentity = !changedFieldCodes
+      || changedFieldCodes.has('id_card_no')
+      || changedFieldCodes.has('employee_id_card');
+    if (isOnboardingOrder && idCardNo && shouldCheckIdentity) {
       const existingOrder = await this.workOrderRepository
         .createQueryBuilder('wo')
         .where('wo.id != :currentId', { currentId: workOrder.id })
@@ -132,20 +155,24 @@ export class WorkOrderValidationService {
     return evaluated.result;
   }
 
-  async resolveCustomerId(customerId: string | undefined, extraData: Record<string, unknown>): Promise<string> {
+  async resolveCustomerId(
+    customerId: string | undefined,
+    extraData: Record<string, unknown>,
+    businessScope: BusinessScope = BusinessScope.BEILUN,
+  ): Promise<string> {
     if (customerId) {
       return customerId;
     }
 
     const customerCode = this.readText(extraData.customer_code);
     const customerName = this.readText(extraData.customer_name);
-    const customer = await this.findCustomer(customerCode, customerName);
+    const customer = await this.findCustomer(customerCode, customerName, businessScope);
     if (customer) {
       return customer.id;
     }
 
     if (customerCode && customerName) {
-      const created = await this.createCustomerFromWorkOrder(customerCode, customerName);
+      const created = await this.createCustomerFromWorkOrder(customerCode, customerName, businessScope);
       return created.id;
     }
 
@@ -156,7 +183,12 @@ export class WorkOrderValidationService {
     });
   }
 
-  async resolveBranchId(branchId: string | undefined, customerId: string, extraData: Record<string, unknown>): Promise<string | null> {
+  async resolveBranchId(
+    branchId: string | undefined,
+    customerId: string,
+    extraData: Record<string, unknown>,
+    businessScope: BusinessScope = BusinessScope.BEILUN,
+  ): Promise<string | null> {
     if (branchId) {
       return branchId;
     }
@@ -164,8 +196,8 @@ export class WorkOrderValidationService {
     const branchCode = this.readText(extraData.branch_code) ?? this.readText(extraData.customer_code);
     if (branchCode) {
       const byCode = await this.dataSource.query(
-        'SELECT id FROM branches WHERE branch_code = $1 AND is_active = true LIMIT 1',
-        [branchCode],
+        'SELECT id FROM branches WHERE branch_code = $1 AND business_scope = $2 AND is_active = true LIMIT 1',
+        [branchCode, businessScope],
       );
       if (Array.isArray(byCode) && byCode.length > 0) {
         return String(byCode[0].id);
@@ -173,8 +205,8 @@ export class WorkOrderValidationService {
     }
 
     const fallback = await this.dataSource.query(
-      'SELECT id FROM branches WHERE customer_id = $1 AND is_active = true ORDER BY created_at ASC LIMIT 1',
-      [customerId],
+      'SELECT id FROM branches WHERE customer_id = $1 AND business_scope = $2 AND is_active = true ORDER BY created_at ASC LIMIT 1',
+      [customerId, businessScope],
     );
     if (Array.isArray(fallback) && fallback.length > 0) {
       return String(fallback[0].id);
@@ -277,16 +309,17 @@ export class WorkOrderValidationService {
   private async createCustomerFromWorkOrder(
     customerCode: string,
     customerName: string,
+    businessScope: BusinessScope,
   ): Promise<{ id: string }> {
     const rows = await this.dataSource.query(
       `
-        INSERT INTO customers (customer_code, customer_name, is_active)
-        VALUES ($1, $2, true)
-        ON CONFLICT (customer_code)
+        INSERT INTO customers (customer_code, customer_name, is_active, business_scope)
+        VALUES ($1, $2, true, $3)
+        ON CONFLICT (customer_code, business_scope)
         DO UPDATE SET customer_name = EXCLUDED.customer_name, is_active = true
         RETURNING id
       `,
-      [customerCode, customerName],
+      [customerCode, customerName, businessScope],
     );
     return { id: String(rows[0].id) };
   }
@@ -294,11 +327,12 @@ export class WorkOrderValidationService {
   private async findCustomer(
     customerCode: string | null,
     customerName: string | null,
+    businessScope: BusinessScope,
   ): Promise<{ id: string } | null> {
     if (customerCode) {
       const byCode = await this.dataSource.query(
-        'SELECT id FROM customers WHERE customer_code = $1 AND is_active = true LIMIT 1',
-        [customerCode],
+        'SELECT id FROM customers WHERE customer_code = $1 AND business_scope = $2 AND is_active = true LIMIT 1',
+        [customerCode, businessScope],
       );
       if (Array.isArray(byCode) && byCode.length > 0) {
         return { id: String(byCode[0].id) };
@@ -307,8 +341,8 @@ export class WorkOrderValidationService {
 
     if (customerName) {
       const byName = await this.dataSource.query(
-        'SELECT id FROM customers WHERE customer_name = $1 AND is_active = true LIMIT 1',
-        [customerName],
+        'SELECT id FROM customers WHERE customer_name = $1 AND business_scope = $2 AND is_active = true LIMIT 1',
+        [customerName, businessScope],
       );
       if (Array.isArray(byName) && byName.length > 0) {
         return { id: String(byName[0].id) };

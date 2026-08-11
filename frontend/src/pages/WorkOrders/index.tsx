@@ -4,9 +4,9 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { PageContainer } from '@ant-design/pro-components';
 import type { ProColumns } from '@ant-design/pro-components';
 import { App, Badge, Button, DatePicker, Input, Popconfirm, Radio, Space, Tag, Tooltip } from 'antd';
-import { EyeOutlined, ImportOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
+import { DownloadOutlined, EyeOutlined, ImportOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import MultiViewTable from '@/components/MultiViewTable';
-import { batchDeleteWorkOrders, deleteWorkOrder, getWorkOrders } from '@/services/workOrders';
+import { batchDeleteWorkOrders, batchExportWorkOrders, deleteWorkOrder, getWorkOrders } from '@/services/workOrders';
 import type { DispatchedOrderSummary, WorkOrderItem } from '@/services/workOrders';
 import { getMyRoleActions, type RoleActionCode } from '@/services/roleActionPermissions';
 import type { PageParams } from '@/services/mock';
@@ -195,6 +195,20 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
   }, [isBackendOnly, navigate]);
 
   const canDelete = !isInitiatedPage && (actionsLoaded ? allowedActions.includes('work_order.delete') : isAdmin);
+  const canBatchExport = !isInitiatedPage && isAdmin
+    && (currentOrderType === 'onboarding' || currentOrderType === 'resignation');
+  const batchExportLabel = currentOrderType === 'resignation' ? '离职批量导出' : '入职批量导出';
+
+  const handleBatchExport = async (ids: React.Key[], clear: () => void) => {
+    if (!canBatchExport || !currentOrderType) return;
+    try {
+      await batchExportWorkOrders(ids.map(String), currentOrderType);
+      message.success(`已导出 ${ids.length} 条主工单`);
+      clear();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '批量导出失败');
+    }
+  };
 
   const handleDelete = async (id: string) => {
     try {
@@ -430,20 +444,31 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
         ]}
         proTableOptions={false}
         proTableToolBarRender={false}
-        batchActions={!isInitiatedPage && canDelete ? (selectedKeys, clear) => (
+        batchActions={!isInitiatedPage && (canDelete || canBatchExport) ? (selectedKeys, clear) => (
           <Space>
-            <Popconfirm
-              title={`确定删除选中的 ${selectedKeys.length} 条工单？`}
-              description="删除后不可恢复，相关子工单也将一并清除。"
-              okText="删除"
-              okButtonProps={{ danger: true }}
-              disabled={selectedKeys.length === 0}
-              onConfirm={() => handleBatchDelete(selectedKeys, clear)}
-            >
-              <RefButton danger disabled={selectedKeys.length === 0}>
-                批量删除
+            {canBatchExport && (
+              <RefButton
+                icon={<DownloadOutlined />}
+                disabled={selectedKeys.length === 0}
+                onClick={() => handleBatchExport(selectedKeys, clear)}
+              >
+                {batchExportLabel}
               </RefButton>
-            </Popconfirm>
+            )}
+            {canDelete && (
+              <Popconfirm
+                title={`确定删除选中的 ${selectedKeys.length} 条工单？`}
+                description="删除后不可恢复，相关子工单也将一并清除。"
+                okText="删除"
+                okButtonProps={{ danger: true }}
+                disabled={selectedKeys.length === 0}
+                onConfirm={() => handleBatchDelete(selectedKeys, clear)}
+              >
+                <RefButton danger disabled={selectedKeys.length === 0}>
+                  批量删除
+                </RefButton>
+              </Popconfirm>
+            )}
             <RefButton onClick={clear}>取消选择</RefButton>
           </Space>
         ) : undefined}

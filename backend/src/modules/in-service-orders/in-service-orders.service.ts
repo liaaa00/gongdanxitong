@@ -1232,6 +1232,9 @@ export class InServiceOrdersService {
       const contractEndDate = extraData.contract_end_date
         ?? extraData.renewal_end_date
         ?? extraData.contractEndDate;
+      const contractTerm = extraData.contract_term
+        ?? extraData.renewal_term
+        ?? extraData.contractTerm;
       const contractTermType = String(
         extraData.contract_term_type ?? extraData.renewal_term_type ?? '',
       );
@@ -1239,13 +1242,15 @@ export class InServiceOrdersService {
       if (baseSalary === undefined || baseSalary === null || String(baseSalary).trim() === '') {
         throw businessException(4811, HttpStatus.BAD_REQUEST, '续签基本工资不能为空');
       }
-      if (!contractStartDate || (contractTermType !== '无固定期限' && !contractEndDate)) {
+      const fixedTermFieldsMissing = contractTermType !== '无固定期限'
+        && (!contractTerm || String(contractTerm).trim() === '' || !contractEndDate);
+      if (!contractStartDate || fixedTermFieldsMissing) {
         throw businessException(
           4811,
           HttpStatus.BAD_REQUEST,
           contractTermType === '无固定期限'
             ? '合同开始日期不能为空'
-            : '合同开始日期和结束日期不能为空',
+            : '合同开始日期、合同期限和结束日期不能为空',
         );
       }
       return;

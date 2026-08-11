@@ -26,17 +26,20 @@ export async function getDetailViewTemplate(id: string) {
   return request.get<DetailViewTemplateItem>(`/admin/detail-view-templates/${id}`);
 }
 
-export async function getActiveDetailViewTemplate(moduleCode: string) {
+export async function getActiveDetailViewTemplate(
+  moduleCode: string,
+  businessScope?: 'beilun' | 'out_of_province',
+) {
   try {
     return await request.get<DetailViewTemplateItem | null>(
       `/admin/detail-view-templates/active/${encodeURIComponent(moduleCode)}`,
-      { silentError: true } as any,
+      { ...(businessScope ? { params: { businessScope } } : {}), silentError: true } as any,
     );
   } catch {
     // 兼容旧后端未注册 active/:moduleCode 路由的场景：退回列表接口取最新启用配置。
     const list = await request.get<DetailViewTemplateItem[]>(
       '/admin/detail-view-templates',
-      { params: { moduleCode }, silentError: true } as any,
+      { params: { moduleCode, ...(businessScope ? { businessScope } : {}) }, silentError: true } as any,
     );
     const items = Array.isArray(list) ? list : (list as any)?.list ?? (list as any)?.items ?? [];
     return items.find((item: DetailViewTemplateItem) => (item.is_active ?? item.isActive) !== false) ?? null;

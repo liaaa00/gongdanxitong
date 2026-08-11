@@ -77,7 +77,7 @@ export function getSocialFundExportFieldList(moduleCode: string): SocialFundExpo
 }
 
 export function getSocialFundExportTemplateName(moduleCode: string): string | null {
-  if (moduleCode === 'social_insurance') return '社保公积金增员导出表';
-  if (moduleCode === 'resignation_social_insurance') return '社保公积金减员导出表';
+  if (moduleCode === 'social_insurance') return '社保公积金增员批导出模板';
+  if (moduleCode === 'resignation_social_insurance') return '社保公积金减员批导出模板';
   return null;
 }

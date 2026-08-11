@@ -124,12 +124,18 @@ describe('Imports ImportTemplateService round-trip', () => {
       '是否为通用模板', '模板名称', '是否企服发薪', '发薪地', '社保公积金未办是否需要催办', '特殊备注',
     ];
     const fieldOverrides: Record<string, Partial<FieldConfig>> = {
-      contract_term: { isRequired: true, defaultRequired: true },
+      contract_term: {
+        isRequired: false,
+        defaultRequired: false,
+        conditionalRequired: { field: 'contract_term_type', op: 'NEQ', value: '无固定期限' },
+        helpText: '固定期限时必填，如3年。',
+      },
       contract_end_date: {
         fieldType: FieldType.DATE,
-        isRequired: true,
-        defaultRequired: true,
-        helpText: '标准格式：年-月-日。',
+        isRequired: false,
+        defaultRequired: false,
+        conditionalRequired: { field: 'contract_term_type', op: 'NEQ', value: '无固定期限' },
+        helpText: '固定期限时必填。标准格式：年-月-日。',
       },
       work_hour_system: {
         fieldType: FieldType.DROPDOWN,
@@ -206,10 +212,10 @@ describe('Imports ImportTemplateService round-trip', () => {
     expect(headerFills[38]).toMatchObject({ theme: 9, tint: 0.6 });
     expect(headerFills[39]).toBeUndefined();
 
-    expect(sheet.getCell('K3').value).toBe('必填');
-    expect(sheet.getCell('K4').value).toBe('');
-    expect(sheet.getCell('M3').value).toBe('必填');
-    expect(sheet.getCell('M4').value).toBe('格式：YYYY-MM-DD；标准格式：年-月-日。');
+    expect(sheet.getCell('K3').value).toBe('条件必填');
+    expect(sheet.getCell('K4').value).toBe('满足条件时必填；固定期限时必填，如3年。');
+    expect(sheet.getCell('M3').value).toBe('条件必填');
+    expect(sheet.getCell('M4').value).toBe('满足条件时必填；格式：YYYY-MM-DD；固定期限时必填。标准格式：年-月-日。');
     expect(sheet.getCell('T4').value).toBe('请填写数字；数字格式：保留小数点后两位。');
     expect(sheet.getCell('V4').value).toBe('满足条件时必填；请填写数字；数字格式：保留小数点后两位。');
     expect(sheet.getCell('AL4').value).toBe('城市的名字（待确认）');

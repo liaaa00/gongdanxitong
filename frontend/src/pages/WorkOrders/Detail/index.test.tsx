@@ -10,7 +10,7 @@ const updateWorkOrderMock = vi.fn();
 const resubmitWorkOrderMock = vi.fn();
 const voidWorkOrderMock = vi.fn();
 const getWorkOrderMock = vi.fn();
-const getCreateWorkOrderFieldsMock = vi.fn();
+
 const getFieldsMock = vi.fn();
 
 vi.mock('@/components/DynamicForm', () => ({
@@ -25,9 +25,6 @@ vi.mock('@/hooks/useFieldPermissions', () => ({
   useFieldPermissions: () => ({ permissions: { employee_name: 'visible' } }),
 }));
 
-vi.mock('@/services/importTemplates', () => ({
-  getCreateWorkOrderFields: (...args: unknown[]) => getCreateWorkOrderFieldsMock(...args),
-}));
 
 vi.mock('@/services/fields', () => ({
   getFields: (...args: unknown[]) => getFieldsMock(...args),
@@ -77,14 +74,11 @@ describe('WorkOrdersDetail main order readonly mode', () => {
       modal: { confirm: vi.fn() } as any,
     });
     getWorkOrderMock.mockResolvedValue(baseOrder);
-    getCreateWorkOrderFieldsMock.mockResolvedValue([
-      { field_code: 'employee_name', field_name: '员工姓名', field_type: 'text', is_required: true, default_required: true, display_order: 1, is_active: true },
-      { field_code: 'custom_import_only', field_name: '导入模板自定义字段', field_type: 'text', is_required: false, default_required: false, display_order: 2, is_active: true },
-    ]);
+
     getFieldsMock.mockResolvedValue([
       { field_code: 'employee_name', field_name: '员工姓名（系统）', field_type: 'text', is_required: true, default_required: true, display_order: 10, is_active: true, collection_group: '基本信息' },
       { field_code: 'custom_import_only', field_name: '导入模板自定义字段（系统）', field_type: 'text', is_required: false, default_required: false, display_order: 11, is_active: true, collection_group: '模板字段' },
-      { field_code: 'system_only_field', field_name: '系统仅有字段', field_type: 'text', is_required: false, default_required: false, display_order: 12, is_active: true, collection_group: '系统字段' },
+      { field_code: 'system_only_field', field_name: '系统仅有字段', field_type: 'text', is_required: false, default_required: false, display_order: 12, is_active: true, is_included_in_template: false, collection_group: '系统字段' },
     ]);
     updateWorkOrderMock.mockResolvedValue({ ...baseOrder, status: 'pending', extra_data: { employee_name: '修改后员工' } });
     resubmitWorkOrderMock.mockResolvedValue({ ...baseOrder, status: 'processing', extra_data: { employee_name: '修改后员工' } });
@@ -95,11 +89,11 @@ describe('WorkOrdersDetail main order readonly mode', () => {
     renderDetail();
 
     expect(await screen.findByText('基本信息')).toBeInTheDocument();
-    expect(getCreateWorkOrderFieldsMock).toHaveBeenCalledWith('onboarding');
+
     expect(getFieldsMock).toHaveBeenCalledWith('onboarding');
-    expect(screen.getByText('员工姓名')).toBeInTheDocument();
+    expect(screen.getByText('员工姓名（系统）')).toBeInTheDocument();
     expect(screen.getByText('模板字段')).toBeInTheDocument();
-    expect(screen.getByText('导入模板自定义字段')).toBeInTheDocument();
+    expect(screen.getByText('导入模板自定义字段（系统）')).toBeInTheDocument();
     expect(screen.queryByText('系统字段')).not.toBeInTheDocument();
     expect(screen.queryByText('系统仅有字段')).not.toBeInTheDocument();
     expect(screen.getAllByText('原员工').length).toBeGreaterThan(0);

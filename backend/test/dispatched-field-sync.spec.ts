@@ -146,6 +146,13 @@ function buildService(order: DispatchedOrder) {
     resolveUserDepartmentIds: jest.fn(async () => ['dep-1']),
     validateWorkOrder: jest.fn(async () => undefined),
   };
+  const detailViewTemplatesService = {
+    getActiveByModule: jest.fn(async (): Promise<{
+      moduleCode: string;
+      fieldList: Array<{ fieldCode: string }>;
+      isActive: boolean;
+    } | null> => null),
+  };
   const service = new DispatchedOrderService(
     dispatchedOrderRepo,
     workOrderRepo,
@@ -166,9 +173,19 @@ function buildService(order: DispatchedOrder) {
     undefined,
     fieldSyncBatchRepo,
     fieldSyncItemRepo,
+    detailViewTemplatesService as never,
   );
   jest.spyOn(service, 'findOne').mockResolvedValue({ id: ORDER_ID } as DispatchedOrderDetailItem);
-  return { service, dispatchedOrderRepo, workOrderRepo, operationLogRepo, fieldSyncBatchRepo, fieldSyncItemRepo, validationService };
+  return {
+    service,
+    dispatchedOrderRepo,
+    workOrderRepo,
+    operationLogRepo,
+    fieldSyncBatchRepo,
+    fieldSyncItemRepo,
+    validationService,
+    detailViewTemplatesService,
+  };
 }
 
 const creator: JwtUserPayload = { sub: CREATOR_ID, username: 'sales', roles: ['business_group_member'] } as JwtUserPayload;
@@ -297,9 +314,15 @@ describe('dispatched order field sync records', () => {
     expect(order.status).toBe(DispatchedOrderStatus.MODIFY_PENDING);
     expect(order.completedAt).toEqual(fixedDate);
     expect(order.parentOrder.extraData.mobile).toBe('old');
-    expect(validationService.validateWorkOrder).toHaveBeenCalledWith(expect.objectContaining({
-      extraData: expect.objectContaining({ mobile: 'new' }),
-    }));
+    expect(validationService.validateWorkOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        extraData: expect.objectContaining({ mobile: 'new' }),
+      }),
+      expect.objectContaining({
+        baselineExtraData: expect.objectContaining({ mobile: 'old' }),
+        changedFieldCodes: ['mobile'],
+      }),
+    );
 
     operationLogRepo.findOne.mockResolvedValue({
       userId: CREATOR_ID,
@@ -377,6 +400,31 @@ describe('dispatched order field sync records', () => {
     expect(fieldSyncBatchRepo.save).toHaveBeenCalledWith(expect.objectContaining({
       status: 'direct_synced',
       changedFields: ['mobile'],
+    }));
+  });
+
+  it('allows a creator to update fields added to the active non-contract detail template', async () => {
+    const order = makeOrder(DispatchedOrderStatus.PENDING, {
+      moduleCode: 'data_entry',
+      visibleFields: ['employee_name'],
+      handlerId: null,
+      acceptedAt: null,
+    });
+    const { service, workOrderRepo, detailViewTemplatesService } = buildService(order);
+    detailViewTemplatesService.getActiveByModule.mockResolvedValue({
+      moduleCode: 'data_entry',
+      fieldList: [{ fieldCode: 'employee_name' }, { fieldCode: 'mobile' }],
+      isActive: true,
+    });
+
+    await service.creatorUpdateFields(ORDER_ID, {
+      fields: { mobile: 'new' },
+      reason: '按当前详情模板补录手机号',
+    }, creator);
+
+    expect(detailViewTemplatesService.getActiveByModule).toHaveBeenCalledWith('data_entry', 'beilun');
+    expect(workOrderRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+      extraData: expect.objectContaining({ mobile: 'new' }),
     }));
   });
 

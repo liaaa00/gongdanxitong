@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import WorkOrders from './index';
 
@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   getWorkOrders: vi.fn(),
   deleteWorkOrder: vi.fn(),
   batchDeleteWorkOrders: vi.fn(),
+  batchExportWorkOrders: vi.fn(),
   getMyRoleActions: vi.fn(),
   navigate: vi.fn(),
   pathname: '/my-work/initiated',
@@ -65,6 +66,7 @@ vi.mock('@/services/workOrders', () => ({
   getWorkOrders: (...args: unknown[]) => mocks.getWorkOrders(...args),
   deleteWorkOrder: (...args: unknown[]) => mocks.deleteWorkOrder(...args),
   batchDeleteWorkOrders: (...args: unknown[]) => mocks.batchDeleteWorkOrders(...args),
+  batchExportWorkOrders: (...args: unknown[]) => mocks.batchExportWorkOrders(...args),
 }));
 
 describe('WorkOrders initiated read-only view', () => {
@@ -76,6 +78,7 @@ describe('WorkOrders initiated read-only view', () => {
     mocks.roles = new Set<string>(['admin']);
     mocks.getMyRoleActions.mockResolvedValue(['work_order.create', 'work_order.import', 'work_order.delete']);
     mocks.getWorkOrders.mockResolvedValue({ list: [], total: 0 });
+    mocks.batchExportWorkOrders.mockResolvedValue(undefined);
   });
 
   function getColumn(dataIndexOrKey: string) {
@@ -219,5 +222,45 @@ describe('WorkOrders initiated read-only view', () => {
       orderType: 'resignation',
     }));
     expect(mocks.getWorkOrders).toHaveBeenCalledWith(expect.not.objectContaining({ createdAfter: expect.anything() }));
+  });
+
+  it('passes the created-time sort through the main work-order request', async () => {
+    mocks.pathname = '/work-orders';
+    mocks.search = '?orderType=onboarding';
+    render(<WorkOrders />);
+
+    await mocks.latestTableProps.request({ current: 1, pageSize: 100, sort: 'created_at:asc' });
+
+    expect(mocks.getWorkOrders).toHaveBeenCalledWith(expect.objectContaining({
+      orderType: 'onboarding',
+      sort: 'created_at:asc',
+    }));
+  });
+
+  it('shows admin-only export actions on onboarding and resignation main lists', async () => {
+    mocks.pathname = '/work-orders';
+    mocks.search = '?orderType=onboarding';
+    mocks.roles = new Set<string>(['admin']);
+    const { rerender } = render(<WorkOrders />);
+
+    expect(screen.getByRole('button', { name: /入职批量导出/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /入职批量导出/ }));
+    await waitFor(() => expect(mocks.batchExportWorkOrders).toHaveBeenCalledWith(['wo-1'], 'onboarding'));
+
+    mocks.pathname = '/work-orders';
+    mocks.search = '?orderType=resignation';
+    rerender(<WorkOrders />);
+    expect(screen.getByRole('button', { name: /离职批量导出/ })).toBeInTheDocument();
+  });
+
+  it('does not expose main-order export to business users', async () => {
+    mocks.pathname = '/work-orders';
+    mocks.search = '?orderType=resignation';
+    mocks.roles = new Set<string>(['business_group_member']);
+    mocks.getMyRoleActions.mockResolvedValue(['work_order.view']);
+    render(<WorkOrders />);
+
+    await waitFor(() => expect(mocks.getMyRoleActions).toHaveBeenCalled());
+    expect(screen.queryByRole('button', { name: /批量导出/ })).not.toBeInTheDocument();
   });
 });

@@ -1,4 +1,5 @@
 import { ForbiddenException, HttpStatus, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { Workbook } from 'exceljs';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, MoreThan, QueryFailedError, Repository } from 'typeorm';
 import {
@@ -119,10 +120,10 @@ export class WorkOrderService {
     this.assertBusinessOwnerReadOnly(user);
     const extraData = this.sanitizeExtraData(payload.extraData);
     const businessScope = this.resolveBusinessScope(payload.orderType);
-    const customerId = await this.validationService.resolveCustomerId(payload.customerId, extraData);
+    const customerId = await this.validationService.resolveCustomerId(payload.customerId, extraData, businessScope);
     const departmentId = await this.validationService.resolveDepartmentId(payload.departmentId, user.sub);
     const branchId = typeof this.validationService.resolveBranchId === 'function'
-      ? await this.validationService.resolveBranchId(payload.extraData?.branchId as string | undefined, customerId, extraData)
+      ? await this.validationService.resolveBranchId(payload.extraData?.branchId as string | undefined, customerId, extraData, businessScope)
       : null;
     const employeeIdCard = this.validationService.requireText(extraData.id_card_no, 'id_card_no');
     const duplicate = await findDuplicateIdCardInMonth(this.workOrderRepository, {
@@ -940,9 +941,18 @@ export class WorkOrderService {
       "CASE WHEN w.status IN ('returned','withdraw_pending','void_pending') OR EXISTS (SELECT 1 FROM dispatched_orders sort_child WHERE sort_child.parent_order_id = w.id AND sort_child.status IN ('returned','modify_pending')) THEN 0 ELSE 1 END",
       'status_priority',
     );
-    qb.orderBy('status_priority', 'ASC');
-    if (typeof (qb as typeof qb & { addOrderBy?: unknown }).addOrderBy === 'function') {
-      qb.addOrderBy('w.updatedAt', 'DESC');
+    const requestedSort = this.resolveWorkOrderListSort(query.sort);
+    if (requestedSort) {
+      // 用户明确点击创建时间时，按创建时间排序并覆盖默认的状态优先级。
+      qb.orderBy(requestedSort.column, requestedSort.direction);
+      if (typeof (qb as typeof qb & { addOrderBy?: unknown }).addOrderBy === 'function') {
+        qb.addOrderBy('w.id', 'ASC');
+      }
+    } else {
+      qb.orderBy('status_priority', 'ASC');
+      if (typeof (qb as typeof qb & { addOrderBy?: unknown }).addOrderBy === 'function') {
+        qb.addOrderBy('w.updatedAt', 'DESC');
+      }
     }
     const rows = await qb.skip((page - 1) * pageSize).take(pageSize).getMany();
     const childrenByParentId = new Map<string, DispatchedOrder[]>();
@@ -1028,6 +1038,104 @@ export class WorkOrderService {
       throw businessException(1000, HttpStatus.INTERNAL_SERVER_ERROR, '重提服务未初始化');
     }
     return this.resubmitService.resubmit(id, payload, user);
+  }
+
+  async batchExport(
+    ids: string[],
+    orderType: OrderType,
+    user: JwtUserPayload,
+  ): Promise<{ buffer: Buffer; fileName: string; rowCount: number }> {
+    if (!isAdminRole(user.roles)) {
+      throw new ForbiddenException('仅管理员可批量导出主工单');
+    }
+    if (![OrderType.ONBOARDING, OrderType.RESIGNATION].includes(orderType)) {
+      throw businessException(4225, HttpStatus.BAD_REQUEST, '仅支持入职或离职主工单批量导出');
+    }
+
+    const uniqueIds = Array.from(new Set(ids));
+    const orders = await this.workOrderRepository.find({
+      where: {
+        id: In(uniqueIds),
+        orderType,
+        businessScope: BusinessScope.BEILUN,
+      },
+      relations: { creator: true },
+    });
+    if (orders.length !== uniqueIds.length) {
+      throw businessException(4226, HttpStatus.BAD_REQUEST, '只能导出当前入职或离职主工单，不能混入其他账套或订单类型');
+    }
+
+    const orderById = new Map(orders.map((order) => [order.id, order]));
+    const orderedOrders = uniqueIds.map((id) => orderById.get(id)!).filter(Boolean);
+    const fields = await this.fieldConfigRepository.find({
+      where: { isActive: true },
+      order: { displayOrder: 'ASC' },
+    });
+    const fieldByCode = new Map(fields.map((field) => [field.fieldCode, field]));
+    const fixedCodes = new Set([
+      'order_no', 'order_type', 'status', 'customer_code', 'customer_name',
+      'employee_name', 'employee_id_card', 'created_by', 'created_at', 'updated_at', 'completed_at',
+    ]);
+    const dynamicCodes = Array.from(new Set(
+      orderedOrders.flatMap((order) => Object.keys(order.extraData || {})),
+    )).filter((code) => !fixedCodes.has(code));
+    dynamicCodes.sort((left, right) => {
+      const leftOrder = fieldByCode.get(left)?.displayOrder ?? Number.MAX_SAFE_INTEGER;
+      const rightOrder = fieldByCode.get(right)?.displayOrder ?? Number.MAX_SAFE_INTEGER;
+      return leftOrder - rightOrder || left.localeCompare(right);
+    });
+
+    const workbook = new Workbook();
+    const sheet = workbook.addWorksheet(orderType === OrderType.ONBOARDING ? '入职主工单' : '离职主工单');
+    const columns = [
+      { key: 'order_no', header: '工单编号', width: 22 },
+      { key: 'customer_code', header: '客户代码', width: 18 },
+      { key: 'customer_name', header: '客户名称', width: 24 },
+      { key: 'employee_name', header: '员工姓名', width: 14 },
+      { key: 'employee_id_card', header: '员工证件号', width: 22 },
+      { key: 'created_by', header: '发起人', width: 18 },
+      { key: 'status', header: '工单状态', width: 16 },
+      { key: 'created_at', header: '创建时间', width: 22 },
+      { key: 'updated_at', header: '最后更新时间', width: 22 },
+      { key: 'completed_at', header: '完成时间', width: 22 },
+      ...dynamicCodes.map((code) => ({
+        key: code,
+        header: fieldByCode.get(code)?.fieldName || code,
+        width: 20,
+      })),
+    ];
+    sheet.columns = columns;
+    sheet.views = [{ state: 'frozen', ySplit: 1 }];
+    sheet.getRow(1).font = { bold: true };
+    sheet.getRow(1).alignment = { vertical: 'middle' };
+
+    for (const order of orderedOrders) {
+      const row: Record<string, unknown> = {
+        order_no: order.orderNo,
+        customer_code: order.customerCode || order.extraData?.customer_code || '',
+        customer_name: order.customerName || order.extraData?.customer_name || '',
+        employee_name: order.employeeName || order.extraData?.employee_name || '',
+        employee_id_card: order.employeeIdCard || order.extraData?.id_card_no || order.extraData?.employee_id_card || '',
+        created_by: order.creator?.realName || order.createdBy,
+        status: order.status,
+        created_at: order.createdAt || '',
+        updated_at: order.updatedAt || '',
+        completed_at: order.completedAt || '',
+      };
+      for (const code of dynamicCodes) {
+        row[code] = this.toWorkOrderExportValue(order.extraData?.[code]);
+      }
+      sheet.addRow(row);
+    }
+
+    const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+    const dateKey = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const label = orderType === OrderType.ONBOARDING ? '入职' : '离职';
+    return {
+      buffer,
+      fileName: `${label}主工单批量导出-${dateKey}.xlsx`,
+      rowCount: orderedOrders.length,
+    };
   }
 
   async remove(id: string, user: JwtUserPayload): Promise<{ success: boolean; id: string }> {
@@ -1792,6 +1900,24 @@ export class WorkOrderService {
     if (isAdminRole(user.roles) || parentCreatedBy === user.sub) return candidates;
     const accessibleModules = await this.resolveReadableBackendModules(user);
     return candidates.filter((sub) => sub.moduleCode === 'resignation_cert' || accessibleModules.includes(sub.moduleCode));
+  }
+
+  private toWorkOrderExportValue(value: unknown): string | number | boolean | Date {
+    if (value === null || value === undefined) return '';
+    if (value instanceof Date || typeof value === 'number' || typeof value === 'boolean') return value;
+    const text = Array.isArray(value)
+      ? value.map((item) => String(item ?? '')).join('、')
+      : typeof value === 'object'
+        ? JSON.stringify(value)
+        : String(value);
+    return /^[=+@-]/.test(text) ? `'${text}` : text;
+  }
+
+  private resolveWorkOrderListSort(sort?: string): { column: 'w.createdAt'; direction: 'ASC' | 'DESC' } | null {
+    const [field, direction] = String(sort || '').split(',')[0].split(':');
+    if (!['created_at', 'createdAt'].includes(field)) return null;
+    if (direction !== 'asc' && direction !== 'desc') return null;
+    return { column: 'w.createdAt', direction: direction === 'asc' ? 'ASC' : 'DESC' };
   }
 
   private resolveBusinessScope(orderType: OrderType): BusinessScope {

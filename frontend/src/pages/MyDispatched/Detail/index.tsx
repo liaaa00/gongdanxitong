@@ -175,8 +175,8 @@ const formatDetailValue = (value: unknown): string => {
 
 const SOCIAL_DETAIL_VALUE_ALIASES: Record<string, string[]> = {
   insured_unit: [
-    'insured_unit', 'insuredUnit', 'payment_institution', 'paymentInstitution',
-    'social_location', 'socialLocation', '参保机构名称', '参保单位',
+    'social_location', 'socialLocation', '参保机构名称',
+    'insured_unit', 'insuredUnit', 'payment_institution', 'paymentInstitution', '参保单位',
   ],
 };
 
@@ -600,14 +600,48 @@ const MyDispatchedDetail: React.FC = () => {
   };
 
   const handleCreatorEditOk = async () => {
-    const values = await creatorEditForm.validateFields();
+    const values = creatorEditForm.getFieldsValue(true) as Record<string, unknown>;
     const reason = String(values.__creator_edit_reason ?? '').trim();
+    if (!hasText(reason)) {
+      creatorEditForm.setFields([{
+        name: '__creator_edit_reason',
+        errors: ['请填写修改原因'],
+      }]);
+      creatorEditForm.scrollToField('__creator_edit_reason', { block: 'center' });
+      message.warning('请填写修改原因');
+      return;
+    }
     const original = (order.extra_data || {}) as Record<string, unknown>;
     const changed = Object.fromEntries(
       visibleDetailFields
         .map((field) => [field.field_code, values[field.field_code]] as const)
         .filter(([fieldCode, value]) => String(original[fieldCode] ?? '') !== String(value ?? '')),
     );
+    const changedFieldCodes = new Set(Object.keys(changed));
+    const missingRequired = visibleDetailFields.filter((field) => {
+      if (!isCreatorEditFieldRequired(field.field_code, field.is_required)) return false;
+      const dependencyChanged = (
+        (field.field_code === 'current_address' && changedFieldCodes.has('need_onboarding_contact'))
+        || (probationDependentFields.has(field.field_code) && changedFieldCodes.has('probation_start_date'))
+      );
+      return (changedFieldCodes.has(field.field_code) || dependencyChanged)
+        && !hasText(values[field.field_code]);
+    });
+
+    creatorEditForm.setFields(visibleDetailFields.map((field) => ({
+      name: field.field_code,
+      errors: [],
+    })));
+    if (missingRequired.length > 0) {
+      creatorEditForm.setFields(missingRequired.map((field) => ({
+        name: field.field_code,
+        errors: [`请填写${field.field_name}`],
+      })));
+      creatorEditForm.scrollToField(missingRequired[0].field_code, { block: 'center' });
+      message.warning(`请填写${missingRequired.map((field) => field.field_name).join('、')}`);
+      return;
+    }
+
     if (Object.keys(changed).length === 0) {
       message.info('没有检测到字段变化');
       setCreatorEditOpen(false);
@@ -1166,6 +1200,7 @@ const MyDispatchedDetail: React.FC = () => {
 
         <Modal title="修改子工单字段" open={creatorEditOpen} onOk={handleCreatorEditOk}
           onCancel={() => setCreatorEditOpen(false)} confirmLoading={actionLoading}
+          okText="提交修改" cancelText="取消"
           width={760} destroyOnHidden>
           <Form form={creatorEditForm} layout="vertical">
             <Form.Item
@@ -1191,9 +1226,6 @@ const MyDispatchedDetail: React.FC = () => {
                 name={field.field_code}
                 label={field.field_name}
                 required={isCreatorEditFieldRequired(field.field_code, field.is_required)}
-                rules={isCreatorEditFieldRequired(field.field_code, field.is_required)
-                  ? [{ required: true, message: `请填写${field.field_name}` }]
-                  : undefined}
               >
                 <Input placeholder={`请输入${field.field_name}`} />
               </Form.Item>

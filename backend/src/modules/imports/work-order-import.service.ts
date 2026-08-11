@@ -34,9 +34,13 @@ export class WorkOrderImportService {
     if (input.orderType === OrderType.ONBOARDING) {
       applyOnboardingDerivedFields(extraData);
     }
+    const businessScope = this.isOutOfProvince(input.orderType)
+      ? BusinessScope.OUT_OF_PROVINCE
+      : BusinessScope.BEILUN;
     const customerId = await this.resolveImportCustomerId(
       this.readOptionalUuid(extraData.customerId),
       extraData,
+      businessScope,
     );
 
     if (this.isOutOfProvince(input.orderType)) {
@@ -145,6 +149,7 @@ export class WorkOrderImportService {
   private async resolveImportCustomerId(
     customerId: string | undefined,
     extraData: Record<string, unknown>,
+    businessScope: BusinessScope,
   ): Promise<string | undefined> {
     if (customerId) {
       return customerId;
@@ -152,7 +157,11 @@ export class WorkOrderImportService {
 
     const customerCode = this.readText(extraData.customer_code);
     const customerName = this.readText(extraData.customer_name);
-    const cacheKey = customerCode ? `code:${customerCode}` : customerName ? `name:${customerName}` : null;
+    const cacheKey = customerCode
+      ? `${businessScope}:code:${customerCode}`
+      : customerName
+        ? `${businessScope}:name:${customerName}`
+        : null;
     if (cacheKey) {
       const cached = this.customerIdCache.get(cacheKey);
       if (cached) {
@@ -165,8 +174,8 @@ export class WorkOrderImportService {
         return undefined;
       }
       const matchingRows = await this.dataSource.query(
-        'SELECT id FROM customers WHERE customer_name = $1 AND is_active = true ORDER BY created_at ASC LIMIT 2',
-        [customerName],
+        'SELECT id FROM customers WHERE customer_name = $1 AND business_scope = $2 AND is_active = true ORDER BY created_at ASC LIMIT 2',
+        [customerName, businessScope],
       );
       if (!Array.isArray(matchingRows) || matchingRows.length !== 1) {
         return undefined;
@@ -179,12 +188,12 @@ export class WorkOrderImportService {
     }
 
     const existingRows = await this.dataSource.query(
-      'SELECT id FROM customers WHERE customer_code = $1 AND is_active = true LIMIT 1',
-      [customerCode],
+      'SELECT id FROM customers WHERE customer_code = $1 AND business_scope = $2 AND is_active = true LIMIT 1',
+      [customerCode, businessScope],
     );
     const existingId = this.readFirstId(existingRows);
     if (existingId) {
-      this.customerIdCache.set(`code:${customerCode}`, existingId);
+      this.customerIdCache.set(`${businessScope}:code:${customerCode}`, existingId);
       return existingId;
     }
 
@@ -193,28 +202,28 @@ export class WorkOrderImportService {
     }
     const createdRows = await this.dataSource.query(
       `
-        INSERT INTO customers (customer_code, customer_name, is_active)
-        VALUES ($1, $2, true)
-        ON CONFLICT (customer_code) DO UPDATE
+        INSERT INTO customers (customer_code, customer_name, is_active, business_scope)
+        VALUES ($1, $2, true, $3)
+        ON CONFLICT (customer_code, business_scope) DO UPDATE
           SET customer_name = EXCLUDED.customer_name,
               is_active = true
         RETURNING id
       `,
-      [customerCode, customerName],
+      [customerCode, customerName, businessScope],
     );
     const createdId = this.readFirstId(createdRows);
     if (createdId) {
-      this.customerIdCache.set(`code:${customerCode}`, createdId);
+      this.customerIdCache.set(`${businessScope}:code:${customerCode}`, createdId);
       return createdId;
     }
 
     const fallbackRows = await this.dataSource.query(
-      'SELECT id FROM customers WHERE customer_code = $1 AND is_active = true LIMIT 1',
-      [customerCode],
+      'SELECT id FROM customers WHERE customer_code = $1 AND business_scope = $2 AND is_active = true LIMIT 1',
+      [customerCode, businessScope],
     );
     const fallbackId = this.readFirstId(fallbackRows);
     if (fallbackId) {
-      this.customerIdCache.set(`code:${customerCode}`, fallbackId);
+      this.customerIdCache.set(`${businessScope}:code:${customerCode}`, fallbackId);
     }
     return fallbackId;
   }

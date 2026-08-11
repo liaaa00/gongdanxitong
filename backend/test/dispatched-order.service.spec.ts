@@ -102,6 +102,36 @@ describe('DispatchedOrderService', () => {
     expect(result.items[0].handlerId).toBe('handler-1');
   });
 
+  it('normalizes the insured unit from the confirmed social-location field in list results', async () => {
+    const order = {
+      ...makeDispatchedOrder(),
+      moduleCode: 'social_insurance',
+      parentOrder: {
+        ...makeDispatchedOrder().parentOrder,
+        extraData: {
+          social_location: '参保机构名称值',
+          insured_unit: '历史参保单位',
+        },
+      },
+    } as DispatchedOrder;
+    const { service } = makeService({}, [order]);
+    const user: JwtUserPayload = {
+      sub: 'user-1',
+      username: 'social01',
+      roles: ['social_insurance_specialist'],
+    } as JwtUserPayload;
+
+    const result = await service.findAll({
+      page: 1,
+      pageSize: 20,
+      moduleCode: 'social_insurance',
+    } as never, user);
+
+    expect(result.items[0].extra_data).toMatchObject({
+      social_location: '参保机构名称值',
+      insured_unit: '参保机构名称值',
+    });
+  });
 
   it('restores current contract fields for a returned business creator despite a stale visible-fields snapshot', async () => {
     const order = {

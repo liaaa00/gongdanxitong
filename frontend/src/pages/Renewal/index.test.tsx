@@ -102,6 +102,6 @@ describe('Renewal List Page', () => {
     renderPage();
 
     fireEvent.click(await screen.findByText('详情'));
-    expect(mockNavigate).toHaveBeenCalledWith('/in-service/renewal-1');
+    expect(mockNavigate).toHaveBeenCalledWith('/renewal/renewal-1');
   });
 });

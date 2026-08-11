@@ -272,7 +272,8 @@ const AdminFieldPermissions: React.FC = () => {
   useEffect(() => {
     if (!data?.roles?.length) return;
     if (selectedRoleCode && data.roles.some((role) => canonicalRoleCode(role.code) === selectedRoleCode)) return;
-    const fallback = currentRoleCode || canonicalRoleCode(data.roles[0].code);
+    const currentRoleExists = data.roles.some((role) => canonicalRoleCode(role.code) === currentRoleCode);
+    const fallback = currentRoleExists ? currentRoleCode : canonicalRoleCode(data.roles[0].code);
     setSelectedRoleCode(fallback);
   }, [currentRoleCode, data?.roles, selectedRoleCode]);
 
@@ -378,6 +379,7 @@ const AdminFieldPermissions: React.FC = () => {
         return (
           <Select
             size="small"
+            aria-label={`${record.field_name}-${r.name}-权限`}
             value={toSelectPermission(normalizedCurrent)}
             onChange={(value) => setCell(r.id, record.field_code, fromSelectPermission(value as PermissionSelectValue), original)}
             // Select 内部值也使用中文，避免 Antd 隐藏 aria-live 节点泄漏 editable/readonly/hidden。

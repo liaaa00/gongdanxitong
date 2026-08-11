@@ -904,7 +904,12 @@ export class DispatchedOrderService {
     if (diff.length === 0) {
       return this.findOne(id, user);
     }
-    await this.validateCandidateWorkOrder(order.parentOrder, nextExtraData);
+    await this.validateCandidateWorkOrder(
+      order.parentOrder,
+      nextExtraData,
+      beforeExtraData,
+      entries.map(([fieldCode]) => fieldCode),
+    );
     if (!this.isAcceptedDispatchedOrder(order)) {
       await this.assertNoCompletedAffectedChildren(order, diff.map((item) => item.field));
     }
@@ -990,7 +995,12 @@ export class DispatchedOrderService {
       const beforeExtraData = { ...(order.parentOrder.extraData ?? {}) };
       const nextExtraData = { ...beforeExtraData, ...pendingFields };
       const diff = this.buildFieldDiff(beforeExtraData, nextExtraData);
-      await this.validateCandidateWorkOrder(order.parentOrder, nextExtraData);
+      await this.validateCandidateWorkOrder(
+        order.parentOrder,
+        nextExtraData,
+        beforeExtraData,
+        Object.keys(pendingFields),
+      );
       order.parentOrder.extraData = nextExtraData;
       this.syncWorkOrderListFields(order.parentOrder);
       if (shouldRedispatch && [WorkOrderStatus.RETURNED, WorkOrderStatus.COMPLETED].includes(order.parentOrder.status)) {
@@ -1311,11 +1321,17 @@ export class DispatchedOrderService {
     const entries = Object.entries(fields).filter(([key]) => key.trim().length > 0);
     if (entries.length > 0) {
       await this.assertCreatorFieldsEditable(order, entries.map(([fieldCode]) => fieldCode), user);
-      const nextExtraData = { ...(order.parentOrder.extraData ?? {}) };
+      const beforeExtraData = { ...(order.parentOrder.extraData ?? {}) };
+      const nextExtraData = { ...beforeExtraData };
       for (const [fieldCode, newValue] of entries) {
         nextExtraData[fieldCode] = newValue;
       }
-      await this.validateCandidateWorkOrder(order.parentOrder, nextExtraData);
+      await this.validateCandidateWorkOrder(
+        order.parentOrder,
+        nextExtraData,
+        beforeExtraData,
+        entries.map(([fieldCode]) => fieldCode),
+      );
       order.parentOrder.extraData = nextExtraData;
       this.syncWorkOrderListFields(order.parentOrder);
       parentTouched = true;
@@ -2586,6 +2602,17 @@ export class DispatchedOrderService {
   ): Record<string, unknown> {
     if (!isHandlingFeedbackModule(moduleCode)) return extraData;
     const normalized = { ...extraData };
+    const insuredUnit = this.readImportString(
+      normalized.social_location
+      ?? normalized.socialLocation
+      ?? normalized['参保机构名称']
+      ?? normalized.insured_unit
+      ?? normalized.insuredUnit
+      ?? normalized.payment_institution
+      ?? normalized.paymentInstitution
+      ?? normalized['参保单位'],
+    );
+    if (insuredUnit) normalized.insured_unit = insuredUnit;
     if (moduleCode === 'social_insurance') {
       normalized.social_pay_region ??= normalized.social_location;
       normalized.fund_start_month ??= normalized.start_month;
@@ -2783,7 +2810,10 @@ export class DispatchedOrderService {
   }
 
   private toListItem(order: DispatchedOrder, configuredHandlerNames: string[] = []): DispatchedOrderListItem {
-    const extraData = this.normalizeImportedContactData(order.parentOrder.extraData ?? {});
+    const extraData = this.normalizeSocialFundExtraData(
+      order.moduleCode,
+      this.normalizeImportedContactData(order.parentOrder.extraData ?? {}),
+    );
     const employeeName = this.readImportString(extraData.employee_name) ?? order.parentOrder.employeeName;
     const employeeIdCard = this.readImportString(extraData.id_card_no ?? extraData.employee_id_card) ?? order.parentOrder.employeeIdCard;
     const customerCode = this.readImportString(extraData.customer_code) ?? order.parentOrder.customerCode;
@@ -3241,8 +3271,18 @@ export class DispatchedOrderService {
   private async assertCreatorFieldsEditable(order: DispatchedOrder, fieldCodes: string[], user: JwtUserPayload): Promise<void> {
     if (this.isAdmin(user)) return;
     let allowedFields = order.visibleFields ? new Set(order.visibleFields) : null;
-    if (order.moduleCode === 'contract' && this.detailViewTemplatesService) {
-      const template = await this.detailViewTemplatesService.getActiveByModule('contract');
+    const businessScope = order.parentOrder.businessScope ?? BusinessScope.BEILUN;
+    if (isHandlingFeedbackModule(order.moduleCode) && this.moduleFieldRepository) {
+      const moduleFields = await this.moduleFieldRepository.find({
+        where: { moduleCode: order.moduleCode, businessScope, isActive: true },
+      });
+      if (moduleFields.length > 0) {
+        allowedFields = new Set(moduleFields.map((field) => field.fieldCode));
+      }
+    } else if (order.moduleCode === DispatchModuleCode.RESIGNATION_CERT) {
+      allowedFields = new Set(RESIGNATION_CERTIFICATE_VISIBLE_FIELDS);
+    } else if (this.detailViewTemplatesService) {
+      const template = await this.detailViewTemplatesService.getActiveByModule(order.moduleCode, businessScope);
       if (template) {
         allowedFields = new Set(getDetailViewFieldCodes(template.fieldList));
       }
@@ -3271,9 +3311,19 @@ export class DispatchedOrderService {
     }
   }
 
-  private async validateCandidateWorkOrder(workOrder: WorkOrder, extraData: Record<string, unknown>): Promise<void> {
+  private async validateCandidateWorkOrder(
+    workOrder: WorkOrder,
+    extraData: Record<string, unknown>,
+    baselineExtraData?: Record<string, unknown>,
+    changedFieldCodes?: string[],
+  ): Promise<void> {
     if (typeof this.validationService.validateWorkOrder !== 'function') return;
-    await this.validationService.validateWorkOrder({ ...workOrder, extraData } as WorkOrder);
+    await this.validationService.validateWorkOrder(
+      { ...workOrder, extraData } as WorkOrder,
+      changedFieldCodes
+        ? { baselineExtraData, changedFieldCodes }
+        : undefined,
+    );
   }
 
   private childContainsField(child: DispatchedOrder, fieldCode: string, modulesByField: Map<string, Set<string>>): boolean {

@@ -60,6 +60,7 @@ export interface BatchRenewalPreviewRow {
   employeeName: string;
   idCardNo: string;
   contractTermType: string;
+  contractTerm: string;
   contractStartDate: string;
   contractEndDate: string;
   baseSalary: number | null;
@@ -73,6 +74,7 @@ const BATCH_RENEWAL_HEADERS = [
   '姓名',
   '证件号码',
   '合同期限形式',
+  '合同期限',
   '合同开始日期',
   '合同结束日期',
   '基本工资',
@@ -126,6 +128,7 @@ export function buildBatchRenewalRows(
       const employeeName = toCellText(getExcelCell(row, ['姓名', '员工姓名']));
       const idCardNo = toCellText(getExcelCell(row, ['证件号码', '证件号', '身份证号']));
       const contractTermType = toCellText(getExcelCell(row, ['合同期限形式', '合同期限类型']));
+      const contractTerm = toCellText(getExcelCell(row, ['合同期限', '劳动合同期限', '合同年限']));
       const startSource = getExcelCell(row, ['合同开始日期', '合同起始日期']);
       const endSource = getExcelCell(row, ['合同结束日期']);
       const contractStartDate = toExcelDate(startSource);
@@ -157,6 +160,7 @@ export function buildBatchRenewalRows(
       if (!['固定期限', '无固定期限'].includes(contractTermType)) errors.push('合同期限形式无效');
       if (!toCellText(startSource)) errors.push('合同开始日期不能为空');
       else if (!contractStartDate) errors.push('合同开始日期无效');
+      if (contractTermType === '固定期限' && !contractTerm) errors.push('固定期限必须填写合同期限');
       if (contractTermType === '固定期限' && !toCellText(endSource)) errors.push('固定期限必须填写合同结束日期');
       else if (toCellText(endSource) && !contractEndDate) errors.push('合同结束日期无效');
       if (baseSalary === null || baseSalary <= 0) errors.push('基本工资必须大于0');
@@ -169,6 +173,7 @@ export function buildBatchRenewalRows(
         extraData: {
           signing_method: '续签',
           contract_term_type: contractTermType,
+          contract_term: contractTerm || null,
           contract_start_date: contractStartDate,
           contract_end_date: contractEndDate || null,
           base_salary: baseSalary,
@@ -182,6 +187,7 @@ export function buildBatchRenewalRows(
         employeeName,
         idCardNo,
         contractTermType,
+        contractTerm,
         contractStartDate,
         contractEndDate,
         baseSalary,
@@ -196,7 +202,7 @@ function downloadBatchRenewalTemplate(): void {
   const worksheet = XLSX.utils.aoa_to_sheet([BATCH_RENEWAL_HEADERS]);
   worksheet['!cols'] = [
     { wch: 24 }, { wch: 18 }, { wch: 14 }, { wch: 22 },
-    { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 14 },
+    { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 14 },
   ];
   XLSX.utils.book_append_sheet(workbook, worksheet, '批量续签');
   XLSX.writeFile(workbook, '劳动合同批量续签导入模板.xlsx');
@@ -632,6 +638,7 @@ export default function InServiceOrderList({
                   { title: '姓名', dataIndex: 'employeeName', width: 100 },
                   { title: '证件号码', dataIndex: 'idCardNo', width: 180 },
                   { title: '期限形式', dataIndex: 'contractTermType', width: 110 },
+                  { title: '合同期限', dataIndex: 'contractTerm', width: 100, render: (value: string) => value || '-' },
                   { title: '开始日期', dataIndex: 'contractStartDate', width: 110 },
                   { title: '结束日期', dataIndex: 'contractEndDate', width: 110, render: (value: string) => value || '-' },
                   { title: '基本工资', dataIndex: 'baseSalary', width: 100, render: (value: number | null) => value ?? '-' },

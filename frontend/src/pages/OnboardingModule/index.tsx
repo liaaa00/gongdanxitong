@@ -280,7 +280,7 @@ const selectHeaderFilter = (
 });
 
 const SOCIAL_FUND_VALUE_ALIASES: Record<string, string[]> = {
-  insured_unit: ['insured_unit', 'insuredUnit', 'payment_institution', 'paymentInstitution', 'social_location', 'socialLocation', '参保机构名称', '参保单位'],
+  insured_unit: ['social_location', 'socialLocation', '参保机构名称', 'insured_unit', 'insuredUnit', 'payment_institution', 'paymentInstitution', '参保单位'],
   social_pay_region: ['social_pay_region', 'socialPayRegion', 'social_location', 'socialLocation'],
   start_month: ['start_month', 'startMonth', 'social_start_month', 'socialStartMonth'],
   fund_start_month: ['fund_start_month', 'fundStartMonth', 'start_month', 'startMonth'],

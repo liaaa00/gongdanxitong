@@ -1,5 +1,6 @@
 import React from 'react';
 import { cleanup, render, screen, waitFor, fireEvent, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import MyDispatchedDetail, { getDispatchedDetailFieldGroups, inferResignationReasonCode } from './index';
@@ -13,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   getSupplementLogs: vi.fn(),
   getActiveDetailViewTemplate: vi.fn(),
   supplementField: vi.fn(),
+  creatorUpdateDispatchedOrderFields: vi.fn(),
   resubmitDispatchedOrder: vi.fn(),
   downloadResignationCertificate: vi.fn(),
   navigate: vi.fn(),
@@ -67,7 +69,8 @@ vi.mock('@/services/dispatchedOrders', () => ({
   downloadDispatchedExport: vi.fn(),
   downloadResignationCertificate: (...args: unknown[]) => mocks.downloadResignationCertificate(...args),
   reassignDispatchedOrder: vi.fn(),
-  creatorUpdateDispatchedOrderFields: vi.fn(),
+  creatorUpdateDispatchedOrderFields: (...args: unknown[]) => mocks.creatorUpdateDispatchedOrderFields(...args),
+  isDispatchedAcceptedByBackend: (order: { accepted_at?: string | null; acceptedAt?: string | null }) => Boolean(order?.accepted_at || order?.acceptedAt),
   resubmitDispatchedOrder: (...args: unknown[]) => mocks.resubmitDispatchedOrder(...args),
   urgeDispatchedOrder: vi.fn(),
   withdrawDispatchedOrder: vi.fn(),
@@ -102,8 +105,22 @@ vi.mock('react-router-dom', async () => {
 
 vi.mock('antd', async () => {
   const actual = await vi.importActual<typeof import('antd')>('antd');
+  const react = await vi.importActual<typeof import('react')>('react');
+  const ActualModal = actual.Modal;
+  const TestModal = (props: React.ComponentProps<typeof ActualModal>) => {
+    if (props.title !== '修改子工单字段') return react.createElement(ActualModal, props);
+    if (!props.open) return null;
+    return react.createElement(
+      'div',
+      { role: 'dialog' },
+      props.children,
+      react.createElement('button', { type: 'button', onClick: props.onOk }, props.okText || 'OK'),
+      react.createElement('button', { type: 'button', onClick: props.onCancel }, props.cancelText || 'Cancel'),
+    );
+  };
   return {
     ...(actual as object),
+    Modal: TestModal,
     App: {
       ...((actual as Record<string, unknown>).App as object),
       useApp: () => ({
@@ -274,6 +291,7 @@ describe('MyDispatchedDetail readonly and creator repair actions', () => {
     mocks.getFallbackFields.mockReturnValue(fields);
     mocks.getSupplementLogs.mockResolvedValue([]);
     mocks.getDispatchedOrderTimeline.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 50 });
+    mocks.creatorUpdateDispatchedOrderFields.mockResolvedValue({ ...baseOrder, status: 'modify_pending' });
     mocks.resubmitDispatchedOrder.mockResolvedValue({ ...baseOrder, status: 'pending' });
     mocks.getActiveDetailViewTemplate.mockResolvedValue(null);
     mocks.getDispatchedOrder.mockResolvedValue(baseOrder);
@@ -473,6 +491,71 @@ describe('MyDispatchedDetail readonly and creator repair actions', () => {
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByLabelText('模板专用字段')).toBeInTheDocument();
     expect(within(dialog).getByLabelText('修改原因')).toBeRequired();
+  });
+
+  it('submits one changed field without forcing old empty required fields to be completed', async () => {
+    mocks.fieldPermissions = {
+      employee_name: 'visible',
+      base_salary: 'visible',
+      bank_name: 'visible',
+    };
+    mocks.getDispatchedOrder.mockResolvedValue({
+      ...baseOrder,
+      visible_fields: ['employee_name', 'base_salary', 'bank_name'],
+      extra_data: {
+        employee_name: '张三',
+        base_salary: '',
+        bank_name: '',
+      },
+      accepted_at: '2026-06-01T09:00:00Z',
+    });
+
+    const user = userEvent.setup();
+    renderDetail('/my-dispatched/d-1');
+
+    await user.click(await screen.findByRole('button', { name: /修改/ }));
+    const dialog = await screen.findByRole('dialog');
+    const reasonInput = within(dialog).getByLabelText('修改原因');
+    const bankInput = within(dialog).getByLabelText('开户银行');
+    await user.type(reasonInput, '修正银行信息');
+    await user.type(bankInput, '新银行');
+    expect(reasonInput).toHaveValue('修正银行信息');
+    expect(bankInput).toHaveValue('新银行');
+    fireEvent.click(within(dialog).getByRole('button', { name: '提交修改' }));
+
+    await waitFor(() => expect(mocks.creatorUpdateDispatchedOrderFields).toHaveBeenCalledWith(
+      'd-1',
+      { bank_name: '新银行' },
+      '修正银行信息',
+      undefined,
+    ));
+    expect(mocks.message.warning).not.toHaveBeenCalled();
+  });
+
+  it('shows the backend reason and keeps the edit dialog open when creator update fails', async () => {
+    mocks.creatorUpdateDispatchedOrderFields.mockRejectedValueOnce({
+      _friendlyMsg: '字段不属于当前子工单，不能在此修改：bank_name',
+    });
+    mocks.fieldPermissions = { employee_name: 'visible', bank_name: 'visible' };
+    mocks.getDispatchedOrder.mockResolvedValue({
+      ...baseOrder,
+      visible_fields: ['employee_name', 'bank_name'],
+      extra_data: { employee_name: '张三', bank_name: '' },
+    });
+
+    const user = userEvent.setup();
+    renderDetail('/my-dispatched/d-1');
+
+    await user.click(await screen.findByRole('button', { name: /修改/ }));
+    const dialog = await screen.findByRole('dialog');
+    await user.type(within(dialog).getByLabelText('修改原因'), '修正银行信息');
+    await user.type(within(dialog).getByLabelText('开户银行'), '新银行');
+    await user.click(within(dialog).getByRole('button', { name: '提交修改' }));
+
+    await waitFor(() => expect(mocks.message.error).toHaveBeenCalledWith(
+      '字段不属于当前子工单，不能在此修改：bank_name',
+    ));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 
   it('falls back to child visible fields when the contract detail template is unavailable', async () => {

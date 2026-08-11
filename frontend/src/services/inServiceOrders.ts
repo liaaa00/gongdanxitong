@@ -117,6 +117,35 @@ export interface InServiceOrderListResult {
 
 type RawRecord = Record<string, any>;
 
+const IN_SERVICE_UPDATE_FIELDS = [
+  'customerId',
+  'departmentId',
+  'employeeName',
+  'idCardNo',
+  'extraData',
+  'expectedCompletionDate',
+  'businessReason',
+  'businessType',
+  'processType',
+  'requirementType',
+  'province',
+  'city',
+  'district',
+  'businessDescription',
+  'serviceFee',
+  'attachments',
+] as const;
+
+export function sanitizeInServiceUpdatePayload(
+  payload: Partial<InServiceOrderPayload>,
+): Partial<InServiceOrderPayload> {
+  return Object.fromEntries(
+    IN_SERVICE_UPDATE_FIELDS
+      .filter((field) => payload[field] !== undefined)
+      .map((field) => [field, payload[field]]),
+  ) as Partial<InServiceOrderPayload>;
+}
+
 const MOCK_KEY = 'mock_in_service_orders_v2';
 
 const MOCK_SEED: InServiceOrder[] = [
@@ -473,8 +502,9 @@ export async function downloadInServiceCertificate(
 }
 
 export async function updateInServiceOrder(id: string, payload: Partial<InServiceOrderPayload>): Promise<InServiceOrder> {
-  if (isMockMode) return mockDelay(updateMock(id, (order) => ({ ...order, ...payload })), 120);
-  return normalizeInServiceOrder(await request.patch('/in-service-orders/' + id, payload) as RawRecord);
+  const changes = sanitizeInServiceUpdatePayload(payload);
+  if (isMockMode) return mockDelay(updateMock(id, (order) => ({ ...order, ...changes })), 120);
+  return normalizeInServiceOrder(await request.patch('/in-service-orders/' + id, changes) as RawRecord);
 }
 
 async function postAction(id: string, action: string, payload: RawRecord = {}): Promise<InServiceOrder> {
@@ -603,14 +633,20 @@ export const requestInServiceMaterialChange = (
   id: string,
   changes: Partial<InServiceOrderPayload>,
   reason?: string,
-) => postAction(id, 'material-change-request', { changes, reason });
+) => postAction(id, 'material-change-request', {
+  changes: sanitizeInServiceUpdatePayload(changes),
+  reason,
+});
 export const reviewInServiceMaterialChange = (id: string, approved: boolean, reason?: string) =>
   postAction(id, 'material-change-review', { approved, reason });
 export const resubmitInServiceOrder = (
   id: string,
   payload: Partial<InServiceOrderPayload>,
   resubmitReason: string,
-) => postAction(id, 'resubmit', { ...payload, resubmitReason });
+) => postAction(id, 'resubmit', {
+  ...sanitizeInServiceUpdatePayload(payload),
+  resubmitReason,
+});
 export const completeInServiceOrder = (
   id: string,
   remark?: string,

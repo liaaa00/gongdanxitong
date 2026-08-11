@@ -109,7 +109,10 @@ export function useDispatchedActions({ orderId, order, onOrderUpdated }: UseDisp
         ? '修改申请已提交，等待后道审批'
         : '修改已保存，并已通知后道');
       return updated;
-    } catch { message.error('修改失败'); }
+    } catch (error) {
+      const detail = error as { _friendlyMsg?: string; message?: string };
+      message.error(detail?._friendlyMsg || detail?.message || '修改失败');
+    }
     finally { setActionLoading(false); }
     return null;
   }, [order, orderId, onOrderUpdated]);

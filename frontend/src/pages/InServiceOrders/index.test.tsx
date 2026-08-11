@@ -163,6 +163,7 @@ describe('single-business category contract', () => {
         姓名: '张三',
         证件号码: '330206199001011234',
         合同期限形式: '固定期限',
+        合同期限: '1年',
         合同开始日期: '2026-09-01',
         合同结束日期: '2027-08-31',
         基本工资: '8,000',
@@ -176,6 +177,24 @@ describe('single-business category contract', () => {
         合同开始日期: '2026-09-01',
         基本工资: 0,
       },
+      {
+        客户名称: '测试客户',
+        发起部门: '业务一部',
+        姓名: '王五',
+        证件号码: '330206199001011236',
+        合同期限形式: '无固定期限',
+        合同开始日期: '2026-09-01',
+        基本工资: 9000,
+      },
+      {
+        客户名称: '测试客户',
+        发起部门: '业务一部',
+        姓名: '赵六',
+        证件号码: '330206199001011237',
+        合同期限形式: '固定期限',
+        合同开始日期: '2026-09-01',
+        基本工资: 9000,
+      },
     ], customers, flattenDepartments(departments));
 
     expect(rows[0].error).toBeNull();
@@ -185,6 +204,7 @@ describe('single-business category contract', () => {
       extraData: {
         signing_method: '续签',
         contract_term_type: '固定期限',
+        contract_term: '1年',
         contract_start_date: '2026-09-01',
         contract_end_date: '2027-08-31',
         base_salary: 8000,
@@ -193,6 +213,17 @@ describe('single-business category contract', () => {
     expect(rows[1].error).toContain('客户不存在');
     expect(rows[1].error).toContain('基本工资必须大于0');
     expect(rows[1].payload).toBeNull();
+    expect(rows[2].error).toBeNull();
+    expect(rows[2].payload).toMatchObject({
+      extraData: {
+        contract_term_type: '无固定期限',
+        contract_term: null,
+        contract_end_date: null,
+      },
+    });
+    expect(rows[3].error).toContain('固定期限必须填写合同期限');
+    expect(rows[3].error).toContain('固定期限必须填写合同结束日期');
+    expect(rows[3].payload).toBeNull();
   });
 });
 

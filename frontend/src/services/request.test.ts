@@ -28,6 +28,18 @@ describe('request friendly error messages', () => {
     expect(getFriendlyErrorMessage(error)).not.toContain('请求超时');
   });
 
+  it('keeps the backend permission reason for 403 responses', () => {
+    const error = new AxiosError('Request failed with status code 403', undefined, undefined, undefined, {
+      status: 403,
+      statusText: 'Forbidden',
+      headers: {},
+      config: {} as any,
+      data: { message: '字段不属于当前子工单，不能在此修改：mobile' },
+    });
+
+    expect(getFriendlyErrorMessage(error)).toBe('字段不属于当前子工单，不能在此修改：mobile');
+  });
+
   it('reports timeout only for ECONNABORTED or timeout messages', () => {
     const error = new AxiosError('timeout of 30000ms exceeded', 'ECONNABORTED');
 

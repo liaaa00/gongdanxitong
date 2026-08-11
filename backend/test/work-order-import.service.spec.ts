@@ -63,6 +63,35 @@ describe('WorkOrderImportService', () => {
     expect(inServiceOrdersService.create).not.toHaveBeenCalled();
   });
 
+  it('creates a new customer with the business-scope composite conflict target', async () => {
+    const query = jest.fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 'customer-new' }]);
+    const { service, workOrderService } = makeServices(query);
+
+    await service.writeOne({
+      orderType: OrderType.ONBOARDING,
+      normalized: {
+        customer_name: '新客户',
+        customer_code: 'C-NEW',
+        employee_name: '张三',
+        id_card_no: '330106199001011237',
+      },
+      autoSubmit: false,
+      user: makeUser(),
+    });
+
+    expect(workOrderService.createDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ customerId: 'customer-new' }),
+      makeUser(),
+    );
+    expect(query).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('ON CONFLICT (customer_code, business_scope)'),
+      ['C-NEW', '新客户', BusinessScope.BEILUN],
+    );
+  });
+
   it('creates one direct order per out-of-province import row without a main work order', async () => {
     const query = jest.fn()
       .mockResolvedValueOnce([{ id: 'customer-1' }])
