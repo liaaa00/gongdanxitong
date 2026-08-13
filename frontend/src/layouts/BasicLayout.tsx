@@ -153,7 +153,7 @@ const RAW_MENU: MenuItem[] = [
     children: [
       { path: '/work-orders?orderType=onboarding', name: '入职主工单列表', key: 'work-orders-main' },
       { path: '/onboarding/onboarding_contact', name: '入职联系子工单' },
-      { path: '/onboarding/payroll_bank_card', name: '薪酬银行卡子工单' },
+      { path: '/onboarding/payroll_bank_card', name: '薪酬银行卡导出' },
       { path: '/onboarding/contract', name: '劳动合同新签子工单' },
       { path: '/onboarding/data_entry', name: '增员报岗录入子工单' },
       { path: '/onboarding/social_insurance', name: '社保公积金增员子工单' },

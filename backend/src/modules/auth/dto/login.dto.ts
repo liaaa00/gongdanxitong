@@ -1,5 +1,4 @@
-import { IsEnum, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
-import { BusinessScope } from 'src/entities';
+import { IsNotEmpty, IsString, MinLength } from 'class-validator';
 
 export class LoginDto {
   @IsString()
@@ -9,8 +8,4 @@ export class LoginDto {
   @IsString()
   @MinLength(6)
   password!: string;
-
-  @IsOptional()
-  @IsEnum(BusinessScope)
-  businessScope?: BusinessScope;
 }

@@ -10,14 +10,9 @@ import {
   BUSINESS_SCOPE,
   getBusinessScopeLandingPath,
   writeBusinessScope,
-  type BusinessScope,
 } from '@/utils/businessScope';
 
-interface LoginPageProps {
-  businessScope?: BusinessScope;
-}
-
-const LoginPage: React.FC<LoginPageProps> = ({ businessScope = BUSINESS_SCOPE.BEILUN }) => {
+const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const { setToken, setUser, setMustChangePassword } = useUserStore();
   const [loading, setLoading] = useState(false);
@@ -27,7 +22,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ businessScope = BUSINESS_SCOPE.BE
   const handleSubmit = async (values: { username: string; password: string }) => {
     setLoading(true);
     try {
-      const res = await login({ ...values, businessScope });
+      const res = await login(values);
       const accessToken = res.accessToken || res.token;
       if (!accessToken) {
         throw new Error('登录成功但未返回访问令牌');
@@ -45,7 +40,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ businessScope = BUSINESS_SCOPE.BE
       setMustChangePassword(Boolean(mustChangePassword));
       const accountScope = userWithPermissions.business_scope
         ?? userWithPermissions.businessScope
-        ?? businessScope;
+        ?? BUSINESS_SCOPE.BEILUN;
       writeBusinessScope(accountScope);
       message.success('登录成功');
 
@@ -74,12 +69,8 @@ const LoginPage: React.FC<LoginPageProps> = ({ businessScope = BUSINESS_SCOPE.BE
     >
       <div style={{ width: 400 }}>
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <h1 style={{ fontSize: 28, color: themeToken.colorPrimary, margin: 0 }}>
-            {businessScope === BUSINESS_SCOPE.OUT_OF_PROVINCE ? '浙江自签工单系统' : '工单管理系统'}
-          </h1>
-          <p style={{ color: themeToken.colorTextSecondary, marginTop: 8 }}>
-            {businessScope === BUSINESS_SCOPE.OUT_OF_PROVINCE ? '省外社保公积金业务平台' : '北仑员工生命周期业务平台'}
-          </p>
+          <h1 style={{ fontSize: 28, color: themeToken.colorPrimary, margin: 0 }}>工单管理系统</h1>
+          <p style={{ color: themeToken.colorTextSecondary, marginTop: 8 }}>员工业务管理平台</p>
         </div>
         <LoginForm
           onFinish={handleSubmit}

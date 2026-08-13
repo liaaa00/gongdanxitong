@@ -1,7 +1,7 @@
 import { ForbiddenException, HttpStatus, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { Workbook } from 'exceljs';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, MoreThan, QueryFailedError, Repository } from 'typeorm';
+import { In, MoreThan, Not, QueryFailedError, Repository } from 'typeorm';
 import {
   BUSINESS_LEADER_ROLES,
   BUSINESS_MANAGER_ROLES,
@@ -16,6 +16,7 @@ import {
 import {
   filterPhase1VisibleDispatchModules,
   isDispatchModuleVisibleForOrderType,
+  isExportOnlyDispatchModule,
   isPhase1VisibleDispatchModule,
   isPhase1VisibleOrderType,
 } from 'src/common/constants/dispatch-modules';
@@ -136,6 +137,7 @@ export class WorkOrderService {
     if (duplicate) {
       throwDuplicateIdCardConflict({ conflictOrderNo: duplicate.orderNo });
     }
+    await this.inheritResignationContractSubject(payload.orderType, customerId, employeeIdCard, extraData);
 
     let workOrder: WorkOrder;
     try {
@@ -186,7 +188,8 @@ export class WorkOrderService {
     }
 
     const activeChildren = workOrder.status === WorkOrderStatus.PROCESSING || workOrder.status === WorkOrderStatus.COMPLETED
-      ? await this.dispatchedOrderRepository.find({ where: { parentOrderId: workOrder.id } })
+      ? (await this.dispatchedOrderRepository.find({ where: { parentOrderId: workOrder.id } }))
+        .filter((child) => !isExportOnlyDispatchModule(child.moduleCode))
       : [];
     if (payload.extraData && activeChildren.some((child) => child.status === DispatchedOrderStatus.COMPLETED)) {
       throw businessException(4116, HttpStatus.CONFLICT, '存在已完成子单，需由模块主管或管理员退回后才能修改');
@@ -295,6 +298,7 @@ export class WorkOrderService {
       await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`work_order:historical-resignation-cert:${id}`]);
       const workOrderRepo = manager.getRepository(WorkOrder);
       const operationLogRepo = manager.getRepository(OperationLog);
+      const notificationRepo = manager.getRepository(Notification);
       const workOrder = await workOrderRepo.findOne({ where: { id } });
       if (!workOrder) throw businessException(4100, HttpStatus.NOT_FOUND, '工单不存在');
       if (workOrder.orderType !== OrderType.RESIGNATION) {
@@ -313,6 +317,50 @@ export class WorkOrderService {
       const certificate = needResignationCert === '是'
         ? await this.resignationCertificateAutomationService!.ensureManualForWorkOrder(workOrder, manager)
         : null;
+      if (certificate?.created) {
+        const child = certificate.order;
+        await operationLogRepo.save(operationLogRepo.create({
+          entityType: 'dispatched_order',
+          entityId: child.id,
+          userId: user.sub,
+          actionType: 'dispatched',
+          beforeData: null,
+          afterData: {
+            parentOrderId: workOrder.id,
+            dispatchedOrderId: child.id,
+            moduleCode: child.moduleCode,
+            handlerId: child.handlerId,
+            toUserId: child.handlerId,
+            status: child.status,
+            contextFields: {
+              parentOrderId: workOrder.id,
+              dispatchedOrderId: child.id,
+              moduleCode: child.moduleCode,
+              handlerId: child.handlerId,
+              toUserId: child.handlerId,
+            },
+          },
+          ipAddress: null,
+        }));
+        if (child.handlerId) {
+          await notificationRepo.save(notificationRepo.create({
+            userId: child.handlerId,
+            bizType: 'dispatch',
+            title: '新子工单待处理',
+            content: `主工单 ${workOrder.orderNo} 分派到 离职证明`,
+            link: `/dispatched-orders/${child.id}`,
+            payload: {
+              workOrderId: workOrder.id,
+              dispatchedOrderId: child.id,
+              moduleCode: child.moduleCode,
+              moduleName: '离职证明',
+            },
+            isRead: false,
+            readAt: null,
+          }));
+        }
+      }
+      const certificateOrderId = certificate?.order.id ?? null;
       await operationLogRepo.save(operationLogRepo.create({
         entityType: 'work_order',
         entityId: workOrder.id,
@@ -321,7 +369,7 @@ export class WorkOrderService {
         beforeData: before,
         afterData: {
           ...snapshotWorkOrder(workOrder),
-          certificateOrderId: certificate?.id ?? null,
+          certificateOrderId,
         },
         ipAddress: null,
       }));
@@ -329,7 +377,7 @@ export class WorkOrderService {
       return {
         workOrderId: workOrder.id,
         needResignationCert,
-        certificateOrderId: certificate?.id ?? null,
+        certificateOrderId,
       };
     });
   }
@@ -426,7 +474,7 @@ export class WorkOrderService {
           parentOrderId: workOrder.id,
           moduleCode: child.moduleCode,
           status: DispatchedOrderStatus.PENDING,
-          handlerId: child.handlerId,
+          handlerId: isExportOnlyDispatchModule(child.moduleCode) ? null : child.handlerId,
           visibleFields: child.visibleFields,
           returnReason: null,
           dispatchedAt: new Date(),
@@ -442,6 +490,7 @@ export class WorkOrderService {
       await workOrderRepo.save(workOrder);
 
       for (const child of savedChildren) {
+        if (isExportOnlyDispatchModule(child.moduleCode)) continue;
         await operationLogRepo.save(operationLogRepo.create({
           entityType: 'dispatched_order',
           entityId: child.id,
@@ -548,9 +597,9 @@ export class WorkOrderService {
         ipAddress: null,
       }));
 
-      const activeChildren = await dispatchedRepo.find({
+      const activeChildren = (await dispatchedRepo.find({
         where: { parentOrderId: workOrder.id },
-      });
+      })).filter((child) => !isExportOnlyDispatchModule(child.moduleCode));
       const recipients = Array.from(new Set(activeChildren
         .filter((child) => child.status !== DispatchedOrderStatus.COMPLETED)
         .map((child) => child.handlerId)
@@ -595,7 +644,8 @@ export class WorkOrderService {
         throw businessException(4119, HttpStatus.CONFLICT, '工单未处于撤回待审核状态');
       }
 
-      const activeChildren = await dispatchedRepo.find({ where: { parentOrderId: workOrder.id } });
+      const activeChildren = (await dispatchedRepo.find({ where: { parentOrderId: workOrder.id } }))
+        .filter((child) => !isExportOnlyDispatchModule(child.moduleCode));
       await this.assertCanApproveWithdraw(activeChildren, user, moduleHandlerRepo, moduleSupervisorRepo, userRoleRepo);
 
       const before = snapshotWorkOrder(workOrder);
@@ -663,7 +713,11 @@ export class WorkOrderService {
     this.assertCanUrge(workOrder.status);
 
     const moduleCode = payload.moduleCode ?? payload.module_code ?? null;
-    const children = await this.dispatchedOrderRepository.find({ where: { parentOrderId: workOrder.id } });
+    if (isExportOnlyDispatchModule(moduleCode)) {
+      throw businessException(4224, HttpStatus.BAD_REQUEST, '薪酬银行卡导出清单不参与催办');
+    }
+    const children = (await this.dispatchedOrderRepository.find({ where: { parentOrderId: workOrder.id } }))
+      .filter((child) => !isExportOnlyDispatchModule(child.moduleCode));
     const targetChildren = children.filter((child) => {
       if (child.status === DispatchedOrderStatus.COMPLETED || child.voidAt) return false;
       if (moduleCode && child.moduleCode !== moduleCode) return false;
@@ -749,7 +803,8 @@ export class WorkOrderService {
 
       const previousStatus = workOrder.status;
       const before = snapshotWorkOrder(workOrder);
-      const activeChildren = await dispatchedRepo.find({ where: { parentOrderId: workOrder.id } });
+      const activeChildren = (await dispatchedRepo.find({ where: { parentOrderId: workOrder.id } }))
+        .filter((child) => !isExportOnlyDispatchModule(child.moduleCode));
 
       if (workOrder.status === WorkOrderStatus.WITHDRAWN) {
         const voidAt = new Date();
@@ -865,7 +920,8 @@ export class WorkOrderService {
         throw businessException(4124, HttpStatus.CONFLICT, '工单未处于作废待审核状态');
       }
 
-      const activeChildren = await dispatchedRepo.find({ where: { parentOrderId: workOrder.id } });
+      const activeChildren = (await dispatchedRepo.find({ where: { parentOrderId: workOrder.id } }))
+        .filter((child) => !isExportOnlyDispatchModule(child.moduleCode));
       await this.assertCanApproveVoid(activeChildren, user, moduleHandlerRepo, moduleSupervisorRepo, userRoleRepo);
 
       const before = snapshotWorkOrder(workOrder);
@@ -1000,7 +1056,7 @@ export class WorkOrderService {
 
     const total = await qb.getCount();
     qb.addSelect(
-      "CASE WHEN w.status IN ('returned','withdraw_pending','void_pending') OR EXISTS (SELECT 1 FROM dispatched_orders sort_child WHERE sort_child.parent_order_id = w.id AND sort_child.status IN ('returned','modify_pending')) THEN 0 ELSE 1 END",
+      "CASE WHEN w.status IN ('returned','withdraw_pending','void_pending') OR EXISTS (SELECT 1 FROM dispatched_orders sort_child WHERE sort_child.parent_order_id = w.id AND sort_child.module_code <> 'payroll_bank_card' AND sort_child.status IN ('returned','modify_pending')) THEN 0 ELSE 1 END",
       'status_priority',
     );
     const requestedSort = this.resolveWorkOrderListSort(query.sort);
@@ -1065,8 +1121,10 @@ export class WorkOrderService {
 
     const childIds = (await this.dispatchedOrderRepository.find({
       where: { parentOrderId: id },
-      select: { id: true },
-    })).map((child) => child.id);
+      select: { id: true, moduleCode: true },
+    }))
+      .filter((child) => !isExportOnlyDispatchModule(child.moduleCode))
+      .map((child) => child.id);
 
     const where = childIds.length > 0
       ? [
@@ -1430,6 +1488,43 @@ export class WorkOrderService {
     return sanitized;
   }
 
+  private async inheritResignationContractSubject(
+    orderType: OrderType,
+    customerId: string,
+    employeeIdCard: string,
+    extraData: Record<string, unknown>,
+  ): Promise<void> {
+    if (orderType !== OrderType.RESIGNATION) return;
+
+    const existingValue = [
+      extraData.contract_subject,
+      extraData.contractSubject,
+      extraData.insured_unit,
+      extraData.insuredUnit,
+      extraData['参保单位'],
+    ].map((value) => this.readText(value)).find((value): value is string => Boolean(value));
+    if (existingValue) return;
+
+    const latestOnboarding = await this.workOrderRepository.findOne({
+      where: {
+        customerId,
+        employeeIdCard,
+        orderType: OrderType.ONBOARDING,
+        status: Not(In([
+          WorkOrderStatus.DRAFT,
+          WorkOrderStatus.WITHDRAWN,
+          WorkOrderStatus.VOID,
+        ])),
+      },
+      order: { createdAt: 'DESC' },
+    });
+    const contractSubject = this.readText(latestOnboarding?.extraData?.contract_subject)
+      ?? this.readText(latestOnboarding?.extraData?.contractSubject);
+    if (contractSubject) {
+      extraData.contract_subject = contractSubject;
+    }
+  }
+
   private readText(value: unknown): string | null {
     if (typeof value === 'string' && value.trim().length > 0) {
       return value.trim();
@@ -1587,7 +1682,11 @@ export class WorkOrderService {
     if (changedFields.length === 0) return;
 
     const children = await this.dispatchedOrderRepository.find({ where: { parentOrderId: workOrder.id } });
-    const openChildren = children.filter((child) => child.status !== DispatchedOrderStatus.COMPLETED && child.status !== DispatchedOrderStatus.RETURNED);
+    const openChildren = children.filter((child) => (
+      !isExportOnlyDispatchModule(child.moduleCode)
+      && child.status !== DispatchedOrderStatus.COMPLETED
+      && child.status !== DispatchedOrderStatus.RETURNED
+    ));
     if (openChildren.length === 0) return;
 
     const fieldConfigs = await this.fieldConfigRepository.find({ where: { isActive: true } });
@@ -1643,7 +1742,7 @@ export class WorkOrderService {
   private async resetReturnedChildren(repository: Repository<DispatchedOrder>, parentOrderId: string): Promise<void> {
     const children = await repository.find({ where: { parentOrderId } });
     for (const child of children) {
-      if (child.status !== DispatchedOrderStatus.RETURNED) {
+      if (isExportOnlyDispatchModule(child.moduleCode) || child.status !== DispatchedOrderStatus.RETURNED) {
         continue;
       }
       child.status = DispatchedOrderStatus.PENDING;
@@ -1731,7 +1830,10 @@ export class WorkOrderService {
       return;
     }
 
-    const activeChildren = children.filter((child) => child.status !== DispatchedOrderStatus.COMPLETED);
+    const activeChildren = children.filter((child) => (
+      !isExportOnlyDispatchModule(child.moduleCode)
+      && child.status !== DispatchedOrderStatus.COMPLETED
+    ));
     if (activeChildren.some((child) => child.handlerId === user.sub)) {
       return;
     }
@@ -1762,7 +1864,10 @@ export class WorkOrderService {
       return;
     }
 
-    const activeChildren = children.filter((child) => child.status !== DispatchedOrderStatus.COMPLETED);
+    const activeChildren = children.filter((child) => (
+      !isExportOnlyDispatchModule(child.moduleCode)
+      && child.status !== DispatchedOrderStatus.COMPLETED
+    ));
     if (activeChildren.some((child) => child.handlerId === user.sub)) {
       return;
     }

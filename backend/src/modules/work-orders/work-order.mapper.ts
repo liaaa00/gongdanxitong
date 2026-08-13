@@ -1,3 +1,4 @@
+import { isExportOnlyDispatchModule } from 'src/common/constants/dispatch-modules';
 import { DispatchedOrder, DispatchedOrderStatus, WorkOrder } from 'src/entities';
 import { WorkOrderListItem, WorkOrderSubOrderItem } from './work-order.types';
 
@@ -64,7 +65,9 @@ export function toWorkOrderSubOrderItem(child: DispatchedOrder): WorkOrderSubOrd
 }
 
 export function toWorkOrderSubOrderItems(children: DispatchedOrder[]): WorkOrderSubOrderItem[] {
-  return children.map((child) => toWorkOrderSubOrderItem(child));
+  return children
+    .filter((child) => !isExportOnlyDispatchModule(child.moduleCode))
+    .map((child) => toWorkOrderSubOrderItem(child));
 }
 
 function readText(value: unknown): string | null {

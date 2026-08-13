@@ -10,7 +10,6 @@ export interface ApiResponse<T = unknown> {
 export interface LoginRequest {
   username: string;
   password: string;
-  businessScope?: BusinessScope;
 }
 
 export interface LoginResponse {

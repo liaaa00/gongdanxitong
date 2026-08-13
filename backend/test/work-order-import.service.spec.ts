@@ -63,6 +63,36 @@ describe('WorkOrderImportService', () => {
     expect(inServiceOrdersService.create).not.toHaveBeenCalled();
   });
 
+  it('keeps resignation imports on the main work-order path so draft creation can inherit onboarding data', async () => {
+    const query = jest.fn(async () => [{ id: 'customer-1' }]);
+    const { service, workOrderService, inServiceOrdersService } = makeServices(query);
+
+    await service.writeOne({
+      orderType: OrderType.RESIGNATION,
+      normalized: {
+        customer_name: '示例客户',
+        customer_code: 'C001',
+        employee_name: '张三',
+        id_card_no: '330106199001011237',
+        resignation_date: '2026-08-13',
+      },
+      autoSubmit: false,
+      user: makeUser(),
+    });
+
+    expect(workOrderService.createDraft).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderType: OrderType.RESIGNATION,
+        customerId: 'customer-1',
+        extraData: expect.objectContaining({
+          id_card_no: '330106199001011237',
+        }),
+      }),
+      makeUser(),
+    );
+    expect(inServiceOrdersService.create).not.toHaveBeenCalled();
+  });
+
   it('creates a new customer with the business-scope composite conflict target', async () => {
     const query = jest.fn()
       .mockResolvedValueOnce([])

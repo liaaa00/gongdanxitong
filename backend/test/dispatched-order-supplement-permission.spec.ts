@@ -156,4 +156,52 @@ describe('DispatchedOrderService supplement permission fallback', () => {
 
     expect(fieldSupplementService.supplement).not.toHaveBeenCalled();
   });
+
+  it('allows the assigned social-insurance specialist to edit a processing social-insurance child', async () => {
+    const currentUser = user('social-id', 'fuqianwen', ['social_insurance_specialist']);
+    const { service, fieldSupplementService } = makeService(makeOrder('social_insurance', currentUser.sub));
+
+    await expect(service.supplement(
+      'do-social_insurance',
+      { fields: { bank_account: '6222' } },
+      currentUser,
+    )).resolves.toEqual({ success: true, workOrderId: 'wo-1', fieldCode: 'bank_account' });
+
+    expect(fieldSupplementService.supplement).toHaveBeenCalledWith({
+      dispatchedOrderId: 'do-social_insurance',
+      fieldCode: 'bank_account',
+      newValue: '6222',
+      userId: currentUser.sub,
+      workOrderUpdatedAt: undefined,
+    });
+  });
+
+  it('rejects a non-social role from the social-insurance edit branch', async () => {
+    const currentUser = user('other-id', 'other-handler', ['data_entry_leader']);
+    const { service, fieldSupplementService } = makeService(makeOrder('social_insurance', currentUser.sub));
+
+    await expect(service.supplement(
+      'do-social_insurance',
+      { fieldCode: 'bank_account', newValue: '6222' },
+      currentUser,
+    )).rejects.toMatchObject({ status: HttpStatus.FORBIDDEN });
+
+    expect(fieldSupplementService.supplement).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    DispatchedOrderStatus.PENDING,
+    DispatchedOrderStatus.COMPLETED,
+  ])('rejects a social-insurance specialist when the child is not processing: %s', async (status) => {
+    const currentUser = user('social-id', 'fuqianwen', ['social_insurance_specialist']);
+    const { service, fieldSupplementService } = makeService(makeOrder('social_insurance', currentUser.sub, status));
+
+    await expect(service.supplement(
+      'do-social_insurance',
+      { fieldCode: 'bank_account', newValue: '6222' },
+      currentUser,
+    )).rejects.toMatchObject({ status: HttpStatus.CONFLICT });
+
+    expect(fieldSupplementService.supplement).not.toHaveBeenCalled();
+  });
 });

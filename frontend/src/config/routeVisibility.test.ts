@@ -296,6 +296,8 @@ describe('routeVisibility admin-only configuration routes', () => {
     const dataEntryRoles = roles([ROLE.DATA_ENTRY_LEADER]);
     const socialRoles = roles([ROLE.SOCIAL_INSURANCE_SPECIALIST]);
 
+    expect(canAccessPath('/onboarding/payroll_bank_card', roles([ROLE.ADMIN]))).toBe(true);
+    expect(canAccessPath('/onboarding/payroll_bank_card', dataEntryRoles)).toBe(false);
     expect(canAccessPath('/onboarding/data_entry', dataEntryRoles)).toBe(true);
     expect(canAccessPath('/onboarding/data_entry_resign', dataEntryRoles)).toBe(true);
     expect(canAccessPath('/offboarding/social-suspend-pool', dataEntryRoles)).toBe(true);

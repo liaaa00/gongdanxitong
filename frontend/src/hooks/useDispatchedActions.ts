@@ -59,7 +59,7 @@ export function useDispatchedActions({ orderId, order, onOrderUpdated }: UseDisp
     return null;
   }, [orderId, onOrderUpdated]);
 
-  const handleSupplement = useCallback(async (fields: Record<string, string>) => {
+  const handleSupplement = useCallback(async (fields: Record<string, unknown>) => {
     setActionLoading(true);
     try {
       await supplementField(orderId, fields);

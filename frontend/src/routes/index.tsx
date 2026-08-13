@@ -115,15 +115,8 @@ const RoleRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 const AppRoutes: React.FC = () => (
   <ErrorBoundary moduleName="路由层">
     <Routes>
-      <Route path="/login" element={<RouteGuard moduleName="北仑登录页"><LoginPage /></RouteGuard>} />
-      <Route
-        path="/zhejiang-login"
-        element={(
-          <RouteGuard moduleName="浙江自签登录页">
-            <LoginPage businessScope="out_of_province" />
-          </RouteGuard>
-        )}
-      />
+      <Route path="/login" element={<RouteGuard moduleName="统一登录页"><LoginPage /></RouteGuard>} />
+      <Route path="/zhejiang-login" element={<Navigate to="/login" replace />} />
       <Route path="/change-password" element={<RouteGuard moduleName="修改密码"><ChangePasswordPage /></RouteGuard>} />
       <Route path="/403" element={<RouteGuard moduleName="403"><Forbidden /></RouteGuard>} />
       <Route path="/404" element={<RouteGuard moduleName="404"><NotFound /></RouteGuard>} />

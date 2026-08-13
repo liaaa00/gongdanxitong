@@ -120,9 +120,9 @@ const onboardingFields: FieldSeed[] = [
   { code: 'work_city',              name: '工作城市',     type: FieldType.TEXT,     required: true,  defaultRequired: true,  orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'work_hour_system',       name: '工时制',       type: FieldType.DROPDOWN, required: true,  defaultRequired: true,  options: ['标准工时制', '综合工时制', '不定时工时制'], orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'salary_form',            name: '工资形式',     type: FieldType.DROPDOWN, required: true,  defaultRequired: true,  options: ['按月'], orderType: ONBOARDING, businessContext: [ONBOARDING] },
-  { code: 'base_salary',            name: '基本工资',     type: FieldType.NUMBER,   required: true,  defaultRequired: true,  helpText: '数字格式：保留小数点后两位。', orderType: ONBOARDING, businessContext: [ONBOARDING] },
+  { code: 'base_salary',            name: '基本工资',     type: FieldType.TEXT,     required: true,  defaultRequired: true,  helpText: '可填写数字、货币格式或文字说明。', orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'other_salary',           name: '其他工资',     type: FieldType.TEXT,     required: false, defaultRequired: false, helpText: '可填写文字说明，如可填写数字加文字。', orderType: ONBOARDING, businessContext: [ONBOARDING] },
-  { code: 'probation_salary',       name: '试用期工资',   type: FieldType.NUMBER,   required: false, defaultRequired: false, helpText: '数字格式：保留小数点后两位。', conditionalRequired: conditionExists('probation_start_date'), orderType: ONBOARDING, businessContext: [ONBOARDING] },
+  { code: 'probation_salary',       name: '试用期工资',   type: FieldType.TEXT,     required: false, defaultRequired: false, helpText: '可填写数字、货币格式或文字说明。', conditionalRequired: conditionExists('probation_start_date'), orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'probation_other_salary', name: '试用期其他工资', type: FieldType.TEXT, required: false, defaultRequired: false, helpText: '可填写文字说明，如可填写数字加文字。', orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'payroll_cycle',          name: '发薪周期',     type: FieldType.DROPDOWN, required: true,  defaultRequired: true,  options: ['当月', '次月'], orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'payroll_date',           name: '发薪日期',     type: FieldType.TEXT,     required: true,  defaultRequired: true,  helpText: '整数。', orderType: ONBOARDING, businessContext: [ONBOARDING] },
@@ -299,26 +299,8 @@ export async function seedFields(dataSource: DataSource): Promise<void> {
     const existed = await repository.findOne({ where: { fieldCode: seed.code } });
 
     if (existed) {
-      Object.assign(existed, {
-        fieldName: seed.name,
-        fieldType: seed.type,
-        isRequired: seed.required,
-        defaultRequired: seed.defaultRequired,
-        validationRegex: seed.regex ?? null,
-        validationMsg: seed.msg ?? null,
-        dropdownOptions: seed.options ?? null,
-        placeholder: seed.placeholder ?? null,
-        helpText: seed.helpText ?? null,
-        orderType: seed.orderType,
-        businessContext: seed.businessContext,
-        conditionalRequired: seed.conditionalRequired ?? null,
-        isIncludedInTemplate: seed.isIncludedInTemplate ?? true,
-        isActive: true,
-      });
-      await repository.save(existed);
-      if (seed.orderType === ONBOARDING) {
-        await updateCollectionGroup(dataSource, seed.code, seed.collectionGroup ?? null);
-      }
+      // ponytail: existing rows are administrator-owned runtime configuration.
+      // Use explicit migrations when a release must change an installed field.
       continue;
     }
 

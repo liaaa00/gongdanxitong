@@ -12,8 +12,9 @@ import {
 } from 'src/common/auth/role-permissions';
 import {
   DISPATCH_MODULE_LABELS,
-  PHASE1_VISIBLE_DISPATCH_MODULE_CODES,
+  WORKFLOW_DISPATCH_MODULE_CODES,
   filterPhase1VisibleDispatchModules,
+  isExportOnlyDispatchModule,
   isPhase1VisibleDispatchModule,
   resolveDispatchModuleCode,
 } from 'src/common/constants/dispatch-modules';
@@ -302,7 +303,7 @@ export class DashboardService {
 
     const departmentIds = scope.departmentIds;
     const hasDeptFilter = departmentIds !== null;
-    const params: unknown[] = [hasDeptFilter, departmentIds ?? [], [...PHASE1_VISIBLE_DISPATCH_MODULE_CODES]];
+    const params: unknown[] = [hasDeptFilter, departmentIds ?? [], [...WORKFLOW_DISPATCH_MODULE_CODES]];
 
     const rows = await this.dataSource.query(
       `
@@ -458,7 +459,7 @@ export class DashboardService {
         COUNT(*) FILTER (WHERE ${DASHBOARD_VOID_STATUS_SQL})::int AS voided
       FROM scoped_month
       `,
-      [scope, scope === 'owner' ? value : null, scope === 'department' ? value : [], this.toMonthStart(month), [...PHASE1_VISIBLE_DISPATCH_MODULE_CODES]],
+      [scope, scope === 'owner' ? value : null, scope === 'department' ? value : [], this.toMonthStart(month), [...WORKFLOW_DISPATCH_MODULE_CODES]],
     ) as DashboardCardsRow[];
     return this.toCardsWithoutMessages(rows[0]);
   }
@@ -689,12 +690,14 @@ export class DashboardService {
   }
 
   private filterModulesByRoleAllowList(roles: readonly string[], moduleCodes: string[]): string[] {
+    const workflowModules = filterPhase1VisibleDispatchModules(moduleCodes)
+      .filter((moduleCode) => !isExportOnlyDispatchModule(moduleCode));
     if (roles.includes('admin') || hasAnyRole(roles, BUSINESS_MANAGER_ROLES) || hasAnyRole(roles, BUSINESS_LEADER_ROLES)) {
-      return filterPhase1VisibleDispatchModules(moduleCodes);
+      return workflowModules;
     }
     const allowed = new Set(this.roleAccessibleModules(roles));
-    if (allowed.size === 0) return filterPhase1VisibleDispatchModules(moduleCodes);
-    return filterPhase1VisibleDispatchModules(moduleCodes).filter((moduleCode) => allowed.has(moduleCode));
+    if (allowed.size === 0) return workflowModules;
+    return workflowModules.filter((moduleCode) => allowed.has(moduleCode));
   }
 
   private hasSharedTeamRole(roles: readonly string[]): boolean {
@@ -773,7 +776,7 @@ export class DashboardService {
       scope.departmentIds ?? [],
       scope.ownerId ?? null,
       this.toMonthStart(selectedMonth),
-      [...PHASE1_VISIBLE_DISPATCH_MODULE_CODES],
+      [...WORKFLOW_DISPATCH_MODULE_CODES],
     ];
 
     if (dimension === 'node') {
@@ -1096,7 +1099,7 @@ export class DashboardService {
       scope.ownerId ?? null,
       moduleFilter,
       this.toMonthStart(month),
-      [...PHASE1_VISIBLE_DISPATCH_MODULE_CODES],
+      [...WORKFLOW_DISPATCH_MODULE_CODES],
     ];
 
     return this.dataSource.transaction(async (manager) => {

@@ -223,6 +223,118 @@ describe('WorkOrderService unit tests', () => {
     expect(result.extraData.need_company_contract).toBe('是');
   });
 
+  it('inherits the latest valid onboarding contract subject when creating a resignation draft', async () => {
+    const onboarding = makeWorkOrder({
+      id: 'wo-onboarding-history',
+      status: WorkOrderStatus.COMPLETED,
+      extraData: {
+        employee_name: 'Alice',
+        id_card_no: '110101199001011234',
+        contract_subject: '历史劳动合同主体有限公司',
+      },
+    });
+    const resignation = makeWorkOrder({
+      id: 'wo-resignation',
+      orderType: OrderType.RESIGNATION,
+      extraData: {
+        employee_name: 'Alice',
+        id_card_no: '110101199001011234',
+        contract_subject: '历史劳动合同主体有限公司',
+      },
+      dispatchedOrders: [],
+    });
+    workOrderRepository.findOne
+      .mockResolvedValueOnce(onboarding)
+      .mockResolvedValueOnce(resignation);
+
+    await service.createDraft({
+      orderType: OrderType.RESIGNATION,
+      extraData: {
+        employee_name: 'Alice',
+        id_card_no: '110101199001011234',
+      },
+    }, makeUser());
+
+    expect(workOrderRepository.findOne).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      where: expect.objectContaining({
+        customerId: 'customer-1',
+        employeeIdCard: '110101199001011234',
+        orderType: OrderType.ONBOARDING,
+        status: expect.anything(),
+      }),
+      order: { createdAt: 'DESC' },
+    }));
+    expect(workOrderRepository.create).toHaveBeenCalledWith(expect.objectContaining({
+      orderType: OrderType.RESIGNATION,
+      extraData: expect.objectContaining({
+        contract_subject: '历史劳动合同主体有限公司',
+      }),
+    }));
+  });
+
+  it('keeps an explicitly supplied resignation insured unit instead of overwriting it from onboarding history', async () => {
+    workOrderRepository.findOne.mockResolvedValue(makeWorkOrder({
+      id: 'wo-resignation',
+      orderType: OrderType.RESIGNATION,
+      extraData: {
+        employee_name: 'Alice',
+        id_card_no: '110101199001011234',
+        insured_unit: '本次离职明确参保单位',
+      },
+      dispatchedOrders: [],
+    }));
+
+    await service.createDraft({
+      orderType: OrderType.RESIGNATION,
+      extraData: {
+        employee_name: 'Alice',
+        id_card_no: '110101199001011234',
+        insured_unit: '本次离职明确参保单位',
+      },
+    }, makeUser());
+
+    expect(workOrderRepository.findOne).toHaveBeenCalledTimes(1);
+    expect(workOrderRepository.create).toHaveBeenCalledWith(expect.objectContaining({
+      extraData: expect.objectContaining({
+        insured_unit: '本次离职明确参保单位',
+      }),
+    }));
+    expect(workOrderRepository.create).toHaveBeenCalledWith(expect.objectContaining({
+      extraData: expect.not.objectContaining({
+        contract_subject: expect.anything(),
+      }),
+    }));
+  });
+
+  it('leaves the resignation contract subject empty when no onboarding subject is available', async () => {
+    const resignation = makeWorkOrder({
+      id: 'wo-resignation',
+      orderType: OrderType.RESIGNATION,
+      extraData: {
+        employee_name: 'Alice',
+        id_card_no: '110101199001011234',
+      },
+      dispatchedOrders: [],
+    });
+    workOrderRepository.findOne
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(resignation);
+
+    await service.createDraft({
+      orderType: OrderType.RESIGNATION,
+      extraData: {
+        employee_name: 'Alice',
+        id_card_no: '110101199001011234',
+      },
+    }, makeUser());
+
+    expect(workOrderRepository.create).toHaveBeenCalledWith(expect.objectContaining({
+      extraData: expect.not.objectContaining({
+        contract_subject: expect.anything(),
+      }),
+    }));
+  });
+
   it('derives province scope on the backend and strips client scope aliases', async () => {
     const provinceOrder = makeWorkOrder({
       orderType: OrderType.OUT_OF_PROVINCE_INCREASE,
@@ -506,6 +618,17 @@ describe('WorkOrderService unit tests', () => {
     ).rejects.toBeInstanceOf(HttpException);
   });
 
+  it('excludes payroll export records from work-order child summaries', () => {
+    const children = toWorkOrderSubOrderItems([
+      makeDispatched({ id: 'do-contract', moduleCode: 'contract' }),
+      makeDispatched({ id: 'do-payroll', moduleCode: 'payroll_bank_card', handlerId: null }),
+    ]);
+
+    expect(children).toEqual([
+      expect.objectContaining({ id: 'do-contract', moduleCode: 'contract' }),
+    ]);
+  });
+
   it('restricts resignation certificate child summaries to Yang Chun, Jiang Lu, and admins', async () => {
     const filter = (service as unknown as {
       filterSubOrdersByUserPermission: (
@@ -538,6 +661,96 @@ describe('WorkOrderService unit tests', () => {
     }
 
     await expect(filter('creator-id', children, makeUser({ sub: 'admin-id', roles: ['admin'] }))).resolves.toHaveLength(2);
+  });
+
+  it('creates the historical resignation certificate in dispatched_orders and notifies only on first creation', async () => {
+    const source = makeWorkOrder({
+      id: 'wo-resign',
+      orderNo: 'ON20260709003',
+      orderType: OrderType.RESIGNATION,
+      status: WorkOrderStatus.PROCESSING,
+      extraData: { need_resignation_cert: '否' },
+    });
+    const certificate = makeDispatched({
+      id: 'do-resignation-cert',
+      parentOrderId: source.id,
+      moduleCode: 'resignation_cert',
+      handlerId: 'handler-cert',
+    });
+    const automation = {
+      ensureManualForWorkOrder: jest.fn()
+        .mockResolvedValueOnce({ order: certificate, created: true })
+        .mockResolvedValueOnce({ order: certificate, created: false }),
+    };
+    const txWorkOrderRepo = createRepositoryMock<WorkOrder>();
+    const txNotificationRepo = createRepositoryMock<Notification>();
+    const txOperationLogRepo = createRepositoryMock<OperationLog>();
+    txWorkOrderRepo.findOne.mockResolvedValue(source);
+    txWorkOrderRepo.save.mockImplementation(async (input) => input as WorkOrder);
+    const manager: TransactionManagerMock = {
+      query: jest.fn(async () => []),
+      getRepository: jest.fn((entity: unknown) => {
+        if (entity === WorkOrder) return txWorkOrderRepo as unknown as RepositoryMock<unknown>;
+        if (entity === Notification) return txNotificationRepo as unknown as RepositoryMock<unknown>;
+        return txOperationLogRepo as unknown as RepositoryMock<unknown>;
+      }),
+    };
+    workOrderRepository.manager.transaction.mockImplementation(async (callback) => callback(manager));
+    service = new WorkOrderService(
+      workOrderRepository as unknown as Repository<WorkOrder>,
+      dispatchedOrderRepository as unknown as Repository<DispatchedOrder>,
+      fieldConfigRepository as unknown as Repository<FieldConfig>,
+      importJobRepository as unknown as Repository<ImportJob>,
+      notificationRepository as unknown as Repository<Notification>,
+      operationLogRepository as unknown as Repository<OperationLog>,
+      validationService as unknown as WorkOrderValidationService,
+      { getVisibleFieldsForScenario: jest.fn(async () => []) } as never,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      automation as never,
+    );
+
+    await expect(service.setHistoricalResignationCertificate(
+      source.id,
+      '是',
+      true,
+      makeUser({ sub: 'admin-id', roles: ['admin'] }),
+    )).resolves.toEqual({
+      workOrderId: source.id,
+      needResignationCert: '是',
+      certificateOrderId: certificate.id,
+    });
+    expect(txOperationLogRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+      entityType: 'dispatched_order',
+      entityId: certificate.id,
+      actionType: 'dispatched',
+    }));
+    expect(txNotificationRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 'handler-cert',
+      link: `/dispatched-orders/${certificate.id}`,
+      payload: expect.objectContaining({ moduleCode: 'resignation_cert' }),
+    }));
+
+    txNotificationRepo.save.mockClear();
+    txOperationLogRepo.save.mockClear();
+    await service.setHistoricalResignationCertificate(
+      source.id,
+      '是',
+      true,
+      makeUser({ sub: 'admin-id', roles: ['admin'] }),
+    );
+
+    expect(txNotificationRepo.save).not.toHaveBeenCalled();
+    expect(txOperationLogRepo.save).not.toHaveBeenCalledWith(expect.objectContaining({
+      entityType: 'dispatched_order',
+      actionType: 'dispatched',
+    }));
   });
 
   it('allows salesperson to update a processing work order and resubmit it to pending', async () => {

@@ -78,6 +78,7 @@ export interface DispatchedOrderItem {
   businessScope?: 'beilun' | 'out_of_province';
   visible_fields: string[];
   fields?: DispatchedOrderDetailField[];
+  _fieldPermissions?: Record<string, 'visible' | 'hidden' | 'readonly' | 'masked'>;
   return_reason: string | null;
   returned_fields?: string[];
   dispatched_at: string | null;
@@ -268,6 +269,7 @@ function normalizeDispatchedOrderItem(raw: unknown): DispatchedOrderItem {
     parent_order_status: String(row.parent_order_status ?? row.parentOrderStatus ?? parent.status ?? ''),
     order_type: String(row.order_type ?? row.orderType ?? parent.order_type ?? parent.orderType ?? ''),
     visible_fields: mergedVisibleFields.length > 0 ? mergedVisibleFields : meta.visible_fields,
+    _fieldPermissions: (row._fieldPermissions ?? row._field_permissions ?? {}) as Record<string, 'visible' | 'hidden' | 'readonly' | 'masked'>,
     return_reason: (row.return_reason ?? row.returnReason ?? null) as string | null,
     returned_fields: normalizeStringArray(row.returned_fields ?? row.returnedFields),
     dispatched_at: (row.dispatched_at ?? row.dispatchedAt ?? null) as string | null,
@@ -784,7 +786,7 @@ export async function returnDispatchedOrder(id: string, reason: string, fields?:
   }) as Promise<DispatchedOrderItem>;
 }
 
-export async function supplementField(id: string, fields: Record<string, string>): Promise<void> {
+export async function supplementField(id: string, fields: Record<string, unknown>): Promise<void> {
   if (isMockMode) return mockDelay(undefined);
   return request.post(`/dispatched-orders/${id}/supplement`, { fields }) as Promise<void>;
 }

@@ -102,6 +102,69 @@ describe('DispatchedOrderService', () => {
     expect(result.items[0].handlerId).toBe('handler-1');
   });
 
+  it('keeps payroll bank cards in an admin-only complete export list', async () => {
+    const payrollOrder = {
+      ...makeDispatchedOrder(),
+      moduleCode: 'payroll_bank_card',
+      handlerId: null,
+      parentOrder: {
+        ...makeDispatchedOrder().parentOrder,
+        extraData: {
+          need_payroll_slip: '是',
+          bank_name: '中国银行',
+          bank_account: '6222000000000000',
+          bank_location: '宁波',
+          payroll_location: '宁波',
+        },
+      },
+    } as DispatchedOrder;
+    const { service, queryBuilder } = makeService({}, [payrollOrder]);
+
+    await expect(service.findAll({
+      page: 1,
+      pageSize: 20,
+      moduleCode: 'payroll_bank_card',
+    } as never, {
+      sub: 'admin-1',
+      username: 'admin',
+      roles: ['admin'],
+    } as JwtUserPayload)).resolves.toMatchObject({ total: 1 });
+
+    const sql = queryBuilder.andWhere.mock.calls.map(([statement]) => String(statement)).join('\n');
+    expect(sql).toContain("need_payroll_slip' = '是'");
+    for (const field of ['bank_name', 'bank_account', 'bank_location', 'payroll_location']) {
+      expect(sql).toContain(field);
+    }
+
+    await expect(service.findAll({
+      page: 1,
+      pageSize: 20,
+      moduleCode: 'payroll_bank_card',
+    } as never, {
+      sub: 'user-1',
+      username: 'dataentry01',
+      roles: ['data_entry_team'],
+    } as JwtUserPayload)).rejects.toMatchObject({
+      status: HttpStatus.FORBIDDEN,
+      message: '薪酬银行卡导出清单仅管理员可访问',
+    });
+  });
+
+  it('excludes payroll bank cards from generic dispatched-order lists', async () => {
+    const { service, queryBuilder } = makeService();
+
+    await service.findAll({ page: 1, pageSize: 20 } as never, {
+      sub: 'admin-1',
+      username: 'admin',
+      roles: ['admin'],
+    } as JwtUserPayload);
+
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+      'd.module_code <> :exportOnlyModule',
+      { exportOnlyModule: 'payroll_bank_card' },
+    );
+  });
+
   it('normalizes the insured unit from the labor contract subject in list results', async () => {
     const order = {
       ...makeDispatchedOrder(),
@@ -185,7 +248,11 @@ describe('DispatchedOrderService', () => {
       roles: ['biz_member'],
     } as JwtUserPayload);
 
-    expect(fieldPermissionService.getPermissionsForUser).toHaveBeenCalledWith('u1', 'dispatched:contract');
+    expect(fieldPermissionService.getPermissionsForUser).toHaveBeenCalledWith(
+      'u1',
+      'dispatched:contract',
+      BusinessScope.BEILUN,
+    );
     expect(result.fields.map((field) => field.fieldCode)).toEqual(['employee_name', 'mobile']);
     expect(result.fields.find((field) => field.fieldCode === 'mobile')).toMatchObject({
       value: '13800000000',
@@ -251,6 +318,91 @@ describe('DispatchedOrderService', () => {
     expect(result.visibleFields).toEqual(['employee_name', 'custom_province_note']);
     expect(result.workOrderUpdatedAt).toBe(order.parentOrder.updatedAt);
     expect(result.work_order_updated_at).toBe(order.parentOrder.updatedAt);
+  });
+
+  it('keeps social input fields when module fields only configure handling feedback', async () => {
+    const order = {
+      ...makeDispatchedOrder(DispatchedOrderStatus.PROCESSING),
+      moduleCode: 'social_insurance',
+      visibleFields: ['social_insurance_result'],
+      parentOrder: {
+        ...makeDispatchedOrder().parentOrder,
+        businessScope: BusinessScope.BEILUN,
+        extraData: {
+          gender: '女',
+          birth_date: '1991-01-18',
+          social_insurance_result: null,
+        },
+      },
+    } as DispatchedOrder;
+    const allFields = [
+      { fieldCode: 'gender', fieldName: '性别', displayOrder: 1 },
+      { fieldCode: 'birth_date', fieldName: '出生日期', displayOrder: 2 },
+      { fieldCode: 'social_insurance_result', fieldName: '社保是否办结', displayOrder: 3 },
+    ].map((field) => ({
+      ...field,
+      fieldType: 'text',
+      orderType: OrderType.ONBOARDING,
+      businessContext: [OrderType.ONBOARDING],
+      isActive: true,
+      isRequired: false,
+      defaultRequired: false,
+    } as unknown as FieldConfig));
+    const fieldPermissionService = {
+      getPermissionsForUser: jest.fn(async () => new Map(allFields.map((field) => [
+        field.fieldCode,
+        FieldPermissionMode.VISIBLE,
+      ]))),
+    } as unknown as FieldPermissionService;
+    const moduleFieldRepo = repoMock<ModuleField>({
+      find: jest.fn(async () => [{
+        moduleCode: 'social_insurance',
+        fieldCode: 'social_insurance_result',
+        businessScope: BusinessScope.BEILUN,
+        displayOrder: 1,
+        isActive: true,
+      } as unknown as ModuleField]),
+    });
+    const service = new DispatchedOrderService(
+      repoMock<DispatchedOrder>({ findOne: jest.fn(async () => order) }),
+      repoMock<WorkOrder>(),
+      repoMock<ModuleHandler>(),
+      repoMock<UserRole>(),
+      repoMock<FieldConfig>({ find: jest.fn(async () => allFields) }),
+      repoMock<Notification>(),
+      repoMock<OperationLog>(),
+      fieldPermissionService,
+      { getLogs: jest.fn() } as unknown as FieldSupplementService,
+      { exportSingleDispatchedOrder: jest.fn() } as never,
+      validationServiceMock as never,
+      undefined,
+      undefined,
+      undefined,
+      moduleFieldRepo,
+    );
+
+    const result = await service.findOne(order.id, {
+      sub: 'social-id',
+      username: 'fuqianwen',
+      roles: ['social_insurance_specialist'],
+      businessScope: BusinessScope.BEILUN,
+    } as JwtUserPayload);
+
+    expect(fieldPermissionService.getPermissionsForUser).toHaveBeenCalledWith(
+      'social-id',
+      'dispatched:social_insurance',
+      BusinessScope.BEILUN,
+    );
+    expect(result.visibleFields).toEqual([
+      'social_insurance_result',
+      'gender',
+      'birth_date',
+    ]);
+    expect(result.fields.map((field) => field.fieldCode)).toEqual([
+      'social_insurance_result',
+      'gender',
+      'birth_date',
+    ]);
   });
 
   it('limits resignation certificate details to formal certificate fields', async () => {
@@ -789,10 +941,10 @@ describe('DispatchedOrderService', () => {
 
       await expect(service.findAll({ page: 1, pageSize: 20, moduleCode } as never, user)).resolves.toMatchObject({ total: 1 });
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(expect.stringContaining('d.module_code = :moduleCode'), { moduleCode });
-      if (moduleCode === 'resignation_cert') {
+      if (['payroll_bank_card', 'resignation_cert'].includes(moduleCode)) {
         expect(queryBuilder.andWhere).toHaveBeenCalledWith(
           expect.stringContaining('d.module_code IN (:...phase1Modules)'),
-          { phase1Modules: expect.arrayContaining(['resignation_cert']) },
+          { phase1Modules: expect.arrayContaining([moduleCode]) },
         );
       }
     },
@@ -848,6 +1000,20 @@ describe('DispatchedOrderService', () => {
     expect(notificationRepo.create).toHaveBeenCalledWith(expect.objectContaining({
       content: expect.not.stringContaining('办理人'),
     }));
+  });
+
+  it('rejects payroll bank card status-result import before row processing', async () => {
+    const { service } = makeService();
+
+    await expect(service.batchImport({
+      moduleCode: 'payroll_bank_card',
+      mode: 'status',
+      forceAction: 'complete',
+      rows: [{ orderNo: 'ON20260511001' }],
+    }, { sub: 'admin-1', username: 'admin', roles: ['admin'] } as JwtUserPayload)).rejects.toMatchObject({
+      status: HttpStatus.BAD_REQUEST,
+      message: '薪酬银行卡导出清单不支持导入',
+    });
   });
 
   it('requires standardized batch import action and rejects business-side imports before row processing', async () => {
@@ -1145,7 +1311,46 @@ describe('DispatchedOrderService', () => {
     expect(parentOrder.status).toBe(WorkOrderStatus.PROCESSING);
   });
 
-  it('batch reassigns eligible rows round-robin and reports missing rows', async () => {
+  it('completes the main order when workflow children are complete even if payroll storage is pending', async () => {
+    const parentOrder = {
+      id: 'wo-1',
+      orderNo: 'ON20260511001',
+      orderType: OrderType.ONBOARDING,
+      status: WorkOrderStatus.PROCESSING,
+      completedAt: null,
+    } as WorkOrder;
+    const dispatchedOrderRepo = repoMock<DispatchedOrder>({
+      find: jest.fn(async () => [
+        { ...makeDispatchedOrder(DispatchedOrderStatus.COMPLETED), moduleCode: 'contract' },
+        { ...makeDispatchedOrder(DispatchedOrderStatus.PENDING), moduleCode: 'payroll_bank_card' },
+      ]),
+    });
+    const workOrderRepo = repoMock<WorkOrder>({
+      findOne: jest.fn(async () => parentOrder),
+    });
+    const service = new DispatchedOrderService(
+      dispatchedOrderRepo,
+      workOrderRepo,
+      repoMock<ModuleHandler>(),
+      repoMock<UserRole>(),
+      repoMock<FieldConfig>(),
+      repoMock<Notification>(),
+      repoMock<OperationLog>(),
+      {} as FieldPermissionService,
+      {} as FieldSupplementService,
+      { exportSingleDispatchedOrder: jest.fn() } as never,
+      validationServiceMock as never,
+    );
+    jest.spyOn(service as any, 'writeLog').mockResolvedValue(undefined);
+
+    await (service as any).checkMainOrderComplete(parentOrder.id);
+
+    expect(parentOrder.status).toBe(WorkOrderStatus.COMPLETED);
+    expect(parentOrder.completedAt).toBeInstanceOf(Date);
+    expect(workOrderRepo.save).toHaveBeenCalledWith(parentOrder);
+  });
+
+  it('batch reassigns workflow rows but skips payroll export records', async () => {
     const orders = [
       {
         ...makeDispatchedOrder(),
@@ -1157,6 +1362,13 @@ describe('DispatchedOrderService', () => {
         ...makeDispatchedOrder(),
         id: 'order-2',
         handlerId: 'old-handler',
+        voidAt: null,
+      },
+      {
+        ...makeDispatchedOrder(),
+        id: 'payroll-order',
+        moduleCode: 'payroll_bank_card',
+        handlerId: null,
         voidAt: null,
       },
     ] as DispatchedOrder[];
@@ -1219,7 +1431,7 @@ describe('DispatchedOrderService', () => {
     jest.spyOn(service as any, 'assertCanViewTeam').mockResolvedValue(undefined);
 
     const result = await service.batchReassign({
-      ids: ['order-1', 'missing-order', 'order-2'],
+      ids: ['order-1', 'missing-order', 'payroll-order', 'order-2'],
       handlerIds: ['replacement-1', 'replacement-2'],
       strategy: BatchReassignStrategy.ROUND_ROBIN,
       reason: '  rebalance coverage  ',
@@ -1229,7 +1441,10 @@ describe('DispatchedOrderService', () => {
       { id: 'order-1', previousHandlerId: 'old-handler', newHandlerId: 'replacement-1' },
       { id: 'order-2', previousHandlerId: 'old-handler', newHandlerId: 'replacement-2' },
     ]);
-    expect(result.skipped).toEqual([{ id: 'missing-order', reason: '子工单不存在' }]);
+    expect(result.skipped).toEqual([
+      { id: 'missing-order', reason: '子工单不存在' },
+      { id: 'payroll-order', reason: '薪酬银行卡导出清单不支持改派' },
+    ]);
     expect(transactionOrderRepository.update).toHaveBeenCalledTimes(2);
     expect(transactionOrderRepository.update).toHaveBeenCalledWith('order-1', {
       handlerId: 'replacement-1',

@@ -120,7 +120,6 @@ describe('LoginPage mustChangePassword synchronization', () => {
     await waitFor(() => expect(mocks.login).toHaveBeenCalledWith({
       username: 'jianglu',
       password: '123456',
-      businessScope: 'beilun',
     }));
     expect(mocks.setToken).toHaveBeenCalledWith('access-token-1', 'refresh-token-1');
     expect(mocks.setUser).toHaveBeenCalledWith(expect.objectContaining({ must_change_password: true, mustChangePassword: true }));
@@ -147,7 +146,7 @@ describe('LoginPage mustChangePassword synchronization', () => {
     expect(mocks.navigate).toHaveBeenCalledWith('/dashboard', { replace: true });
   });
 
-  it('uses the Zhejiang entry scope and redirects an assigned account to the out-of-province home', async () => {
+  it('uses the account scope returned by unified login and redirects to the out-of-province home', async () => {
     const user = userEvent.setup();
     const response = makeLoginResponse(false, { camelCaseOnly: true });
     response.user.business_scope = 'out_of_province';
@@ -155,7 +154,7 @@ describe('LoginPage mustChangePassword synchronization', () => {
 
     render(
       <MemoryRouter>
-        <LoginPage businessScope="out_of_province" />
+        <LoginPage />
       </MemoryRouter>,
     );
 
@@ -166,7 +165,6 @@ describe('LoginPage mustChangePassword synchronization', () => {
     await waitFor(() => expect(mocks.login).toHaveBeenCalledWith({
       username: 'zhejianguser',
       password: 'changedPass123',
-      businessScope: 'out_of_province',
     }));
     expect(window.localStorage.getItem('business_scope_v1')).toBe('out_of_province');
     expect(mocks.navigate).toHaveBeenCalledWith('/out-of-province/increase', { replace: true });

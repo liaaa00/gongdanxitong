@@ -19,6 +19,7 @@ import {
 import {
   filterPhase1VisibleDispatchModules,
   isDispatchModuleVisibleForOrderType,
+  isExportOnlyDispatchModule,
   isOutOfProvinceDispatchModule,
   isOutOfProvinceOrderType,
   isSocialInsuranceDispatchModule,
@@ -225,6 +226,25 @@ export class DispatchedOrderService {
     this.applyCommonFilters(qb, { ...query, __currentUserId: user.sub } as ListDispatchedOrderQueryDto & { __currentUserId: string });
 
     const requestedModules = this.normalizeQueryList(query.moduleCode ?? query.module_code);
+    const requestsExportOnlyModule = requestedModules.some((moduleCode) => isExportOnlyDispatchModule(moduleCode));
+    if (requestsExportOnlyModule && requestedModules.length !== 1) {
+      throw businessException(4224, HttpStatus.BAD_REQUEST, '薪酬银行卡导出清单不能与工作流子单混合查询');
+    }
+    if (requestsExportOnlyModule && !this.isAdmin(user)) {
+      throw businessException(5000, HttpStatus.FORBIDDEN, '薪酬银行卡导出清单仅管理员可访问');
+    }
+    if (requestedModules.length === 0) {
+      qb.andWhere('d.module_code <> :exportOnlyModule', { exportOnlyModule: DispatchModuleCode.PAYROLL_BANK_CARD });
+    }
+    if (requestedModules.length === 1 && isExportOnlyDispatchModule(requestedModules[0])) {
+      qb.andWhere(`
+        w.extra_data ->> 'need_payroll_slip' = '是'
+        AND NULLIF(BTRIM(w.extra_data ->> 'bank_name'), '') IS NOT NULL
+        AND NULLIF(BTRIM(w.extra_data ->> 'bank_account'), '') IS NOT NULL
+        AND NULLIF(BTRIM(w.extra_data ->> 'bank_location'), '') IS NOT NULL
+        AND NULLIF(BTRIM(w.extra_data ->> 'payroll_location'), '') IS NOT NULL
+      `);
+    }
     const isSocialFundList = requestedModules.length > 0
       && requestedModules.every((moduleCode) => isHandlingFeedbackModule(moduleCode));
     qb.addSelect(
@@ -250,6 +270,9 @@ export class DispatchedOrderService {
     query: ListDispatchedOrderQueryDto,
     user: JwtUserPayload,
   ): Promise<PagedResponse<DispatchedOrderListItem>> {
+    if (isExportOnlyDispatchModule(moduleCode)) {
+      throw businessException(4224, HttpStatus.BAD_REQUEST, '薪酬银行卡导出清单不提供团队工单视图');
+    }
     await this.assertCanViewTeam(user, moduleCode);
     return this.findAll({ ...query, moduleCode }, { ...user, roles: this.ensureAdminScope(user.roles) });
   }
@@ -272,6 +295,9 @@ export class DispatchedOrderService {
     isOnDuty: boolean;
     is_on_duty: boolean;
   }>> {
+    if (isExportOnlyDispatchModule(moduleCode)) {
+      throw businessException(4224, HttpStatus.BAD_REQUEST, '薪酬银行卡导出清单没有负责人池');
+    }
     await this.assertModulePoolAccess(user, moduleCode);
     const handlers = await this.moduleHandlerRepository.find({
       where: { moduleCode, isActive: true },
@@ -308,6 +334,7 @@ export class DispatchedOrderService {
 
   async findOne(id: string, user: JwtUserPayload): Promise<DispatchedOrderDetailItem> {
     const order = await this.loadDispatchedOrder(id);
+    this.assertWorkflowOperationSupported(order, '查看详情');
     await this.assertCanRead(order, user);
     return this.toDetailItem(order, 0, user);
   }
@@ -791,6 +818,9 @@ export class DispatchedOrderService {
     const details: Array<{ rowNumber: number; success: boolean; id?: string; orderNo?: string; employeeIdCard?: string; action?: string; message: string }> = [];
     let successRows = 0;
 
+    if (moduleCode === DispatchModuleCode.PAYROLL_BANK_CARD) {
+      throw businessException(4224, HttpStatus.BAD_REQUEST, '薪酬银行卡导出清单不支持导入');
+    }
     if (payload.mode === 'status' && !payload.forceAction && !isHandlingFeedbackModule(moduleCode)) {
       throw businessException(4224, HttpStatus.BAD_REQUEST, '导入办理必须选择标准动作：批办理完成、批办理退回或保持处理中');
     }
@@ -1041,6 +1071,7 @@ export class DispatchedOrderService {
 
   async getFieldSyncRecords(id: string, user: JwtUserPayload): Promise<FieldSyncSummary> {
     const order = await this.loadDispatchedOrder(id);
+    this.assertWorkflowOperationSupported(order, '查看字段同步');
     await this.assertCanRead(order, user);
     return this.buildFieldSyncSummary(order.id);
   }
@@ -1072,6 +1103,7 @@ export class DispatchedOrderService {
   }
 
   private async urgeLoadedOrder(order: DispatchedOrder, reasonInput: string | undefined, user: JwtUserPayload): Promise<void> {
+    this.assertWorkflowOperationSupported(order, '催办');
     if (![DispatchedOrderStatus.PENDING, DispatchedOrderStatus.PROCESSING].includes(order.status)) {
       throw businessException(4201, HttpStatus.CONFLICT, '仅处理中子工单可催办');
     }
@@ -1276,7 +1308,7 @@ export class DispatchedOrderService {
   /**
    * 0602 E-1/E-2/E-3：子工单级“重新提交”。发起人可在【已退回 / 已撤回 / 已作废】子单详情页重提，
    * 合并了原“撤销作废”语义（撤销作废 = 已作废子单的一次重提）。
-   * 行为：子单重新流转到原模块对应后道（保留原 handler；为空则按模块默认主办重新指派），
+   * 行为：子单重新流转到原模块对应后道，并恢复接单前派单形态（固定派单保留原处理人，公共池保持为空），
    * 状态回到待处理(pending)，父工单若处于终态则回到处理中(processing)，并通知后道。
    * 入参可携带修改后的 extraData（与 E-4 配合：修改仅存内容，重提才真正流转）。
    * 兜底：非发起人调用被拒；状态不允许时返回明确冲突错误码。
@@ -1341,11 +1373,9 @@ export class DispatchedOrderService {
       parentTouched = true;
     }
 
-    // 重新指派：保留原 handler；为空（曾进过待认领池/被作废清空）则按模块默认主办重新指派。
-    if (!order.handlerId) {
-      order.handlerId = await this.resolveDefaultModuleHandler(order.moduleCode);
-    }
-
+    // 接单会把公共池的 handlerId 写成接单人，重提时需从接单前审计快照恢复原派单形态。
+    order.handlerId = await this.readOriginalDispatchHandlerId(order.id, order.handlerId);
+    order.handler = null;
     order.status = DispatchedOrderStatus.PENDING;
     order.voidAt = null;
     order.completedAt = null;
@@ -1380,21 +1410,13 @@ export class DispatchedOrderService {
     return this.findOne(order.id, user);
   }
 
-  /** 按模块默认主办（isBackup:false，权重高者优先）解析处理人；无主办时返回 null（进入待认领池）。 */
-  private async resolveDefaultModuleHandler(moduleCode: string): Promise<string | null> {
-    const handlers = await this.moduleHandlerRepository.find({
-      where: { moduleCode, isActive: true, isBackup: false },
-      order: { weight: 'DESC', handlerId: 'ASC' },
-    });
-    return handlers[0]?.handlerId ?? null;
-  }
-
   async getTimeline(
     id: string,
     query: PaginationQueryDto,
     user: JwtUserPayload,
   ): Promise<PagedResponse<DispatchedOrderTimelineItem>> {
     const order = await this.loadDispatchedOrder(id);
+    this.assertWorkflowOperationSupported(order, '查看处理日志');
     await this.assertCanRead(order, user);
 
     const page = query.current ?? query.page;
@@ -1431,12 +1453,14 @@ export class DispatchedOrderService {
 
   async getSupplementLogs(id: string, user: JwtUserPayload): Promise<Array<{ fieldCode: string; oldValue: string | null; newValue: string | null; supplementedById: string; supplementedAt: Date }>> {
     const order = await this.loadDispatchedOrder(id);
+    this.assertWorkflowOperationSupported(order, '查看补录日志');
     await this.assertCanRead(order, user);
     return this.fieldSupplementService.getLogs(id);
   }
 
   async confirmDirtyRead(id: string, user: JwtUserPayload): Promise<{ success: boolean; cleared: number }> {
     const order = await this.loadDispatchedOrder(id);
+    this.assertWorkflowOperationSupported(order, '确认字段变更');
     await this.assertCanRead(order, user);
     const cleared = await this.clearDirtyMarksForDispatchedOrder(order, user, 'confirm_read');
     return { success: true, cleared };
@@ -1524,6 +1548,10 @@ export class DispatchedOrderService {
       const order = orderById.get(id);
       if (!order) {
         skipped.push({ id, reason: '子工单不存在' });
+        continue;
+      }
+      if (isExportOnlyDispatchModule(order.moduleCode)) {
+        skipped.push({ id, reason: '薪酬银行卡导出清单不支持改派' });
         continue;
       }
       if (order.voidAt || blockedStatuses.includes(order.status)) {
@@ -1620,6 +1648,7 @@ export class DispatchedOrderService {
     user: JwtUserPayload,
   ): Promise<DispatchedOrderDetailItem> {
     const order = await this.loadDispatchedOrder(id);
+    this.assertWorkflowOperationSupported(order, '改派');
     if (isOutOfProvinceDispatchModule(order.moduleCode)) {
       await this.assertCanHandle(order, user);
     } else {
@@ -1721,6 +1750,9 @@ export class DispatchedOrderService {
     user: JwtUserPayload,
   ): Promise<DispatchedOrderExportResult> {
     const order = await this.loadDispatchedOrder(id);
+    if (isExportOnlyDispatchModule(order.moduleCode) && !this.isAdmin(user)) {
+      throw businessException(5000, HttpStatus.FORBIDDEN, '薪酬银行卡导出清单仅管理员可导出');
+    }
     await this.assertCanRead(order, user);
     this.assertPayrollBankCardReady(order);
     return this.exportTemplatesService.exportSingleDispatchedOrder(id, payload.templateId, user);
@@ -1731,6 +1763,9 @@ export class DispatchedOrderService {
     const orders: DispatchedOrder[] = [];
     for (const id of ids) {
       const order = await this.loadDispatchedOrder(id);
+      if (isExportOnlyDispatchModule(order.moduleCode) && !this.isAdmin(user)) {
+        throw businessException(5000, HttpStatus.FORBIDDEN, '薪酬银行卡导出清单仅管理员可导出');
+      }
       await this.assertCanRead(order, user);
       this.assertPayrollBankCardReady(order);
       orders.push(order);
@@ -2258,6 +2293,7 @@ export class DispatchedOrderService {
 
     qb.andWhere('d.module_code IN (:...phase1Modules)', { phase1Modules: filterPhase1VisibleDispatchModules([
       'onboarding_contact',
+      'payroll_bank_card',
       'contract',
       'data_entry',
       'social_insurance',
@@ -2554,6 +2590,9 @@ export class DispatchedOrderService {
 
   private assertPayrollBankCardReady(order: DispatchedOrder): void {
     if (order.moduleCode !== DispatchModuleCode.PAYROLL_BANK_CARD) return;
+    if (String(order.parentOrder?.extraData?.need_payroll_slip ?? '').trim() !== '是') {
+      throw businessException(4233, HttpStatus.CONFLICT, '该员工当前不需要进入薪酬银行卡导出清单');
+    }
     const missingFields = getMissingPayrollBankCardFields(order.parentOrder?.extraData);
     if (missingFields.length === 0) return;
     throw businessException(4233, HttpStatus.CONFLICT, `银行卡资料未完整，缺少：${missingFields.join('、')}`);
@@ -2670,7 +2709,11 @@ export class DispatchedOrderService {
       dirtyByField.set(mark.fieldCode, mark);
     }
     const permissions = user
-      ? await this.fieldPermissionService.getPermissionsForUser(user.sub, `dispatched:${order.moduleCode}`)
+      ? await this.fieldPermissionService.getPermissionsForUser(
+        user.sub,
+        `dispatched:${order.moduleCode}`,
+        moduleBusinessScope,
+      )
       : new Map<string, FieldPermissionMode>();
     const hasConfiguredPermissions = permissions.size > 0;
     const isBusinessCreator = Boolean(
@@ -2687,11 +2730,23 @@ export class DispatchedOrderService {
       ? new Set(order.visibleFields)
       : null;
     // 离职证明字段由正式证明字段白名单定义，忽略历史子单上的旧字段快照。
+    const isSocialInsuranceSpecialistDetail = Boolean(
+      user
+      && order.moduleCode === DispatchModuleCode.SOCIAL_INSURANCE
+      && hasAnyRole(user.roles, ['social_insurance_specialist']),
+    );
+    const currentSocialPermissionFields = isSocialInsuranceSpecialistDetail
+      ? Array.from(permissions.entries())
+        .filter(([, permission]) => permission !== FieldPermissionMode.HIDDEN)
+        .map(([fieldCode]) => fieldCode)
+      : [];
     const effectiveVisibleSet = order.moduleCode === DispatchModuleCode.RESIGNATION_CERT
       ? null
-      : hasAuthoritativeSocialFields
-        ? new Set(moduleConfiguredFieldCodes)
-        : visibleSet;
+      : isSocialInsuranceSpecialistDetail
+        ? new Set([...currentSocialPermissionFields, ...moduleConfiguredFieldCodes])
+        : hasAuthoritativeSocialFields
+          ? new Set([...(order.visibleFields ?? []), ...moduleConfiguredFieldCodes])
+          : visibleSet;
     const configuredHandlerNames = (await this.getConfiguredHandlerNamesByModule([order.moduleCode])).get(order.moduleCode) ?? [];
     const syncSummary = await this.buildFieldSyncSummary(order.id);
     const filteredFields = fields.filter((field) => {
@@ -2708,10 +2763,16 @@ export class DispatchedOrderService {
         && (!hasConfiguredPermissions || permission !== FieldPermissionMode.HIDDEN);
     });
     const orderedFilteredFields = hasAuthoritativeSocialFields
-      ? [...filteredFields].sort((left, right) => (
-        (moduleFieldByCode.get(left.fieldCode)?.displayOrder ?? 0)
-        - (moduleFieldByCode.get(right.fieldCode)?.displayOrder ?? 0)
-      ))
+      ? [...filteredFields].sort((left, right) => {
+        const leftModuleOrder = moduleFieldByCode.get(left.fieldCode)?.displayOrder;
+        const rightModuleOrder = moduleFieldByCode.get(right.fieldCode)?.displayOrder;
+        if (leftModuleOrder !== undefined && rightModuleOrder !== undefined) {
+          return leftModuleOrder - rightModuleOrder;
+        }
+        if (leftModuleOrder !== undefined) return -1;
+        if (rightModuleOrder !== undefined) return 1;
+        return left.displayOrder - right.displayOrder;
+      })
       : filteredFields;
     const dynamicSupplementFieldCodes = orderedFilteredFields
       .filter((field) => isBusinessCreator
@@ -2932,6 +2993,7 @@ export class DispatchedOrderService {
   }
 
   private async assertCanHandle(order: DispatchedOrder, user: JwtUserPayload): Promise<void> {
+    this.assertWorkflowOperationSupported(order, '办理');
     if (this.isAdmin(user)) return;
     if (order.handlerId === user.sub && this.canReadAssignedModule(user, order.moduleCode)) return;
     if (await this.canActAsModuleSupervisor(user, order.moduleCode)) return;
@@ -2939,11 +3001,18 @@ export class DispatchedOrderService {
   }
 
   private assertCanSupplementFields(order: DispatchedOrder, user: JwtUserPayload): void {
+    if (
+      order.moduleCode === DispatchModuleCode.SOCIAL_INSURANCE
+      && hasAnyRole(user.roles, ['social_insurance_specialist'])
+    ) {
+      return;
+    }
+
     const operatorKeys = [user.username, user.realName, user.real_name]
       .map((value) => String(value || '').trim())
       .filter(Boolean);
     if (order.moduleCode !== SUPPLEMENT_ALLOWED_MODULE_CODE || !operatorKeys.some((key) => SUPPLEMENT_ALLOWED_USERNAMES.has(key))) {
-      throw businessException(5001, HttpStatus.FORBIDDEN, '仅毛雅妮或江璐可补充入职联系子工单字段');
+      throw businessException(5001, HttpStatus.FORBIDDEN, '仅毛雅妮、江璐或社保专员可补充对应子工单字段');
     }
   }
 
@@ -2964,6 +3033,7 @@ export class DispatchedOrderService {
   }
 
   private assertParentAllowsDispatchedHandling(order: DispatchedOrder): void {
+    this.assertWorkflowOperationSupported(order, '办理');
     if (order.voidAt || [WorkOrderStatus.VOID, WorkOrderStatus.VOID_PENDING, WorkOrderStatus.WITHDRAW_PENDING, WorkOrderStatus.WITHDRAWN].includes(order.parentOrder.status)) {
       throw businessException(4204, HttpStatus.CONFLICT, '父工单已作废、已撤回、撤回中或不可办理，子工单不可继续办理');
     }
@@ -2975,6 +3045,7 @@ export class DispatchedOrderService {
   }
 
   private assertCanCreatorRestoreVoid(order: DispatchedOrder, user: JwtUserPayload): void {
+    this.assertWorkflowOperationSupported(order, '撤销作废');
     if (order.parentOrder.createdBy !== user.sub || !hasAnyRole(user.roles, BUSINESS_MEMBER_ROLES)) {
       throw businessException(5000, HttpStatus.FORBIDDEN, '仅创建该工单的业务员可撤销作废该子工单');
     }
@@ -2985,6 +3056,7 @@ export class DispatchedOrderService {
   }
 
   private assertCreatorActionAllowed(order: DispatchedOrder, actionLabel: string): void {
+    this.assertWorkflowOperationSupported(order, actionLabel);
     if (!([DispatchedOrderStatus.RETURNED, DispatchedOrderStatus.WITHDRAWN].includes(order.status) && ['作废', '修改'].includes(actionLabel))) {
       this.assertParentAllowsDispatchedHandling(order);
     }
@@ -2996,6 +3068,12 @@ export class DispatchedOrderService {
     }
     if ([DispatchedOrderStatus.MODIFY_PENDING, DispatchedOrderStatus.WITHDRAW_PENDING, DispatchedOrderStatus.VOID_PENDING].includes(order.status)) {
       throw businessException(4201, HttpStatus.CONFLICT, `审批中的子工单不允许${actionLabel}`);
+    }
+  }
+
+  private assertWorkflowOperationSupported(order: DispatchedOrder, actionLabel: string): void {
+    if (isExportOnlyDispatchModule(order.moduleCode)) {
+      throw businessException(4224, HttpStatus.BAD_REQUEST, `薪酬银行卡导出清单仅支持固定模板导出，不支持${actionLabel}`);
     }
   }
 
@@ -3127,7 +3205,8 @@ export class DispatchedOrderService {
 
   private async checkMainOrderComplete(parentOrderId: string): Promise<void> {
     const children = await this.dispatchedOrderRepository.find({ where: { parentOrderId } });
-    if (children.length === 0 || children.some((child) => child.status !== DispatchedOrderStatus.COMPLETED)) return;
+    const workflowChildren = children.filter((child) => !isExportOnlyDispatchModule(child.moduleCode));
+    if (workflowChildren.length === 0 || workflowChildren.some((child) => child.status !== DispatchedOrderStatus.COMPLETED)) return;
     const workOrder = await this.workOrderRepository.findOne({ where: { id: parentOrderId } });
     if (!workOrder || workOrder.status === WorkOrderStatus.COMPLETED || [WorkOrderStatus.WITHDRAWN, WorkOrderStatus.VOID].includes(workOrder.status)) return;
     const before = {
@@ -3597,6 +3676,28 @@ export class DispatchedOrderService {
     });
   }
 
+  private async readOriginalDispatchHandlerId(id: string, fallback: string | null): Promise<string | null> {
+    const log = await this.operationLogRepository.findOne({
+      where: {
+        entityType: 'dispatched_order',
+        entityId: id,
+        actionType: In(['accept', 'claim', 'start_silent_sign', 'reassign']),
+      },
+      order: { createdAt: 'DESC' },
+    });
+    if (!log) return fallback;
+
+    const beforeData = (log.beforeData ?? {}) as Record<string, unknown>;
+    if (['accept', 'claim', 'start_silent_sign'].includes(log.actionType)) {
+      const handlerId = beforeData.handlerId ?? beforeData.handler_id;
+      return typeof handlerId === 'string' && handlerId.length > 0 ? handlerId : null;
+    }
+
+    const afterData = (log.afterData ?? {}) as Record<string, unknown>;
+    const handlerId = afterData.newHandlerId ?? afterData.new_handler_id ?? afterData.handlerId ?? afterData.handler_id;
+    return typeof handlerId === 'string' && handlerId.length > 0 ? handlerId : fallback;
+  }
+
   private buildFieldDiff(before: Record<string, unknown>, after: Record<string, unknown>): FieldDiffItem[] {
     const hookDiff = this.fieldChangeHook?.buildDiff(before, after);
     if (hookDiff && hookDiff.length > 0) return hookDiff;
@@ -3674,7 +3775,11 @@ export class DispatchedOrderService {
 
   private async resolveDispatchedRecipients(order: DispatchedOrder): Promise<string[]> {
     const handlers = await this.moduleHandlerRepository.find({
-      where: { moduleCode: order.moduleCode, isActive: true },
+      where: {
+        moduleCode: order.moduleCode,
+        businessScope: order.parentOrder.businessScope ?? BusinessScope.BEILUN,
+        isActive: true,
+      },
     });
     const configuredHandlerIds = handlers.map((handler) => handler.handlerId).filter((id): id is string => Boolean(id));
     return Array.from(new Set([order.handlerId, ...configuredHandlerIds].filter((id): id is string => Boolean(id))));

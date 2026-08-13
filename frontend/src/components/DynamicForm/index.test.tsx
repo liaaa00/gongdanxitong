@@ -73,13 +73,47 @@ describe('DynamicForm', () => {
     const onFinish = vi.fn().mockResolvedValue(undefined);
     render(<DynamicForm fields={mockFields} onFinish={onFinish} submitText="提交" />);
     await waitFor(() => expect(screen.getByText('姓名')).toBeInTheDocument());
-    const buttons = document.querySelectorAll('button[type="submit"]');
-    if (buttons.length > 0) {
-      await userEvent.click(buttons[0] as HTMLElement);
-      await waitFor(() => {
-        expect(onFinish).toHaveBeenCalled();
-      });
-    }
+    await userEvent.click(screen.getByRole('button', { name: /提\s*交/ }));
+    await waitFor(() => {
+      expect(onFinish).toHaveBeenCalled();
+    });
+  });
+
+  it('submits a changed optional field without validating untouched historical required gaps', async () => {
+    const onFinish = vi.fn().mockResolvedValue(undefined);
+    render(
+      <DynamicForm
+        fields={mockFields.filter((field) => ['name', 'note'].includes(field.field_code))}
+        initialValues={{ name: '', note: '' }}
+        onFinish={onFinish}
+        submitText="保存字段"
+        validateChangedFieldsOnly
+      />,
+    );
+
+    await userEvent.type(screen.getByLabelText('备注'), '本次补录');
+    await userEvent.click(screen.getByRole('button', { name: /保\s*存\s*字\s*段/ }));
+
+    await waitFor(() => expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ note: '本次补录' })));
+  });
+
+  it('still blocks clearing a required field in changed-fields-only mode', async () => {
+    const onFinish = vi.fn().mockResolvedValue(undefined);
+    render(
+      <DynamicForm
+        fields={mockFields.filter((field) => ['name', 'note'].includes(field.field_code))}
+        initialValues={{ name: '张三', note: '' }}
+        onFinish={onFinish}
+        submitText="保存字段"
+        validateChangedFieldsOnly
+      />,
+    );
+
+    await userEvent.clear(screen.getByLabelText('姓名'));
+    await userEvent.click(screen.getByRole('button', { name: /保\s*存\s*字\s*段/ }));
+
+    expect(await screen.findByText('姓名为必填')).toBeInTheDocument();
+    expect(onFinish).not.toHaveBeenCalled();
   });
 
   it('marks highlighted fields with stable focus anchor', async () => {

@@ -34,6 +34,11 @@ export const PHASE1_VISIBLE_DISPATCH_MODULE_CODES = [
 
 export const PHASE1_VISIBLE_ORDER_TYPES = ['onboarding', 'resignation'] as const;
 
+export const EXPORT_ONLY_DISPATCH_MODULE_CODES = ['payroll_bank_card'] as const;
+export const WORKFLOW_DISPATCH_MODULE_CODES = PHASE1_VISIBLE_DISPATCH_MODULE_CODES.filter(
+  (moduleCode) => !EXPORT_ONLY_DISPATCH_MODULE_CODES.includes(moduleCode as (typeof EXPORT_ONLY_DISPATCH_MODULE_CODES)[number]),
+);
+
 export const OUT_OF_PROVINCE_DISPATCH_MODULE_CODES = ['out_of_province_dispatch'] as const;
 export const OUT_OF_PROVINCE_ORDER_TYPES = [
   'out_of_province_increase',
@@ -41,6 +46,7 @@ export const OUT_OF_PROVINCE_ORDER_TYPES = [
 ] as const;
 
 const PHASE1_VISIBLE_DISPATCH_MODULE_SET = new Set<string>(PHASE1_VISIBLE_DISPATCH_MODULE_CODES);
+const EXPORT_ONLY_DISPATCH_MODULE_SET = new Set<string>(EXPORT_ONLY_DISPATCH_MODULE_CODES);
 const OUT_OF_PROVINCE_DISPATCH_MODULE_SET = new Set<string>(OUT_OF_PROVINCE_DISPATCH_MODULE_CODES);
 const OUT_OF_PROVINCE_ORDER_TYPE_SET = new Set<string>(OUT_OF_PROVINCE_ORDER_TYPES);
 const PHASE1_VISIBLE_ORDER_TYPE_SET = new Set<string>(PHASE1_VISIBLE_ORDER_TYPES);
@@ -98,6 +104,10 @@ export function resolveDispatchModuleCode(input: string | undefined | null): str
   const normalized = normalizeDispatchModuleCode(value);
   if (DISPATCH_MODULE_LABELS[normalized]) return normalized;
   return DISPATCH_MODULE_NAME_TO_CODE[value] ?? normalized;
+}
+
+export function isExportOnlyDispatchModule(moduleCode: string | undefined | null): boolean {
+  return EXPORT_ONLY_DISPATCH_MODULE_SET.has(normalizeDispatchModuleCode(moduleCode));
 }
 
 export function isPhase1VisibleDispatchModule(moduleCode: string | undefined | null): boolean {

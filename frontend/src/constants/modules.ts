@@ -23,12 +23,12 @@ export const MODULE_META: Record<string, ModuleMeta> = {
   },
   payroll_bank_card: {
     code: 'payroll_bank_card',
-    label: '薪酬银行卡',
-    shortLabel: '薪酬银行卡',
+    label: '薪酬银行卡导出',
+    shortLabel: '薪酬银行卡导出',
     color: 'gold',
     group: 'onboarding',
-    title: '薪酬银行卡子工单',
-    desc: '选择是否需要工资单为“是”时生成；银行卡资料齐全后可办理和导出。',
+    title: '薪酬银行卡导出',
+    desc: '选择是否需要工资单为“是”且银行卡资料齐全后进入清单，页面数据可直接按固定模板导出。',
   },
   contract: {
     code: 'contract',

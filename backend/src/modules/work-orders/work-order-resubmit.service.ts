@@ -2,6 +2,7 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { hasManagementScopeRole, isAdminRole } from 'src/common/auth/role-permissions';
+import { isExportOnlyDispatchModule } from 'src/common/constants/dispatch-modules';
 import { businessException } from 'src/common/exceptions/business-exception';
 import {
   DispatchedOrder,
@@ -112,6 +113,7 @@ export class WorkOrderResubmitService {
       workOrder.submittedAt = workOrder.submittedAt ?? new Date();
       await workOrderRepo.save(workOrder);
       for (const child of touched) {
+        if (isExportOnlyDispatchModule(child.moduleCode)) continue;
         await operationLogRepo.save(operationLogRepo.create({
           entityType: 'dispatched_order',
           entityId: child.id,
@@ -177,7 +179,12 @@ export class WorkOrderResubmitService {
     for (const next of nextChildren) {
       const current = byModule.get(next.moduleCode);
       if (current) {
-        if (current.status !== DispatchedOrderStatus.COMPLETED) {
+        if (isExportOnlyDispatchModule(current.moduleCode)) {
+          current.handlerId = null;
+          current.visibleFields = next.visibleFields;
+          current.returnReason = null;
+          touched.push(await repository.save(current));
+        } else if (current.status !== DispatchedOrderStatus.COMPLETED) {
           current.status = DispatchedOrderStatus.PENDING;
           current.handlerId = next.handlerId;
           current.visibleFields = next.visibleFields;
@@ -191,12 +198,14 @@ export class WorkOrderResubmitService {
       } else {
         touched.push(await repository.save(repository.create({
           parentOrderId, moduleCode: next.moduleCode, status: DispatchedOrderStatus.PENDING,
-          handlerId: next.handlerId, visibleFields: next.visibleFields, returnReason: null,
+          handlerId: isExportOnlyDispatchModule(next.moduleCode) ? null : next.handlerId,
+          visibleFields: next.visibleFields, returnReason: null,
           dispatchedAt: new Date(), acceptedAt: null, completedAt: null,
         })));
       }
     }
     for (const child of byModule.values()) {
+      if (isExportOnlyDispatchModule(child.moduleCode)) continue;
       if (child.status === DispatchedOrderStatus.RETURNED) {
         child.status = DispatchedOrderStatus.COMPLETED;
         child.completedAt = new Date();
@@ -209,7 +218,7 @@ export class WorkOrderResubmitService {
 
   private async notifyHandlers(repository: Repository<Notification>, children: DispatchedOrder[], workOrder: WorkOrder): Promise<void> {
     for (const child of children) {
-      if (!child.handlerId) continue;
+      if (isExportOnlyDispatchModule(child.moduleCode) || !child.handlerId) continue;
       await repository.save(repository.create({
         userId: child.handlerId, bizType: 'dispatch_resubmit', title: '退回工单已重新提交',
         content: `主工单 ${workOrder.orderNo} 已重新派发到 ${child.moduleCode}`,

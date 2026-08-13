@@ -36,7 +36,7 @@ async function makeUser(roleCode: string, businessScope: BusinessScope): Promise
   return Object.assign(new User(), {
     id: 'user-1',
     username: 'scope-user',
-    realName: '业务线测试用户',
+    realName: 'Scope User',
     email: null,
     phone: null,
     passwordHash: await bcrypt.hash('123456', 4),
@@ -55,37 +55,26 @@ async function makeUser(roleCode: string, businessScope: BusinessScope): Promise
   });
 }
 
-describe('login business-scope boundary', () => {
-  it('rejects a Zhejiang business-front account at the Beilun entry', async () => {
-    const user = await makeUser('business_group_member', BusinessScope.OUT_OF_PROVINCE);
-    const { service, jwtService } = createService(user);
+describe('unified login business-scope routing', () => {
+  it.each([
+    ['business_group_member', BusinessScope.OUT_OF_PROVINCE],
+    ['labor_contract_member', BusinessScope.BEILUN],
+  ])('authenticates %s through the unified endpoint and returns the database scope', async (roleCode, businessScope) => {
+    const user = await makeUser(roleCode, businessScope);
+    const { service, userRepository, jwtService } = createService(user);
 
     await expect(service.login(
       user.username,
       '123456',
       '127.0.0.1',
-      BusinessScope.BEILUN,
-    )).rejects.toThrow('该账号属于浙江自签业务，请从浙江自签入口登录');
-
-    expect(jwtService.signAsync).not.toHaveBeenCalled();
-  });
-
-  it('allows a backend handler to use either entry and returns the database scope', async () => {
-    const user = await makeUser('labor_contract_member', BusinessScope.OUT_OF_PROVINCE);
-    const { service, userRepository } = createService(user);
-
-    await expect(service.login(
-      user.username,
-      '123456',
-      '127.0.0.1',
-      BusinessScope.BEILUN,
     )).resolves.toMatchObject({
       user: {
-        businessScope: BusinessScope.OUT_OF_PROVINCE,
-        business_scope: BusinessScope.OUT_OF_PROVINCE,
+        businessScope,
+        business_scope: businessScope,
       },
     });
 
     expect(userRepository.save).toHaveBeenCalledWith(user);
+    expect(jwtService.signAsync).toHaveBeenCalled();
   });
 });

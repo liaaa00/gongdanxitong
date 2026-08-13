@@ -14,17 +14,6 @@ import { RoleActionPermissionService } from 'src/modules/role-action-permissions
 import { JwtUserPayload, LoginResult } from './auth.types';
 
 const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
-const BUSINESS_FRONT_ROLE_CODES = new Set([
-  'business_owner',
-  'business_group_leader',
-  'business_group_member',
-  'biz_manager',
-  'biz_leader',
-  'biz_member',
-  'manager',
-  'salesperson',
-]);
-
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -74,7 +63,6 @@ export class AuthService {
     username: string,
     password: string,
     ipAddress?: string,
-    requestedBusinessScope?: BusinessScope,
   ): Promise<LoginResult> {
     const user = await this.userRepository.findOne({
       where: { username },
@@ -114,19 +102,7 @@ export class AuthService {
     }
 
     const roleCodes = this.getActiveRoleCodes(user);
-    const fixedScopeAccount = roleCodes.some((code) => BUSINESS_FRONT_ROLE_CODES.has(code));
     const accountScope = user.businessScope ?? BusinessScope.BEILUN;
-    if (requestedBusinessScope && fixedScopeAccount && accountScope !== requestedBusinessScope) {
-      await this.writeSecurityLog('login_scope_rejected', user.id, ipAddress, {
-        requestedBusinessScope,
-        accountScope,
-      });
-      throw new UnauthorizedException(
-        accountScope === BusinessScope.OUT_OF_PROVINCE
-          ? '该账号属于浙江自签业务，请从浙江自签入口登录'
-          : '该账号属于北仑本地业务，请从北仑业务入口登录',
-      );
-    }
 
     user.lastLoginAt = now;
     user.failedLoginAttempts = 0;

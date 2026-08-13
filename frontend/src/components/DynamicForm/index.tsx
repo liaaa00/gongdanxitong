@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ProForm,
   ProFormText,
@@ -56,6 +56,7 @@ interface DynamicFormProps {
   onValuesChange?: (changedValues: Record<string, unknown>, allValues: Record<string, unknown>) => void;
   submitText?: string;
   hideSubmit?: boolean;
+  validateChangedFieldsOnly?: boolean;
   loading?: boolean;
   highlightedFields?: string[];
   focusField?: string | null;
@@ -115,12 +116,16 @@ function DynamicForm({
   onValuesChange,
   submitText,
   hideSubmit,
+  validateChangedFieldsOnly,
   loading,
   highlightedFields,
   focusField,
 }: DynamicFormProps) {
   const { message } = App.useApp();
   const [currentValues, setCurrentValues] = useState<Record<string, unknown>>(initialValues ?? {});
+  const changedFieldCodesRef = useRef(new Set<string>());
+  const internalFormRef = useRef<ProFormInstance>();
+  const effectiveFormRef = formRef ?? internalFormRef;
   const [contractSubjects, setContractSubjects] = useState<ContractSubjectItem[]>([]);
   const hasContractSubjectFields = orderType === 'onboarding'
     && fields.some((field) => field.field_code === 'contract_subject' || field.field_code === 'company_address');
@@ -225,6 +230,12 @@ function DynamicForm({
     const rules: Array<Record<string, unknown>> = [];
     const perm = getPermission(field.field_code, fieldPermissions, readOnly);
     const isReadonly = perm === 'readonly' || perm === 'masked';
+    const fieldConditions = getFieldConditions(field.field_code);
+    const shouldValidate = !validateChangedFieldsOnly
+      || changedFieldCodesRef.current.has(field.field_code)
+      || fieldConditions.some((condition) => changedFieldCodesRef.current.has(condition.field));
+
+    if (!shouldValidate) return rules;
 
     if (field.is_required && !isReadonly) {
       rules.push({ required: true, message: `${field.field_name}为必填` });
@@ -360,6 +371,7 @@ function DynamicForm({
   };
 
   const handleValuesChange = (changedValues: Record<string, unknown>, allValues: Record<string, unknown>) => {
+    Object.keys(changedValues).forEach((fieldCode) => changedFieldCodesRef.current.add(fieldCode));
     setCurrentValues(allValues);
     onValuesChange?.(changedValues, allValues);
   };
@@ -377,7 +389,7 @@ function DynamicForm({
 
   return (
     <ProForm
-      formRef={formRef as React.RefObject<ProFormInstance>}
+      formRef={effectiveFormRef as React.RefObject<ProFormInstance>}
       initialValues={initialValues}
       onFinish={handleFinish}
       onValuesChange={handleValuesChange}
@@ -385,7 +397,11 @@ function DynamicForm({
         onFinish && !hideSubmit
           ? {
               searchConfig: { submitText: submitText || '提交' },
-              submitButtonProps: { loading },
+              submitButtonProps: {
+                htmlType: 'button',
+                loading,
+                onClick: () => effectiveFormRef.current?.submit(),
+              },
             }
           : false
       }

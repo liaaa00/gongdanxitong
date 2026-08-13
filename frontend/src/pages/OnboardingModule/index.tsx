@@ -47,15 +47,6 @@ const HANDLING_RESULT_OPTIONS = [
   { label: '否', value: '否' },
 ];
 const ACTIVE_DISPATCHED_STATUSES = new Set(['pending', 'processing']);
-const PAYROLL_BANK_CARD_REQUIRED_FIELDS = ['bank_name', 'bank_account', 'bank_location', 'payroll_location'] as const;
-
-export function getMissingPayrollBankCardFields(record: Pick<DispatchedOrderItem, 'extra_data'>): string[] {
-  const extraData = record.extra_data ?? {};
-  return PAYROLL_BANK_CARD_REQUIRED_FIELDS.filter((fieldCode) => {
-    const value = extraData[fieldCode];
-    return value === undefined || value === null || String(value).trim() === '';
-  });
-}
 const DISPATCHED_PROCESSING_FILTER_STATUSES = ['pending', 'processing'] as const;
 
 
@@ -96,6 +87,8 @@ export function getOnboardingModulePermissionState({
 }): OnboardingModulePermissionState {
   const isSocialModule = ['social_insurance', 'social_insurance_resign', 'resignation_social_insurance'].includes(currentModule);
   const isResignationCertificateModule = currentModule === 'resignation_cert';
+  const isPayrollBankCardExport = currentModule === 'payroll_bank_card';
+  const supportsBatchStatusImport = !isResignationCertificateModule;
   const hasActionPermission = (action: string) => (
     userPermissions.includes('*') || userPermissions.includes('all') || userPermissions.includes(action)
   );
@@ -103,8 +96,27 @@ export function getOnboardingModulePermissionState({
     permission.startsWith('module.') || permission.startsWith('dispatched_order.') || permission.startsWith('route.')
   ));
   const moduleManageAction = getOnboardingModuleManageAction(currentModule);
+  if (isPayrollBankCardExport) {
+    const canOperateCurrentModule = hasRole('admin')
+      && (!hasBackendActionPermissions || hasActionPermission(moduleManageAction));
+    const canBatchExport = canOperateCurrentModule
+      && (!hasBackendActionPermissions || hasActionPermission('dispatched_order.batch_export'));
+    return {
+      isSocialModule: false,
+      hasBackendActionPermissions,
+      canOperateCurrentModule,
+      canBatchImport: false,
+      canBatchImportFields: false,
+      canBatchExport,
+      canBatchAccept: false,
+      canBatchComplete: false,
+      canBatchReturn: false,
+      canBatchUrge: false,
+      canSelectRows: canBatchExport,
+    };
+  }
+
   const legacyCanOperateCurrentModule = hasRole('admin')
-    || (currentModule === 'payroll_bank_card' && hasRole('admin'))
     || (['contract', 'renewal_contract', 'resignation_cert'].includes(currentModule) && (hasRole('labor_contract_member') || hasRole('shared_team_owner')))
     || (['onboarding_contact', 'resignation_contact'].includes(currentModule) && (hasRole('onboarding_resignation_member') || hasRole('shared_team_owner')))
     || (['data_entry', 'data_entry_resign'].includes(currentModule) && hasRole('data_entry_leader'))
@@ -113,7 +125,7 @@ export function getOnboardingModulePermissionState({
     ? hasActionPermission(moduleManageAction)
     : legacyCanOperateCurrentModule;
   const canBackendOperate = canOperateCurrentModule;
-  const canBatchImport = !isResignationCertificateModule && canBackendOperate && (!hasBackendActionPermissions || hasActionPermission('dispatched_order.batch_import'));
+  const canBatchImport = supportsBatchStatusImport && canBackendOperate && (!hasBackendActionPermissions || hasActionPermission('dispatched_order.batch_import'));
   const canBatchImportFields = canBackendOperate && (!hasBackendActionPermissions || hasActionPermission('dispatched_order.batch_import_fields'));
   const canBatchExport = canBackendOperate && (!hasBackendActionPermissions || hasActionPermission('dispatched_order.batch_export'));
   const canBatchAccept = !isResignationCertificateModule
@@ -335,7 +347,9 @@ const OnboardingModule: React.FC = () => {
   const backendModuleCode = currentModule === 'social_insurance_resign' ? 'resignation_social_insurance' : currentModule;
   const moduleLabel = getModuleLabel(currentModule);
   const isResignationCertificateModule = currentModule === 'resignation_cert';
+  const isPayrollBankCardExport = currentModule === 'payroll_bank_card';
   const batchExportLabel = isResignationCertificateModule ? '批量导出离职证明' : '按固定模板导出';
+  const exportFileBaseName = isPayrollBankCardExport ? '薪酬银行卡导出' : `${moduleLabel}子工单`;
 
 
   useEffect(() => {
@@ -423,8 +437,6 @@ const OnboardingModule: React.FC = () => {
     if (currentModule === 'payroll_bank_card') {
       const value = (record: DispatchedOrderItem, fieldCode: string) => record.extra_data?.[fieldCode] ?? '-';
       return [
-        actionColumn,
-        statusColumn,
         { title: '姓名', dataIndex: 'employee_name', key: 'employee_name', width: 120, filteredValue: tableFilters.employee_name || null, ...textHeaderFilter('输入员工姓名') },
         { title: '证件号码', dataIndex: 'employee_id_card', key: 'employee_id_card', width: 190, filteredValue: tableFilters.employee_id_card || null, ...textHeaderFilter('输入证件号码') },
         { title: '开户行', key: 'bank_name', width: 180, renderText: (_: unknown, record) => value(record, 'bank_name') },
@@ -432,13 +444,6 @@ const OnboardingModule: React.FC = () => {
         { title: '开户地', key: 'bank_location', width: 130, renderText: (_: unknown, record) => value(record, 'bank_location') },
         { title: '商社代码', key: 'branch_code', width: 130, renderText: (_: unknown, record) => value(record, 'branch_code') },
         { title: '发薪地', key: 'payroll_location', width: 160, renderText: (_: unknown, record) => value(record, 'payroll_location') },
-        { title: '资料状态', key: 'payroll_ready', width: 110, render: (_, record) => {
-          const missing = getMissingPayrollBankCardFields(record);
-          return <Tag color={missing.length === 0 ? 'green' : 'orange'}>{missing.length === 0 ? '资料齐全' : `缺 ${missing.length} 项`}</Tag>;
-        } },
-        { title: '派发时间', dataIndex: 'dispatched_at', key: 'dispatched_at', width: 160, valueType: 'dateTime', sorter: true },
-        { title: '完成时间', dataIndex: 'completed_at', key: 'completed_at', width: 160, valueType: 'dateTime' },
-        ...dateRangeColumns,
       ];
     }
 
@@ -609,7 +614,7 @@ const OnboardingModule: React.FC = () => {
               : '.xlsx';
           const fallbackName = isResignationCertificateModule
             ? `离职证明批量导出${extension}`
-            : `${moduleLabel}子工单${platform}${extension}`;
+            : `${exportFileBaseName}${platform}${extension}`;
           try {
             await downloadDispatchedExport(file, fallbackName);
           } catch {
@@ -624,7 +629,7 @@ const OnboardingModule: React.FC = () => {
           message.error('导出失败');
         }
       } else {
-        await downloadDispatchedExport(result, isResignationCertificateModule ? '离职证明.docx' : `${moduleLabel}子工单.xlsx`);
+        await downloadDispatchedExport(result, isResignationCertificateModule ? '离职证明.docx' : `${exportFileBaseName}.xlsx`);
         message.success('导出成功');
       }
     } catch {
@@ -684,7 +689,7 @@ const OnboardingModule: React.FC = () => {
       title: getModuleTitle(currentModule),
       extra: [
         <Space key="month">
-          <span>工单月份：</span>
+          <span>{isPayrollBankCardExport ? '进入清单月份：' : '工单月份：'}</span>
           <DatePicker
             picker="month"
             allowClear
@@ -708,7 +713,11 @@ const OnboardingModule: React.FC = () => {
         onChange={handleTableChange}
         rowKey="id"
         search={false}
-        headerTitle={currentModule === 'resignation_cert' ? '离职证明子工单列表' : `${moduleLabel}列表`}
+        headerTitle={isPayrollBankCardExport
+          ? '可直接导出数据'
+          : currentModule === 'resignation_cert'
+            ? '离职证明子工单列表'
+            : `${moduleLabel}列表`}
         options={false}
         toolBarRender={() => [
           <span key="columns">{columnConfig.button}</span>,

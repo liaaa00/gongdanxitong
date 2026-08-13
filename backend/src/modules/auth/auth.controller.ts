@@ -20,7 +20,6 @@ export class AuthController {
       payload.username,
       payload.password,
       request.ip,
-      payload.businessScope,
     );
   }
 

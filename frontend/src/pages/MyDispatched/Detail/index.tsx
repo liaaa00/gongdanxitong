@@ -13,7 +13,6 @@ import {
 import DynamicForm from '@/components/DynamicForm';
 import type { FieldConfig } from '@/components/DynamicForm';
 import MaterialsUpload from '@/components/MaterialsUpload';
-import { useFieldPermissions } from '@/hooks/useFieldPermissions';
 import { useDispatchedActions } from '@/hooks/useDispatchedActions';
 import {
   getDispatchedOrder,
@@ -165,6 +164,14 @@ export function inferResignationReasonCode(extraData: Record<string, unknown>): 
 const SUPPLEMENT_ALLOWED_MODULE_CODE = 'onboarding_contact';
 const SUPPLEMENT_ALLOWED_USERNAMES = new Set(['maoyani', 'jianglu']);
 const SUPPLEMENT_ALLOWED_REAL_NAMES = new Set(['毛雅妮', '江璐']);
+const SOCIAL_INSURANCE_NON_INPUT_FIELDS = new Set([
+  'social_insurance_result',
+  'social_insurance_remark',
+  'medical_insurance_result',
+  'housing_fund_result',
+  'social_urge',
+  'special_remark',
+]);
 
 const normalizeUsername = (value: unknown) => String(value || '').trim().toLowerCase();
 const normalizeRealName = (value: unknown) => String(value || '').trim();
@@ -258,10 +265,9 @@ const MyDispatchedDetail: React.FC = () => {
   const autoActionHandledRef = useRef<string>('');
   const { message, modal } = App.useApp();
   const { hasRole, user } = useAuth();
-  const scenario = 'dispatched:' + (id || '');
-  const { permissions } = useFieldPermissions(scenario);
 
   const [order, setOrder] = useState<DispatchedOrderItem | null>(null);
+  const permissions = order?._fieldPermissions ?? {};
   const [fields, setFields] = useState<FieldConfig[]>([]);
   const [detailTemplateApplied, setDetailTemplateApplied] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -341,7 +347,12 @@ const MyDispatchedDetail: React.FC = () => {
           .filter((field) => field.permission !== 'hidden')
           .map(toSocialDetailFieldConfig)
         : [];
-      const fieldList = socialDetailFields.length > 0 ? socialDetailFields : configuredFields;
+      const fieldList = socialDetailFields.length > 0
+        ? [
+          ...socialDetailFields,
+          ...configuredFields.filter((field) => !socialDetailFields.some((detailField) => detailField.field_code === field.field_code)),
+        ]
+        : configuredFields;
 
       let visibleFieldCodes: string[] | undefined;
       if (moduleCode && !isSocialInsuranceModule(moduleCode)) {
@@ -474,10 +485,20 @@ const MyDispatchedDetail: React.FC = () => {
   });
 
   const supplementableFields = useMemo(() => {
-    if (!order?.supplementable_fields || !fields) return [];
+    if (!order || !fields) return [];
     const visibleSet = new Set(visibleFields);
-    return fields.filter((f) => order.supplementable_fields?.includes(f.field_code) && (visibleSet.size === 0 || visibleSet.has(f.field_code)));
-  }, [order, fields, visibleFields]);
+    if (order.module_code === 'social_insurance') {
+      return fields.filter((field) => (
+        (visibleSet.size === 0 || visibleSet.has(field.field_code))
+        && permissions[field.field_code] === 'visible'
+        && !SOCIAL_INSURANCE_NON_INPUT_FIELDS.has(field.field_code)
+      ));
+    }
+    return fields.filter((field) => (
+      order.supplementable_fields?.includes(field.field_code)
+      && (visibleSet.size === 0 || visibleSet.has(field.field_code))
+    ));
+  }, [order, fields, visibleFields, visibleFieldPermissions]);
 
   const emptySupplementFields = useMemo(() =>
     supplementableFields.filter((f) =>
@@ -518,9 +539,13 @@ const MyDispatchedDetail: React.FC = () => {
   const canComplete = canBackendOperate && !isVoided && order?.status === 'processing';
   const canDownloadResignationCertificate = canBackendOperate && isResignationCertificateOrder;
   const canReturn = canBackendOperate && !isVoided && (order?.status === 'processing' || order?.status === 'pending');
-  const canSupplementOperator = isAllowedSupplementOperator(user);
-  const canSupplementModule = order?.module_code === SUPPLEMENT_ALLOWED_MODULE_CODE;
-  const canSupplement = canBackendOperate && canSupplementOperator && canSupplementModule && !isVoided && order?.status === 'processing' && supplementableFields.length > 0;
+  const canSupplementOnboarding = order?.module_code === SUPPLEMENT_ALLOWED_MODULE_CODE && isAllowedSupplementOperator(user);
+  const canSupplementSocialInsurance = order?.module_code === 'social_insurance' && hasRole('social_insurance_specialist');
+  const canSupplement = canBackendOperate
+    && (canSupplementOnboarding || canSupplementSocialInsurance)
+    && !isVoided
+    && order?.status === 'processing'
+    && supplementableFields.length > 0;
   const isRepairableStatus = isResubmittableStatus;
   const isApprovalStatus = Boolean(order && ['modify_pending', 'withdraw_pending', 'void_pending'].includes(order.status));
   const isTerminalStatus = Boolean(order && ['completed', 'modify_pending', 'withdraw_pending', 'void_pending', 'void'].includes(order.status));
@@ -999,7 +1024,7 @@ const MyDispatchedDetail: React.FC = () => {
               <Button danger icon={<RollbackOutlined />}
                 onClick={() => { returnCompletedForm.resetFields(); setReturnCompletedOpen(true); }}>退回已完成节点</Button>
             )}
-            {!isTerminal && canSupplement && (
+            {!isTerminal && canSupplementOnboarding && (
               <Button icon={<PlusCircleOutlined />}
                 onClick={() => {
                   supplementForm.setFieldsValue(order.extra_data || {});
@@ -1064,7 +1089,7 @@ const MyDispatchedDetail: React.FC = () => {
           }]}
         />
 
-        {canSupplement && emptySupplementFields.length > 0 && (
+        {canSupplementOnboarding && emptySupplementFields.length > 0 && (
           <Alert
             message="待补充字段（紫色标记项为空，请尽快补充）"
             type="warning"
@@ -1129,13 +1154,29 @@ const MyDispatchedDetail: React.FC = () => {
               );
             })}
             {canSupplement && (
-              <Card title="补充字段（可编辑）" size="small" type="inner">
+              <Card title={canSupplementSocialInsurance ? '可编辑字段' : '补充字段（可编辑）'} size="small" type="inner">
                 <DynamicForm
-                  fields={dynamicVisibleFields}
+                  key={`${order.id}:${order.work_order_updated_at || order.workOrderUpdatedAt || ''}`}
+                  fields={canSupplementSocialInsurance ? supplementableFields.map(withRequiredLabel) : dynamicVisibleFields}
                   fieldPermissions={visibleFieldPermissions}
                   orderType={order.order_type || 'onboarding'}
                   initialValues={order.extra_data || {}}
                   readOnly={false}
+                  onFinish={canSupplementSocialInsurance ? async (values) => {
+                    const original = order.extra_data || {};
+                    const changed = Object.fromEntries(Object.entries(values).filter(([fieldCode, value]) => (
+                      String(original[fieldCode] ?? '') !== String(value ?? '')
+                    )));
+                    if (Object.keys(changed).length === 0) {
+                      message.info('没有检测到字段变化');
+                      return;
+                    }
+                    const updated = await handleSupplement(changed);
+                    if (updated) refreshLogs();
+                  } : undefined}
+                  submitText="保存字段"
+                  validateChangedFieldsOnly={canSupplementSocialInsurance}
+                  loading={actionLoading}
                 />
               </Card>
             )}

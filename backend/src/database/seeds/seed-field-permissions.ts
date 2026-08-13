@@ -113,7 +113,6 @@ const PAYROLL_BANK_CARD_VISIBLE = new Set([
   'employee_name', 'id_card_no', 'bank_name', 'bank_account',
   'bank_location', 'payroll_location',
 ]);
-const PAYROLL_BANK_CARD_EDITABLE = new Set<string>([]);
 
 const DATA_ENTRY_VISIBLE = new Set([
   'customer_name','customer_code','outsource_type','position','position_type','employee_name','id_card_type','id_card_no','gender','birth_date','age','household_type','ethnicity','education','graduation_school','major','graduation_date','marital_status','mobile','email','current_address','household_address','postal_code','social_location','start_month','social_base','fund_base','fund_ratio','bank_name','bank_account','need_payroll_slip','remark','business_mode','need_company_payroll','payroll_location',
@@ -309,7 +308,9 @@ export async function seedFieldPermissions(dataSource: DataSource): Promise<void
         role.id,
         field.fieldCode,
         'dispatched:payroll_bank_card',
-        dispatchedPermission(role.code, field, [OrderType.ONBOARDING], DATA_ENTRY_ROLE_CODES, PAYROLL_BANK_CARD_EDITABLE, PAYROLL_BANK_CARD_VISIBLE),
+        role.code === 'admin' && belongsAny(field, [OrderType.ONBOARDING]) && PAYROLL_BANK_CARD_VISIBLE.has(field.fieldCode)
+          ? READONLY
+          : HIDDEN,
       );
       await upsertPermission(
         permRepo,

@@ -38,6 +38,7 @@ describe('DashboardService', () => {
     expect(result).toEqual({ totalThisMonth: 45, processing: 12, ...pendingFields(12), completed: 30, ...rateFields(66.7), ...zeroVoided, myMessages: 8, scope: 'global' });
     expect(dataSource.query).toHaveBeenNthCalledWith(1, expect.stringContaining('notifications'), ['admin-1']);
     expect(dataSource.query).toHaveBeenNthCalledWith(2, expect.stringContaining('FROM dispatched_orders'), [null, null, [], expect.any(String), phase1Modules]);
+    expect(dataSource.query.mock.calls[1][1][4]).not.toContain('payroll_bank_card');
     expect(dataSource.query.mock.calls[1][0]).toContain("- COUNT(*) FILTER (WHERE status::text = 'completed')");
     expect(dataSource.query.mock.calls[1][0]).toContain("- COUNT(*) FILTER (WHERE status::text IN ('void','voided') OR void_at IS NOT NULL)");
     expect(dataSource.query.mock.calls[1][0]).not.toContain("- COUNT(*) FILTER (WHERE status::text IN ('withdraw_pending','withdrawn') AND void_at IS NULL)");

@@ -1,5 +1,6 @@
 import { Repository } from 'typeorm';
 import {
+  BusinessScope,
   DispatchedOrder,
   DispatchedOrderStatus,
   FieldConfig,
@@ -115,7 +116,14 @@ function buildService(order: DispatchedOrder, handlerRows: Array<Partial<ModuleH
   );
   // Isolate state-transition logic from the detail-mapping chain.
   jest.spyOn(service, 'findOne').mockResolvedValue({ id: ORDER_ID } as DispatchedOrderDetailItem);
-  return { service, dispatchedOrderRepo, workOrderRepo, notificationRepo, operationLogRepo };
+  return {
+    service,
+    dispatchedOrderRepo,
+    workOrderRepo,
+    moduleHandlerRepo,
+    notificationRepo,
+    operationLogRepo,
+  };
 }
 
 const creator: JwtUserPayload = { sub: CREATOR_ID, username: 'sales', roles: ['business_group_member'] } as JwtUserPayload;
@@ -124,7 +132,7 @@ const handler: JwtUserPayload = { sub: 'handler-old', username: 'handler', roles
 describe('sub-order level resubmit (0602 E)', () => {
   it('E-1: 已退回子单可重新提交，回到 pending 并通知后道', async () => {
     const order = makeOrder(DispatchedOrderStatus.RETURNED, WorkOrderStatus.RETURNED);
-    const { service, dispatchedOrderRepo, workOrderRepo, notificationRepo } = buildService(order, [
+    const { service, dispatchedOrderRepo, workOrderRepo, notificationRepo, operationLogRepo } = buildService(order, [
       { moduleCode: 'contract', handlerId: 'handler-old', isActive: true },
     ]);
 
@@ -139,6 +147,10 @@ describe('sub-order level resubmit (0602 E)', () => {
     // 父工单从 RETURNED 回到 PROCESSING
     expect(workOrderRepo.save).toHaveBeenCalledWith(expect.objectContaining({ status: WorkOrderStatus.PROCESSING }));
     expect(notificationRepo.save).toHaveBeenCalled();
+    expect(operationLogRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+      actionType: 'creator_resubmit',
+      afterData: expect.objectContaining({ handlerId: 'handler-old' }),
+    }));
   });
 
   it('保存去除首尾空格后的重新提交原因，并同步到操作日志和后道通知', async () => {
@@ -219,26 +231,63 @@ describe('sub-order level resubmit (0602 E)', () => {
     expect(workOrderRepo.save).toHaveBeenCalledWith(expect.objectContaining({ status: WorkOrderStatus.PROCESSING }));
   });
 
-  it('重提时 handlerId 为空则按模块默认主办重新指派', async () => {
+  it('公共池子单被接单并退回后，重提恢复为未认领', async () => {
+    const order = makeOrder(DispatchedOrderStatus.RETURNED, WorkOrderStatus.RETURNED, {
+      handlerId: 'handler-old',
+      acceptedAt: new Date('2026-08-13T05:20:38.945Z'),
+    });
+    const { service, dispatchedOrderRepo, operationLogRepo } = buildService(order);
+    (operationLogRepo.findOne as jest.Mock).mockResolvedValue({
+      actionType: 'accept',
+      beforeData: { handlerId: null },
+      afterData: { handlerId: 'handler-old' },
+      createdAt: new Date('2026-08-13T05:20:38.949Z'),
+    } as unknown as OperationLog);
+
+    await service.resubmitDispatched(ORDER_ID, { reason: '补齐资料并重新派发' }, creator);
+
+    expect(dispatchedOrderRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+      status: DispatchedOrderStatus.PENDING,
+      handlerId: null,
+      acceptedAt: null,
+    }));
+    expect(operationLogRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+      actionType: 'creator_resubmit',
+      afterData: expect.objectContaining({ handlerId: null }),
+    }));
+  });
+
+  it('公共池子单重提后保持未认领，不按当前配置权重改成固定派单', async () => {
     const order = makeOrder(DispatchedOrderStatus.VOID, WorkOrderStatus.VOID, { handlerId: null });
-    const { service, dispatchedOrderRepo, moduleHandlerRepo } = buildService(order) as never as {
-      service: DispatchedOrderService;
-      dispatchedOrderRepo: Repository<DispatchedOrder>;
-      moduleHandlerRepo: Repository<ModuleHandler>;
-    };
-    // resolveDefaultModuleHandler 查询 isBackup:false 主办
-    (order as DispatchedOrder).handlerId = null;
-    const handlerRepo = (service as unknown as { moduleHandlerRepository: Repository<ModuleHandler> }).moduleHandlerRepository;
-    (handlerRepo.find as jest.Mock).mockResolvedValue([
-      { moduleCode: 'contract', handlerId: 'yangchun-id', isActive: true, isBackup: false, weight: 10 },
+    order.parentOrder.businessScope = BusinessScope.BEILUN;
+    const { service, dispatchedOrderRepo, moduleHandlerRepo, operationLogRepo } = buildService(order, [
+      {
+        moduleCode: 'contract',
+        businessScope: BusinessScope.BEILUN,
+        handlerId: 'high-weight-handler',
+        isActive: true,
+        isBackup: false,
+        weight: 10,
+      },
     ]);
 
     await service.resubmitDispatched(ORDER_ID, { reason: '补齐资料并重新派发' }, creator);
 
     expect(dispatchedOrderRepo.save).toHaveBeenCalledWith(expect.objectContaining({
       status: DispatchedOrderStatus.PENDING,
-      handlerId: 'yangchun-id',
+      handlerId: null,
     }));
+    expect(operationLogRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+      actionType: 'creator_resubmit',
+      afterData: expect.objectContaining({ handlerId: null }),
+    }));
+    expect(moduleHandlerRepo.find).toHaveBeenCalledWith({
+      where: {
+        moduleCode: 'contract',
+        businessScope: BusinessScope.BEILUN,
+        isActive: true,
+      },
+    });
   });
 
   it('E-6: 非发起人调用重新提交被后端拒绝（FORBIDDEN）', async () => {

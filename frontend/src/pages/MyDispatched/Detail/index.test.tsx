@@ -42,11 +42,23 @@ vi.mock('@ant-design/pro-components', () => ({
 }));
 
 vi.mock('@/components/DynamicForm', () => ({
-  default: ({ readOnly }: { readOnly?: boolean }) => <div data-testid="dynamic-form" data-readonly={String(readOnly)} />,
-}));
-
-vi.mock('@/hooks/useFieldPermissions', () => ({
-  useFieldPermissions: () => ({ permissions: mocks.fieldPermissions }),
+  default: ({ readOnly, fields, onFinish }: {
+    readOnly?: boolean;
+    fields?: Array<{ field_code: string }>;
+    onFinish?: (values: Record<string, unknown>) => Promise<void>;
+  }) => (
+    <div
+      data-testid="dynamic-form"
+      data-readonly={String(readOnly)}
+      data-fields={(fields || []).map((field) => field.field_code).join(',')}
+    >
+      {onFinish ? (
+        <button type="button" onClick={() => void onFinish({ bank_name: 'New Bank', employee_name: 'Test User' })}>
+          Save social fields
+        </button>
+      ) : null}
+    </div>
+  ),
 }));
 
 vi.mock('@/hooks/useAuth', () => ({
@@ -57,7 +69,13 @@ vi.mock('@/hooks/useAuth', () => ({
 }));
 
 vi.mock('@/services/dispatchedOrders', () => ({
-  getDispatchedOrder: (...args: unknown[]) => mocks.getDispatchedOrder(...args),
+  getDispatchedOrder: async (...args: unknown[]) => {
+    const order = await mocks.getDispatchedOrder(...args);
+    return {
+      ...order,
+      _fieldPermissions: order?._fieldPermissions ?? mocks.fieldPermissions,
+    };
+  },
   getDispatchedOrderTimeline: (...args: unknown[]) => mocks.getDispatchedOrderTimeline(...args),
   confirmDispatchedDirtyRead: (...args: unknown[]) => mocks.confirmDispatchedDirtyRead(...args),
   returnCompletedDispatchedOrder: vi.fn(),
@@ -398,6 +416,51 @@ describe('MyDispatchedDetail readonly and creator repair actions', () => {
     expect(screen.queryByText('Fallback Only Field')).not.toBeInTheDocument();
     expect(screen.queryByText('fallback value')).not.toBeInTheDocument();
   });
+  it('merges social handling metadata with approved system fields', async () => {
+    mocks.currentUser = {
+      id: 'handler-social',
+      username: 'fuqianwen',
+      real_name: '傅倩雯',
+      roles: [{ code: 'social_insurance_specialist' }],
+    };
+    mocks.fieldPermissions = {
+      social_insurance_result: 'visible',
+      gender: 'visible',
+    };
+    mocks.getFields.mockResolvedValue([
+      {
+        field_code: 'gender',
+        field_name: '性别',
+        field_type: 'dropdown',
+        is_required: false,
+        is_active: true,
+        display_order: 1,
+        collection_group: 'basic',
+      },
+    ]);
+    mocks.getDispatchedOrder.mockResolvedValue({
+      ...baseOrder,
+      module_code: 'social_insurance',
+      module_name: '社保公积金增员',
+      handler_id: 'handler-social',
+      visible_fields: ['social_insurance_result', 'gender'],
+      fields: [{
+        fieldCode: 'social_insurance_result',
+        fieldName: '社保是否办结',
+        fieldType: 'dropdown',
+        permission: 'visible',
+        dropdownOptions: [{ label: '是', value: '是' }, { label: '否', value: '否' }],
+      }],
+      extra_data: { social_insurance_result: null, gender: '女' },
+      _fieldPermissions: mocks.fieldPermissions,
+    });
+
+    renderDetail('/my-dispatched/d-1');
+
+    expect(await screen.findByText('性别')).toBeInTheDocument();
+    expect(screen.getByTestId('dynamic-form')).toHaveAttribute('data-fields', 'gender');
+  });
+
   it('falls back to local field metadata when backend field metadata request fails', async () => {
     const fallbackOnlyFields = [
       {
@@ -905,6 +968,54 @@ describe('MyDispatchedDetail readonly and creator repair actions', () => {
 
     await waitFor(() => expect(mocks.supplementField).toHaveBeenCalledWith('d-1', expect.objectContaining({ bank_name: '' })));
     await waitFor(() => expect(mocks.getDispatchedOrder).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mocks.getSupplementLogs).toHaveBeenCalledTimes(2));
+  });
+
+  it('uses backend social-insurance permissions and submits only changed visible fields', async () => {
+    mocks.currentUser = {
+      id: 'handler-social',
+      username: 'fuqianwen',
+      real_name: '傅倩雯',
+      roles: [{ code: 'social_insurance_specialist' }],
+    };
+    mocks.fieldPermissions = {
+      employee_name: 'readonly',
+      bank_name: 'visible',
+    };
+    mocks.supplementField.mockResolvedValue(undefined);
+    mocks.getDispatchedOrder
+      .mockResolvedValueOnce({
+        ...baseOrder,
+        module_code: 'social_insurance',
+        module_name: '社保公积金增员',
+        status: 'processing',
+        handler_id: 'handler-social',
+        visible_fields: ['employee_name', 'bank_name'],
+        extra_data: { employee_name: 'Test User', bank_name: '' },
+        _fieldPermissions: mocks.fieldPermissions,
+      })
+      .mockResolvedValue({
+        ...baseOrder,
+        module_code: 'social_insurance',
+        module_name: '社保公积金增员',
+        status: 'processing',
+        handler_id: 'handler-social',
+        visible_fields: ['employee_name', 'bank_name'],
+        extra_data: { employee_name: 'Test User', bank_name: 'New Bank' },
+        _fieldPermissions: mocks.fieldPermissions,
+      });
+
+    renderDetail('/my-dispatched/d-1');
+
+    const form = await screen.findByTestId('dynamic-form');
+    expect(form).toHaveAttribute('data-fields', 'bank_name');
+    expect(screen.queryByRole('button', { name: /补充\/修改暂存字段/ })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save social fields' }));
+
+    await waitFor(() => expect(mocks.supplementField).toHaveBeenCalledWith('d-1', {
+      bank_name: 'New Bank',
+    }));
     await waitFor(() => expect(mocks.getSupplementLogs).toHaveBeenCalledTimes(2));
   });
 

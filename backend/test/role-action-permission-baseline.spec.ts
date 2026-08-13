@@ -41,6 +41,8 @@ describe('role action permission default baseline', () => {
       'module.data_entry_resign.manage',
       'dispatched_order.batch_complete',
     ] as const) expect(actionsOf('data_entry_leader').has(action)).toBe(true);
+    expect(actionsOf('data_entry_leader').has('route.onboarding_payroll_bank_card')).toBe(false);
+    expect(actionsOf('data_entry_leader').has('module.payroll_bank_card.manage')).toBe(false);
     for (const action of [
       'module.social_insurance.manage',
       'module.social_insurance_resign.manage',

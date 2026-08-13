@@ -65,27 +65,32 @@ export class FieldSupplementService {
       });
     }
 
-    const rule = await this.fieldSupplementRuleRepository.findOne({
-      where: {
-        fieldCode: input.fieldCode,
-        supplementerModule: dispatchedOrder.moduleCode,
-        isActive: true,
-      },
-    });
-    if (!rule) {
+    const isSocialInsuranceEdit = dispatchedOrder.moduleCode === 'social_insurance';
+    const rule = isSocialInsuranceEdit
+      ? null
+      : await this.fieldSupplementRuleRepository.findOne({
+        where: {
+          fieldCode: input.fieldCode,
+          supplementerModule: dispatchedOrder.moduleCode,
+          isActive: true,
+        },
+      });
+    if (!isSocialInsuranceEdit && !rule) {
       throw businessException(5001, 403, '字段无可补充权限', {
         fieldCode: input.fieldCode,
         moduleCode: dispatchedOrder.moduleCode,
       });
     }
-
     const permissions = await this.fieldPermissionService.getPermissionsForUser(
       input.userId,
       `dispatched:${dispatchedOrder.moduleCode}`,
       workOrder.businessScope,
     );
     const permission = permissions.get(input.fieldCode) ?? FieldPermissionMode.HIDDEN;
-    if (permission === FieldPermissionMode.HIDDEN) {
+    if (
+      permission === FieldPermissionMode.HIDDEN
+      || (isSocialInsuranceEdit && permission !== FieldPermissionMode.VISIBLE)
+    ) {
       throw businessException(5001, 403, '字段无可补充权限', {
         fieldCode: input.fieldCode,
         moduleCode: dispatchedOrder.moduleCode,
@@ -114,7 +119,7 @@ export class FieldSupplementService {
     };
     await this.workOrderRepository.save(workOrder);
 
-    if (Array.isArray(rule.syncToModules) && rule.syncToModules.length > 0) {
+    if (rule && Array.isArray(rule.syncToModules) && rule.syncToModules.length > 0) {
       const children = await this.dispatchedOrderRepository.find({
         where: { parentOrderId: workOrder.id },
       });

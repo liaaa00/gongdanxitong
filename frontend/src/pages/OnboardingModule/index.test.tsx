@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   reload: vi.fn(),
   navigate: vi.fn(),
   moduleCode: 'data_entry',
+  userPermissions: ['*'] as string[],
 }));
 
 vi.mock('@ant-design/pro-components', () => ({
@@ -50,7 +51,10 @@ vi.mock('react-router-dom', async () => {
 });
 
 vi.mock('@/hooks/useAuth', () => ({
-  useAuth: () => ({ hasRole: () => true }),
+  useAuth: () => ({
+    hasRole: () => true,
+    user: { permissions: mocks.userPermissions },
+  }),
 }));
 
 vi.mock('@/components/DispatchedBatchImportModal', () => ({
@@ -186,6 +190,39 @@ describe('OnboardingModule header table filters', () => {
     expect(params.statuses).toBeUndefined();
   });
 
+});
+
+describe('OnboardingModule payroll bank card export list', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.latestProTableProps = undefined;
+    mocks.moduleCode = 'payroll_bank_card';
+    mocks.getDispatchedOrders.mockResolvedValue({ list: [], total: 0 });
+  });
+
+  it('shows only directly exportable bank-card fields and export controls', () => {
+    render(<OnboardingModule />);
+
+    const columns = mocks.latestProTableProps.columns as Array<Record<string, unknown>>;
+    const visibleTitles = columns.filter((column) => !column.hideInTable).map((column) => column.title);
+    expect(visibleTitles).toEqual([
+      '姓名', '证件号码', '开户行', '银行账号', '开户地', '商社代码', '发薪地',
+    ]);
+    expect(visibleTitles).not.toEqual(expect.arrayContaining([
+      '查看', '状态', '资料状态', '派发时间', '完成时间',
+    ]));
+
+    expect(mocks.latestProTableProps.headerTitle).toBe('可直接导出数据');
+    const actions = mocks.latestProTableProps.toolBarRender() as React.ReactElement[];
+    expect(actions.map((action) => action.key)).toEqual(['columns', 'export']);
+    expect(mocks.latestProTableProps.rowSelection).toBeDefined();
+    expect(mocks.latestProTableProps.rowSelection.getCheckboxProps({
+      id: 'payroll-1',
+      module_code: 'payroll_bank_card',
+      status: 'pending',
+    })).toEqual({ disabled: false });
+    expect(mocks.latestProTableProps.tableAlertRender).not.toBe(false);
+  });
 });
 
 describe('OnboardingModule resignation certificate list', () => {
@@ -391,6 +428,33 @@ describe('OnboardingModule action permission baseline', () => {
     expect(state.canBatchImportFields).toBe(true);
     expect(state.canBatchImport).toBe(true);
     expect(state.canBatchComplete).toBe(true);
+  });
+
+  it('keeps payroll bank card as an admin-only export list', () => {
+    const nonAdmin = getOnboardingModulePermissionState({
+      currentModule: 'payroll_bank_card',
+      userPermissions: DEFAULT_MATRIX.data_entry_leader,
+      hasRole: hasRoleFactory(['data_entry_leader']),
+    });
+    expect(nonAdmin.canOperateCurrentModule).toBe(false);
+    expect(nonAdmin.canSelectRows).toBe(false);
+
+    const admin = getOnboardingModulePermissionState({
+      currentModule: 'payroll_bank_card',
+      userPermissions: DEFAULT_MATRIX.admin,
+      hasRole: hasRoleFactory(['admin']),
+    });
+    expect(admin).toMatchObject({
+      canOperateCurrentModule: true,
+      canBatchImport: false,
+      canBatchImportFields: false,
+      canBatchExport: true,
+      canBatchAccept: false,
+      canBatchComplete: false,
+      canBatchReturn: false,
+      canBatchUrge: false,
+      canSelectRows: true,
+    });
   });
 
   it('keeps social insurance module using feedback instead of complete permission', () => {

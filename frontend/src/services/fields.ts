@@ -238,12 +238,12 @@ export async function createField(data: Partial<FieldConfigItem>): Promise<Field
     saveList(FIELD_MOCK_STORE_KEY, list);
     return mockDelay(item);
   }
-  return request.post('/admin/fields', packField(data)) as Promise<FieldConfigItem>;
+  return request.post('/admin/fields', packField(data, true)) as Promise<FieldConfigItem>;
 }
 
-function packField(data: Partial<FieldConfigItem>): Record<string, unknown> {
+function packField(data: Partial<FieldConfigItem>, includeFieldCode = false): Record<string, unknown> {
   const body: Record<string, unknown> = {};
-  if (data.field_code !== undefined) body.fieldCode = data.field_code;
+  if (includeFieldCode && data.field_code !== undefined) body.fieldCode = data.field_code;
   if (data.field_name !== undefined) body.fieldName = data.field_name;
   if (data.field_type !== undefined) body.fieldType = data.field_type;
   if (data.is_required !== undefined) body.isRequired = data.is_required;
