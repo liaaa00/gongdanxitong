@@ -70,6 +70,40 @@ describe('ImportJobService', () => {
     attachmentsService,
   );
 
+  it('excludes the resignation attachment hint column from unmatched header review', async () => {
+    jest.clearAllMocks();
+    (uploadsService.resolveForUser as jest.Mock).mockResolvedValue({
+      fileId: 'file-resignation',
+      filePath: '/tmp/resignation.xlsx',
+    });
+    (excelParserService.parseFile as jest.Mock).mockResolvedValue({
+      headers: ['姓名', '附件'],
+      rows: [{ 姓名: '张三', 附件: null }],
+      meta: { rowNumbers: [4], attachmentLinks: [] },
+    });
+    (fieldValidationService.buildCandidateFields as jest.Mock).mockResolvedValue([
+      { fieldCode: 'employee_name', fieldName: '姓名', fieldType: 'text', required: true },
+    ]);
+    (aiMappingService.suggest as jest.Mock).mockResolvedValue({
+      suggestion: { 姓名: 'employee_name' },
+      confidence: { 姓名: 0.99 },
+      unmatched: ['附件'],
+      missingRequired: [],
+    });
+
+    const result = await service.preview({
+      user: makeUser({ roles: ['business_group_member'] }),
+      fileId: 'file-resignation',
+      orderType: OrderType.RESIGNATION,
+    });
+
+    expect(result.unmatchedHeaders).toEqual([]);
+    expect(result.mapping).toEqual([
+      expect.objectContaining({ excelColumn: '姓名', systemFieldCode: 'employee_name' }),
+    ]);
+    expect(result.headers).toContain('附件');
+  });
+
   it('rejects confirmation when any non-placeholder header is not mapped to a configured field', async () => {
     jest.clearAllMocks();
     (uploadsService.resolveForUser as jest.Mock).mockResolvedValue({

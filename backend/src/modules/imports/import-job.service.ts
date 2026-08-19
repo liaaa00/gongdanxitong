@@ -401,7 +401,11 @@ export class ImportJobService {
   }
 
   private isPlaceholderHeader(header: string): boolean {
-    return /^__col_\d+__$/.test(header.trim());
+    const normalized = header.trim().toLowerCase().replace(/__\d+$/, '');
+    return /^__col_\d+__$/.test(normalized)
+      || normalized === '附件'
+      || normalized === 'attachment'
+      || normalized === 'attachments';
   }
 
   private buildSequentialSuggestion(headers: string[], availableFields: CandidateField[]): MappingSuggestion {

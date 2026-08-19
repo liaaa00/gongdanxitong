@@ -2217,3 +2217,9 @@
 - 发布：修复提交 `f2d3f643fda8bf30b0fee39cbca7f3718daadcdb` 已部署；备份目录为 `/data/apps/work-order-system/backups/province-handler-scope_20260819_133647`，回滚镜像为 `work-order-system-backend:province-handler-scope-backup-20260819_133647`。全量 seed 执行成功，Sheet4 和 Sheet5 均为 `28` 条活动映射，各覆盖 `9` 名负责人。
 - 数据保护：seed 前后用户全表、密码哈希、用户角色关系以及 `work_orders=120`、`dispatched_orders=377` 等工单表整行哈希完全一致，未新增或修改用户、密码、角色及工单数据。
 - 验证：省份映射 seed 定向测试 `7/7`、后端 production build、固定回归 `140/140` 通过；生产 backend 已重建并保持 healthy，`127.0.0.1:3000/api/health` 返回 `status=ok`。
+
+## 2026-08-19 离职导入模板“附件”表头误报修复
+
+- 根因：离职模板生成器追加的“附件”列仅用于按物理行号提取嵌入文件或超链接，不对应数据库业务字段；解析器为保留附件信息必须输出该表头，但导入任务的结构列过滤只识别空占位列，导致预览把“附件”计入未匹配表头，确认导入时也可能要求无意义的手工映射。
+- 修复：导入任务把“附件”及英文 `attachment/attachments`（含重复列后缀）识别为结构列；预览不再显示未匹配警告，确认导入不再因该列阻断。解析器仍保留附件列，嵌入附件、超链接和按物理行号关联逻辑均不改变。
+- 验证：`import-job.service.spec.ts` 与 `excel-parser.service.spec.ts` 定向测试 `15/15` 通过；新增用例确认原始 headers 保留“附件”，但未匹配列表和字段映射列表排除该列。
