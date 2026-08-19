@@ -2225,3 +2225,10 @@
 - 验证：`import-job.service.spec.ts` 与 `excel-parser.service.spec.ts` 定向测试 `15/15` 通过；新增用例确认原始 headers 保留“附件”，但未匹配列表和字段映射列表排除该列。
 - 生产发布：运行时文件补丁来源为提交 `32beebdb1f92d03b884218986e88bf276e1aebe3`，目标 blob `5a2d8e72e0906a02b8724420c88e5afebe4e8c0c`；基础源码标记保持 `f2d3f643fda8bf30b0fee39cbca7f3718daadcdb`，独立记录 `SOURCE_PATCH_COMMIT`。备份目录为 `/data/apps/work-order-system/backups/resignation-attachment-header_20260819_154240`，回滚镜像为 `work-order-system-backend:resignation-attachment-header-backup-20260819_154240`。
 - 生产验收：仅重建 backend，未执行迁移或 seed；容器 healthy，`/api/health` 返回 `status=ok`。运行容器模拟“姓名+附件”预览后 `unmatchedHeaders=[]`，映射列表仅含姓名且原始 headers 仍保留附件。部署前后 `work_orders`、`dispatched_orders`、`users`、`user_roles`、`customers`、`order_attachments`、`import_jobs` 的计数和整行哈希一致；新增 1 条 `operation_logs` 已确认是并发生产用户执行离职录入批量导出的正常审计记录。
+
+## 2026-08-19 离职材料采集与离职证明流程时点修复
+
+- 根因：通用派发引擎在离职主工单提交时直接创建所有命中子单，使“需要共享收集离职材料”的工单尚未完成材料收集就提前出现 `resignation_cert`；单条新建和批量导入又都在附件保存前自动提交，无法落实“不采集时附件必填”。
+- 修复：提交时按离职材料采集和证明两个字段过滤证明子单；共享采集为“是”时延后到 `resignation_contact` 完成后幂等创建，共享采集为“否”时后端要求至少一份未退回离职材料附件。普通完成与批量导入办理完成均接入同一自动化服务，并写派发日志/通知。
+- 导入与前端：离职 Excel 按物理行校验嵌入附件或附件列超链接，先建草稿、保存同行附件、再自动提交；单条新建同步改为草稿、上传、提交顺序，并保留前端即时提示，后端门禁为最终口径。
+- 验证：后端离职流程、导入和材料完成定向测试 `93/93` 通过，前端新建页定向测试 `8/8` 通过，前后端 production build 通过；未修改数据库结构、历史工单或生产服务器。

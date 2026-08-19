@@ -3,7 +3,10 @@ import { HttpStatus } from '@nestjs/common';
 import { Customer, CustomerAssignee, ImportJob, ImportJobStatus, OrderType } from 'src/entities';
 import { businessException } from 'src/common/exceptions/business-exception';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
-import { ImportJobService } from 'src/modules/imports/import-job.service';
+import {
+  ImportJobService,
+  requiresResignationImportAttachment,
+} from 'src/modules/imports/import-job.service';
 import { ImportFieldValidationService } from 'src/modules/imports/field-validation.service';
 import { ImportErrorExcelService } from 'src/modules/imports/error-excel.service';
 import { WorkOrderImportService } from 'src/modules/imports/work-order-import.service';
@@ -51,6 +54,7 @@ describe('ImportJobService', () => {
   } as unknown as ImportErrorExcelService;
   const workOrderImportService = {
     writeOne: jest.fn(),
+    submit: jest.fn(),
   } as unknown as WorkOrderImportService;
   const attachmentsService = {
     createFromBuffer: jest.fn(),
@@ -69,6 +73,12 @@ describe('ImportJobService', () => {
     workOrderImportService,
     attachmentsService,
   );
+
+  it('requires a same-row attachment only when resignation material collection is disabled', () => {
+    expect(requiresResignationImportAttachment(OrderType.RESIGNATION, { need_resignation_share: '否' })).toBe(true);
+    expect(requiresResignationImportAttachment(OrderType.RESIGNATION, { need_resignation_share: '是' })).toBe(false);
+    expect(requiresResignationImportAttachment(OrderType.ONBOARDING, { need_resignation_share: '否' })).toBe(false);
+  });
 
   it('excludes the resignation attachment hint column from unmatched header review', async () => {
     jest.clearAllMocks();
@@ -347,7 +357,7 @@ describe('ImportJobService', () => {
       rowNo: 1,
       errors: [],
       warnings: [],
-      normalized: { employee_name: 'Alice' },
+      normalized: { employee_name: 'Alice', need_resignation_share: '否' },
       raw: { Name: 'Alice' },
     });
     (workOrderImportService.writeOne as jest.Mock).mockResolvedValueOnce({ workOrderId: 'wo-link' });
@@ -355,11 +365,54 @@ describe('ImportJobService', () => {
 
     await service.processJob('job-link-attachment', makeUser({ roles: ['admin'] }));
 
+    expect(workOrderImportService.writeOne).toHaveBeenCalledWith(expect.objectContaining({
+      orderType: OrderType.RESIGNATION,
+      autoSubmit: false,
+    }));
     expect(attachmentsService.createFromExternalLink).toHaveBeenCalledWith(
       'wo-link',
       { url: 'https://example.com/proof.pdf', originalName: 'proof.pdf' },
       'user-1',
     );
+    expect(workOrderImportService.submit).toHaveBeenCalledWith('wo-link', expect.objectContaining({ sub: 'user-1' }));
+    expect((attachmentsService.createFromExternalLink as jest.Mock).mock.invocationCallOrder[0])
+      .toBeLessThan((workOrderImportService.submit as jest.Mock).mock.invocationCallOrder[0]);
+  });
+
+  it('rejects a resignation import row before draft creation when collection is disabled and no same-row attachment exists', async () => {
+    jest.clearAllMocks();
+    const processingJob = {
+      id: 'job-required-attachment',
+      userId: 'user-1',
+      filePath: '/tmp/import.xlsx',
+      fieldMapping: { Name: 'employee_name' },
+      status: ImportJobStatus.PROCESSING,
+      aiMappingRaw: { orderType: 'resignation' },
+      createdAt: new Date('2026-08-19T00:00:00.000Z'),
+      completedAt: null,
+    } as unknown as ImportJob;
+    importJobRepository.findOne.mockResolvedValue(processingJob);
+    (excelParserService.parseFile as jest.Mock).mockResolvedValue({
+      headers: ['Name', '附件'],
+      rows: [{ Name: 'Alice', 附件: null }],
+      meta: { sheetName: 'sheet1', totalRows: 1, headerRows: 1, rowNumbers: [4], attachmentLinks: [] },
+    });
+    (fieldValidationService.getActiveFields as jest.Mock).mockResolvedValue([]);
+    (fieldValidationService.validateRow as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      rowNo: 1,
+      errors: [],
+      warnings: [],
+      normalized: { employee_name: 'Alice', need_resignation_share: '否' },
+      raw: { Name: 'Alice' },
+    });
+    (importErrorExcelService.generate as jest.Mock).mockResolvedValue('/api/files/report.xlsx');
+
+    await service.processJob('job-required-attachment', makeUser({ roles: ['admin'] }));
+
+    expect(workOrderImportService.writeOne).not.toHaveBeenCalled();
+    const finalUpdate = (importJobRepository.update as jest.Mock).mock.calls.find((call) => call[1]?.aiMappingRaw?.validationErrors);
+    expect(finalUpdate?.[1].aiMappingRaw.validationErrors?.[0]?.message).toContain('本行附件至少提供一份');
   });
 
 });

@@ -44,6 +44,14 @@ interface ImportFailedRow {
   existedOrderNo?: string | null;
 }
 
+export function requiresResignationImportAttachment(
+  orderType: OrderType,
+  normalized: Record<string, unknown>,
+): boolean {
+  return orderType === OrderType.RESIGNATION
+    && String(normalized.need_resignation_share ?? '').trim() === '否';
+}
+
 @Injectable()
 export class ImportJobService {
   private readonly previewSessions = new Map<string, PreviewSession>();
@@ -290,27 +298,44 @@ export class ImportJobService {
       }
 
       try {
-        const created = await this.writeOneRow(orderType, validation.normalized, autoSubmit, user, defaults);
-        createdWorkOrderIds.push(created.workOrderId);
-        await this.importJobRepository.update({ id: job.id }, { successRows: () => 'success_rows + 1' });
-        // 关联嵌入附件：附件按 Excel 物理行号(0-based)提取，需用 parsed.rows 对应的物理行号取，
-        // 不能直接用数组下标 index（离职模板数据从第 5 行起，下标 0 ≠ 物理行 4）
+        // 附件必须与解析后的数据行使用同一个 Excel 物理行号，不能跨行借用。
         const physicalRow = parsed.meta?.rowNumbers?.[index] ?? index;
-        const attachFiles = embeddedAttachments.get(physicalRow);
-        const attachLinks = hyperlinkAttachments.get(physicalRow);
-        if (attachFiles?.length || attachLinks?.length) {
-          this.logger.log(`[import attachment] workOrder=${created.workOrderId} row=${rowNo} physicalRow=${physicalRow} count=${(attachFiles?.length ?? 0) + (attachLinks?.length ?? 0)}`);
-          for (const file of attachFiles ?? []) {
+        const attachFiles = embeddedAttachments.get(physicalRow) ?? [];
+        const attachLinks = hyperlinkAttachments.get(physicalRow) ?? [];
+        const attachmentRequired = requiresResignationImportAttachment(orderType, validation.normalized);
+        if (attachmentRequired && attachFiles.length + attachLinks.length === 0) {
+          throw businessException(
+            4110,
+            HttpStatus.BAD_REQUEST,
+            '不进行离职材料采集时，本行附件至少提供一份',
+            { missing: ['attachment'] },
+          );
+        }
+
+        // 离职导入先建草稿并保存本行附件，最后再提交，确保提交门禁能看到附件。
+        const created = await this.writeOneRow(
+          orderType,
+          validation.normalized,
+          orderType === OrderType.RESIGNATION ? false : autoSubmit,
+          user,
+          defaults,
+        );
+        let savedAttachmentCount = 0;
+        if (attachFiles.length || attachLinks.length) {
+          this.logger.log(`[import attachment] workOrder=${created.workOrderId} row=${rowNo} physicalRow=${physicalRow} count=${attachFiles.length + attachLinks.length}`);
+          for (const file of attachFiles) {
             try {
               const attachment = await this.attachmentsService.createFromBuffer(created.workOrderId, file, user.sub);
+              savedAttachmentCount += 1;
               this.logger.log(`[import attachment] file saved: ${file.originalName} (${file.mimeType}) attachmentId=${attachment.id}`);
             } catch (attachError) {
               this.logger.warn(`[import attachment] file failed: row=${rowNo} file=${file.originalName}: ${attachError instanceof Error ? attachError.message : String(attachError)}`);
             }
           }
-          for (const link of attachLinks ?? []) {
+          for (const link of attachLinks) {
             try {
               const attachment = await this.attachmentsService.createFromExternalLink(created.workOrderId, link, user.sub);
+              savedAttachmentCount += 1;
               this.logger.log(`[import attachment] external link saved: ${link.originalName} (${link.url}) attachmentId=${attachment.id}`);
             } catch (attachError) {
               this.logger.warn(`[import attachment] external link failed: row=${rowNo} url=${link.url}: ${attachError instanceof Error ? attachError.message : String(attachError)}`);
@@ -319,6 +344,21 @@ export class ImportJobService {
         } else if (embeddedAttachments.size > 0 || hyperlinkAttachments.size > 0) {
           this.logger.debug(`[import attachment] no attachment: workOrder=${created.workOrderId} row=${rowNo} physicalRow=${physicalRow}`);
         }
+
+        if (attachmentRequired && savedAttachmentCount < 1) {
+          throw businessException(
+            4110,
+            HttpStatus.BAD_REQUEST,
+            '不进行离职材料采集时，本行附件保存失败',
+            { missing: ['attachment'] },
+          );
+        }
+        if (orderType === OrderType.RESIGNATION && autoSubmit) {
+          await this.workOrderImportService.submit(created.workOrderId, user);
+        }
+
+        createdWorkOrderIds.push(created.workOrderId);
+        await this.importJobRepository.update({ id: job.id }, { successRows: () => 'success_rows + 1' });
       } catch (error) {
         const rowError = this.toRowError(error, fieldNameMap);
         failRows.push({ rowNo, raw, fieldCode: rowError.fieldCode, message: rowError.message, code: rowError.code, existedOrderNo: rowError.existedOrderNo });

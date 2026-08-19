@@ -3,7 +3,7 @@ import { readFile } from 'fs/promises';
 import { join } from 'path';
 import * as JSZip from 'jszip';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, In, MoreThan, QueryFailedError, Repository, SelectQueryBuilder } from 'typeorm';
+import { Brackets, EntityManager, In, MoreThan, QueryFailedError, Repository, SelectQueryBuilder } from 'typeorm';
 import {
   BUSINESS_LEADER_ROLES,
   BUSINESS_MANAGER_ROLES,
@@ -68,6 +68,7 @@ import { UploadsService } from 'src/modules/uploads/uploads.service';
 import { FieldChangeHook, FieldDiffItem } from 'src/modules/notifications/field-change.hook';
 import { describeActionCode, humanizeActionCode, toOperationLogActionCode } from 'src/modules/operation-logs/operation-log-semantics';
 // 离职证明改由离职主工单下的 resignation_cert 子工单处理。
+import { ResignationCertificateAutomationService } from 'src/modules/work-orders/resignation-certificate-automation.service';
 import { WorkOrderValidationService } from 'src/modules/work-orders/work-order-validation.service';
 import { normalizeNeedPayrollSlip } from './payroll-bank-card';
 import { RoleActionPermissionService } from 'src/modules/role-action-permissions/role-action-permission.service';
@@ -208,7 +209,8 @@ export class DispatchedOrderService {
     private readonly uploadsService?: UploadsService,
     @Optional()
     private readonly roleActionPermissionService?: RoleActionPermissionService,
-    // 离职证明不再由资料收集完成事件自动创建独立工单。
+    @Optional()
+    private readonly resignationCertificateAutomationService?: ResignationCertificateAutomationService,
   ) {}
 
   async findAll(
@@ -517,8 +519,9 @@ export class DispatchedOrderService {
         await manager.getRepository(WorkOrder).save(order.parentOrder);
       }
 
-      // 离职证明在完成时生成，成品通过详情页导出/预览，不要求人工上传文件。
-      // 离职证明子工单在主工单提交时创建，不在离职材料收集完成后追加独立工单。
+      if (nextCompleted) {
+        await this.ensureResignationCertificateAfterMaterials(order, user.sub, manager);
+      }
     });
 
     if (beforeExtraData && this.fieldChangeHook) {
@@ -2141,9 +2144,74 @@ export class DispatchedOrderService {
     order.handlerId = order.handlerId ?? user.sub;
     order.completionRemark = remark;
     await this.dispatchedOrderRepository.save(order);
+    if (order.moduleCode === DispatchModuleCode.RESIGNATION_CONTACT) {
+      await this.dispatchedOrderRepository.manager.transaction(async (manager) => {
+        await this.ensureResignationCertificateAfterMaterials(order, user.sub, manager);
+      });
+    }
     await this.checkMainOrderComplete(order.parentOrderId);
     await this.markTodoNotificationsReadForDispatchedOrder(order, user.sub);
     await this.writeLog('dispatched_order', order.id, user.sub, 'batch_import_complete', before, { remark });
+  }
+
+  private async ensureResignationCertificateAfterMaterials(
+    order: DispatchedOrder,
+    actorUserId: string,
+    manager: EntityManager,
+  ): Promise<void> {
+    if (
+      order.moduleCode !== DispatchModuleCode.RESIGNATION_CONTACT
+      || !this.resignationCertificateAutomationService
+    ) {
+      return;
+    }
+
+    const certificate = await this.resignationCertificateAutomationService.ensureForWorkOrder(
+      order.parentOrder,
+      'materials_completed',
+      manager,
+    );
+    if (!certificate?.created) return;
+
+    const child = certificate.order;
+    const operationLogRepository = manager.getRepository(OperationLog);
+    await operationLogRepository.save(operationLogRepository.create({
+      entityType: 'dispatched_order',
+      entityId: child.id,
+      userId: actorUserId,
+      actionType: 'dispatched',
+      beforeData: null,
+      afterData: {
+        parentOrderId: order.parentOrderId,
+        dispatchedOrderId: child.id,
+        moduleCode: child.moduleCode,
+        handlerId: child.handlerId,
+        toUserId: child.handlerId,
+        status: child.status,
+        trigger: 'materials_completed',
+      },
+      ipAddress: null,
+    }));
+
+    if (child.handlerId) {
+      const notificationRepository = manager.getRepository(Notification);
+      await notificationRepository.save(notificationRepository.create({
+        userId: child.handlerId,
+        bizType: 'dispatch',
+        title: '新子工单待处理',
+        content: `主工单 ${order.parentOrder.orderNo} 分派到 离职证明`,
+        link: `/dispatched-orders/${child.id}`,
+        payload: {
+          workOrderId: order.parentOrderId,
+          dispatchedOrderId: child.id,
+          moduleCode: child.moduleCode,
+          moduleName: '离职证明',
+          trigger: 'materials_completed',
+        },
+        isRead: false,
+        readAt: null,
+      }));
+    }
   }
 
   private async markTodoNotificationsReadForDispatchedOrder(order: DispatchedOrder, userId: string): Promise<void> {

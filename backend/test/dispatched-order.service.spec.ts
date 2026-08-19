@@ -71,6 +71,61 @@ describe('DispatchedOrderService', () => {
     return { service, queryBuilder };
   }
 
+  it('creates and notifies a resignation certificate only once after material collection completes', async () => {
+    const { service } = makeService();
+    const parentOrder = Object.assign(new WorkOrder(), {
+      id: 'wo-resignation',
+      orderNo: 'RS20260819001',
+      orderType: OrderType.RESIGNATION,
+      status: WorkOrderStatus.PROCESSING,
+      extraData: { need_resignation_share: '是', need_resignation_cert: '是' },
+    });
+    const materialOrder = Object.assign(new DispatchedOrder(), {
+      id: 'material-1',
+      parentOrderId: parentOrder.id,
+      parentOrder,
+      moduleCode: 'resignation_contact',
+      status: DispatchedOrderStatus.COMPLETED,
+    });
+    const certificateOrder = Object.assign(new DispatchedOrder(), {
+      id: 'certificate-1',
+      parentOrderId: parentOrder.id,
+      moduleCode: 'resignation_cert',
+      status: DispatchedOrderStatus.PENDING,
+      handlerId: 'certificate-handler',
+    });
+    const automation = {
+      ensureForWorkOrder: jest.fn()
+        .mockResolvedValueOnce({ order: certificateOrder, created: true })
+        .mockResolvedValueOnce({ order: certificateOrder, created: false }),
+    };
+    Object.defineProperty(service, 'resignationCertificateAutomationService', { value: automation });
+    const operationLogRepository = repoMock<OperationLog>();
+    const notificationRepository = repoMock<Notification>();
+    const manager = {
+      getRepository: jest.fn((entity: unknown) => {
+        if (entity === OperationLog) return operationLogRepository;
+        if (entity === Notification) return notificationRepository;
+        throw new Error('unexpected repository');
+      }),
+    };
+
+    await (service as any).ensureResignationCertificateAfterMaterials(materialOrder, 'handler-1', manager);
+    await (service as any).ensureResignationCertificateAfterMaterials(materialOrder, 'handler-1', manager);
+
+    expect(automation.ensureForWorkOrder).toHaveBeenCalledWith(parentOrder, 'materials_completed', manager);
+    expect(operationLogRepository.save).toHaveBeenCalledTimes(1);
+    expect(operationLogRepository.save).toHaveBeenCalledWith(expect.objectContaining({
+      entityId: certificateOrder.id,
+      actionType: 'dispatched',
+    }));
+    expect(notificationRepository.save).toHaveBeenCalledTimes(1);
+    expect(notificationRepository.save).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 'certificate-handler',
+      link: `/dispatched-orders/${certificateOrder.id}`,
+    }));
+  });
+
   it('exposes the related data-entry status for a contract child order', () => {
     const { service } = makeService();
     const order = { ...makeDispatchedOrder(), moduleCode: 'contract' } as DispatchedOrder;

@@ -8,7 +8,7 @@ import DynamicForm from '@/components/DynamicForm';
 import type { FieldConfig, ConditionalRequired } from '@/components/DynamicForm';
 import { useFieldPermissions } from '@/hooks/useFieldPermissions';
 import { getCreateWorkOrderFields } from '@/services/importTemplates';
-import { checkResignationInjuryWarning, createWorkOrder } from '@/services/workOrders';
+import { checkResignationInjuryWarning, createWorkOrder, submitWorkOrder } from '@/services/workOrders';
 import { getCustomers, getFallbackCustomers, type CustomerItem } from '@/services/customers';
 import { useAuth } from '@/hooks/useAuth';
 import MaterialsUpload, { type MaterialsUploadHandle } from '@/components/MaterialsUpload';
@@ -68,6 +68,14 @@ export function canCreateMainWorkOrderByRole(hasRole: (roleCode: string) => bool
 
 export function isReadonlyBusinessViewer(hasRole: (roleCode: string) => boolean): boolean {
   return hasRole('business_owner') && !canCreateMainWorkOrderByRole(hasRole);
+}
+
+export function requiresResignationAttachment(
+  orderType: SupportedOrderType,
+  values: Record<string, unknown>,
+): boolean {
+  return orderType === 'resignation'
+    && String(values.need_resignation_share ?? '').trim() === '否';
 }
 
 const WorkOrdersNew: React.FC = () => {
@@ -130,7 +138,7 @@ const WorkOrdersNew: React.FC = () => {
       customer_name: resolvedCustomer?.customer_name || values.customer_name,
       customer_code: resolvedCustomer?.customer_code || values.customer_code,
       orderType,
-      _action: 'submit',
+      _action: 'draft',
     };
   };
 
@@ -176,13 +184,21 @@ const WorkOrdersNew: React.FC = () => {
           }
         }
       }
-      const result = await createWorkOrder(buildPayload(values));
-      setCreatedWorkOrderId(result.id as string);
+      const attachmentRequired = requiresResignationAttachment(orderType, values);
+      if (attachmentRequired && !materialsRef.current?.hasStaged()) {
+        message.error('不进行离职材料采集时，附件至少上传一份');
+        return;
+      }
+
+      const draft = await createWorkOrder(buildPayload(values));
+      setCreatedWorkOrderId(draft.id as string);
       try {
-        await materialsRef.current?.uploadStaged(result.id as string);
+        await materialsRef.current?.uploadStaged(draft.id as string);
       } catch {
         message.error('部分附件上传失败，请在工单详情页重试');
+        if (attachmentRequired) return;
       }
+      const result = await submitWorkOrder(draft.id as string);
       showSplitResult(result);
     } catch (err) {
       console.error(`[新建${orderTypeLabel}工单] 提交失败：`, err);
@@ -234,7 +250,7 @@ const WorkOrdersNew: React.FC = () => {
         </Space>
       </Card>
 
-      <Card title="附件上传（可选，可在提交前选择，提交后自动上传）" style={{ marginTop: 16 }}>
+      <Card title="附件上传" style={{ marginTop: 16 }}>
         <MaterialsUpload
           ref={materialsRef}
           workOrderId={createdWorkOrderId || ''}

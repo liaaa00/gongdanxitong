@@ -9,6 +9,7 @@ import {
   ImportJob,
   Notification,
   OperationLog,
+  OrderAttachment,
   OrderType,
   WorkOrder,
   WorkOrderStatus,
@@ -16,7 +17,11 @@ import {
 } from 'src/entities';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { toWorkOrderSubOrderItems } from 'src/modules/work-orders/work-order.mapper';
-import { WorkOrderService } from 'src/modules/work-orders/work-order.service';
+import {
+  requiresResignationAttachmentOnSubmission,
+  shouldDispatchWorkOrderChildAtSubmission,
+  WorkOrderService,
+} from 'src/modules/work-orders/work-order.service';
 import { WorkOrderValidationService } from 'src/modules/work-orders/work-order-validation.service';
 
 type TransactionManagerMock = {
@@ -190,6 +195,28 @@ describe('WorkOrderService unit tests', () => {
       { getVisibleFieldsForScenario: jest.fn(async () => []) } as never,
     );
   });
+
+  it.each([
+    ['是', '是', false, false],
+    ['是', '否', false, false],
+    ['否', '是', true, true],
+    ['否', '否', true, false],
+  ] as Array<[string, string, boolean, boolean]>)(
+    'applies resignation submission rules for material collection=%s and certificate=%s',
+    (share, certificate, attachmentRequired, certificateDispatched) => {
+      const order = makeWorkOrder({
+        orderType: OrderType.RESIGNATION,
+        extraData: {
+          need_resignation_share: share,
+          need_resignation_cert: certificate,
+        },
+      });
+
+      expect(requiresResignationAttachmentOnSubmission(order)).toBe(attachmentRequired);
+      expect(shouldDispatchWorkOrderChildAtSubmission(order, 'resignation_cert')).toBe(certificateDispatched);
+      expect(shouldDispatchWorkOrderChildAtSubmission(order, 'resignation_contact')).toBe(true);
+    },
+  );
 
   it('creates a draft work order and persists all business fields in extraData', async () => {
     const saved = makeWorkOrder();
@@ -452,6 +479,40 @@ describe('WorkOrderService unit tests', () => {
     ]));
     expect(notifications.map((item) => item.content).join(' ')).not.toContain('social_insurance');
     expect(result.dispatchedOrders.map((item) => item.moduleCode).sort()).toEqual(['contract', 'data_entry', 'onboarding_contact', 'social_insurance']);
+  });
+
+  it('rejects resignation submission without an attachment when material collection is disabled', async () => {
+    const draft = makeWorkOrder({
+      orderType: OrderType.RESIGNATION,
+      extraData: {
+        employee_name: 'Alice',
+        id_card_no: '110101199001011234',
+        need_resignation_share: '否',
+        need_resignation_cert: '是',
+      },
+    });
+    const txWorkOrderRepo = createRepositoryMock<WorkOrder>();
+    const txAttachmentRepo = createRepositoryMock<OrderAttachment>();
+    txWorkOrderRepo.findOne.mockResolvedValue(draft);
+    txAttachmentRepo.count.mockResolvedValue(0);
+    const manager: TransactionManagerMock = {
+      query: jest.fn(async () => []),
+      getRepository: jest.fn((entity: unknown) => {
+        if (entity === WorkOrder) return txWorkOrderRepo as unknown as RepositoryMock<unknown>;
+        if (entity === OrderAttachment) return txAttachmentRepo as unknown as RepositoryMock<unknown>;
+        return createRepositoryMock<unknown>();
+      }),
+    };
+    workOrderRepository.manager.transaction.mockImplementation(async (callback) => callback(manager));
+
+    await expect(service.submit('wo-1', {}, makeUser())).rejects.toThrow('附件至少上传一份');
+    expect(txAttachmentRepo.count).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        workOrderId: 'wo-1',
+        bizPurpose: 'resignation_material',
+      }),
+    }));
+    expect(txWorkOrderRepo.save).not.toHaveBeenCalled();
   });
 
   it('filters list results by own creator, submitted time, and returns pagination metadata', async () => {

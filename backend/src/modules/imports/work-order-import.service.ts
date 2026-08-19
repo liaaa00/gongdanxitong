@@ -64,6 +64,10 @@ export class WorkOrderImportService {
     return { workOrderId: draft.id };
   }
 
+  async submit(workOrderId: string, user: JwtUserPayload): Promise<void> {
+    await this.workOrderService.submit(workOrderId, {}, user);
+  }
+
   private async writeOutOfProvinceOrder(
     orderType: OrderType.OUT_OF_PROVINCE_INCREASE | OrderType.OUT_OF_PROVINCE_DECREASE,
     source: Record<string, unknown>,

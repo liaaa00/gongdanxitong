@@ -5,6 +5,7 @@ import {
   canCreateMainWorkOrderByRole,
   excludeBackofficeFeedbackFields,
   isReadonlyBusinessViewer,
+  requiresResignationAttachment,
 } from './index';
 import { getFallbackFields } from '@/services/fields';
 
@@ -61,6 +62,17 @@ describe('single create form field and role rules', () => {
     const filtered = excludeBackofficeFeedbackFields(resignation);
     expect(filtered.length).toBe(resignation.length);
   });
+
+  it.each([
+    ['是', false],
+    ['否', true],
+  ] as Array<[string, boolean]>)(
+    'requires an attachment only when resignation material collection is disabled',
+    (share, expected) => {
+      expect(requiresResignationAttachment('resignation', { need_resignation_share: share })).toBe(expected);
+      expect(requiresResignationAttachment('onboarding', { need_resignation_share: '否' })).toBe(false);
+    },
+  );
 
   it('allows business members and group leaders to create onboarding/resignation main work orders', () => {
     const makeHasRole = (roles: string[]) => (roleCode: string) => roles.includes(roleCode);

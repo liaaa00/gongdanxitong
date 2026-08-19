@@ -32,6 +32,7 @@ import {
   ModuleSupervisor,
   Notification,
   OperationLog,
+  OrderAttachment,
   OrderType,
   RoleLevel,
   UserRole,
@@ -105,6 +106,24 @@ const WORK_ORDER_EXPORT_FEEDBACK_CODES = [
   'housing_fund_result',
   'social_insurance_remark',
 ] as const;
+
+export function requiresResignationAttachmentOnSubmission(
+  workOrder: Pick<WorkOrder, 'orderType' | 'extraData'>,
+): boolean {
+  return workOrder.orderType === OrderType.RESIGNATION
+    && String(workOrder.extraData?.need_resignation_share ?? '').trim() === '否';
+}
+
+export function shouldDispatchWorkOrderChildAtSubmission(
+  workOrder: Pick<WorkOrder, 'orderType' | 'extraData'>,
+  moduleCode: string,
+): boolean {
+  if (workOrder.orderType !== OrderType.RESIGNATION || moduleCode !== 'resignation_cert') {
+    return true;
+  }
+  return String(workOrder.extraData?.need_resignation_share ?? '').trim() === '否'
+    && String(workOrder.extraData?.need_resignation_cert ?? '').trim() === '是';
+}
 
 @Injectable()
 export class WorkOrderService {
@@ -460,6 +479,23 @@ export class WorkOrderService {
       }
 
       await this.validationService.validateWorkOrder(workOrder);
+      if (requiresResignationAttachmentOnSubmission(workOrder)) {
+        const attachmentCount = await manager.getRepository(OrderAttachment).count({
+          where: {
+            workOrderId: workOrder.id,
+            bizPurpose: 'resignation_material',
+            status: Not('rejected'),
+          },
+        });
+        if (attachmentCount < 1) {
+          throw businessException(
+            4110,
+            HttpStatus.BAD_REQUEST,
+            '不进行离职材料采集时，附件至少上传一份',
+            { missing: ['attachment'] },
+          );
+        }
+      }
       const before = snapshotWorkOrder(workOrder);
 
       if (workOrder.status === WorkOrderStatus.RETURNED) {
@@ -484,9 +520,12 @@ export class WorkOrderService {
         };
       }
 
-      const childrenToCreate = this.dispatchEngineService
+      const evaluatedChildren = this.dispatchEngineService
         ? (await this.dispatchEngineService.evaluateDetailed(workOrder, manager)).childrenToCreate
         : await buildOnboardingChildren(workOrder, manager, this.fieldPermissionService);
+      const childrenToCreate = evaluatedChildren.filter((child) => (
+        shouldDispatchWorkOrderChildAtSubmission(workOrder, child.moduleCode)
+      ));
       if (childrenToCreate.length === 0) {
         throw businessException(4202, HttpStatus.BAD_REQUEST, '无可派发规则命中');
       }

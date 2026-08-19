@@ -9,6 +9,7 @@ import {
   ModuleSupervisor,
   Notification,
   OperationLog,
+  OrderAttachment,
   UserRole,
   WorkOrder,
   WorkOrderFieldDirtyMark,
