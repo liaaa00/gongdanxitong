@@ -19,13 +19,13 @@ const { requestGet } = vi.hoisted(() => ({
 
 vi.mock('./request', () => ({
   DEFAULT_PAGE_SIZE: 20,
-  MAX_PAGE_SIZE: 100,
+  MAX_PAGE_SIZE: 200,
   default: {
     get: requestGet,
   },
 }));
 
-import { getDispatchedOrders, getDispatchedOrdersSafe } from './dispatchedOrders';
+import { getDispatchedOrders, getDispatchedOrdersSafe, normalizeDispatchedOrderItem } from './dispatchedOrders';
 
 describe('dispatchedOrders services', () => {
   beforeEach(() => {
@@ -127,16 +127,29 @@ describe('dispatchedOrders services', () => {
     expect(result.list[0].visible_fields).not.toContain('need_resignation_share');
   });
 
+  it('recovers existing field values when a child response omits parent extra_data', () => {
+    const result = normalizeDispatchedOrderItem({
+      id: 'child-1',
+      module_code: 'data_entry',
+      fields: [
+        { field_code: 'employee_name', value: '张三' },
+        { field_code: 'bank_name', value: '中国银行' },
+      ],
+    });
+
+    expect(result.extra_data).toMatchObject({ employee_name: '张三', bank_name: '中国银行' });
+  });
+
   it('returns an empty failed page instead of throwing when safe list receives a 400 response', async () => {
     const badRequest = Object.assign(new Error('Request failed with status code 400'), {
-      response: { status: 400, data: { message: 'pageSize must not be greater than 100' } },
+      response: { status: 400, data: { message: 'pageSize must not be greater than 200' } },
     });
     requestGet.mockRejectedValueOnce(badRequest);
 
     const result = await getDispatchedOrdersSafe({ current: 3, pageSize: 1000, moduleCode: 'contract' } as any);
 
     expect(requestGet).toHaveBeenCalledWith('/dispatched-orders', {
-      params: expect.objectContaining({ page: 3, pageSize: 100, moduleCode: 'contract' }),
+      params: expect.objectContaining({ page: 3, pageSize: 200, moduleCode: 'contract' }),
       silentError: true,
     });
     expect(requestGet.mock.calls[0][1].params).not.toHaveProperty('current');

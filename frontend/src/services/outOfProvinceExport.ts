@@ -2,7 +2,7 @@ import { isMockMode, mockDelay } from './mock';
 
 export async function downloadOutOfProvinceOrdersExport(
   ids: string[],
-  typeLabel: '省外增员' | '省外减员',
+  typeLabel: '菜鸟增员' | '菜鸟减员',
 ): Promise<void> {
   if (isMockMode) {
     await mockDelay(undefined, 80);

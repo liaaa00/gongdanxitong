@@ -15,7 +15,7 @@ const modules: Array<Partial<WorkOrderModuleConfig>> = [
   { moduleCode: 'in_service_single_business', moduleName: '单项业务办理', moduleType: 'sub_module', parentModuleCode: 'employment_management', displayOrder: 20, description: 'Sheet2 分类与 Sheet4 省份派单' },
   { moduleCode: 'resignation_management', moduleName: '离职管理', moduleType: 'business_module', parentModuleCode: null, displayOrder: 30, description: '第一阶段开放：离职办理事项配置' },
   { moduleCode: 'onboarding_contact', moduleName: '入职联系', moduleType: 'sub_module', parentModuleCode: 'onboarding_management', displayOrder: 11, description: '按是否需要入职联系条件生成' },
-  { moduleCode: 'payroll_bank_card', moduleName: '薪酬银行卡', moduleType: 'sub_module', parentModuleCode: 'onboarding_management', displayOrder: 12, description: '按是否需要工资单生成；银行卡资料完整后可办理和导出' },
+  { moduleCode: 'payroll_bank_card', moduleName: '薪酬银行卡', moduleType: 'sub_module', parentModuleCode: 'onboarding_management', displayOrder: 12, description: '所有成功入职数据生成记录；四项银行卡资料完整后可导出' },
   { moduleCode: 'contract', moduleName: '劳动合同新签', moduleType: 'sub_module', parentModuleCode: 'onboarding_management', displayOrder: 12, description: '按是否企服发起劳动合同条件生成' },
   { moduleCode: 'data_entry', moduleName: '增员报岗录入', moduleType: 'sub_module', parentModuleCode: 'onboarding_management', displayOrder: 13, description: '入职工单必生成' },
   { moduleCode: 'social_insurance', moduleName: '社保公积金增员', moduleType: 'sub_module', parentModuleCode: 'onboarding_management', displayOrder: 14, description: '入职社保公积金增员，负责人傅倩雯' },
@@ -87,13 +87,13 @@ const resignationCoreFields = [
 const resignationContactFields = [
   'customer_name', 'customer_code', 'mobile', 'email', 'position',
   ...resignationCoreFields,
-  'feedback_deadline', 'is_common_template', 'template_name',
+  'feedback_deadline', 'is_common_template', 'template_name', 'resignation_cert_format',
 ];
 
 const resignationCertificateFields = [
   'customer_name', 'customer_code', 'mobile', 'email', 'position',
   'employee_name', 'id_card_no', 'resignation_reason', 'resignation_date',
-  'need_resignation_cert', 'cert_delivery_address', 'resignation_cert_status',
+  'need_resignation_cert', 'resignation_cert_format', 'cert_delivery_address', 'resignation_cert_status',
 ];
 
 const dataEntryResignFields = [

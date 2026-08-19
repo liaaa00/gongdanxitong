@@ -27,8 +27,9 @@ export class CreateInServiceOrderDto {
   @IsUUID()
   customerId!: string;
 
+  @IsOptional()
   @IsUUID()
-  departmentId!: string;
+  departmentId?: string;
 
   @IsOptional()
   @IsEnum(InServiceOrderKind)

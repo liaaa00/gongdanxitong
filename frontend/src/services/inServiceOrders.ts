@@ -15,7 +15,7 @@ import {
 
 export interface InServiceOrderPayload {
   customerId: string;
-  departmentId: string;
+  departmentId?: string;
   orderKind?: InServiceOrderKind;
   businessScope?: 'beilun' | 'out_of_province';
   employeeName?: string | null;
@@ -50,6 +50,7 @@ export interface InServiceTransferRecord {
 }
 
 export interface InServiceOrder extends InServiceOrderPayload {
+  departmentId: string;
   id: string;
   orderNo: string;
   orderType: 'in_service';
@@ -372,6 +373,8 @@ export interface RenewalHistoryResult {
   orderNo: string | null;
   employeeName: string | null;
   idCardNo: string | null;
+  departmentId: string | null;
+  departmentName?: string | null;
   extraData: Record<string, unknown>;
   fixedTermCount: number;
   fixedTermRisk: boolean;
@@ -387,6 +390,7 @@ export async function getRenewalHistory(customerId: string, idCardNo: string): P
       orderNo: null,
       employeeName: null,
       idCardNo,
+      departmentId: null,
       extraData: {},
       fixedTermCount: 0,
       fixedTermRisk: false,
@@ -466,7 +470,7 @@ export async function exportInServiceRenewalTemplate(
 export async function downloadOutOfProvinceOrderExport(
   id: string,
   orderNo: string,
-  typeLabel: '省外增员' | '省外减员',
+  typeLabel: '菜鸟增员' | '菜鸟减员',
 ): Promise<void> {
   const token = localStorage.getItem('token');
   const base = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || '';

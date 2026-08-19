@@ -71,6 +71,19 @@ describe('DispatchedOrderService', () => {
     return { service, queryBuilder };
   }
 
+  it('exposes the related data-entry status for a contract child order', () => {
+    const { service } = makeService();
+    const order = { ...makeDispatchedOrder(), moduleCode: 'contract' } as DispatchedOrder;
+
+    const result = (service as any).toListItem(order, [], { data_entry: 'completed' });
+
+    expect(result).toMatchObject({
+      dataEntryStatus: 'completed',
+      data_entry_status: 'completed',
+      related_module_statuses: { data_entry: 'completed' },
+    });
+  });
+
   it('filters list results and paginates with offset/limit', async () => {
     const rows = [{ id: 'do-1', parentOrderId: 'wo-1', parentOrder: { id: 'wo-1', orderNo: 'ON20260511001', orderType: 'onboarding', status: WorkOrderStatus.PROCESSING, createdBy: 'u1', departmentId: 'd1', customerId: 'c1', employeeName: '张三', employeeIdCard: '330102199001010011', extraData: {}, submittedAt: null, completedAt: null, createdAt: new Date(), updatedAt: new Date() }, moduleCode: 'data_entry', status: DispatchedOrderStatus.PENDING, handlerId: 'handler-1', visibleFields: ['employee_name'], returnReason: null, dispatchedAt: new Date(), acceptedAt: null, completedAt: null, createdAt: new Date(), updatedAt: new Date() } as unknown as DispatchedOrder];
     const queryBuilder = qbMock(rows, 1);
@@ -102,7 +115,7 @@ describe('DispatchedOrderService', () => {
     expect(result.items[0].handlerId).toBe('handler-1');
   });
 
-  it('keeps payroll bank cards in an admin-only complete export list', async () => {
+  it('keeps payroll bank cards in a complete export list and scopes business users to their own orders', async () => {
     const payrollOrder = {
       ...makeDispatchedOrder(),
       moduleCode: 'payroll_bank_card',
@@ -110,7 +123,7 @@ describe('DispatchedOrderService', () => {
       parentOrder: {
         ...makeDispatchedOrder().parentOrder,
         extraData: {
-          need_payroll_slip: '是',
+          need_payroll_slip: '否',
           bank_name: '中国银行',
           bank_account: '6222000000000000',
           bank_location: '宁波',
@@ -131,10 +144,22 @@ describe('DispatchedOrderService', () => {
     } as JwtUserPayload)).resolves.toMatchObject({ total: 1 });
 
     const sql = queryBuilder.andWhere.mock.calls.map(([statement]) => String(statement)).join('\n');
-    expect(sql).toContain("need_payroll_slip' = '是'");
-    for (const field of ['bank_name', 'bank_account', 'bank_location', 'payroll_location']) {
-      expect(sql).toContain(field);
-    }
+    expect(sql).not.toContain('need_payroll_slip');
+    expect(sql).not.toContain('bank_name');
+
+    await expect(service.findAll({
+      page: 1,
+      pageSize: 20,
+      moduleCode: 'payroll_bank_card',
+    } as never, {
+      sub: 'u1',
+      username: 'sales01',
+      roles: ['business_group_member'],
+    } as JwtUserPayload)).resolves.toMatchObject({ total: 1 });
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+      'w.created_by = :payrollUserId',
+      { payrollUserId: 'u1' },
+    );
 
     await expect(service.findAll({
       page: 1,
@@ -146,7 +171,7 @@ describe('DispatchedOrderService', () => {
       roles: ['data_entry_team'],
     } as JwtUserPayload)).rejects.toMatchObject({
       status: HttpStatus.FORBIDDEN,
-      message: '薪酬银行卡导出清单仅管理员可访问',
+      message: '薪酬银行卡导出清单无权访问',
     });
   });
 

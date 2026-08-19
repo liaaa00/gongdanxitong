@@ -14,8 +14,8 @@ function renderImport(initialEntry = '/out-of-province/import') {
     <MemoryRouter initialEntries={[initialEntry]}>
       <Routes>
         <Route path="/out-of-province/import" element={<OutOfProvinceImport />} />
-        <Route path="/out-of-province/increase" element={<div>省外增员列表页</div>} />
-        <Route path="/out-of-province/decrease" element={<div>省外减员列表页</div>} />
+        <Route path="/out-of-province/increase" element={<div>菜鸟增员列表页</div>} />
+        <Route path="/out-of-province/decrease" element={<div>菜鸟减员列表页</div>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -36,22 +36,22 @@ describe('OutOfProvinceImport', () => {
     expect(screen.queryByText('省外导入与北仑数据独立')).not.toBeInTheDocument();
     expect(screen.queryByText(/Excel 每条记录会直接生成一张工单/)).not.toBeInTheDocument();
     expect(screen.getByTestId('excel-uploader')).toBeInTheDocument();
-    expect(screen.getByText('返回省外增员列表')).toBeInTheDocument();
+    expect(screen.getByText('返回菜鸟增员列表')).toBeInTheDocument();
   });
 
   it('uses the list-provided decrease type when opening the import page', () => {
     renderImport('/out-of-province/import?orderType=out_of_province_decrease');
 
-    expect(screen.getByText('返回省外减员列表')).toBeInTheDocument();
+    expect(screen.getByText('返回菜鸟减员列表')).toBeInTheDocument();
   });
 
   it('returns to the list matching the selected import type', async () => {
     const user = userEvent.setup();
     renderImport();
 
-    await user.click(screen.getByText('省外减员'));
-    await user.click(screen.getByText('返回省外减员列表'));
+    await user.click(screen.getByText('菜鸟减员'));
+    await user.click(screen.getByText('返回菜鸟减员列表'));
 
-    expect(await screen.findByText('省外减员列表页')).toBeInTheDocument();
+    expect(await screen.findByText('菜鸟减员列表页')).toBeInTheDocument();
   });
 });

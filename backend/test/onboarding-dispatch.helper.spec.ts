@@ -151,10 +151,11 @@ describe('onboarding-dispatch helper', () => {
     expect(result).toBe('handler-high');
   });
 
-  it('keeps onboarding child split conditional instead of always generating four modules', async () => {
+  it('always creates payroll storage while keeping workflow children conditional', async () => {
     const { manager, exceptionRepo } = createDefaultManager({
       handlers: [
         makeHandler({ moduleCode: DispatchModuleCode.DATA_ENTRY, handlerId: 'handler-data' }),
+        makeHandler({ moduleCode: DispatchModuleCode.PAYROLL_BANK_CARD, handlerId: 'handler-payroll' }),
         makeHandler({ moduleCode: DispatchModuleCode.CONTRACT, handlerId: 'handler-contract' }),
         makeHandler({ moduleCode: DispatchModuleCode.SOCIAL_INSURANCE, handlerId: 'handler-social' }),
       ],
@@ -167,6 +168,7 @@ describe('onboarding-dispatch helper', () => {
         extraData: {
           customer_code: 'C001',
           need_onboarding_contact: 'no',
+          need_payroll_slip: '否',
           need_company_contract: 'yes',
         },
       }),
@@ -176,10 +178,11 @@ describe('onboarding-dispatch helper', () => {
 
     expect(children.map((child) => child.moduleCode)).toEqual([
       DispatchModuleCode.DATA_ENTRY,
+      DispatchModuleCode.PAYROLL_BANK_CARD,
       DispatchModuleCode.CONTRACT,
       DispatchModuleCode.SOCIAL_INSURANCE,
     ]);
-    expect(children).toHaveLength(3);
+    expect(children).toHaveLength(4);
     expect(children.every((child) => child.handlerId !== null)).toBe(true);
     expect(exceptionRepo.findOne).toHaveBeenCalledWith({
       where: { moduleCode: DispatchModuleCode.DATA_ENTRY, customerCode: 'C001', businessScope: BusinessScope.BEILUN },
@@ -215,7 +218,7 @@ describe('onboarding-dispatch helper', () => {
     expect(children.map((child) => child.moduleCode)).not.toContain(DispatchModuleCode.ONBOARDING_CONTACT);
   });
 
-  it('creates a focused onboarding contact child when payroll bank fields are missing', async () => {
+  it('does not create onboarding contact when only payroll bank fields are missing', async () => {
     const { manager } = createDefaultManager();
     const fieldPermissionService = {
       getVisibleFieldsForScenario: jest.fn(async () => ['employee_name', 'id_card_no', 'bank_name', 'bank_account', 'bank_location', 'payroll_location']),
@@ -235,17 +238,10 @@ describe('onboarding-dispatch helper', () => {
 
     expect(children.map((child) => child.moduleCode)).toEqual([
       DispatchModuleCode.DATA_ENTRY,
-      DispatchModuleCode.ONBOARDING_CONTACT,
       DispatchModuleCode.PAYROLL_BANK_CARD,
       DispatchModuleCode.SOCIAL_INSURANCE,
     ]);
-    expect(children.find((child) => child.moduleCode === DispatchModuleCode.ONBOARDING_CONTACT)?.visibleFields).toEqual([
-      'employee_name',
-      'id_card_no',
-      'bank_account',
-      'bank_location',
-      'payroll_location',
-    ]);
+    expect(children.map((child) => child.moduleCode)).not.toContain(DispatchModuleCode.ONBOARDING_CONTACT);
   });
 
   it.skip('routes non-onboarding orders by overall work order module', async () => {

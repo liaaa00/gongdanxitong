@@ -26,7 +26,6 @@ const ONBOARDING_EXCLUDED = new Set([
   'contract_feedback',
   'onboarding_feedback',
   'data_entry_feedback',
-  'contract_template',
 ]);
 
 const RESIGNATION_DEFAULT_FIELDS = [
@@ -68,6 +67,7 @@ function normalizeField(raw: any, orderType: string): ImportTemplateFieldItem {
     business_context: Array.isArray(raw.business_context) ? raw.business_context : (Array.isArray(raw.businessContext) ? raw.businessContext : null),
     display_order: raw.display_order ?? raw.displayOrder ?? 99,
     is_active: raw.is_active ?? raw.isActive ?? true,
+    is_included_in_template: raw.is_included_in_template ?? raw.isIncludedInTemplate ?? true,
     header_alias: raw.header_alias ?? raw.headerAlias ?? null,
     is_required_override: raw.is_required_override ?? raw.isRequiredOverride ?? null,
     source: raw.source ?? 'configured',

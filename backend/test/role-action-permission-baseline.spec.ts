@@ -43,6 +43,10 @@ describe('role action permission default baseline', () => {
     ] as const) expect(actionsOf('data_entry_leader').has(action)).toBe(true);
     expect(actionsOf('data_entry_leader').has('route.onboarding_payroll_bank_card')).toBe(false);
     expect(actionsOf('data_entry_leader').has('module.payroll_bank_card.manage')).toBe(false);
+    expect(actionsOf('payroll_bank_card_exporter').has('module.payroll_bank_card.manage')).toBe(true);
+    expect(actionsOf('business_scope_switcher')).toEqual(new Set(['business_scope.switch']));
+    expect(actionsOf('business_scope_switcher').has('work_order.create')).toBe(false);
+    expect(actionsOf('business_scope_switcher').has('work_order.update')).toBe(false);
     for (const action of [
       'module.social_insurance.manage',
       'module.social_insurance_resign.manage',

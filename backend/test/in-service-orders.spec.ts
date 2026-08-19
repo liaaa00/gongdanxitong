@@ -5,6 +5,7 @@ import {
   BusinessType,
   DispatchModuleCode,
   DispatchStrategy,
+  Department,
   IN_SERVICE_BUSINESS_TYPE_MAPPING,
   IN_SERVICE_PROCESS_TYPE_MAPPING,
   InServiceHandleChannel,
@@ -87,6 +88,8 @@ function makeService(
   initial = makeOrder(),
   mappedHandler: string | null = 'handler-1',
   workflow?: Partial<WorkflowDefinition>,
+  workOrderValidationService?: { resolveDepartmentId: jest.Mock },
+  departmentRepositoryOverride?: { findOne: jest.Mock },
 ) {
   let current = initial;
   const repository = {
@@ -120,8 +123,24 @@ function makeService(
   const workflowRepository = {
     findOne: jest.fn(async () => workflow ?? null),
   } as unknown as Repository<WorkflowDefinition>;
+  const departmentRepository = departmentRepositoryOverride ?? {
+    findOne: jest.fn(async ({ where }: { where: { id: string; isActive: boolean } }) => (
+      where.id === '33333333-3333-4333-8333-333333333333' && where.isActive
+        ? { id: where.id, isActive: true }
+        : null
+    )),
+  };
   return {
-    service: new InServiceOrdersService(repository, workOrderRepository, picker, exporter, workflowRepository),
+    service: new InServiceOrdersService(
+      repository,
+      workOrderRepository,
+      picker,
+      exporter,
+      workflowRepository,
+      undefined,
+      workOrderValidationService as any,
+      departmentRepository as unknown as Repository<Department>,
+    ),
     picker: picker as unknown as { pick: jest.Mock },
     exporter: exporter as unknown as { exportContractRenewal: jest.Mock },
     repository: repository as unknown as {
@@ -132,6 +151,7 @@ function makeService(
     },
     workOrderRepository: workOrderRepository as unknown as { find: jest.Mock },
     workflowRepository: workflowRepository as unknown as { findOne: jest.Mock },
+    departmentRepository: departmentRepository as unknown as { findOne: jest.Mock },
     current: () => current,
   };
 }
@@ -193,7 +213,7 @@ describe('published in-service flow runtime contract', () => {
     expect(repository.save).not.toHaveBeenCalled();
   });
 
-  it('uses the Beilun single-business workflow for out-of-province single business', async () => {
+  it('uses the current business-scope workflow for out-of-province single business', async () => {
     const order = Object.assign(makeOrder(), { businessScope: BusinessScope.OUT_OF_PROVINCE });
     const { service, workflowRepository } = makeService(order);
 
@@ -202,13 +222,13 @@ describe('published in-service flow runtime contract', () => {
     expect(workflowRepository.findOne).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({
         flowKey: 'single_business',
-        businessScope: BusinessScope.BEILUN,
+        businessScope: BusinessScope.OUT_OF_PROVINCE,
         status: WorkflowDefinitionStatus.PUBLISHED,
       }),
     }));
   });
 
-  it('does not let a legacy renewal workflow snapshot override the Beilun contract-child flow', async () => {
+  it('uses the published renewal snapshot for the renewal flow', async () => {
     const order = Object.assign(makeOrder(), { orderKind: InServiceOrderKind.CONTRACT_RENEWAL });
     const { service, current, workflowRepository } = makeService(order, 'handler-1', {
       flowKey: 'contract_renewal',
@@ -221,10 +241,15 @@ describe('published in-service flow runtime contract', () => {
       },
     });
 
-    await service.accept(order.id, handler);
-
-    expect(current().status).toBe(InServiceOrderStatus.ACCEPTED);
-    expect(workflowRepository.findOne).not.toHaveBeenCalled();
+    await expect(service.accept(order.id, handler)).rejects.toThrow('不允许状态');
+    expect(current().status).toBe(InServiceOrderStatus.DISPATCHED);
+    expect(workflowRepository.findOne).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        flowKey: 'contract_renewal',
+        businessScope: BusinessScope.BEILUN,
+        status: WorkflowDefinitionStatus.PUBLISHED,
+      }),
+    }));
   });
 });
 
@@ -390,6 +415,124 @@ describe('InServiceOrdersService', () => {
     );
   });
 
+  it('inherits the renewal department from the matched onboarding record', async () => {
+    const resolver = { resolveDepartmentId: jest.fn().mockResolvedValue('current-department') };
+    const context = makeService(makeOrder(), 'handler-1', undefined, resolver);
+    context.workOrderRepository.find.mockResolvedValue([{
+      id: 'onboarding-1',
+      orderNo: 'WO-1',
+      status: WorkOrderStatus.COMPLETED,
+      employeeName: '张三',
+      employeeIdCard: '330206199001011234',
+      customerId: createDto.customerId,
+      departmentId: 'history-department',
+      extraData: { contract_term_type: '固定期限' },
+      createdAt: new Date('2026-01-01'),
+    }]);
+    await context.service.create({
+      ...createDto,
+      departmentId: 'wrong-department',
+      orderKind: InServiceOrderKind.CONTRACT_RENEWAL,
+      employeeName: '张三',
+      idCardNo: '330206199001011234',
+      extraData: {
+        contract_term_type: '固定期限',
+        contract_term: '2年',
+        contractStartDate: '2026-08-01',
+        contractEndDate: '2028-07-31',
+        base_salary: 12000,
+        renewal_source: 'forged-client-value',
+      },
+    }, creator);
+    expect(context.current().departmentId).toBe('history-department');
+    expect(context.current().extraData).toMatchObject({ renewal_source: 'matched_history' });
+    expect(resolver.resolveDepartmentId).not.toHaveBeenCalled();
+  });
+
+  it('creates a first renewal for legacy stock with an explicit active department and source marker', async () => {
+    const context = makeService();
+
+    await context.service.create({
+      ...createDto,
+      orderKind: InServiceOrderKind.CONTRACT_RENEWAL,
+      employeeName: '存量员工',
+      idCardNo: '330206199001011239',
+      extraData: {
+        contract_term_type: '无固定期限',
+        contract_start_date: '2026-09-01',
+        base_salary: 9000,
+        renewal_source: 'forged-client-value',
+      },
+    }, creator);
+
+    expect(context.departmentRepository.findOne).toHaveBeenCalledWith({
+      where: { id: createDto.departmentId, isActive: true },
+    });
+    expect(context.current()).toMatchObject({
+      departmentId: createDto.departmentId,
+      extraData: { renewal_source: 'legacy_stock' },
+    });
+  });
+
+  it('rejects legacy stock renewal without an explicit department before saving', async () => {
+    const context = makeService();
+
+    await expect(context.service.create({
+      customerId: createDto.customerId,
+      orderKind: InServiceOrderKind.CONTRACT_RENEWAL,
+      employeeName: '存量员工',
+      idCardNo: '330206199001011239',
+      extraData: {
+        contract_term_type: '无固定期限',
+        contract_start_date: '2026-09-01',
+        base_salary: 9000,
+      },
+    }, creator)).rejects.toThrow('系统无历史记录，发起部门不能为空');
+
+    expect(context.repository.save).not.toHaveBeenCalled();
+  });
+
+  it('rejects an inactive or unknown department for legacy stock renewal', async () => {
+    const inactiveDepartment = { findOne: jest.fn().mockResolvedValue(null) };
+    const context = makeService(makeOrder(), 'handler-1', undefined, undefined, inactiveDepartment);
+
+    await expect(context.service.create({
+      ...createDto,
+      orderKind: InServiceOrderKind.CONTRACT_RENEWAL,
+      employeeName: '存量员工',
+      idCardNo: '330206199001011239',
+      extraData: {
+        contract_term_type: '无固定期限',
+        contract_start_date: '2026-09-01',
+        base_salary: 9000,
+      },
+    }, creator)).rejects.toThrow('发起部门不存在或已停用');
+
+    expect(context.repository.save).not.toHaveBeenCalled();
+  });
+
+  it('rejects duplicate customer and id-card pairs in a renewal batch before saving', async () => {
+    const context = makeService();
+    const item = {
+      ...createDto,
+      orderKind: InServiceOrderKind.CONTRACT_RENEWAL,
+      employeeName: '张三',
+      idCardNo: '330206199001011234',
+      extraData: {
+        contract_term_type: '无固定期限',
+        contract_start_date: '2026-09-01',
+        base_salary: 9000,
+      },
+    };
+
+    await expect(context.service.batchCreateRenewals([
+      item,
+      { ...item, employeeName: '李四' },
+    ], creator)).rejects.toThrow('同一客户和证件号码在本批次重复');
+
+    expect(context.repository.save).not.toHaveBeenCalled();
+  });
+
   it('loads local onboarding and renewal history and flags the open-ended contract risk', async () => {
     const { service, workOrderRepository, repository } = makeService();
     workOrderRepository.find.mockResolvedValue([{
@@ -432,6 +575,7 @@ describe('InServiceOrdersService', () => {
       status: WorkOrderStatus.COMPLETED,
       employeeName: '张三',
       employeeIdCard: '330206199001011234',
+      departmentId: createDto.departmentId,
       extraData: { contract_term_type: '固定期限', base_salary: '￥12000' },
       createdAt: new Date('2026-01-01'),
     }]);

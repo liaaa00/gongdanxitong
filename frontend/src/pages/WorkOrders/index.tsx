@@ -32,11 +32,11 @@ const ORDER_TYPE_OPTIONS = [
 ];
 const ORDER_TYPE_MAP = Object.fromEntries(ORDER_TYPE_OPTIONS.map((item) => [item.value, item.label]));
 
-function getMonthRange(value?: Dayjs | null): { createdAfter: string; createdBefore: string } | undefined {
+function getMonthRange(value?: Dayjs | null): { submittedAfter: string; submittedBefore: string } | undefined {
   if (!value || !value.isValid()) return undefined;
   return {
-    createdAfter: value.startOf('month').toISOString(),
-    createdBefore: value.endOf('month').toISOString(),
+    submittedAfter: value.startOf('month').toISOString(),
+    submittedBefore: value.endOf('month').toISOString(),
   };
 }
 
@@ -166,6 +166,7 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
   const pageStateKey = isInitiatedPage ? 'my-work-initiated' : `work-orders-${currentOrderType || 'all'}`;
   const cachedPageState = getCachedListPageState(pageStateKey);
   const [month, setMonth] = useState<Dayjs | null>(() => getCachedMonthOrNull(pageStateKey));
+  const [submittedRange, setSubmittedRange] = useState<[Dayjs, Dayjs] | null>(null);
   const currentOrderTypeLabel = currentOrderType === 'resignation' ? '离职' : currentOrderType === 'onboarding' ? '入职' : '';
   const modulePrefix = currentOrderTypeLabel || '';
   const canBusinessUserCreateOrImport = isGroupMember || isGroupLeader;
@@ -373,6 +374,10 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
       ...urlFilters,
       ...params,
       ...(monthRange || {}),
+      ...(submittedRange ? {
+        submittedAfter: submittedRange[0].toISOString(),
+        submittedBefore: submittedRange[1].toISOString(),
+      } : {}),
       orderNo: params.orderNo || params.order_no || urlFilters.orderNo,
       customerCode: params.customerCode || params.customer_code || urlFilters.customerCode,
       customerName: params.customerName || params.customer_name || urlFilters.customerName,
@@ -416,6 +421,21 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
               onChange={(value) => {
                 setMonth(value);
                 updateCachedListPageState(pageStateKey, { month: value ? toMonthKey(value) : '', current: 1 });
+                setRefreshKey((current) => current + 1);
+              }}
+            />
+          </Space>,
+          <Space key="submitted-range">
+            <span>提交时间：</span>
+            <DatePicker.RangePicker
+              allowClear
+              showTime
+              value={submittedRange}
+              placeholder={['开始时间', '结束时间']}
+              onChange={(values) => {
+                const next = values?.[0] && values?.[1] ? [values[0], values[1]] as [Dayjs, Dayjs] : null;
+                setSubmittedRange(next);
+                updateCachedListPageState(pageStateKey, { current: 1 });
                 setRefreshKey((current) => current + 1);
               }}
             />

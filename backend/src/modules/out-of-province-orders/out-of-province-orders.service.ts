@@ -1,5 +1,6 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { Optional } from '@nestjs/common';
 import { In, Repository } from 'typeorm';
 import {
   BUSINESS_LEADER_ROLES,
@@ -25,6 +26,8 @@ import {
   WorkOrderListItem,
 } from 'src/modules/work-orders/work-order.types';
 import { WorkOrderValidationService } from 'src/modules/work-orders/work-order-validation.service';
+import { RoleActionPermissionService } from 'src/modules/role-action-permissions/role-action-permission.service';
+import { businessException } from 'src/common/exceptions/business-exception';
 import { SubmitWorkOrderDto } from 'src/modules/work-orders/dto/submit.dto';
 import { CreateOutOfProvinceOrderDto, OUT_OF_PROVINCE_ORDER_TYPES } from './dto/create-out-of-province-order.dto';
 import { ListOutOfProvinceOrderQueryDto } from './dto/list-out-of-province-order.dto';
@@ -39,9 +42,13 @@ export class OutOfProvinceOrdersService {
     private readonly dispatchedOrderRepository: Repository<DispatchedOrder>,
     private readonly workOrderService: WorkOrderService,
     private readonly validationService: WorkOrderValidationService,
+    @Optional()
+    private readonly roleActionPermissionService?: RoleActionPermissionService,
   ) {}
 
   async create(dto: CreateOutOfProvinceOrderDto, user: JwtUserPayload): Promise<WorkOrderDetailItem> {
+    await this.assertBusinessScopeAccess(user);
+    await this.assertBusinessAction(user, 'work_order.create');
     return this.workOrderService.createDraft({
       orderType: dto.orderType,
       customerId: dto.customerId,
@@ -57,6 +64,8 @@ export class OutOfProvinceOrdersService {
     query: ListOutOfProvinceOrderQueryDto,
     user: JwtUserPayload,
   ): Promise<PagedResponse<WorkOrderListItem>> {
+    await this.assertBusinessScopeAccess(user);
+    await this.assertBusinessAction(user, 'work_order.view');
     const qb = this.workOrderRepository.createQueryBuilder('w')
       .leftJoinAndSelect('w.creator', 'creator')
       .where('w.business_scope = :businessScope', {
@@ -99,7 +108,7 @@ export class OutOfProvinceOrdersService {
 
     const total = await qb.getCount();
     const rows = await qb
-      .orderBy('w.created_at', 'DESC')
+      .orderBy('w.createdAt', 'DESC')
       .skip((query.page - 1) * query.pageSize)
       .take(query.pageSize)
       .getMany();
@@ -128,6 +137,8 @@ export class OutOfProvinceOrdersService {
   }
 
   async findOne(id: string, user: JwtUserPayload): Promise<WorkOrderDetailItem> {
+    await this.assertBusinessScopeAccess(user);
+    await this.assertBusinessAction(user, 'work_order.view');
     const order = await this.findScopedEntity(id);
     await this.assertCanRead(order, user);
     return this.toDetail(order);
@@ -138,6 +149,8 @@ export class OutOfProvinceOrdersService {
     dto: UpdateOutOfProvinceOrderDto,
     user: JwtUserPayload,
   ): Promise<WorkOrderDetailItem> {
+    await this.assertBusinessScopeAccess(user);
+    await this.assertBusinessAction(user, 'work_order.update');
     const order = await this.findScopedEntity(id);
     this.assertOwner(order, user);
     const extraData = dto.extraData || dto.province
@@ -151,15 +164,35 @@ export class OutOfProvinceOrdersService {
   }
 
   async submit(id: string, dto: SubmitWorkOrderDto, user: JwtUserPayload) {
+    await this.assertBusinessScopeAccess(user);
+    await this.assertBusinessAction(user, 'work_order.update');
     const order = await this.findScopedEntity(id);
     this.assertOwner(order, user);
     return this.workOrderService.submit(id, dto, user);
   }
 
   async resubmit(id: string, dto: SubmitWorkOrderDto, user: JwtUserPayload) {
+    await this.assertBusinessScopeAccess(user);
+    await this.assertBusinessAction(user, 'work_order.update');
     const order = await this.findScopedEntity(id);
     this.assertOwner(order, user);
     return this.workOrderService.resubmit(id, dto, user);
+  }
+
+  private async assertBusinessScopeAccess(user: JwtUserPayload): Promise<void> {
+    if (isAdminRole(user.roles) || user.businessScope === BusinessScope.OUT_OF_PROVINCE) return;
+    const allowed = this.roleActionPermissionService
+      ? await this.roleActionPermissionService.hasAnyRoleAction(user.roles, 'business_scope.switch', BusinessScope.OUT_OF_PROVINCE)
+      : false;
+    if (!allowed) throw businessException(5000, HttpStatus.FORBIDDEN, '无权切换业务范围');
+  }
+
+  private async assertBusinessAction(user: JwtUserPayload, action: 'work_order.view' | 'work_order.create' | 'work_order.update'): Promise<void> {
+    if (isAdminRole(user.roles)) return;
+    const allowed = this.roleActionPermissionService
+      ? await this.roleActionPermissionService.hasAnyRoleAction(user.roles, action, BusinessScope.OUT_OF_PROVINCE)
+      : false;
+    if (!allowed) throw businessException(5000, HttpStatus.FORBIDDEN, '未配置省外业务动作：' + action);
   }
 
   private async findScopedEntity(id: string): Promise<WorkOrder> {

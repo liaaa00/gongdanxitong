@@ -34,6 +34,7 @@ export type RoleActionCode =
   | 'route.offboarding_contact_pool'
   | 'route.offboarding_social_suspend_pool'
   | 'route.leader_dashboard'
+  | 'business_scope.switch'
   | 'system.admin'
   | 'module.contract.manage'
   | 'module.onboarding_contact.manage'
@@ -98,6 +99,7 @@ export const DEFAULT_ACTIONS: RoleActionDefinition[] = [
   { code: 'route.offboarding_contact_pool', name: '离职材料收集池入口', description: '允许访问离职材料收集池入口' },
   { code: 'route.offboarding_social_suspend_pool', name: '减员报岗录入池入口', description: '允许访问减员报岗录入池入口' },
   { code: 'route.leader_dashboard', name: '领导看板入口', description: '允许访问领导看板' },
+  { code: 'business_scope.switch', name: '业务范围切换', description: '允许在北仑与菜鸟业务范围之间切换' },
   { code: 'system.admin', name: '后台管理入口', description: '允许访问后台管理配置入口' },
   { code: 'module.contract.manage', name: '劳动合同新签模块', description: '允许访问劳动合同新签子工单模块' },
   { code: 'module.onboarding_contact.manage', name: '入职联系模块', description: '允许访问入职联系子工单模块' },
@@ -127,9 +129,12 @@ const CONTRACT_MODULE_ACTIONS: RoleActionCode[] = ['route.onboarding', 'route.on
 const ONBOARDING_CONTACT_MODULE_ACTIONS: RoleActionCode[] = ['route.onboarding', 'route.onboarding_contact', 'module.onboarding_contact.manage', 'dispatched_order.batch_import_fields', ...STANDARD_MODULE_BATCH_ACTIONS];
 const RESIGNATION_CONTACT_MODULE_ACTIONS: RoleActionCode[] = ['route.onboarding', 'route.offboarding', 'route.offboarding_contact_pool', 'route.resignation_contact', 'module.resignation_contact.manage', ...STANDARD_MODULE_BATCH_ACTIONS];
 const DATA_ENTRY_MODULE_ACTIONS: RoleActionCode[] = ['route.onboarding', 'route.onboarding_data_entry', 'module.data_entry.manage', ...STANDARD_MODULE_BATCH_ACTIONS];
-// Payroll bank card remains admin-only until a business handler role is selected.
+// Payroll bank-card list/export is available to business roles within their data scope.
 const DATA_ENTRY_RESIGN_MODULE_ACTIONS: RoleActionCode[] = ['route.onboarding', 'route.offboarding', 'route.offboarding_social_suspend_pool', 'route.data_entry_resign', 'module.data_entry_resign.manage', ...STANDARD_MODULE_BATCH_ACTIONS];
 const SOCIAL_INSURANCE_MODULE_ACTIONS: RoleActionCode[] = ['route.onboarding', 'route.onboarding_social_insurance', 'module.social_insurance.manage', ...MODULE_BATCH_BASE_ACTIONS, 'dispatched_order.batch_feedback'];
+// Scope switching is a capability; business actions are assigned manually per person.
+const BUSINESS_SCOPE_SWITCHER_ACTIONS: RoleActionCode[] = ['business_scope.switch'];
+
 const SOCIAL_INSURANCE_RESIGN_MODULE_ACTIONS: RoleActionCode[] = ['route.onboarding', 'route.social_insurance_resign', 'module.social_insurance_resign.manage', ...MODULE_BATCH_BASE_ACTIONS, 'dispatched_order.batch_feedback'];
 
 export const DEFAULT_MATRIX: RoleActionMatrix = {
@@ -151,6 +156,8 @@ export const DEFAULT_MATRIX: RoleActionMatrix = {
   onboarding_resignation_member: ['work_order.view', 'work_order.export', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, ...ONBOARDING_CONTACT_MODULE_ACTIONS, ...RESIGNATION_CONTACT_MODULE_ACTIONS],
   social_insurance_specialist: ['work_order.view', 'work_order.export', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, ...SOCIAL_INSURANCE_MODULE_ACTIONS, ...SOCIAL_INSURANCE_RESIGN_MODULE_ACTIONS],
   social_security_team: ['work_order.view', 'work_order.export'],
+  payroll_bank_card_exporter: ['route.dashboard', 'route.onboarding', 'route.onboarding_payroll_bank_card', 'module.payroll_bank_card.manage'],
+  business_scope_switcher: BUSINESS_SCOPE_SWITCHER_ACTIONS,
 };
 
 const store = () => loadList<{ roleCode: string; actions: RoleActionCode[] }>(KEY, Object.entries(DEFAULT_MATRIX).map(([roleCode, actions]) => ({ roleCode, actions })));

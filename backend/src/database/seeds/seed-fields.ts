@@ -1,4 +1,5 @@
 import { DataSource } from 'typeorm';
+import { PAYROLL_LOCATIONS } from 'src/common/constants/contract-subject-fund';
 import { PROVINCES_27 } from 'src/common/constants/provinces';
 import { FieldConfig, FieldType, OrderType } from 'src/entities';
 
@@ -65,7 +66,8 @@ const onboardingCollectionGroups: Record<string, string> = Object.fromEntries([
     'bank_location', 'bank_name', 'bank_account',
   ].map((code) => [code, '薪资与发薪信息']),
   ...[
-    'social_location', 'start_month', 'social_base', 'fund_base', 'fund_ratio', 'social_urge',
+    'social_location', 'start_month', 'social_base', 'fund_base', 'fund_ratio',
+    'supplementary_fund_ratio', 'social_urge',
     'social_insurance_result', 'social_insurance_remark',
     'medical_insurance_result',
     'housing_fund_result',
@@ -132,7 +134,8 @@ const onboardingFields: FieldSeed[] = [
   { code: 'social_base',            name: '社保缴费工资', type: FieldType.NUMBER,   required: true,  defaultRequired: true,  helpText: '数字格式：保留小数点后两位。', orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'fund_start_month',       name: '公积金起缴月', type: FieldType.DROPDOWN, required: true,  defaultRequired: true,  options: ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'], orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'fund_base',              name: '公积金缴费工资', type: FieldType.NUMBER, required: true,  defaultRequired: true,  helpText: '数字格式：保留小数点后两位。', orderType: ONBOARDING, businessContext: [ONBOARDING] },
-  { code: 'fund_ratio',             name: '公积金比例',   type: FieldType.TEXT,     required: true,  defaultRequired: true,  placeholder: '如 5%+5%', helpText: '单位比例+个人比例（百分比格式）。', orderType: ONBOARDING, businessContext: [ONBOARDING] },
+  { code: 'fund_ratio',             name: '公积金比例',   type: FieldType.DROPDOWN, required: false, defaultRequired: false, placeholder: '请选择公积金比例', helpText: '根据劳动合同主体自动加载可选比例。广州、深圳的单位与个人比例可分别选择。', orderType: ONBOARDING, businessContext: [ONBOARDING] },
+  { code: 'supplementary_fund_ratio', name: '补充公积金比例', type: FieldType.DROPDOWN, required: false, defaultRequired: false, placeholder: '请选择补充公积金比例', helpText: '仅选择配置了补充公积金的劳动合同主体时显示并可选。', orderType: ONBOARDING, businessContext: [ONBOARDING, RESIGNATION], isIncludedInTemplate: false },
   { code: 'social_insurance_result', name: '社保是否办结', type: FieldType.DROPDOWN, required: false, defaultRequired: false, options: ['是', '否'], orderType: ONBOARDING, businessContext: [ONBOARDING, RESIGNATION] },
   { code: 'social_insurance_remark', name: '社保公积金办理备注', type: FieldType.TEXT, required: false, defaultRequired: false, orderType: ONBOARDING, businessContext: [ONBOARDING, RESIGNATION] },
   { code: 'medical_insurance_result', name: '医保是否办结', type: FieldType.DROPDOWN, required: false, defaultRequired: false, options: ['是', '否'], orderType: ONBOARDING, businessContext: [ONBOARDING, RESIGNATION] },
@@ -140,7 +143,7 @@ const onboardingFields: FieldSeed[] = [
   { code: 'bank_location',          name: '开户地',       type: FieldType.TEXT,     required: false, defaultRequired: false, helpText: '城市的名字（待确认）', orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'bank_name',              name: '开户银行信息', type: FieldType.TEXT,     required: false, defaultRequired: false, orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'bank_account',           name: '银行借记卡帐号', type: FieldType.TEXT,   required: false, defaultRequired: false, orderType: ONBOARDING, businessContext: [ONBOARDING] },
-  { code: 'need_payroll_slip',      name: '是否需要工资单', type: FieldType.DROPDOWN, required: true, defaultRequired: true, options: ['是', '否'], helpText: '选择“是”时生成薪酬银行卡子工单。', orderType: ONBOARDING, businessContext: [ONBOARDING] },
+  { code: 'need_payroll_slip',      name: '是否需要工资单', type: FieldType.DROPDOWN, required: true, defaultRequired: true, options: ['是', '否'], helpText: '仅用于薪酬银行卡页面显示，不决定银行卡记录生成或导出资格。', orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'remark',                 name: '备注',         type: FieldType.TEXT,     required: false, defaultRequired: false, orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'business_mode',          name: '业务模式',     type: FieldType.DROPDOWN, required: true,  defaultRequired: true,  options: ['北仑自营', '转外包', '转代理（非常规）'], orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'employee_type',          name: '人员类型',     type: FieldType.DROPDOWN, required: true,  defaultRequired: true,  options: ['全日制', '非全日制', '劳务合同', '退休返聘'], orderType: ONBOARDING, businessContext: [ONBOARDING] },
@@ -158,7 +161,7 @@ const onboardingFields: FieldSeed[] = [
   { code: 'is_common_template',     name: '是否为通用模板', type: FieldType.DROPDOWN, required: false, defaultRequired: false, options: ['是', '否'], conditionalRequired: conditionEq('need_onboarding_contact', '是'), orderType: ONBOARDING, businessContext: [ONBOARDING, RESIGNATION] },
   { code: 'template_name',          name: '模板名称',     type: FieldType.TEXT,     required: false, defaultRequired: false, conditionalRequired: conditionAnd(conditionEq('need_onboarding_contact', '是'), conditionEq('is_common_template', '否')), orderType: ONBOARDING, businessContext: [ONBOARDING, RESIGNATION] },
   { code: 'need_company_payroll',   name: '是否企服发薪', type: FieldType.DROPDOWN, required: true,  defaultRequired: true,  options: ['是', '否'], orderType: ONBOARDING, businessContext: [ONBOARDING] },
-  { code: 'payroll_location',       name: '发薪地',       type: FieldType.TEXT,     required: false, defaultRequired: false, helpText: '填写由北仑哪个分公司作为发薪主体。', conditionalRequired: conditionEq('need_company_payroll', '是'), orderType: ONBOARDING, businessContext: [ONBOARDING] },
+  { code: 'payroll_location',       name: '发薪地',       type: FieldType.DROPDOWN, required: false, defaultRequired: false, options: [...PAYROLL_LOCATIONS], helpText: '沿用薪酬银行卡模板的66项发薪地，独立选择，不与合同主体联动。', conditionalRequired: conditionEq('need_company_payroll', '是'), orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'social_urge',            name: '社保公积金未办是否需要催办', type: FieldType.DROPDOWN, required: true,  defaultRequired: true,  options: ['是', '否'], helpText: '导入表中必须维护“是/否”；未维护或填写异常时该行导入失败。', orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'special_remark',         name: '特殊备注',     type: FieldType.TEXT,     required: false, defaultRequired: false, placeholder: '无缝转移注意反馈/不要联系员工', orderType: ONBOARDING, businessContext: [ONBOARDING] },
   { code: 'contract_feedback',      name: '劳动合同新签反馈', type: FieldType.DROPDOWN, required: false, defaultRequired: false, options: ['未办', '办理中', '已办结'], orderType: ONBOARDING, businessContext: [ONBOARDING] },
@@ -211,6 +214,7 @@ const resignationFields: FieldSeed[] = [
   { code: 'contract_terminate_date',      name: '合同解除日',       type: FieldType.DATE,     required: true,  defaultRequired: true,  orderType: RESIGNATION, businessContext: [RESIGNATION] },
   { code: 'handover_person',              name: '工作交接人',       type: FieldType.TEXT,     required: false, defaultRequired: false, orderType: RESIGNATION, businessContext: [RESIGNATION] },
   { code: 'need_resignation_cert',        name: '是否需要开具离职证明', type: FieldType.DROPDOWN, required: true,  defaultRequired: true,  options: ['是', '否'], orderType: RESIGNATION, businessContext: [RESIGNATION] },
+  { code: 'resignation_cert_format',      name: '离职证明形式',       type: FieldType.DROPDOWN, required: false, defaultRequired: false, options: ['电子证明', '纸质证明'], conditionalRequired: conditionEq('need_resignation_cert', '是'), orderType: RESIGNATION, businessContext: [RESIGNATION] },
   { code: 'cert_delivery_address',        name: '离职证明送达地址', type: FieldType.TEXT,     required: false, defaultRequired: false, conditionalRequired: conditionEq('need_resignation_cert', '是'), orderType: RESIGNATION, businessContext: [RESIGNATION] },
   { code: 'resignation_contact_feedback', name: '离职联系反馈',     type: FieldType.DROPDOWN, required: false, defaultRequired: false, options: ['未联系', '已联系', '材料回传', '不回传'], orderType: RESIGNATION, businessContext: [RESIGNATION] },
   { code: 'resignation_cert_status',      name: '离职证明开具状态', type: FieldType.DROPDOWN, required: false, defaultRequired: false, options: ['未开具', '已开具', '已送达'], orderType: RESIGNATION, businessContext: [RESIGNATION] },

@@ -520,7 +520,8 @@ const BasicLayout: React.FC = () => {
     [user?.roles],
   );
   const accountBusinessScope = user?.business_scope ?? user?.businessScope ?? BUSINESS_SCOPE.BEILUN;
-  const canSwitchBusinessScope = !isBusinessFrontAccount;
+  const canSwitchBusinessScope = userHasAnyCanonicalRole(user?.roles, [ROLE.ADMIN])
+    || (user?.permissions || []).some((permission) => permission === 'business_scope.switch' || permission === '*' || permission === 'all');
   // The value is intentionally read here so menu filtering re-renders after a
   // permission-center activation; routeVisibility keeps the static fallback.
   void permissionConfig;
@@ -593,13 +594,13 @@ const BasicLayout: React.FC = () => {
     else if (/^\/in-service\/[^/]+$/.test(location.pathname)) title = '单项业务详情 - 工单管理系统';
     if (location.pathname === '/renewal') title = '劳动合同续签 - 工单管理系统';
     if (/^\/renewal\/[^/]+$/.test(location.pathname)) title = '劳动合同续签详情 - 工单管理系统';
-    if (location.pathname === '/out-of-province/increase') title = '省外增员 - 工单管理系统';
-    if (/^\/out-of-province\/increase\/[^/]+$/.test(location.pathname)) title = '省外增员详情 - 工单管理系统';
-    if (location.pathname === '/out-of-province/decrease') title = '省外减员 - 工单管理系统';
-    if (/^\/out-of-province\/decrease\/[^/]+$/.test(location.pathname)) title = '省外减员详情 - 工单管理系统';
-    if (location.pathname === '/out-of-province/single-business') title = '省外单项业务 - 工单管理系统';
-    if (/^\/out-of-province\/single-business\/[^/]+$/.test(location.pathname)) title = '省外单项业务详情 - 工单管理系统';
-    if (location.pathname === '/out-of-province/import') title = '省外增减员导入 - 工单管理系统';
+    if (location.pathname === '/out-of-province/increase') title = '菜鸟增员 - 工单管理系统';
+    if (/^\/out-of-province\/increase\/[^/]+$/.test(location.pathname)) title = '菜鸟增员详情 - 工单管理系统';
+    if (location.pathname === '/out-of-province/decrease') title = '菜鸟减员 - 工单管理系统';
+    if (/^\/out-of-province\/decrease\/[^/]+$/.test(location.pathname)) title = '菜鸟减员详情 - 工单管理系统';
+    if (location.pathname === '/out-of-province/single-business') title = '菜鸟单项业务 - 工单管理系统';
+    if (/^\/out-of-province\/single-business\/[^/]+$/.test(location.pathname)) title = '菜鸟单项业务详情 - 工单管理系统';
+    if (location.pathname === '/out-of-province/import') title = '菜鸟增减员导入 - 工单管理系统';
     if (location.pathname === '/admin/users') title = '用户管理 - 工单管理系统';
     if (location.pathname === '/admin/module-config') title = '子工单字段配置 - 工单管理系统';
     if (location.pathname === '/admin/fields') title = '系统字段库 - 工单管理系统';
@@ -911,7 +912,8 @@ const BasicLayout: React.FC = () => {
       menuExtraRender={(layoutProps) => {
         const collapsed = Boolean(layoutProps.collapsed);
         const isOutOfProvince = effectiveBusinessScope === BUSINESS_SCOPE.OUT_OF_PROVINCE;
-        const scopeLabel = isOutOfProvince ? '浙江自签' : '北仑本地';
+        const scopeLabel = isOutOfProvince ? '菜鸟' : '北仑';
+        if (!canSwitchBusinessScope && !isOutOfProvince) return null;
         if (collapsed) {
           const nextScope = isOutOfProvince ? BUSINESS_SCOPE.BEILUN : BUSINESS_SCOPE.OUT_OF_PROVINCE;
           return (
@@ -938,7 +940,7 @@ const BasicLayout: React.FC = () => {
                 value={effectiveBusinessScope}
                 options={[
                   { label: '北仑', value: BUSINESS_SCOPE.BEILUN },
-                  { label: '省外', value: BUSINESS_SCOPE.OUT_OF_PROVINCE },
+                  { label: '菜鸟', value: BUSINESS_SCOPE.OUT_OF_PROVINCE },
                 ]}
                 onChange={handleBusinessScopeChange}
               />

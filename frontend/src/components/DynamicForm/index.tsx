@@ -10,7 +10,11 @@ import {
 import type { ProFormInstance } from '@ant-design/pro-components';
 import { App, Card, Col, Row } from 'antd';
 import type { Dayjs } from 'dayjs';
-import { getContractSubjects, type ContractSubjectItem } from '@/services/contractSubjects';
+import {
+  getAllowedFundRatios,
+  getContractSubjects,
+  type ContractSubjectItem,
+} from '@/services/contractSubjects';
 
 export interface FieldConfig {
   field_code: string;
@@ -35,10 +39,14 @@ export interface FieldConfig {
   is_active?: boolean;
 }
 
-export interface ConditionalRequired {
+export interface ConditionalCondition {
   field: string;
   operator?: 'equals' | 'exists' | 'notEquals';
   value?: string | string[];
+}
+
+export interface ConditionalRequired extends Partial<ConditionalCondition> {
+  conditions?: ConditionalCondition[];
   requireFields: string[];
 }
 
@@ -69,7 +77,16 @@ function hasConditionalValue(value: unknown): boolean {
   return true;
 }
 
-function matchesConditionalRule(condition: ConditionalRequired, triggerValue: unknown): boolean {
+function matchesConditionalRule(
+  condition: ConditionalRequired | ConditionalCondition,
+  values: Record<string, unknown>,
+): boolean {
+  if ('conditions' in condition && condition.conditions?.length) {
+    return condition.conditions.every((child) => matchesConditionalRule(child, values));
+  }
+
+  if (!condition.field) return false;
+  const triggerValue = values[condition.field];
   if (condition.operator === 'exists') return hasConditionalValue(triggerValue);
   if (condition.operator === 'notEquals') {
     const expectedValues = Array.isArray(condition.value) ? condition.value : [condition.value];
@@ -77,6 +94,33 @@ function matchesConditionalRule(condition: ConditionalRequired, triggerValue: un
   }
   const expectedValues = Array.isArray(condition.value) ? condition.value : [condition.value];
   return expectedValues.filter((value): value is string => typeof value === 'string').includes(String(triggerValue ?? ''));
+}
+
+function conditionReferencesField(condition: ConditionalRequired, fieldCode: string): boolean {
+  return condition.field === fieldCode
+    || Boolean(condition.conditions?.some((child) => child.field === fieldCode));
+}
+
+function describeConditionalRule(
+  condition: ConditionalRequired,
+  fieldNameMap: Record<string, string>,
+): string {
+  if (condition.conditions?.length) {
+    return condition.conditions
+      .map((child) => {
+        const name = fieldNameMap[child.field] || child.field;
+        if (child.operator === 'exists') return `「${name}」有值`;
+        const expectedValues = Array.isArray(child.value) ? child.value : [child.value];
+        const operator = child.operator === 'notEquals' ? '不为' : '为';
+        return `「${name}」${operator}${expectedValues.filter(Boolean).join('/')}`;
+      })
+      .join('且');
+  }
+  const name = fieldNameMap[condition.field || ''] || condition.field || '指定字段';
+  if (condition.operator === 'exists') return `「${name}」有值`;
+  const expectedValues = Array.isArray(condition.value) ? condition.value : [condition.value];
+  const operator = condition.operator === 'notEquals' ? '不为' : '为';
+  return `「${name}」${operator}${expectedValues.filter(Boolean).join('/')}`;
 }
 
 function getPermission(
@@ -127,12 +171,16 @@ function DynamicForm({
   const internalFormRef = useRef<ProFormInstance>();
   const effectiveFormRef = formRef ?? internalFormRef;
   const [contractSubjects, setContractSubjects] = useState<ContractSubjectItem[]>([]);
-  const hasContractSubjectFields = orderType === 'onboarding'
-    && fields.some((field) => field.field_code === 'contract_subject' || field.field_code === 'company_address');
+  const hasContractSubjectFields = fields.some((field) => [
+    'contract_subject',
+    'company_address',
+    'fund_ratio',
+    'supplementary_fund_ratio',
+  ].includes(field.field_code));
 
   useEffect(() => {
     if (!hasContractSubjectFields) {
-      setContractSubjects([]);
+      setContractSubjects((previous) => (previous.length === 0 ? previous : []));
       return;
     }
     getContractSubjects()
@@ -207,20 +255,14 @@ function DynamicForm({
   );
 
   const isConditionallyRequired = (fieldCode: string) => (
-    getFieldConditions(fieldCode).some((condition) => matchesConditionalRule(condition, currentValues[condition.field]))
+    getFieldConditions(fieldCode).some((condition) => matchesConditionalRule(condition, currentValues))
   );
 
   const getConditionalRules = (fieldCode: string) => (
     getFieldConditions(fieldCode).map((condition) => ({
       validator: async (_: unknown, value: unknown) => {
-        const triggerValue = currentValues[condition.field];
-        if (matchesConditionalRule(condition, triggerValue) && !hasConditionalValue(value)) {
-          const conditionFieldName = fieldNameMap[condition.field] || condition.field;
-          if (condition.operator === 'exists') {
-            throw new Error(`当「${conditionFieldName}」有值时此项为必填`);
-          }
-          const expectedValues = Array.isArray(condition.value) ? condition.value : [condition.value];
-          throw new Error(`当「${conditionFieldName}」为${expectedValues.filter(Boolean).join('/')}时此项为必填`);
+        if (matchesConditionalRule(condition, currentValues) && !hasConditionalValue(value)) {
+          throw new Error(`当${describeConditionalRule(condition, fieldNameMap)}时此项为必填`);
         }
       },
     }))
@@ -233,7 +275,7 @@ function DynamicForm({
     const fieldConditions = getFieldConditions(field.field_code);
     const shouldValidate = !validateChangedFieldsOnly
       || changedFieldCodesRef.current.has(field.field_code)
-      || fieldConditions.some((condition) => changedFieldCodesRef.current.has(condition.field));
+      || fieldConditions.some((condition) => Array.from(changedFieldCodesRef.current).some((code) => conditionReferencesField(condition, code)));
 
     if (!shouldValidate) return rules;
 
@@ -255,6 +297,10 @@ function DynamicForm({
 
     return rules;
   };
+
+  const selectedContractSubject = contractSubjects.find(
+    (subject) => subject.subjectName === currentValues.contract_subject,
+  );
 
   const renderField = (field: FieldConfig) => {
     const perm = getPermission(field.field_code, fieldPermissions, readOnly);
@@ -289,15 +335,21 @@ function DynamicForm({
           }}
           options={contractSubjects.map((subject) => ({
             value: subject.subjectName,
-            label: `${subject.subjectName}（${subject.city}）`,
+            label: subject.city ? `${subject.subjectName}｜城市：${subject.city}` : subject.subjectName,
           }))}
           onChange={(value) => {
             const selected = contractSubjects.find((subject) => subject.subjectName === value);
             const address = selected?.registeredAddress || undefined;
-            const nextValues = { ...currentValues, contract_subject: value, company_address: address };
-            formRef?.current?.setFieldsValue({ contract_subject: value, company_address: address });
+            const changed = {
+              contract_subject: value,
+              company_address: address,
+              fund_ratio: undefined,
+              supplementary_fund_ratio: undefined,
+            };
+            const nextValues = { ...currentValues, ...changed };
+            effectiveFormRef.current?.setFieldsValue(changed);
             setCurrentValues(nextValues);
-            onValuesChange?.({ contract_subject: value, company_address: address }, nextValues);
+            onValuesChange?.(changed, nextValues);
           }}
         />
       );
@@ -309,6 +361,52 @@ function DynamicForm({
           key={field.field_code}
           {...commonProps}
           disabled={disabled || Boolean(currentValues.contract_subject)}
+        />
+      );
+    }
+
+    if (field.field_code === 'fund_ratio') {
+      const options = getAllowedFundRatios(selectedContractSubject);
+      return (
+        <ProFormSelect
+          key={field.field_code}
+          {...commonProps}
+          required={options.length > 0}
+          rules={options.length > 0 ? [{ required: true, message: '该主体的公积金比例为必填项' }, ...commonProps.rules] : commonProps.rules}
+          disabled={disabled || options.length === 0}
+          placeholder={options.length > 0 ? '请选择公积金比例' : '该主体暂无正式公积金比例'}
+          fieldProps={{
+            ...commonProps.fieldProps,
+            showSearch: true,
+            allowClear: true,
+            optionFilterProp: 'label',
+            getPopupContainer: (triggerNode: HTMLElement) => triggerNode.parentElement || document.body,
+          }}
+          options={options.map((value) => ({
+            value,
+            label: selectedContractSubject?.fundRatioMode === 'separate'
+              ? `单位${value.split('+')[0]} + 个人${value.split('+')[1]}`
+              : value,
+          }))}
+        />
+      );
+    }
+
+    if (field.field_code === 'supplementary_fund_ratio') {
+      const options = selectedContractSubject?.supplementaryFundRatioOptions ?? [];
+      if (options.length === 0) return null;
+      return (
+        <ProFormSelect
+          key={field.field_code}
+          {...commonProps}
+          fieldProps={{
+            ...commonProps.fieldProps,
+            showSearch: true,
+            allowClear: true,
+            optionFilterProp: 'label',
+            getPopupContainer: (triggerNode: HTMLElement) => triggerNode.parentElement || document.body,
+          }}
+          options={options.map((value) => ({ value, label: value }))}
         />
       );
     }

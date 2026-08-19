@@ -3,7 +3,7 @@ import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 20;
-export const MAX_PAGE_SIZE = 100;
+export const MAX_PAGE_SIZE = 200;
 
 function normalizePositiveInt(value: unknown, fallback: number, max?: number): number {
   const numeric = Number(value);

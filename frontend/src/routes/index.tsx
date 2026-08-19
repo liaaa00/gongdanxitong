@@ -105,7 +105,7 @@ const RoleRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   if (!user) return <Loading />;
   // Subscribe to the store field so an activated config re-evaluates the guard.
   void permissionConfig;
-  if (!canAccessBusinessScopePath(location.pathname, user.roles, user.business_scope ?? user.businessScope)) {
+  if (!canAccessBusinessScopePath(location.pathname, user.roles, user.business_scope ?? user.businessScope, user.permissions)) {
     return <Navigate to="/403" replace />;
   }
   if (!canAccessPath(location.pathname, user.roles, user.permissions)) return <Navigate to="/403" replace />;

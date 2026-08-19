@@ -4,7 +4,7 @@ import { FieldType } from 'src/entities';
 import { ONBOARDING_TEMPLATE_ORDER, seedImportTemplateFields } from 'src/database/seeds/seed-import-template-fields';
 
 describe('onboarding import template seeds', () => {
-  it('keeps the confirmed 61-field order without postal_code', async () => {
+  it('keeps the universal order without regional supplementary fund and preserves special remark as the final column', async () => {
     const saved: Array<Record<string, unknown>> = [];
     const repository = {
       delete: jest.fn().mockResolvedValue(undefined),
@@ -21,11 +21,11 @@ describe('onboarding import template seeds', () => {
 
     await seedImportTemplateFields(dataSource);
 
-    expect(ONBOARDING_TEMPLATE_ORDER).toHaveLength(61);
-    expect(new Set(ONBOARDING_TEMPLATE_ORDER)).toHaveProperty('size', 61);
+    expect(new Set(ONBOARDING_TEMPLATE_ORDER)).toHaveProperty('size', ONBOARDING_TEMPLATE_ORDER.length);
+    expect(ONBOARDING_TEMPLATE_ORDER).not.toContain('supplementary_fund_ratio');
+    expect(ONBOARDING_TEMPLATE_ORDER.at(-1)).toBe('special_remark');
     expect(ONBOARDING_TEMPLATE_ORDER.indexOf('need_payroll_slip')).toBe(ONBOARDING_TEMPLATE_ORDER.indexOf('remark') - 1);
-    expect(ONBOARDING_TEMPLATE_ORDER.slice(35, 52)).toEqual([
-      'current_address',
+    expect(ONBOARDING_TEMPLATE_ORDER.slice(36, 53)).toEqual([
       'household_address',
       'bank_location',
       'bank_name',
@@ -42,6 +42,7 @@ describe('onboarding import template seeds', () => {
       'project_name',
       'work_arrangement',
       'contract_template',
+      'need_contract_urge',
     ]);
     expect(ONBOARDING_TEMPLATE_ORDER).not.toContain('postal_code');
     expect(ONBOARDING_TEMPLATE_ORDER).not.toEqual(expect.arrayContaining([
@@ -98,12 +99,12 @@ describe('onboarding import template seeds', () => {
       conditionalRequired: { field: 'contract_term_type', op: 'NEQ', value: '无固定期限' },
     });
     expect(byCode.get('base_salary')).toMatchObject({
-      fieldType: FieldType.NUMBER,
-      helpText: '数字格式：保留小数点后两位。',
+      fieldType: FieldType.TEXT,
+      helpText: '可填写数字、货币格式或文字说明。',
     });
     expect(byCode.get('probation_salary')).toMatchObject({
-      fieldType: FieldType.NUMBER,
-      helpText: '数字格式：保留小数点后两位。',
+      fieldType: FieldType.TEXT,
+      helpText: '可填写数字、货币格式或文字说明。',
     });
     expect(byCode.get('feedback_deadline')).toMatchObject({
       isRequired: false,
@@ -123,6 +124,12 @@ describe('onboarding import template seeds', () => {
       defaultRequired: true,
     });
     expect(byCode.get('education')).toMatchObject({ isIncludedInTemplate: true });
+    expect(byCode.get('supplementary_fund_ratio')).toMatchObject({
+      isIncludedInTemplate: false,
+      businessContext: ['onboarding', 'resignation'],
+      isRequired: false,
+      defaultRequired: false,
+    });
     expect(byCode.get('postal_code')).toMatchObject({ isIncludedInTemplate: false, isActive: true });
     expect(byCode.get('graduation_school')).toMatchObject({ isIncludedInTemplate: false });
     expect(byCode.get('major')).toMatchObject({ isIncludedInTemplate: false });

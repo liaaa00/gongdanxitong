@@ -22,7 +22,7 @@ export default function BusinessScopeSwitcher({ style, className }: BusinessScop
 
   const options: SegmentedProps['options'] = [
     { label: '北仑', value: 'beilun' },
-    { label: '省外', value: 'out_of_province' },
+    { label: '菜鸟', value: 'out_of_province' },
   ];
 
   const handleChange = (value: BusinessScope) => {

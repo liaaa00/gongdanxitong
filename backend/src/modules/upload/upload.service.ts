@@ -16,6 +16,15 @@ export interface StoredFileMeta {
   filePath: string;
 }
 
+export function normalizeUploadedFileName(fileName: string): string {
+  if (!fileName || Array.from(fileName).some((character) => character.codePointAt(0)! > 0xff)) {
+    return fileName;
+  }
+  const decoded = Buffer.from(fileName, 'latin1').toString('utf8');
+  if (decoded.includes('\ufffd') || !/[\u3400-\u9fff]/u.test(decoded)) return fileName;
+  return decoded;
+}
+
 @Injectable()
 export class UploadService implements OnModuleInit {
   private readonly logger = new Logger(UploadService.name);
@@ -51,8 +60,9 @@ export class UploadService implements OnModuleInit {
     originalName: string;
     mimeType: string;
   }): Promise<StoredFileMeta> {
+    const originalName = normalizeUploadedFileName(input.originalName);
     const fileId = randomUUID();
-    const ext = extname(input.originalName).toLowerCase() || this.defaultExtension(input.kind);
+    const ext = extname(originalName).toLowerCase() || this.defaultExtension(input.kind);
     const fileName = `${fileId}${ext}`;
     const filePath = join(this.getRootDir(), input.kind, fileName);
     await mkdir(dirname(filePath), { recursive: true });
@@ -60,7 +70,7 @@ export class UploadService implements OnModuleInit {
     const meta: StoredFileMeta = {
       fileId,
       fileName,
-      originalName: input.originalName,
+      originalName,
       mimeType: input.mimeType,
       size: input.buffer.length,
       kind: input.kind,

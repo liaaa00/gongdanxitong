@@ -80,6 +80,32 @@ import { ResignationCertificateAutomationService } from './resignation-certifica
 import { WorkOrderResubmitService } from './work-order-resubmit.service';
 import { WorkOrderValidationService } from './work-order-validation.service';
 
+const WORK_ORDER_EXPORT_STATUS_LABELS: Record<string, string> = {
+  pending: '未接单',
+  processing: '已接单',
+  modify_pending: '修改审批中',
+  withdraw_pending: '撤回审批中',
+  void_pending: '作废审批中',
+  completed: '已完成',
+  void: '已作废',
+  withdrawn: '已撤回',
+  returned: '已退回',
+};
+
+const WORK_ORDER_EXPORT_CHILD_STATUS_CODES = [
+  'data_entry_status',
+  'onboarding_contact_status',
+  'contract_status',
+  'social_insurance_status',
+] as const;
+
+const WORK_ORDER_EXPORT_FEEDBACK_CODES = [
+  'social_insurance_result',
+  'medical_insurance_result',
+  'housing_fund_result',
+  'social_insurance_remark',
+] as const;
+
 @Injectable()
 export class WorkOrderService {
   constructor(
@@ -1027,6 +1053,12 @@ export class WorkOrderService {
     if (query.createdBefore) {
       qb.andWhere('w.created_at <= :createdBefore', { createdBefore: query.createdBefore });
     }
+    if (query.submittedAfter) {
+      qb.andWhere('w.submitted_at >= :submittedAfter', { submittedAfter: query.submittedAfter });
+    }
+    if (query.submittedBefore) {
+      qb.andWhere('w.submitted_at <= :submittedBefore', { submittedBefore: query.submittedBefore });
+    }
     if (query.keyword) {
       qb.andWhere('(w.employee_name ILIKE :keyword OR w.employee_id_card ILIKE :keyword OR w.order_no ILIKE :keyword)', {
         keyword: `%${query.keyword}%`,
@@ -1187,6 +1219,15 @@ export class WorkOrderService {
 
     const orderById = new Map(orders.map((order) => [order.id, order]));
     const orderedOrders = uniqueIds.map((id) => orderById.get(id)!).filter(Boolean);
+    const childOrders = await this.dispatchedOrderRepository.find({
+      where: { parentOrderId: In(uniqueIds) },
+    });
+    const childrenByParentId = new Map<string, DispatchedOrder[]>();
+    for (const child of childOrders) {
+      const bucket = childrenByParentId.get(child.parentOrderId) ?? [];
+      bucket.push(child);
+      childrenByParentId.set(child.parentOrderId, bucket);
+    }
     const fields = await this.fieldConfigRepository.find({
       where: { isActive: true },
       order: { displayOrder: 'ASC' },
@@ -1195,6 +1236,9 @@ export class WorkOrderService {
     const fixedCodes = new Set([
       'order_no', 'order_type', 'status', 'customer_code', 'customer_name',
       'employee_name', 'employee_id_card', 'created_by', 'created_at', 'updated_at', 'completed_at',
+      'submitted_at',
+      ...WORK_ORDER_EXPORT_CHILD_STATUS_CODES,
+      ...WORK_ORDER_EXPORT_FEEDBACK_CODES,
     ]);
     const dynamicCodes = Array.from(new Set(
       orderedOrders.flatMap((order) => Object.keys(order.extraData || {})),
@@ -1216,8 +1260,17 @@ export class WorkOrderService {
       { key: 'created_by', header: '发起人', width: 18 },
       { key: 'status', header: '工单状态', width: 16 },
       { key: 'created_at', header: '创建时间', width: 22 },
+      { key: 'submitted_at', header: '提交时间', width: 22 },
       { key: 'updated_at', header: '最后更新时间', width: 22 },
       { key: 'completed_at', header: '完成时间', width: 22 },
+      { key: 'data_entry_status', header: '增员报岗状态', width: 16 },
+      { key: 'onboarding_contact_status', header: '入职联系状态', width: 16 },
+      { key: 'contract_status', header: '劳动合同状态', width: 16 },
+      { key: 'social_insurance_status', header: '社保公积金状态', width: 18 },
+      { key: 'social_insurance_result', header: '社保是否办结', width: 16 },
+      { key: 'medical_insurance_result', header: '医保是否办结', width: 16 },
+      { key: 'housing_fund_result', header: '公积金是否办结', width: 18 },
+      { key: 'social_insurance_remark', header: '社保公积金办理备注', width: 24 },
       ...dynamicCodes.map((code) => ({
         key: code,
         header: fieldByCode.get(code)?.fieldName || code,
@@ -1239,8 +1292,15 @@ export class WorkOrderService {
         created_by: order.creator?.realName || order.createdBy,
         status: order.status,
         created_at: order.createdAt || '',
+        submitted_at: order.submittedAt || '',
         updated_at: order.updatedAt || '',
         completed_at: order.completedAt || '',
+        ...Object.fromEntries(WORK_ORDER_EXPORT_CHILD_STATUS_CODES.map((code) => {
+          const moduleCode = code.replace('_status', '');
+          const child = (childrenByParentId.get(order.id) ?? []).find((item) => item.moduleCode === moduleCode);
+          return [code, child ? (WORK_ORDER_EXPORT_STATUS_LABELS[child.status] ?? child.status) : ''];
+        })),
+        ...Object.fromEntries(WORK_ORDER_EXPORT_FEEDBACK_CODES.map((code) => [code, this.toWorkOrderExportValue(order.extraData?.[code]) ?? ''])),
       };
       for (const code of dynamicCodes) {
         row[code] = this.toWorkOrderExportValue(order.extraData?.[code]);
@@ -1362,6 +1422,12 @@ export class WorkOrderService {
         'need_company_contract',
         '是否企服发起劳动合同',
         '企服发起劳动合同',
+      ],
+      need_payroll_slip: [
+        'need_payroll_slip',
+        '是否需要工资单',
+        '是否生成工资单',
+        '需要工资单',
       ],
     };
 

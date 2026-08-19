@@ -13,6 +13,7 @@ import {
   WorkOrder,
   WorkOrderFieldDirtyMark,
 } from 'src/entities';
+import { ContractSubjectsModule } from 'src/modules/contract-subjects/contract-subjects.module';
 import { DispatchEngineModule } from 'src/modules/dispatch-engine/dispatch-engine.module';
 import { FieldPermissionsModule } from 'src/modules/field-permissions/field-permissions.module';
 import { NotificationModule } from 'src/modules/notifications/notification.module';
@@ -38,6 +39,7 @@ import { WorkOrderValidationService } from './work-order-validation.service';
       UserRole,
     ]),
     FieldPermissionsModule,
+    ContractSubjectsModule,
     NotificationModule,
     DispatchEngineModule,
   ],

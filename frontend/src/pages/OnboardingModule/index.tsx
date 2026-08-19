@@ -20,9 +20,11 @@ import DispatchedBatchImportModal from '@/components/DispatchedBatchImportModal'
 import type { DispatchedBatchImportMode } from '@/components/DispatchedBatchImportModal';
 import type { PageParams } from '@/services/mock';
 import { getModuleLabel, getModuleTitle } from '@/constants/modules';
+import { ROLE } from '@/constants/roles';
 import { getStatusColor, getStatusText } from '@/constants/dictionaries';
 import { useAuth } from '@/hooks/useAuth';
 import { useColumnConfig } from '@/components/MultiViewTable/useColumnConfig';
+import { normalizePayrollSlipDisplay } from '@/utils/payrollBankCard';
 import { DISPATCHED_NINE_STATUS_OPTIONS } from '@/utils/dispatchedStatusFilter';
 import {
   getCachedMonthOrNull,
@@ -48,6 +50,12 @@ const HANDLING_RESULT_OPTIONS = [
 ];
 const ACTIVE_DISPATCHED_STATUSES = new Set(['pending', 'processing']);
 const DISPATCHED_PROCESSING_FILTER_STATUSES = ['pending', 'processing'] as const;
+const PAYROLL_BANK_CARD_FIELDS = ['bank_name', 'bank_account', 'bank_location', 'payroll_location'] as const;
+
+function getMissingPayrollBankCardFields(record: DispatchedOrderItem): string[] {
+  return PAYROLL_BANK_CARD_FIELDS.filter((fieldCode) => String(record.extra_data?.[fieldCode] ?? '').trim() === '');
+}
+
 
 
 export interface OnboardingModulePermissionState {
@@ -97,10 +105,11 @@ export function getOnboardingModulePermissionState({
   ));
   const moduleManageAction = getOnboardingModuleManageAction(currentModule);
   if (isPayrollBankCardExport) {
-    const canOperateCurrentModule = hasRole('admin')
-      && (!hasBackendActionPermissions || hasActionPermission(moduleManageAction));
-    const canBatchExport = canOperateCurrentModule
-      && (!hasBackendActionPermissions || hasActionPermission('dispatched_order.batch_export'));
+    const isBusinessRole = hasRole(ROLE.BUSINESS_OWNER)
+      || hasRole(ROLE.BUSINESS_GROUP_LEADER)
+      || hasRole(ROLE.BUSINESS_GROUP_MEMBER);
+    const canOperateCurrentModule = isBusinessRole || (!hasBackendActionPermissions || hasActionPermission(moduleManageAction));
+    const canBatchExport = canOperateCurrentModule;
     return {
       isSocialModule: false,
       hasBackendActionPermissions,
@@ -436,9 +445,20 @@ const OnboardingModule: React.FC = () => {
 
     if (currentModule === 'payroll_bank_card') {
       const value = (record: DispatchedOrderItem, fieldCode: string) => record.extra_data?.[fieldCode] ?? '-';
+      const missingLabels: Record<string, string> = {
+        bank_name: '开户银行',
+        bank_account: '银行卡号',
+        bank_location: '开户地',
+        payroll_location: '发薪地',
+      };
       return [
         { title: '姓名', dataIndex: 'employee_name', key: 'employee_name', width: 120, filteredValue: tableFilters.employee_name || null, ...textHeaderFilter('输入员工姓名') },
         { title: '证件号码', dataIndex: 'employee_id_card', key: 'employee_id_card', width: 190, filteredValue: tableFilters.employee_id_card || null, ...textHeaderFilter('输入证件号码') },
+        { title: '是否需要工资单', key: 'need_payroll_slip', width: 130, renderText: (_: unknown, record) => normalizePayrollSlipDisplay(record.extra_data?.need_payroll_slip) },
+        { title: '资料状态', key: 'payroll_bank_card_status', width: 180, renderText: (_: unknown, record) => {
+          const missing = getMissingPayrollBankCardFields(record);
+          return missing.length === 0 ? '完整' : `缺少：${missing.map((field) => missingLabels[field]).join('、')}`;
+        } },
         { title: '开户行', key: 'bank_name', width: 180, renderText: (_: unknown, record) => value(record, 'bank_name') },
         { title: '银行账号', key: 'bank_account', width: 210, renderText: (_: unknown, record) => value(record, 'bank_account') },
         { title: '开户地', key: 'bank_location', width: 130, renderText: (_: unknown, record) => value(record, 'bank_location') },
@@ -472,6 +492,17 @@ const OnboardingModule: React.FC = () => {
 
     return [
       actionColumn,
+      ...(currentModule === 'contract'
+        ? [{
+            title: '增员报岗状态',
+            key: 'data_entry_status',
+            width: 130,
+            hideInSearch: true,
+            render: (_: unknown, record: DispatchedOrderItem) => record.data_entry_status
+              ? <Tag color={getStatusColor(record.data_entry_status)}>{getStatusText(record.data_entry_status)}</Tag>
+              : '-',
+          }]
+        : []),
       {
         title: '子工单号',
         dataIndex: 'order_no',
@@ -592,9 +623,16 @@ const OnboardingModule: React.FC = () => {
   };
 
   const handleBatchExport = async (rows: DispatchedOrderItem[] = selectedRows) => {
-    const exportRows = rows.filter((row) => row.module_code === backendModuleCode);
+    const exportRows = rows.filter((row) => (
+      row.module_code === backendModuleCode
+      && (!isPayrollBankCardExport || getMissingPayrollBankCardFields(row).length === 0)
+    ));
     if (exportRows.length === 0) {
-      message.warning('请先选择当前子工单页面中要导出的数据');
+      if (isPayrollBankCardExport && rows.some((row) => row.module_code === backendModuleCode)) {
+        message.warning('银行卡资料不完整，补齐后才能导出');
+      } else {
+        message.warning('请先选择当前子工单页面中要导出的数据');
+      }
       return;
     }
     // 后端按 模块::电子签平台 分组，每组生成一个独立文件并在 result.files 返回；
@@ -714,7 +752,7 @@ const OnboardingModule: React.FC = () => {
         rowKey="id"
         search={false}
         headerTitle={isPayrollBankCardExport
-          ? '可直接导出数据'
+          ? '薪酬银行卡记录'
           : currentModule === 'resignation_cert'
             ? '离职证明子工单列表'
             : `${moduleLabel}列表`}
@@ -771,7 +809,7 @@ const OnboardingModule: React.FC = () => {
           preserveSelectedRowKeys: true,
           getCheckboxProps: (record) => ({
             disabled: !(
-              canBatchExport
+              (canBatchExport && (!isPayrollBankCardExport || getMissingPayrollBankCardFields(record).length === 0))
               || canBatchAccept
               || canBatchComplete
               || (canBatchReturn && ACTIVE_DISPATCHED_STATUSES.has(record.status))
@@ -854,7 +892,7 @@ const OnboardingModule: React.FC = () => {
             </Space>
           );
         } : false}
-        pagination={{ defaultPageSize: 20, showSizeChanger: true }}
+        pagination={{ defaultPageSize: 20, pageSizeOptions: ['20', '50', '100', '200'], showSizeChanger: true }}
         scroll={{ x: 1280 }}
         dateFormatter="string"
       />

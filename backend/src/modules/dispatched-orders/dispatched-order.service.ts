@@ -69,6 +69,8 @@ import { FieldChangeHook, FieldDiffItem } from 'src/modules/notifications/field-
 import { describeActionCode, humanizeActionCode, toOperationLogActionCode } from 'src/modules/operation-logs/operation-log-semantics';
 // 离职证明改由离职主工单下的 resignation_cert 子工单处理。
 import { WorkOrderValidationService } from 'src/modules/work-orders/work-order-validation.service';
+import { normalizeNeedPayrollSlip } from './payroll-bank-card';
+import { RoleActionPermissionService } from 'src/modules/role-action-permissions/role-action-permission.service';
 import { AcceptDispatchedOrderDto } from './dto/accept.dto';
 import { BatchAcceptDispatchedOrderDto } from './dto/batch-accept.dto';
 import { BatchApproveModifyDispatchedOrderDto } from './dto/batch-approve-modify.dto';
@@ -125,7 +127,8 @@ const SUPPLEMENT_ALLOWED_USERNAMES = new Set(['maoyani', 'jianglu', '毛雅妮',
 const RESIGNATION_CERTIFICATE_VISIBLE_FIELDS = new Set([
   'customer_name', 'customer_code', 'mobile', 'email', 'position',
   'employee_name', 'id_card_no', 'resignation_reason', 'resignation_date',
-  'need_resignation_cert', 'cert_delivery_address', 'resignation_cert_status',
+  'need_resignation_cert', 'resignation_cert_format', 'cert_delivery_address', 'resignation_cert_status',
+  'is_common_template', 'template_name',
 ]);
 
 export function canStartResignationCertificate(
@@ -203,6 +206,8 @@ export class DispatchedOrderService {
     private readonly detailViewTemplatesService?: DetailViewTemplatesService,
     @Optional()
     private readonly uploadsService?: UploadsService,
+    @Optional()
+    private readonly roleActionPermissionService?: RoleActionPermissionService,
     // 离职证明不再由资料收集完成事件自动创建独立工单。
   ) {}
 
@@ -213,38 +218,33 @@ export class DispatchedOrderService {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
     const qb = this.baseListQuery();
-    const businessScope = query.businessScope ?? query.business_scope ?? BusinessScope.BEILUN;
+    const businessScope = query.businessScope ?? query.business_scope ?? user.businessScope ?? BusinessScope.BEILUN;
+    await this.assertBusinessScopeAccess(user, businessScope);
     this.applyBusinessScopeModuleScope(qb, businessScope);
-
-    await this.applyUserScope(
-      qb,
-      user,
-      query.onlyPool === true || query.onlyUnclaimed === true,
-      query.scope,
-      businessScope,
-    );
-    this.applyCommonFilters(qb, { ...query, __currentUserId: user.sub } as ListDispatchedOrderQueryDto & { __currentUserId: string });
 
     const requestedModules = this.normalizeQueryList(query.moduleCode ?? query.module_code);
     const requestsExportOnlyModule = requestedModules.some((moduleCode) => isExportOnlyDispatchModule(moduleCode));
+    if (!requestsExportOnlyModule) {
+      await this.applyUserScope(
+        qb,
+        user,
+        query.onlyPool === true || query.onlyUnclaimed === true,
+        query.scope,
+        businessScope,
+      );
+    }
+    this.applyCommonFilters(qb, { ...query, __currentUserId: user.sub } as ListDispatchedOrderQueryDto & { __currentUserId: string });
     if (requestsExportOnlyModule && requestedModules.length !== 1) {
       throw businessException(4224, HttpStatus.BAD_REQUEST, '薪酬银行卡导出清单不能与工作流子单混合查询');
     }
-    if (requestsExportOnlyModule && !this.isAdmin(user)) {
-      throw businessException(5000, HttpStatus.FORBIDDEN, '薪酬银行卡导出清单仅管理员可访问');
+    if (requestsExportOnlyModule) {
+      await this.assertPayrollBankCardAccess(user, businessScope, '访问');
+      await this.applyPayrollBankCardUserScope(qb, user);
     }
     if (requestedModules.length === 0) {
       qb.andWhere('d.module_code <> :exportOnlyModule', { exportOnlyModule: DispatchModuleCode.PAYROLL_BANK_CARD });
     }
-    if (requestedModules.length === 1 && isExportOnlyDispatchModule(requestedModules[0])) {
-      qb.andWhere(`
-        w.extra_data ->> 'need_payroll_slip' = '是'
-        AND NULLIF(BTRIM(w.extra_data ->> 'bank_name'), '') IS NOT NULL
-        AND NULLIF(BTRIM(w.extra_data ->> 'bank_account'), '') IS NOT NULL
-        AND NULLIF(BTRIM(w.extra_data ->> 'bank_location'), '') IS NOT NULL
-        AND NULLIF(BTRIM(w.extra_data ->> 'payroll_location'), '') IS NOT NULL
-      `);
-    }
+    // 薪酬银行卡页面展示所有已生成记录；导出动作在 assertPayrollBankCardReady 中校验四项资料完整性。
     const isSocialFundList = requestedModules.length > 0
       && requestedModules.every((moduleCode) => isHandlingFeedbackModule(moduleCode));
     qb.addSelect(
@@ -262,7 +262,17 @@ export class DispatchedOrderService {
       .limit(pageSize)
       .getManyAndCount();
     const configuredHandlerNamesByModule = await this.getConfiguredHandlerNamesByModule(rows.map((row) => row.moduleCode));
-    return { items: rows.map((row) => this.toListItem(row, configuredHandlerNamesByModule.get(row.moduleCode) ?? [])), total, page, pageSize };
+    const relatedStatusesByParent = await this.getRelatedModuleStatuses(rows.map((row) => row.parentOrderId));
+    return {
+      items: rows.map((row) => this.toListItem(
+        row,
+        configuredHandlerNamesByModule.get(row.moduleCode) ?? [],
+        relatedStatusesByParent.get(row.parentOrderId) ?? {},
+      )),
+      total,
+      page,
+      pageSize,
+    };
   }
 
   async findTeam(
@@ -353,7 +363,7 @@ export class DispatchedOrderService {
 
   async accept(
     id: string,
-    payload: AcceptDispatchedOrderDto,
+    _payload: AcceptDispatchedOrderDto,
     user: JwtUserPayload,
   ): Promise<DispatchedOrderDetailItem> {
     const order = await this.loadDispatchedOrder(id);
@@ -368,21 +378,6 @@ export class DispatchedOrderService {
     }
     if (!order.handlerId) {
       await this.assertModulePoolAccess(user, order.moduleCode);
-    }
-    if (order.moduleCode === DispatchModuleCode.RESIGNATION_CERT) {
-      const signPlatform = payload.signPlatform?.trim();
-      const templateName = payload.templateName?.trim();
-      if (!signPlatform || !templateName) {
-        throw businessException(4231, HttpStatus.BAD_REQUEST, '发起静默签前必须选择平台和模板');
-      }
-      order.parentOrder.extraData = {
-        ...(order.parentOrder.extraData ?? {}),
-        resignation_cert_sign_platform: signPlatform,
-        resignation_cert_template_name: templateName,
-        resignation_cert_status: '开具中',
-        resignation_cert_started_at: new Date().toISOString(),
-      };
-      await this.workOrderRepository.save(order.parentOrder);
     }
 
     const handlerId = this.isAdmin(user) && order.handlerId ? order.handlerId : user.sub;
@@ -403,13 +398,9 @@ export class DispatchedOrderService {
       'dispatched_order',
       id,
       user.sub,
-      order.moduleCode === DispatchModuleCode.RESIGNATION_CERT ? 'start_silent_sign' : 'accept',
+      'accept',
       this.snapshot(order),
-      {
-        handlerId,
-        signPlatform: payload.signPlatform?.trim() || null,
-        templateName: payload.templateName?.trim() || null,
-      },
+      { handlerId },
     );
     return this.findOne(id, user);
   }
@@ -478,29 +469,23 @@ export class DispatchedOrderService {
           },
           order: { createdAt: 'DESC' },
         });
-      if (certificateAttachments.length === 0) {
-        throw businessException(4232, HttpStatus.BAD_REQUEST, '完成离职证明前必须上传线下电子签完成文件');
+      Object.assign(extraDataPatch, buildResignationCertificateResultPatch(
+        order.moduleCode,
+        completedAt,
+        remark,
+      ));
+      if (certificateAttachments.length > 0) {
+        extraDataPatch.resignation_cert_attachments = Array.from(new Set([
+          ...(
+            Array.isArray(order.parentOrder.extraData?.resignation_cert_attachments)
+              ? order.parentOrder.extraData.resignation_cert_attachments.filter(
+                  (value): value is string => typeof value === 'string',
+                )
+              : []
+          ),
+          ...certificateAttachments.map((attachment) => attachment.fileId),
+        ]));
       }
-      const primary = certificateAttachments[0];
-      Object.assign(
-        extraDataPatch,
-        buildResignationCertificateResultPatch(order.moduleCode, completedAt, remark, {
-          fileId: primary.fileId,
-          originalName: primary.originalName,
-        }),
-        {
-          resignation_cert_attachments: Array.from(new Set([
-            ...(
-              Array.isArray(order.parentOrder.extraData?.resignation_cert_attachments)
-                ? order.parentOrder.extraData.resignation_cert_attachments.filter(
-                    (value): value is string => typeof value === 'string',
-                  )
-                : []
-            ),
-            ...certificateAttachments.map((attachment) => attachment.fileId),
-          ])),
-        },
-      );
     } else if (nextCompleted) {
       Object.assign(extraDataPatch, buildResignationCertificateResultPatch(order.moduleCode, completedAt, remark));
     }
@@ -532,7 +517,7 @@ export class DispatchedOrderService {
         await manager.getRepository(WorkOrder).save(order.parentOrder);
       }
 
-      // 离职证明成品由线下电子签完成后上传，本事务只回写已上传文件与办理结果。
+      // 离职证明在完成时生成，成品通过详情页导出/预览，不要求人工上传文件。
       // 离职证明子工单在主工单提交时创建，不在离职材料收集完成后追加独立工单。
     });
 
@@ -1750,8 +1735,8 @@ export class DispatchedOrderService {
     user: JwtUserPayload,
   ): Promise<DispatchedOrderExportResult> {
     const order = await this.loadDispatchedOrder(id);
-    if (isExportOnlyDispatchModule(order.moduleCode) && !this.isAdmin(user)) {
-      throw businessException(5000, HttpStatus.FORBIDDEN, '薪酬银行卡导出清单仅管理员可导出');
+    if (isExportOnlyDispatchModule(order.moduleCode)) {
+      await this.assertPayrollBankCardAccess(user, order.parentOrder.businessScope ?? BusinessScope.BEILUN, '导出');
     }
     await this.assertCanRead(order, user);
     this.assertPayrollBankCardReady(order);
@@ -1763,8 +1748,8 @@ export class DispatchedOrderService {
     const orders: DispatchedOrder[] = [];
     for (const id of ids) {
       const order = await this.loadDispatchedOrder(id);
-      if (isExportOnlyDispatchModule(order.moduleCode) && !this.isAdmin(user)) {
-        throw businessException(5000, HttpStatus.FORBIDDEN, '薪酬银行卡导出清单仅管理员可导出');
+      if (isExportOnlyDispatchModule(order.moduleCode)) {
+        await this.assertPayrollBankCardAccess(user, order.parentOrder.businessScope ?? BusinessScope.BEILUN, '导出');
       }
       await this.assertCanRead(order, user);
       this.assertPayrollBankCardReady(order);
@@ -2221,6 +2206,8 @@ export class DispatchedOrderService {
       const wrapped = trimmed.match(/^=\s*"([\s\S]*)"$/) ?? trimmed.match(/^"([\s\S]*)"$/);
       normalized[fieldCode] = (wrapped?.[1] ?? trimmed).replace(/""/g, '"').trim();
     }
+    const payrollSlip = normalizeNeedPayrollSlip(normalized.need_payroll_slip);
+    if (payrollSlip) normalized.need_payroll_slip = payrollSlip;
     return normalized;
   }
 
@@ -2590,9 +2577,6 @@ export class DispatchedOrderService {
 
   private assertPayrollBankCardReady(order: DispatchedOrder): void {
     if (order.moduleCode !== DispatchModuleCode.PAYROLL_BANK_CARD) return;
-    if (String(order.parentOrder?.extraData?.need_payroll_slip ?? '').trim() !== '是') {
-      throw businessException(4233, HttpStatus.CONFLICT, '该员工当前不需要进入薪酬银行卡导出清单');
-    }
     const missingFields = getMissingPayrollBankCardFields(order.parentOrder?.extraData);
     if (missingFields.length === 0) return;
     throw businessException(4233, HttpStatus.CONFLICT, `银行卡资料未完整，缺少：${missingFields.join('、')}`);
@@ -2748,6 +2732,7 @@ export class DispatchedOrderService {
           ? new Set([...(order.visibleFields ?? []), ...moduleConfiguredFieldCodes])
           : visibleSet;
     const configuredHandlerNames = (await this.getConfiguredHandlerNamesByModule([order.moduleCode])).get(order.moduleCode) ?? [];
+    const relatedStatuses = (await this.getRelatedModuleStatuses([order.parentOrderId])).get(order.parentOrderId) ?? {};
     const syncSummary = await this.buildFieldSyncSummary(order.id);
     const filteredFields = fields.filter((field) => {
       const sameType = field.orderType === null
@@ -2787,7 +2772,7 @@ export class DispatchedOrderService {
           ? Array.from(new Set([...order.visibleFields, ...dynamicSupplementFieldCodes]))
           : null;
     return {
-      ...this.toListItem(order, configuredHandlerNames),
+      ...this.toListItem(order, configuredHandlerNames, relatedStatuses),
       handlerName: order.handler?.realName ?? null,
       handler_name: order.handler?.realName ?? null,
       parentOrder: {
@@ -2867,6 +2852,22 @@ export class DispatchedOrderService {
     return cleared;
   }
 
+  private async getRelatedModuleStatuses(parentOrderIds: string[]): Promise<Map<string, Record<string, string>>> {
+    const ids = Array.from(new Set(parentOrderIds.filter(Boolean)));
+    const result = new Map<string, Record<string, string>>();
+    if (ids.length === 0) return result;
+    const rows = await this.dispatchedOrderRepository.find({
+      where: { parentOrderId: In(ids) },
+      select: { parentOrderId: true, moduleCode: true, status: true },
+    });
+    for (const row of rows) {
+      const statuses = result.get(row.parentOrderId) ?? {};
+      statuses[row.moduleCode] = String(row.status);
+      result.set(row.parentOrderId, statuses);
+    }
+    return result;
+  }
+
   private async getConfiguredHandlerNamesByModule(moduleCodes: string[]): Promise<Map<string, string[]>> {
     const codes = Array.from(new Set(moduleCodes.filter(Boolean)));
     const result = new Map<string, string[]>();
@@ -2886,7 +2887,11 @@ export class DispatchedOrderService {
     return result;
   }
 
-  private toListItem(order: DispatchedOrder, configuredHandlerNames: string[] = []): DispatchedOrderListItem {
+  private toListItem(
+    order: DispatchedOrder,
+    configuredHandlerNames: string[] = [],
+    relatedModuleStatuses: Record<string, string> = {},
+  ): DispatchedOrderListItem {
     const extraData = this.normalizeSocialFundExtraData(
       order.moduleCode,
       this.normalizeImportedContactData(order.parentOrder.extraData ?? {}),
@@ -2962,6 +2967,10 @@ export class DispatchedOrderService {
       configured_handler_names: configuredHandlerNames,
       extraData,
       extra_data: extraData,
+      relatedModuleStatuses,
+      related_module_statuses: relatedModuleStatuses,
+      dataEntryStatus: relatedModuleStatuses.data_entry ?? null,
+      data_entry_status: relatedModuleStatuses.data_entry ?? null,
     };
   }
 
@@ -2972,6 +2981,11 @@ export class DispatchedOrderService {
   }
 
   private async assertCanRead(order: DispatchedOrder, user: JwtUserPayload): Promise<void> {
+    if (isExportOnlyDispatchModule(order.moduleCode)) {
+      await this.assertPayrollBankCardAccess(user, order.parentOrder.businessScope ?? BusinessScope.BEILUN, '访问');
+      await this.assertPayrollBankCardDataScope(order, user);
+      return;
+    }
     if (this.isAdmin(user)) return;
     if (order.moduleCode === 'resignation_cert') {
       if (isResignationCertHandler(user)) return;
@@ -2982,6 +2996,69 @@ export class DispatchedOrderService {
     if (!order.handlerId && (await this.hasModuleAccess(user.sub, order.moduleCode, user.roles))) return;
     if (await this.canViewAsSupervisor(user, order.moduleCode)) return;
     throw new ForbiddenException('无权访问该子工单');
+  }
+
+  private isBusinessSideUser(user: JwtUserPayload): boolean {
+    return hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES)
+      || hasAnyRole(user.roles, BUSINESS_LEADER_ROLES)
+      || hasAnyRole(user.roles, BUSINESS_MEMBER_ROLES);
+  }
+
+  private async applyPayrollBankCardUserScope(
+    qb: SelectQueryBuilder<DispatchedOrder>,
+    user: JwtUserPayload,
+  ): Promise<void> {
+    if (this.isAdmin(user)) return;
+    if (hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES)) {
+      const departmentIds = await this.validationService.resolveUserDepartmentIds(user.sub);
+      if (departmentIds.length === 0) {
+        qb.andWhere('1 = 0');
+        return;
+      }
+      qb.andWhere('w.department_id IN (:...payrollDepartmentIds)', { payrollDepartmentIds: departmentIds });
+      return;
+    }
+    if (hasAnyRole(user.roles, BUSINESS_LEADER_ROLES) || hasAnyRole(user.roles, BUSINESS_MEMBER_ROLES)) {
+      qb.andWhere('w.created_by = :payrollUserId', { payrollUserId: user.sub });
+    }
+  }
+
+  private async assertPayrollBankCardDataScope(
+    order: DispatchedOrder,
+    user: JwtUserPayload,
+  ): Promise<void> {
+    if (this.isAdmin(user) || !this.isBusinessSideUser(user)) return;
+    if (hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES)) {
+      const departmentIds = await this.validationService.resolveUserDepartmentIds(user.sub);
+      if (departmentIds.includes(order.parentOrder.departmentId)) return;
+    } else if (order.parentOrder.createdBy === user.sub) {
+      return;
+    }
+    throw businessException(5000, HttpStatus.FORBIDDEN, '无权访问该薪酬银行卡记录');
+  }
+
+  private async assertPayrollBankCardAccess(
+    user: JwtUserPayload,
+    businessScope: BusinessScope,
+    action: '访问' | '导出',
+  ): Promise<void> {
+    if (this.isAdmin(user) || this.isBusinessSideUser(user)) return;
+    const allowed = this.roleActionPermissionService
+      ? await this.roleActionPermissionService.hasAnyRoleAction(user.roles, 'module.payroll_bank_card.manage', businessScope)
+      : false;
+    if (!allowed) {
+      throw businessException(5000, HttpStatus.FORBIDDEN, `薪酬银行卡导出清单无权${action}`);
+    }
+  }
+
+  private async assertBusinessScopeAccess(user: JwtUserPayload, businessScope: BusinessScope): Promise<void> {
+    if (this.isAdmin(user) || !user.businessScope || user.businessScope === businessScope) return;
+    const allowed = this.roleActionPermissionService
+      ? await this.roleActionPermissionService.hasAnyRoleAction(user.roles, 'business_scope.switch', businessScope)
+      : false;
+    if (!allowed) {
+      throw businessException(5000, HttpStatus.FORBIDDEN, '无权切换业务范围');
+    }
   }
 
   private canReadAssignedModule(user: JwtUserPayload, moduleCode: string): boolean {

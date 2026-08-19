@@ -173,6 +173,45 @@ export async function downloadOrderAttachment(item: OrderAttachmentItem): Promis
   }
 }
 
+export async function previewOrderAttachment(item: OrderAttachmentItem): Promise<void> {
+  const fileName = item.original_name || item.file_name || '附件';
+  const extension = fileName.split('.').pop()?.toLowerCase() || '';
+  const mimeType = String(item.mime_type || '').toLowerCase();
+  const previewable = mimeType.startsWith('image/')
+    || mimeType === 'application/pdf'
+    || ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'pdf'].includes(extension);
+  if (!previewable) {
+    throw new Error('Word 文件暂不支持在线预览，请下载查看');
+  }
+
+  if (isMockMode) {
+    const blobUrl = window.URL.createObjectURL(new Blob(['mock attachment data'], { type: mimeType || 'application/octet-stream' }));
+    window.open(blobUrl, '_blank', 'noopener,noreferrer');
+    window.setTimeout(() => window.URL.revokeObjectURL(blobUrl), 60_000);
+    return;
+  }
+
+  const url = item.download_url || (item.file_id ? `/api/files/${item.file_id}` : '');
+  if (!url) throw new Error('附件预览地址缺失');
+  if (/^https?:\/\//i.test(url)) {
+    window.open(url, '_blank', 'noopener,noreferrer');
+    return;
+  }
+
+  const token = typeof window !== 'undefined' && window.localStorage ? window.localStorage.getItem('token') : null;
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  if (!response.ok) {
+    const msg = await response.text().catch(() => '');
+    throw new Error(msg || `附件预览失败 (${response.status})`);
+  }
+  const blobUrl = window.URL.createObjectURL(await response.blob());
+  window.open(blobUrl, '_blank', 'noopener,noreferrer');
+  window.setTimeout(() => window.URL.revokeObjectURL(blobUrl), 60_000);
+}
+
 export async function deleteOrderAttachment(id: string): Promise<void> {
   if (isMockMode) {
     const idx = mockAttachments.findIndex((item) => item.id === id);

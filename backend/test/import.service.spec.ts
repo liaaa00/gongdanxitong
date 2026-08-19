@@ -48,6 +48,10 @@ const fields = [
   field({ fieldCode: 'household_address', fieldName: '户籍地址', isRequired: true, defaultRequired: true }),
   field({ fieldCode: 'household_type', fieldName: '户籍性质', fieldType: FieldType.DROPDOWN, dropdownOptions: ['农业', '非农业'] }),
   field({ fieldCode: 'need_onboarding_contact', fieldName: '入职材料是否需要集约收集', fieldType: FieldType.DROPDOWN, isRequired: true, defaultRequired: true, dropdownOptions: ['是', '否'] }),
+  field({ fieldCode: 'bank_name', fieldName: '开户银行' }),
+  field({ fieldCode: 'bank_account', fieldName: '银行卡号' }),
+  field({ fieldCode: 'bank_location', fieldName: '开户地' }),
+  field({ fieldCode: 'payroll_location', fieldName: '发薪地' }),
   field({ fieldCode: 'current_address', fieldName: '现住地址', conditionalRequired: { field: 'need_onboarding_contact', op: 'EQ', value: '否' } }),
   field({ fieldCode: 'feedback_deadline', fieldName: '反馈截止日期', fieldType: FieldType.DATE }),
   field({ fieldCode: 'is_common_template', fieldName: '是否为通用模板', fieldType: FieldType.DROPDOWN, dropdownOptions: ['是', '否'], conditionalRequired: needsOnboardingContact }),
@@ -68,6 +72,10 @@ const mapping: MappingItemInput[] = [
   { header: '试用期其他工资', fieldCode: 'probation_other_salary' },
   { header: '户籍地址', fieldCode: 'household_address' },
   { header: '入职材料是否需要集约收集', fieldCode: 'need_onboarding_contact' },
+  { header: '开户银行', fieldCode: 'bank_name' },
+  { header: '银行卡号', fieldCode: 'bank_account' },
+  { header: '开户地', fieldCode: 'bank_location' },
+  { header: '发薪地', fieldCode: 'payroll_location' },
   { header: '现住地址', fieldCode: 'current_address' },
   { header: '反馈截止日期', fieldCode: 'feedback_deadline' },
   { header: '是否为通用模板', fieldCode: 'is_common_template' },
@@ -84,6 +92,10 @@ function validRow(overrides: Record<string, unknown> = {}): Record<string, unkno
     户籍地址: '浙江杭州',
     现住地址: '浙江杭州文一路1号',
     入职材料是否需要集约收集: '否',
+    开户银行: '中国银行',
+    银行卡号: '6222000000000000',
+    开户地: '宁波',
+    发薪地: '宁波',
     特殊备注: '无',
     ...overrides,
   };
@@ -161,6 +173,67 @@ describe('ImportFieldValidationService scenarios', () => {
 
     expect(result.ok).toBe(false);
     expect(result.errors).toContainEqual(expect.objectContaining({ fieldCode: 'need_onboarding_contact', reason: 'required' }));
+  });
+
+  it('requires payroll bank fields when payroll is needed without centralized collection', async () => {
+    const payrollFields = [
+      field({ fieldCode: 'employee_name', fieldName: '姓名', isRequired: true }),
+      field({ fieldCode: 'id_card_no', fieldName: '身份证号', isRequired: true }),
+      field({ fieldCode: 'need_payroll_slip', fieldName: '是否需要工资单', isRequired: true, fieldType: FieldType.DROPDOWN, dropdownOptions: ['是', '否'] }),
+      field({ fieldCode: 'need_onboarding_contact', fieldName: '入职材料是否需要集约收集', isRequired: true, fieldType: FieldType.DROPDOWN, dropdownOptions: ['是', '否'] }),
+      field({ fieldCode: 'bank_name', fieldName: '开户银行' }),
+      field({ fieldCode: 'bank_account', fieldName: '银行卡号' }),
+      field({ fieldCode: 'bank_location', fieldName: '开户地' }),
+      field({ fieldCode: 'payroll_location', fieldName: '发薪地' }),
+    ];
+    const payrollMapping: MappingItemInput[] = payrollFields.map((item) => ({
+      header: item.fieldName,
+      fieldCode: item.fieldCode,
+    }));
+
+    const result = await service.validateRow({
+      rowNo: 3,
+      raw: {
+        姓名: '工资卡缺失',
+        身份证号: '330102199001010011',
+        是否需要工资单: '是',
+        入职材料是否需要集约收集: '否',
+      },
+      mapping: payrollMapping,
+      fields: payrollFields,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.errors.map((error) => error.fieldCode)).toEqual(expect.arrayContaining([
+      'bank_name', 'bank_account', 'bank_location', 'payroll_location',
+    ]));
+  });
+
+  it('allows missing payroll bank fields in imports when centralized collection is enabled', async () => {
+    const payrollFields = [
+      field({ fieldCode: 'employee_name', fieldName: '姓名', isRequired: true }),
+      field({ fieldCode: 'id_card_no', fieldName: '身份证号', isRequired: true }),
+      field({ fieldCode: 'need_payroll_slip', fieldName: '是否需要工资单', isRequired: true, fieldType: FieldType.DROPDOWN, dropdownOptions: ['是', '否'] }),
+      field({ fieldCode: 'need_onboarding_contact', fieldName: '入职材料是否需要集约收集', isRequired: true, fieldType: FieldType.DROPDOWN, dropdownOptions: ['是', '否'] }),
+      field({ fieldCode: 'bank_name', fieldName: '开户银行' }),
+      field({ fieldCode: 'bank_account', fieldName: '银行卡号' }),
+      field({ fieldCode: 'bank_location', fieldName: '开户地' }),
+      field({ fieldCode: 'payroll_location', fieldName: '发薪地' }),
+    ];
+    const result = await service.validateRow({
+      rowNo: 4,
+      raw: {
+        姓名: '集约收集',
+        身份证号: '330102199001010011',
+        是否需要工资单: '是',
+        入职材料是否需要集约收集: '是',
+      },
+      mapping: payrollFields.map((item) => ({ header: item.fieldName, fieldCode: item.fieldCode })),
+      fields: payrollFields,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.errors).toHaveLength(0);
   });
 
   it('requires current_address when need_onboarding_contact is no', async () => {

@@ -42,6 +42,10 @@ export interface ImportTemplateFieldView {
   default_required: boolean;
   conditionalRequired: FieldConfig['conditionalRequired'];
   conditional_required: FieldConfig['conditionalRequired'];
+  collectionGroup: string | null;
+  collection_group: string | null;
+  isIncludedInTemplate: boolean;
+  is_included_in_template: boolean;
 }
 
 // 入职导入模板排除：办理岗在子单完成时填写的反馈字段，不进业务员发起的导入表。
@@ -59,6 +63,7 @@ const ONBOARDING_IMPORT_EXCLUDED_FIELDS = new Set([
   'housing_fund_result',
 ]);
 
+// 新建主工单与 Excel 导入模板共用同一套后台字段配置。
 const RESIGNATION_IMPORT_TEMPLATE_FIELDS = [
   'employee_name',
   'id_card_no',
@@ -68,6 +73,7 @@ const RESIGNATION_IMPORT_TEMPLATE_FIELDS = [
   'resignation_date',
   'need_resignation_share',
   'need_resignation_cert',
+  'resignation_cert_format',
   'cert_delivery_address',
   'feedback_deadline',
   'is_common_template',
@@ -83,6 +89,7 @@ export class ImportTemplateConfigService {
     private readonly templateFieldRepository: Repository<ImportTemplateField>,
   ) {}
 
+  // 新建接口直接调用 list()，不额外追加模板外字段。
   async list(orderType: OrderType, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<ImportTemplateFieldView[]> {
     const { fields, configured } = await this.resolveFields(orderType, businessScope);
     const configuredByCode = new Map(configured.map((item) => [item.fieldCode, item]));
@@ -328,6 +335,10 @@ export class ImportTemplateConfigService {
       default_required: field.defaultRequired,
       conditionalRequired: field.conditionalRequired,
       conditional_required: field.conditionalRequired,
+      collectionGroup: field.collectionGroup ?? null,
+      collection_group: field.collectionGroup ?? null,
+      isIncludedInTemplate: field.isIncludedInTemplate,
+      is_included_in_template: field.isIncludedInTemplate,
     };
   }
 }

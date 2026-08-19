@@ -13,13 +13,14 @@ function field(overrides: Partial<FieldConfig>): FieldConfig {
     validationRegex: null,
     validationMsg: null,
     dropdownOptions: overrides.dropdownOptions ?? null,
-    collectionGroup: null,
+    collectionGroup: overrides.collectionGroup ?? null,
     placeholder: null,
     helpText: overrides.helpText ?? null,
     orderType: overrides.orderType ?? OrderType.ONBOARDING,
     businessContext: overrides.businessContext ?? [overrides.orderType ?? OrderType.ONBOARDING],
     displayOrder: overrides.displayOrder ?? 1,
     isActive: overrides.isActive ?? true,
+    isIncludedInTemplate: overrides.isIncludedInTemplate ?? true,
     createdAt: new Date(),
   } as FieldConfig;
 }
@@ -101,6 +102,32 @@ describe('ImportTemplateConfigService', () => {
     expect(list.find((item) => item.fieldCode === 'contract_template')?.conditionalRequired).toEqual({ field: 'need_company_contract', op: 'EQ', value: '1.是' });
     expect(list.find((item) => item.fieldCode === 'feedback_deadline')?.conditionalRequired).toBeNull();
     expect(list.every((item) => item.source === 'fallback')).toBe(true);
+  });
+
+  it('keeps create pages aligned with configured template fields', async () => {
+    const employee = field({ fieldCode: 'employee_name', fieldName: '姓名', displayOrder: 1 });
+    const supplementary = field({
+      fieldCode: 'supplementary_fund_ratio',
+      fieldName: '补充公积金比例',
+      collectionGroup: '社保公积金信息',
+      isIncludedInTemplate: false,
+      displayOrder: 2,
+    });
+    const postalCode = field({
+      fieldCode: 'postal_code',
+      fieldName: '邮编',
+      collectionGroup: '基本信息',
+      isIncludedInTemplate: false,
+      displayOrder: 3,
+    });
+    const { service } = buildService([employee, supplementary, postalCode], [
+      templateField({ fieldCode: 'employee_name', displayOrder: 1 }),
+    ]);
+
+    const list = await service.list(OrderType.ONBOARDING);
+
+    expect(list.map((item) => item.fieldCode)).toEqual(['employee_name']);
+    expect(list).toHaveLength(1);
   });
 
   it('returns allowed available fields without downstream feedback fields but keeps contract_template', async () => {

@@ -61,6 +61,7 @@ const OUT_OF_PROVINCE_ROLES = [
 
 const ONBOARDING_ROLES = [
   ROLE.ADMIN,
+  ROLE.PAYROLL_BANK_CARD_EXPORTER,
   ROLE.DATA_ENTRY_LEADER,
   ROLE.SHARED_TEAM_OWNER,
   ROLE.LABOR_CONTRACT_MEMBER,
@@ -172,7 +173,8 @@ export const ROUTE_VISIBILITY = {
   // 入职管理：业务侧看主列表；后道只看授权子模块。
   '/onboarding': ONBOARDING_ROLES,
   '/onboarding/onboarding_contact': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.ONBOARDING_RESIGNATION_MEMBER, ROLE.SHARED_TEAM_OWNER],
-  '/onboarding/payroll_bank_card': [ROLE.ADMIN],
+  // 页面与导出统一由 module.payroll_bank_card.manage 控制；业务角色仍受后端本人/部门数据范围约束。
+  '/onboarding/payroll_bank_card': [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.PAYROLL_BANK_CARD_EXPORTER],
   '/onboarding/contract': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.LABOR_CONTRACT_MEMBER, ROLE.SHARED_TEAM_OWNER],
   '/onboarding/data_entry': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.DATA_ENTRY_LEADER],
   '/onboarding/social_insurance': [ROLE.ADMIN, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER, ROLE.SOCIAL_INSURANCE_SPECIALIST],
@@ -257,6 +259,15 @@ const ROUTE_ACTION_PERMISSIONS: Partial<Record<VisibilityRoute, readonly string[
   '/out-of-province/orders': ['route.work_orders'],
   '/out-of-province/orders/new': ['route.work_order_create'],
   '/out-of-province/orders/:id': ['route.work_order_detail'],
+  '/out-of-province/increase': ['route.work_orders'],
+  '/out-of-province/increase/new': ['route.work_order_create'],
+  '/out-of-province/increase/:id': ['route.work_order_detail'],
+  '/out-of-province/decrease': ['route.work_orders'],
+  '/out-of-province/decrease/new': ['route.work_order_create'],
+  '/out-of-province/decrease/:id': ['route.work_order_detail'],
+  '/out-of-province/single-business': ['route.work_orders'],
+  '/out-of-province/single-business/new': ['route.work_order_create'],
+  '/out-of-province/single-business/:id': ['route.work_order_detail'],
   '/my-dispatched/:id': ['route.dispatched_detail'],
   '/onboarding': ['route.onboarding'],
   '/onboarding/contract': ['route.onboarding_contract', 'module.contract.manage'],
@@ -393,6 +404,10 @@ const RESTRICTED_DYNAMIC_PERMISSION_ROUTES: Partial<Record<CanonicalRole, readon
   [ROLE.LABOR_CONTRACT_MEMBER]: BACKEND_DYNAMIC_ROUTES,
   [ROLE.ONBOARDING_RESIGNATION_MEMBER]: BACKEND_DYNAMIC_ROUTES,
   [ROLE.SOCIAL_INSURANCE_SPECIALIST]: BACKEND_DYNAMIC_ROUTES,
+  [ROLE.PAYROLL_BANK_CARD_EXPORTER]: [
+    '/dashboard', '/onboarding', '/onboarding/payroll_bank_card',
+  ],
+  [ROLE.BUSINESS_SCOPE_SWITCHER]: [],
   [ROLE.WELFARE_SPECIALIST]: [
     '/dashboard',
     '/out-of-province', '/out-of-province/orders', '/out-of-province/orders/:id',
@@ -451,6 +466,10 @@ export function canAccessPath(pathname: string, userRoles: { code?: string }[] |
       const staticRoles = ROUTE_VISIBILITY[staticRoute];
       // ponytail: the static role matrix is the ceiling; permission-center rules may only narrow it.
       if (staticRoles.length > 0 && !userHasAnyCanonicalRole(userRoles, [...staticRoles])) return false;
+      if (
+        (staticRoles as readonly string[]).includes(ROLE.ADMIN)
+        && userHasAnyCanonicalRole(userRoles, [ROLE.ADMIN])
+      ) return true;
     }
     return userHasAnyCanonicalRole(userRoles, dynamicRoute.allowedRoles.map((role) => canonicalRoleCode(String(role))));
   }
@@ -470,16 +489,22 @@ export function canAccessBusinessScopePath(
   pathname: string,
   userRoles: { code?: string }[] | undefined,
   accountScope: BusinessScope | undefined,
+  permissions?: string[],
 ): boolean {
   const path = normalizePath(pathname);
   const isOutOfProvincePath = path === '/out-of-province' || path.startsWith('/out-of-province/');
+  const isAdmin = userHasAnyCanonicalRole(userRoles, [ROLE.ADMIN]);
+  const canSwitch = isAdmin || (permissions || []).some((permission) => (
+    permission === 'business_scope.switch' || permission === '*' || permission === 'all'
+  ));
   const isBusinessFront = userHasAnyCanonicalRole(userRoles, [
     ROLE.BUSINESS_OWNER,
     ROLE.BUSINESS_GROUP_LEADER,
     ROLE.BUSINESS_GROUP_MEMBER,
   ]);
-  if (!isBusinessFront) return true;
+  if (canSwitch) return true;
   const scope = accountScope || 'beilun';
+  if (!isBusinessFront) return scope === 'out_of_province' ? isOutOfProvincePath : !isOutOfProvincePath;
   return scope === 'out_of_province' ? isOutOfProvincePath : !isOutOfProvincePath;
 }
 

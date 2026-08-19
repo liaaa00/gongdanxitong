@@ -153,6 +153,7 @@ export function getInServiceClosureActions(
 ): Array<'withdraw' | 'void'> {
   if (!canClose) return [];
   return orderKind === IN_SERVICE_ORDER_KINDS.CONTRACT_RENEWAL
+    || orderKind === IN_SERVICE_ORDER_KINDS.CERTIFICATE
     ? ['withdraw', 'void']
     : ['void'];
 }
@@ -639,7 +640,7 @@ export default function InServiceOrderDetail() {
   }
 
   if (isOutOfProvinceOrder) {
-    const exportLabel = order.orderKind === IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_INCREASE ? '省外增员' : '省外减员';
+    const exportLabel = order.orderKind === IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_INCREASE ? '菜鸟增员' : '菜鸟减员';
     actionButtons.push(
       <Button
         key="download-out-of-province"

@@ -43,13 +43,6 @@ const HANDLING_RESULT_OPTIONS = [
   { label: '是', value: '是' },
   { label: '否', value: '否' },
 ];
-const RESIGNATION_SIGN_PLATFORM_OPTIONS = [
-  { label: '速创', value: '速创' },
-  { label: 'E签宝', value: 'E签宝' },
-];
-const RESIGNATION_CERTIFICATE_TEMPLATE_OPTIONS = [
-  { label: '北仑通用离职证明', value: '北仑通用离职证明' },
-];
 
 const FIELD_GROUPS: Array<{ title: string; codes: string[] }> = [
   {
@@ -78,7 +71,7 @@ const FIELD_GROUPS: Array<{ title: string; codes: string[] }> = [
   },
   {
     title: '离职信息',
-    codes: ['resignation_type', 'resignation_reason', 'last_work_date', 'contract_terminate_date', 'handover_person', 'need_resignation_cert', 'cert_delivery_address'],
+    codes: ['resignation_type', 'resignation_reason', 'last_work_date', 'contract_terminate_date', 'handover_person', 'need_resignation_cert', 'resignation_cert_format', 'cert_delivery_address', 'is_common_template', 'template_name'],
   },
   {
     title: '后道反馈',
@@ -89,7 +82,7 @@ const FIELD_GROUPS: Array<{ title: string; codes: string[] }> = [
 const PAYROLL_BANK_CARD_FIELD_GROUPS: Array<{ title: string; codes: string[] }> = [
   {
     title: '薪酬银行卡信息',
-    codes: ['employee_name', 'id_card_no', 'bank_name', 'bank_account', 'bank_location', 'branch_code', 'payroll_location'],
+    codes: ['employee_name', 'id_card_no', 'need_payroll_slip', 'bank_name', 'bank_account', 'bank_location', 'branch_code', 'payroll_location'],
   },
 ];
 
@@ -105,6 +98,7 @@ const SOCIAL_INCREASE_FIELD_GROUPS: Array<{ title: string; codes: string[] }> = 
       'fund_start_month',
       'fund_base',
       'fund_ratio',
+      'supplementary_fund_ratio',
       ...HANDLING_FEEDBACK_FIELDS.map((item) => item.result),
     ],
   },
@@ -116,6 +110,7 @@ const SOCIAL_DECREASE_FIELD_GROUPS: Array<{ title: string; codes: string[] }> = 
     codes: [
       ...HANDLING_FEEDBACK_FIELDS.map((item) => item.result),
       'social_pay_region',
+      'supplementary_fund_ratio',
       'social_insurance_remark',
     ],
   },
@@ -285,8 +280,6 @@ const MyDispatchedDetail: React.FC = () => {
   const [completeModalOpen, setCompleteModalOpen] = useState(false);
   const [completeForm] = Form.useForm();
   const [certificateDownloading, setCertificateDownloading] = useState(false);
-  const [silentSignOpen, setSilentSignOpen] = useState(false);
-  const [silentSignForm] = Form.useForm<{ signPlatform: string; templateName: string }>();
 
   const [supplementModalOpen, setSupplementModalOpen] = useState(false);
   const [supplementForm] = Form.useForm();
@@ -494,6 +487,13 @@ const MyDispatchedDetail: React.FC = () => {
         && !SOCIAL_INSURANCE_NON_INPUT_FIELDS.has(field.field_code)
       ));
     }
+    if (isSocialInsuranceModule(order.module_code)) {
+      return fields.filter((field) => (
+        field.field_code === 'supplementary_fund_ratio'
+        && (visibleSet.size === 0 || visibleSet.has(field.field_code))
+        && permissions[field.field_code] === 'visible'
+      ));
+    }
     return fields.filter((field) => (
       order.supplementable_fields?.includes(field.field_code)
       && (visibleSet.size === 0 || visibleSet.has(field.field_code))
@@ -533,6 +533,11 @@ const MyDispatchedDetail: React.FC = () => {
   const isVoided = Boolean(order?.void_at || order?.voidAt || order?.status === 'void');
   const isResubmittableStatus = Boolean(order && (['returned', 'withdrawn', 'void'].includes(order.status) || isVoided));
   const isSocialInsuranceOrder = isSocialInsuranceModule(order?.module_code);
+  const dataEntryStatus = order?.data_entry_status
+    ?? order?.dataEntryStatus
+    ?? order?.related_module_statuses?.data_entry
+    ?? order?.relatedModuleStatuses?.data_entry
+    ?? null;
   const isResignationCertificateOrder = order?.module_code === 'resignation_cert';
   const isAcceptedByBackend = Boolean(order?.accepted_at) || order?.status === 'accepted' || order?.status === 'processing';
   const canAccept = canBackendOperate && !isVoided && order?.status === 'pending';
@@ -540,7 +545,7 @@ const MyDispatchedDetail: React.FC = () => {
   const canDownloadResignationCertificate = canBackendOperate && isResignationCertificateOrder;
   const canReturn = canBackendOperate && !isVoided && (order?.status === 'processing' || order?.status === 'pending');
   const canSupplementOnboarding = order?.module_code === SUPPLEMENT_ALLOWED_MODULE_CODE && isAllowedSupplementOperator(user);
-  const canSupplementSocialInsurance = order?.module_code === 'social_insurance' && hasRole('social_insurance_specialist');
+  const canSupplementSocialInsurance = isSocialInsuranceOrder && hasRole('social_insurance_specialist');
   const canSupplement = canBackendOperate
     && (canSupplementOnboarding || canSupplementSocialInsurance)
     && !isVoided
@@ -580,14 +585,22 @@ const MyDispatchedDetail: React.FC = () => {
 
   const fillCreatorEditForm = () => {
     if (!order) return;
+    const extraData = (order.extra_data ?? {}) as Record<string, unknown>;
+    const detailValues = new Map(
+      (order.fields ?? []).map((field) => [field.fieldCode, field.value]),
+    );
     creatorEditForm.setFieldsValue({
       __creator_edit_reason: '',
       ...Object.fromEntries(visibleDetailFields.map((field) => [
         field.field_code,
-        String((order.extra_data as Record<string, unknown> | undefined)?.[field.field_code] ?? ''),
+        String(extraData[field.field_code] ?? detailValues.get(field.field_code) ?? ''),
       ])),
     });
   };
+
+  useEffect(() => {
+    if (creatorEditOpen) fillCreatorEditForm();
+  }, [creatorEditOpen, order, visibleDetailFields]);
 
   useEffect(() => {
     const action = new URLSearchParams(location.search).get('action');
@@ -777,14 +790,6 @@ const MyDispatchedDetail: React.FC = () => {
     }
   };
 
-  const handleSilentSignOk = async () => {
-    const values = await silentSignForm.validateFields();
-    const updated = await handleAccept(values);
-    if (updated) {
-      setSilentSignOpen(false);
-      silentSignForm.resetFields();
-    }
-  };
 
   const handleCompleteOk = async () => {
     const values = await completeForm.validateFields();
@@ -912,6 +917,11 @@ const MyDispatchedDetail: React.FC = () => {
             <Descriptions.Item label="状态">
               <Tag color={getStatusColor(isVoided ? 'void' : order.status)}>{getStatusText(isVoided ? 'void' : order.status)}</Tag>
             </Descriptions.Item>
+            {order.module_code === 'contract' ? (
+              <Descriptions.Item label="增员报岗状态">
+                {dataEntryStatus ? <Tag color={getStatusColor(dataEntryStatus)}>{getStatusText(dataEntryStatus)}</Tag> : '-'}
+              </Descriptions.Item>
+            ) : null}
             <Descriptions.Item label="员工">{order.employee_name || '-'}</Descriptions.Item>
             <Descriptions.Item label="客户">{order.customer_name || '-'}</Descriptions.Item>
             <Descriptions.Item label="工单发起人">{order.created_by_name || order.createdByName || order.created_by || order.createdBy || '-'}</Descriptions.Item>
@@ -1000,16 +1010,9 @@ const MyDispatchedDetail: React.FC = () => {
                 type="primary"
                 icon={<CheckCircleOutlined />}
                 loading={actionLoading}
-                onClick={() => {
-                  if (isResignationCertificateOrder) {
-                    silentSignForm.setFieldsValue({ templateName: '北仑通用离职证明' });
-                    setSilentSignOpen(true);
-                  } else {
-                    void handleAccept();
-                  }
-                }}
+                onClick={() => { void handleAccept(); }}
               >
-                {isResignationCertificateOrder ? '发起静默签' : '接单'}
+                接单
               </Button>
             )}
             {!isTerminal && canComplete && (
@@ -1192,12 +1195,15 @@ const MyDispatchedDetail: React.FC = () => {
               workOrderId={order.parent_order_id}
               bizPurpose="resignation_material"
               readOnly
-              title="辞职信及离职材料（只读）"
+              title="辞职信及离职材料（只读，可预览/下载）"
             />
             <MaterialsUpload
               workOrderId={order.parent_order_id}
               dispatchedOrderId={order.id}
               bizPurpose="resignation_cert"
+              readOnly
+              title="历史签署成品附件（可预览/下载）"
+              emptyText="暂无历史签署成品"
             />
           </>
         )}
@@ -1390,29 +1396,6 @@ const MyDispatchedDetail: React.FC = () => {
           </Form>
         </Modal>
 
-        <Modal
-          title="发起静默签"
-          open={silentSignOpen}
-          onOk={handleSilentSignOk}
-          onCancel={() => setSilentSignOpen(false)}
-          confirmLoading={actionLoading}
-          destroyOnHidden
-        >
-          <Alert
-            type="info"
-            showIcon
-            style={{ marginBottom: 12 }}
-            message="系统仅记录发起状态，实际电子签仍在线下平台完成"
-          />
-          <Form form={silentSignForm} layout="vertical">
-            <Form.Item name="signPlatform" label="电子签平台" rules={[{ required: true, message: '请选择电子签平台' }]}>
-              <Select options={RESIGNATION_SIGN_PLATFORM_OPTIONS} />
-            </Form.Item>
-            <Form.Item name="templateName" label="证明模板" rules={[{ required: true, message: '请选择证明模板' }]}>
-              <Select options={RESIGNATION_CERTIFICATE_TEMPLATE_OPTIONS} />
-            </Form.Item>
-          </Form>
-        </Modal>
 
         <Modal title="完成工单" open={completeModalOpen} onOk={handleCompleteOk}
           onCancel={() => setCompleteModalOpen(false)} confirmLoading={actionLoading} destroyOnHidden>
@@ -1447,7 +1430,7 @@ const MyDispatchedDetail: React.FC = () => {
                   type="info"
                   showIcon
                   style={{ marginBottom: 12 }}
-                  message="请先上传线下电子签完成文件，再提交完成"
+                  message="完成后系统会自动生成离职证明，可直接导出；历史附件仍可预览或下载"
                 />
                 <Form.Item
                   name="resignation_reason_code"

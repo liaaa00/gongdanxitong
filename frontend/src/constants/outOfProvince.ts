@@ -36,8 +36,8 @@ export const OUT_OF_PROVINCE_ORDER_TYPE = {
 } as const;
 
 export const OUT_OF_PROVINCE_ORDER_TYPE_OPTIONS = [
-  { label: '省外增员', value: OUT_OF_PROVINCE_ORDER_TYPE.INCREASE },
-  { label: '省外减员', value: OUT_OF_PROVINCE_ORDER_TYPE.DECREASE },
+  { label: '菜鸟增员', value: OUT_OF_PROVINCE_ORDER_TYPE.INCREASE },
+  { label: '菜鸟减员', value: OUT_OF_PROVINCE_ORDER_TYPE.DECREASE },
 ] as const;
 
 export type OutOfProvinceOrderType = typeof OUT_OF_PROVINCE_ORDER_TYPE[keyof typeof OUT_OF_PROVINCE_ORDER_TYPE];

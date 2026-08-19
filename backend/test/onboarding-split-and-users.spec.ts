@@ -61,17 +61,19 @@ describe('onboarding split dispatch', () => {
       'contract',
       'data_entry',
       'onboarding_contact',
+      'payroll_bank_card',
       'social_insurance',
     ]);
     expect(result.childrenToCreate).toEqual(expect.arrayContaining([
       expect.objectContaining({ moduleCode: 'data_entry', handlerId: 'handler-data_entry' }),
       expect.objectContaining({ moduleCode: 'social_insurance', handlerId: 'handler-social_insurance' }),
       expect.objectContaining({ moduleCode: 'onboarding_contact', handlerId: 'handler-onboarding_contact' }),
+      expect.objectContaining({ moduleCode: 'payroll_bank_card', handlerId: 'handler-payroll_bank_card' }),
       expect.objectContaining({ moduleCode: 'contract', handlerId: 'handler-contract' }),
     ]));
   });
 
-  it('does not create optional onboarding children when flags are no', async () => {
+  it('always creates payroll storage while optional workflow children remain conditional', async () => {
     const moduleHandlerRepo = repo({
       find: jest.fn(async ({ where }: { where: { moduleCode: string; isActive: boolean; isBackup: boolean } }) => {
         const moduleCode = where.moduleCode;
@@ -94,10 +96,45 @@ describe('onboarding split dispatch', () => {
       extraData: {
         need_onboarding_contact: '否',
         need_company_contract: '否',
+        need_payroll_slip: '否',
       },
     }));
 
-    expect(result.childrenToCreate.map((child) => child.moduleCode)).toEqual(['data_entry', 'social_insurance']);
+    expect(result.childrenToCreate.map((child) => child.moduleCode)).toEqual(['data_entry', 'social_insurance', 'payroll_bank_card']);
+  });
+
+  it('keeps missing payroll fields out of onboarding contact when centralized collection is not needed', async () => {
+    const moduleHandlerRepo = repo({
+      find: jest.fn(async ({ where }: { where: { moduleCode: string; isActive: boolean; isBackup: boolean } }) => {
+        const moduleCode = where.moduleCode;
+        if (!where.isActive) return [];
+        return [{ moduleCode, handlerId: `handler-${moduleCode}`, weight: 10, isBackup: false, isActive: true }];
+      }),
+    });
+    const service = new DispatchEngineService(
+      repo<DispatchRule>({ find: jest.fn(async () => []) }),
+      repo({ find: jest.fn(async () => []) }) as never,
+      moduleHandlerRepo as never,
+      new AstEvaluator(),
+      { pick: jest.fn(async (_strategy: DispatchStrategy, moduleCode: string) => `handler-${moduleCode}`) } as unknown as HandlerPickerService,
+      { getVisibleFieldsForScenario: jest.fn(async () => []) } as unknown as FieldPermissionService,
+    );
+
+    const result = await service.evaluateDetailed(Object.assign(new WorkOrder(), {
+      id: 'wo-3',
+      orderType: OrderType.ONBOARDING,
+      extraData: {
+        need_onboarding_contact: '否',
+        need_payroll_slip: '是',
+        bank_name: '测试银行',
+      },
+    }));
+
+    expect(result.childrenToCreate.map((child) => child.moduleCode).sort()).toEqual([
+      'data_entry',
+      'payroll_bank_card',
+      'social_insurance',
+    ]);
   });
 });
 

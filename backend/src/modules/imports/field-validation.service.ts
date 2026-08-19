@@ -5,6 +5,10 @@ import { CandidateField, MappingItemInput, RowValidationResult, RowValidationWar
 import { AstNode } from 'src/modules/dispatch-engine/dispatch-engine.types';
 import { AstEvaluator } from 'src/modules/dispatch-engine/ast-evaluator';
 import { FieldConfig, FieldType, OrderType } from 'src/entities';
+import {
+  ContractSubjectsService,
+  getAllowedFundRatios,
+} from 'src/modules/contract-subjects/contract-subjects.service';
 import { ImportTemplateConfigService } from './import-template-config.service';
 import { applyOnboardingDerivedFields } from './import-derived-fields.util';
 import {
@@ -12,6 +16,10 @@ import {
   isOutOfProvinceImportOrderType,
   normalizeOutOfProvinceRow,
 } from './out-of-province-import-mapping';
+import {
+  getCreatorRequiredMissingPayrollBankCardFields,
+  PAYROLL_BANK_CARD_FIELD_NAMES,
+} from 'src/modules/dispatched-orders/payroll-bank-card';
 
 interface RowValidationError {
   fieldCode: string;
@@ -134,6 +142,7 @@ const HEADER_ALIASES: Record<string, string[]> = {
   resignation_date: ['离职日期', '离职时间', '减员日期', '减员时间'],
   need_resignation_share: ['离职材料是否需要共享收集', '离职材料是否需要集约收集', '是否共享收集离职材料', '离职材料共享收集'],
   need_resignation_cert: ['是否需要离职证明', '需要离职证明', '是否开具离职证明', '离职证明'],
+  resignation_cert_format: ['离职证明形式', '证明形式', '电子/纸质证明', '电子或纸质证明'],
   cert_delivery_address: ['离职证明收件地址', '证明收件地址', '离职证明邮寄地址', '证明邮寄地址'],
 };
 
@@ -145,6 +154,8 @@ export class ImportFieldValidationService {
     private readonly astEvaluator: AstEvaluator,
     @Optional()
     private readonly templateConfigService?: ImportTemplateConfigService,
+    @Optional()
+    private readonly contractSubjectsService?: ContractSubjectsService,
   ) {}
 
   async getActiveFields(orderType: OrderType): Promise<FieldConfig[]> {
@@ -328,7 +339,54 @@ export class ImportFieldValidationService {
       }
     }
 
+    await this.validateContractSubjectRelations(normalized, fields, errors);
+
+    if (this.isOnboardingImportFieldSet(fields)) {
+      for (const fieldCode of getCreatorRequiredMissingPayrollBankCardFields(normalized)) {
+        if (!errors.some((error) => error.fieldCode === fieldCode)) {
+          errors.push({
+            fieldCode,
+            reason: 'required',
+            message: `${PAYROLL_BANK_CARD_FIELD_NAMES[fieldCode]}为必填项，请在导入表格中补充后重新导入`,
+          });
+        }
+      }
+    }
+
     return { ok: errors.length === 0, rowNo: input.rowNo, errors, warnings, normalized, raw: input.raw };
+  }
+
+  private async validateContractSubjectRelations(
+    normalized: Record<string, unknown>,
+    fields: FieldConfig[],
+    errors: RowValidationError[],
+  ): Promise<void> {
+    if (!this.contractSubjectsService || !fields.some((field) => field.fieldCode === 'contract_subject')) return;
+    const subjectName = typeof normalized.contract_subject === 'string'
+      ? normalized.contract_subject.trim()
+      : '';
+    if (!subjectName) return;
+    const subject = await this.contractSubjectsService.findByName(subjectName);
+    if (!subject) {
+      errors.push({ fieldCode: 'contract_subject', reason: 'enum', message: '劳动合同主体不在正式主体目录中' });
+      return;
+    }
+    const address = normalized.company_address;
+    if (this.hasValue(address) && String(address).trim() !== subject.registeredAddress.trim()) {
+      errors.push({ fieldCode: 'company_address', reason: 'relation', message: '劳动合同主体注册地必须与主体目录一致' });
+    }
+    const allowedRatios = getAllowedFundRatios(subject);
+    const ratio = normalized.fund_ratio;
+    if (allowedRatios.length > 0 && !this.hasValue(ratio)) {
+      errors.push({ fieldCode: 'fund_ratio', reason: 'required', message: '该劳动合同主体已开公积金户，公积金比例为必填项' });
+    } else if (this.hasValue(ratio) && !allowedRatios.includes(String(ratio))) {
+      errors.push({ fieldCode: 'fund_ratio', reason: 'relation', message: '公积金比例不属于该劳动合同主体允许的比例' });
+    }
+    const supplementary = normalized.supplementary_fund_ratio;
+    const supplementaryOptions = subject.supplementaryFundRatioOptions ?? [];
+    if (this.hasValue(supplementary) && !supplementaryOptions.includes(String(supplementary))) {
+      errors.push({ fieldCode: 'supplementary_fund_ratio', reason: 'relation', message: '补充公积金比例不属于该上海主体允许的比例' });
+    }
   }
 
   private mapRow(

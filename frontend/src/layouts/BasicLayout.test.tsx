@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes, useNavigate as useRouterNavigate } from 'r
 import BasicLayout, { buildKeepAliveCacheKey } from './BasicLayout';
 import { markNotificationRead } from '@/services/notifications';
 import { KEEP_ALIVE_ROUTE_ACTIVATED_EVENT } from '@/utils/listPageState';
+import { DEFAULT_MATRIX } from '@/services/roleActionPermissions';
 // Role codes are kept as literals in hoisted mocks.
 
 type TestMenuItem = { name?: string; path?: string; key?: string; children?: TestMenuItem[] };
@@ -218,7 +219,11 @@ describe('BasicLayout menu visibility', () => {
     expect(menuPaths()).not.toContain('/admin/import-templates');
   });
 
-  it('locks business-front accounts to their assigned scope and lets admins switch', () => {
+  it('hides the scope area for ordinary Beilun users, locks fixed accounts, and lets authorized users switch', () => {
+    mockUserState.user = mockUserState.makeUser(['business_group_member'], 'beilun');
+    const beilunView = renderLayout(['/dashboard']);
+    expect(screen.getByTestId('layout-extra')).toBeEmptyDOMElement();
+    beilunView.unmount();
     window.localStorage.setItem('business_scope_v1', 'beilun');
     mockUserState.user = mockUserState.makeUser(['business_group_member'], 'out_of_province');
 
@@ -232,24 +237,25 @@ describe('BasicLayout menu visibility', () => {
     expect(menuText()).toContain('单项业务办理');
     expect(menuText()).not.toContain('增减员批量导入');
     expect(menuText()).not.toContain('我的工单');
-    expect(screen.getByText('浙江自签')).toBeInTheDocument();
+    expect(screen.getByText('菜鸟')).toBeInTheDocument();
     expect(screen.queryByText('北仑')).not.toBeInTheDocument();
     expect(screen.queryByText('省外')).not.toBeInTheDocument();
     expect(window.localStorage.getItem('business_scope_v1')).toBe('out_of_province');
     businessView.unmount();
 
     window.localStorage.setItem('business_scope_v1', 'beilun');
-    mockUserState.user = mockUserState.makeUser(['admin']);
+    mockUserState.user = mockUserState.makeUser(['business_group_member', 'business_scope_switcher']);
+    mockUserState.user.permissions = ['business_scope.switch', ...DEFAULT_MATRIX.business_group_member];
     renderLayout(['/dashboard']);
 
     const scopeAreaText = screen.getByTestId('layout-extra').textContent || '';
     expect(scopeAreaText).toContain('业务范围');
     expect(scopeAreaText).toContain('北仑');
-    expect(scopeAreaText).toContain('省外');
+    expect(scopeAreaText).toContain('菜鸟');
     expect(screen.getByTestId('layout-actions').textContent).not.toContain('北仑');
-    expect(screen.getByTestId('layout-actions').textContent).not.toContain('省外');
+    expect(screen.getByTestId('layout-actions').textContent).not.toContain('菜鸟');
 
-    fireEvent.click(screen.getByText('省外'));
+    fireEvent.click(screen.getByText('菜鸟'));
 
     expect(window.localStorage.getItem('business_scope_v1')).toBe('out_of_province');
     expect(mockNavigate).toHaveBeenLastCalledWith('/out-of-province/increase');
@@ -276,7 +282,7 @@ describe('BasicLayout menu visibility', () => {
     renderLayout(['/dashboard']);
     expect(menuText()).not.toContain('证明开具');
     expect(menuText()).not.toContain('劳动合同续签');
-    expect(menuText()).not.toContain('单项业务办理');
+    expect(menuText()).toContain('单项业务办理');
     expect(menuText()).not.toContain('管理后台');
   });
 

@@ -188,7 +188,7 @@ describe('离职证明子工单', () => {
     });
   });
 
-  it('rejects starting silent sign without both platform and template', async () => {
+  it('accepts a resignation certificate order without silent-sign parameters', async () => {
     const parentOrder = Object.assign(new WorkOrder(), {
       id: 'work-order-accept',
       orderType: OrderType.RESIGNATION,
@@ -203,8 +203,21 @@ describe('离职证明子工单', () => {
       status: DispatchedOrderStatus.PENDING,
       handlerId: 'handler-1',
     });
+    const updateBuilder = {
+      update: jest.fn(),
+      set: jest.fn(),
+      where: jest.fn(),
+      andWhere: jest.fn(),
+      execute: jest.fn(async () => ({ affected: 1 })),
+    };
+    [updateBuilder.update, updateBuilder.set, updateBuilder.where, updateBuilder.andWhere]
+      .forEach((method) => method.mockReturnValue(updateBuilder));
+    const repository = {
+      findOne: jest.fn(async () => order),
+      createQueryBuilder: jest.fn(() => updateBuilder),
+    };
     const service = new (await import('src/modules/dispatched-orders/dispatched-order.service')).DispatchedOrderService(
-      { findOne: jest.fn(async () => order) } as never,
+      repository as never,
       { save: jest.fn() } as never,
       {} as never,
       {} as never,
@@ -216,64 +229,36 @@ describe('离职证明子工单', () => {
       {} as never,
       {} as never,
     );
+    jest.spyOn(service, 'findOne').mockResolvedValue({ id: order.id } as never);
+    jest.spyOn(service as never, 'writeLog' as never).mockResolvedValue(undefined as never);
 
     await expect(service.accept(
       order.id,
-      { signPlatform: '速创' },
+      { signPlatform: '历史参数', templateName: '历史模板' } as never,
       { sub: 'handler-1', username: 'yangchun', roles: ['labor_contract_member'] },
-    )).rejects.toThrow('发起静默签前必须选择平台和模板');
-    await expect(service.accept(
-      order.id,
-      { templateName: '北仑通用离职证明' },
-      { sub: 'handler-1', username: 'yangchun', roles: ['labor_contract_member'] },
-    )).rejects.toThrow('发起静默签前必须选择平台和模板');
-  });
-
-  it('rejects completion when no signed certificate file was uploaded', async () => {
-    const parentOrder = Object.assign(new WorkOrder(), {
-      id: 'work-order-no-file',
-      orderType: OrderType.RESIGNATION,
-      status: WorkOrderStatus.PROCESSING,
-      extraData: { need_resignation_share: '否' },
-    });
-    const order = Object.assign(new DispatchedOrder(), {
-      id: 'dispatched-no-file',
-      parentOrderId: parentOrder.id,
-      parentOrder,
-      moduleCode: DispatchModuleCode.RESIGNATION_CERT,
+    )).resolves.toEqual({ id: order.id });
+    expect(updateBuilder.set).toHaveBeenCalledWith(expect.objectContaining({
       status: DispatchedOrderStatus.PROCESSING,
       handlerId: 'handler-1',
-    });
-    const attachmentRepository = { find: jest.fn(async () => []) };
-    const service = new (await import('src/modules/dispatched-orders/dispatched-order.service')).DispatchedOrderService(
-      {
-        findOne: jest.fn(async () => order),
-        manager: { getRepository: jest.fn(() => attachmentRepository) },
-      } as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-    );
-    jest.spyOn(service as never, 'assertCanHandle' as never).mockResolvedValue(undefined as never);
-    jest.spyOn(service as never, 'createResignationCertificateDocument' as never).mockResolvedValue({
-      replacements: { resignationReasonCode: '2' },
-    } as never);
-
-    await expect(service.complete(
-      order.id,
-      { remark: '已完成', extraData: { resignation_reason_code: '2' } },
-      { sub: 'handler-1', username: 'yangchun', roles: ['labor_contract_member'] },
-    )).rejects.toThrow('完成离职证明前必须上传线下电子签完成文件');
+    }));
   });
 
-  it('completes with the uploaded signed certificate instead of auto-generating an unsigned file', async () => {
+  it('does not add a signed-file requirement to the generated certificate result', () => {
+    const patch = buildResignationCertificateResultPatch(
+      DispatchModuleCode.RESIGNATION_CERT,
+      new Date('2026-08-07T10:00:00.000Z'),
+      '已开具',
+    );
+
+    expect(patch).toEqual(expect.objectContaining({
+      resignation_cert_status: '已开具',
+      resignation_cert_result: '已开具',
+    }));
+    expect(patch).not.toHaveProperty('resignation_cert_file_id');
+    expect(patch).not.toHaveProperty('resignation_cert_file_name');
+  });
+
+  it('completes without a signed attachment and generates the certificate for export', async () => {
     const parentOrder = Object.assign(new WorkOrder(), {
       id: 'work-order-1',
       orderNo: 'RS20260807001',
@@ -311,20 +296,8 @@ describe('离职证明子工单', () => {
     };
     [updateBuilder.update, updateBuilder.set, updateBuilder.where, updateBuilder.andWhere]
       .forEach((method) => method.mockReturnValue(updateBuilder));
-    const signedAttachment = Object.assign(new OrderAttachment(), {
-      id: 'attachment-signed-1',
-      workOrderId: parentOrder.id,
-      dispatchedOrderId: order.id,
-      bizPurpose: 'resignation_cert',
-      fileId: 'signed-file-1',
-      fileName: 'signed-resignation-certificate.pdf',
-      originalName: '已签署离职证明.pdf',
-      mimeType: 'application/pdf',
-      status: 'received',
-      createdAt: new Date('2026-08-07T02:00:00.000Z'),
-    });
     const attachmentRepository = {
-      find: jest.fn(async () => [signedAttachment]),
+      find: jest.fn(async () => []),
       create: jest.fn((value) => value),
       save: jest.fn(async (value) => value),
     };
@@ -419,13 +392,12 @@ describe('离职证明子工单', () => {
     expect(workOrderTransactionRepository.save).toHaveBeenCalledWith(expect.objectContaining({
       extraData: expect.objectContaining({
         resignation_cert_status: '已开具',
-        resignation_cert_file_id: 'signed-file-1',
-        resignation_cert_file_name: '已签署离职证明.pdf',
-        resignation_cert_attachments: ['signed-file-1'],
+        resignation_cert_result: '已核对并开具',
         resignation_reason_code: '4',
         resignation_other_reason: '公司经营调整',
         resignation_legal_article: '40',
       }),
     }));
+    expect(workOrderTransactionRepository.save.mock.calls[0][0].extraData).not.toHaveProperty('resignation_cert_file_id');
   });
 });

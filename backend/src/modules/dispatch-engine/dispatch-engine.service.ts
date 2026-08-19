@@ -25,10 +25,7 @@ import {
   RuleHit,
 } from './dispatch-engine.types';
 import { HandlerPickerService } from './handler-picker.service';
-import {
-  getMissingPayrollBankCardFields,
-  PAYROLL_BANK_CARD_VISIBLE_FIELDS,
-} from 'src/modules/dispatched-orders/payroll-bank-card';
+import { getMissingPayrollBankCardFields } from 'src/modules/dispatched-orders/payroll-bank-card';
 
 @Injectable()
 export class DispatchEngineService {
@@ -337,20 +334,13 @@ export class DispatchEngineService {
       await this.ensureChild(childrenToCreate, 'onboarding_contact', manager, 'onboarding-contact-when-needed-fallback', businessScope);
     }
 
-    if (this.isTruthyYes(workOrder.extraData.need_payroll_slip)) {
-      await this.ensureChild(childrenToCreate, 'payroll_bank_card', manager, 'payroll-bank-card-when-needed-fallback', businessScope);
-      const missingFields = getMissingPayrollBankCardFields(workOrder.extraData);
-      if (missingFields.length > 0) {
-        await this.ensureChild(childrenToCreate, 'onboarding_contact', manager, 'onboarding-contact-for-payroll-bank-fallback', businessScope);
-        const contactChild = childrenToCreate.find((child) => child.moduleCode === 'onboarding_contact');
-        if (contactChild) {
-          contactChild.visibleFields = needsOnboardingContact
-            ? Array.from(new Set([...contactChild.visibleFields, ...missingFields]))
-            : PAYROLL_BANK_CARD_VISIBLE_FIELDS.filter((fieldCode) => (
-              missingFields.includes(fieldCode as (typeof missingFields)[number])
-              || ['employee_name', 'id_card_no'].includes(fieldCode)
-            ));
-        }
+    // 所有成功入职数据都生成薪酬银行卡记录；四项资料完整性只决定提交/导出资格。
+    await this.ensureChild(childrenToCreate, 'payroll_bank_card', manager, 'payroll-bank-card-for-every-onboarding-fallback', businessScope);
+    const missingFields = getMissingPayrollBankCardFields(workOrder.extraData);
+    if (needsOnboardingContact && missingFields.length > 0) {
+      const contactChild = childrenToCreate.find((child) => child.moduleCode === 'onboarding_contact');
+      if (contactChild) {
+        contactChild.visibleFields = Array.from(new Set([...contactChild.visibleFields, ...missingFields]));
       }
     }
 
@@ -397,7 +387,7 @@ export class DispatchEngineService {
       return value;
     }
     const text = String(value ?? '').trim().toLowerCase();
-    return ['是', 'yes', 'y', 'true', '1', '需要', '需', '生成'].includes(text);
+    return ['是', 'yes', 'y', 'true', '1', '1是', '1.是', '需要', '需', '生成'].includes(text);
   }
 
   private toAstNode(value: Record<string, unknown> | null): AstNode | null {

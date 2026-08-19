@@ -61,6 +61,10 @@ function toView(field: FieldConfig, index: number, overrides: Partial<ImportTemp
     default_required: field.defaultRequired,
     conditionalRequired: field.conditionalRequired,
     conditional_required: field.conditionalRequired,
+    collectionGroup: field.collectionGroup ?? null,
+    collection_group: field.collectionGroup ?? null,
+    isIncludedInTemplate: field.isIncludedInTemplate ?? true,
+    is_included_in_template: field.isIncludedInTemplate ?? true,
     ...overrides,
   };
 }
@@ -199,18 +203,18 @@ describe('Imports ImportTemplateService round-trip', () => {
     expect(sheet.rowCount).toBe(5);
     expect((sheet.getRow(2).values as unknown[]).slice(2)).toEqual(referenceHeaders);
     expect(sheet.getCell('A1').value).toBe('填表说明：');
-    expect(sheet.getCell('B1').value).toBe('B-AE列为客户必须填写');
-    expect(sheet.getCell('AF1').value).toBe('AF-AO列为客户填写或外服入职联系收集');
-    expect(sheet.getCell('AO1').value).toBeNull();
-    expect(sheet.getCell('AP1').value).toBe('AP-BJ列为外服客户经理填写');
+    expect(sheet.getCell('B1').value).toBe('B-AF列为客户必须填写');
+    expect(sheet.getCell('AG1').value).toBe('AG-AP列为客户填写或外服入职联系收集');
+    expect(sheet.getCell('AP1').value).toBeNull();
+    expect(sheet.getCell('AQ1').value).toBe('AQ-BJ列为外服客户经理填写');
 
     const headerFills = referenceHeaders.map((_, index) => (
       sheet.getRow(2).getCell(index + 2).fill as { fgColor?: { argb?: string; theme?: number; tint?: number } }
     ).fgColor);
-    expect(headerFills.filter((color) => color?.argb === 'FFFFFF00')).toHaveLength(30);
-    expect(headerFills[30]).toMatchObject({ theme: 9, tint: 0.6 });
-    expect(headerFills[39]).toMatchObject({ theme: 9, tint: 0.6 });
-    expect(headerFills[40]).toBeUndefined();
+    expect(headerFills.filter((color) => color?.argb === 'FFFFFF00')).toHaveLength(31);
+    expect(headerFills[31]).toMatchObject({ theme: 9, tint: 0.6 });
+    expect(headerFills[40]).toMatchObject({ theme: 9, tint: 0.6 });
+    expect(headerFills[41]).toBeUndefined();
 
     expect(sheet.getCell('K3').value).toBe('条件必填');
     expect(sheet.getCell('K4').value).toBe('满足条件时必填；固定期限时必填，如3年。');

@@ -11,6 +11,7 @@ import {
 import {
   buildBatchRenewalRows,
   buildInServiceListQuery,
+  classifyBatchRenewalRows,
   flattenDepartments,
   getInServiceDetailPath,
   getInServiceStatusValueEnum,
@@ -132,7 +133,7 @@ describe('single-business category contract', () => {
     expect(provinceStatuses).not.toHaveProperty('failed');
   });
 
-  it('maps batch renewal Excel rows to customer and department ids with row errors', () => {
+  it('classifies existing history and legacy stock rows in one renewal batch', async () => {
     const customers = [{
       id: 'customer-1',
       customer_name: '测试客户',
@@ -159,7 +160,7 @@ describe('single-business category contract', () => {
     const rows = buildBatchRenewalRows([
       {
         客户名称: '测试客户',
-        发起部门: '业务一部',
+        发起部门: '不存在部门',
         姓名: '张三',
         证件号码: '330206199001011234',
         合同期限形式: '固定期限',
@@ -195,12 +196,19 @@ describe('single-business category contract', () => {
         合同开始日期: '2026-09-01',
         基本工资: 9000,
       },
+      {
+        客户名称: '测试客户',
+        姓名: '钱七',
+        证件号码: '330206199001011238',
+        合同期限形式: '无固定期限',
+        合同开始日期: '2026-09-01',
+        基本工资: 10000,
+      },
     ], customers, flattenDepartments(departments));
 
     expect(rows[0].error).toBeNull();
     expect(rows[0].payload).toMatchObject({
       customerId: 'customer-1',
-      departmentId: 'department-1',
       extraData: {
         signing_method: '续签',
         contract_term_type: '固定期限',
@@ -224,6 +232,56 @@ describe('single-business category contract', () => {
     expect(rows[3].error).toContain('固定期限必须填写合同期限');
     expect(rows[3].error).toContain('固定期限必须填写合同结束日期');
     expect(rows[3].payload).toBeNull();
+
+    const classified = await classifyBatchRenewalRows(rows, async (_customerId, idCardNo) => {
+      const found = idCardNo === '330206199001011234';
+      return {
+        found,
+        source: found ? 'onboarding' : null,
+        orderId: found ? 'onboarding-1' : null,
+        orderNo: found ? 'ON-1' : null,
+        employeeName: found ? '张三' : null,
+        idCardNo,
+        departmentId: found ? 'history-department' : null,
+        departmentName: found ? '历史业务部' : null,
+        extraData: {},
+        fixedTermCount: found ? 1 : 0,
+        fixedTermRisk: false,
+        warning: null,
+      };
+    });
+
+    expect(classified[0]).toMatchObject({ sourceLabel: '系统历史', departmentName: '历史业务部', error: null });
+    expect(classified[0].payload).toMatchObject({ departmentId: 'history-department' });
+    expect(classified[2]).toMatchObject({ sourceLabel: '历史存量', departmentName: '业务一部', error: null });
+    expect(classified[2].payload).toMatchObject({ departmentId: 'department-1' });
+    expect(classified[4].sourceLabel).toBe('历史存量');
+    expect(classified[4].error).toContain('系统无历史记录，发起部门不能为空');
+    expect(classified[4].payload).toBeNull();
+  });
+
+  it('blocks duplicate customer and id-card pairs within one renewal batch', () => {
+    const customers = [{
+      id: 'customer-1',
+      customer_name: '测试客户',
+      customer_code: 'C001',
+      is_active: true,
+      created_at: '',
+    }];
+    const source = {
+      客户名称: '测试客户',
+      姓名: '张三',
+      证件号码: '330206199001011234',
+      合同期限形式: '无固定期限',
+      合同开始日期: '2026-09-01',
+      基本工资: 9000,
+    };
+
+    const rows = buildBatchRenewalRows([source, { ...source, 姓名: '李四' }], customers, []);
+
+    expect(rows).toHaveLength(2);
+    expect(rows.every((row) => row.error?.includes('同一客户和证件号码在本批次重复'))).toBe(true);
+    expect(rows.every((row) => row.payload === null)).toBe(true);
   });
 });
 

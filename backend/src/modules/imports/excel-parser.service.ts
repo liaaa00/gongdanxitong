@@ -92,7 +92,7 @@ export class ExcelParserService {
       const record: Record<string, unknown> = {};
       let hasValue = false;
       for (let col = 1; col <= headers.length; col += 1) {
-        const value = this.normalizeCellValue(row.getCell(col).value);
+        const value = this.normalizeCellValue(this.readImportCellValue(row.getCell(col), headers[col - 1]));
         if (value !== null && value !== '') {
           hasValue = true;
         }
@@ -361,6 +361,27 @@ export class ExcelParserService {
     const textValue = this.normalizeCellValue(record.text) ?? hyperlink;
     const text = String(textValue).trim();
     return { text: text || hyperlink, hyperlink };
+  }
+
+  private readImportCellValue(cell: { value: unknown; text?: string; numFmt?: string }, header: string): unknown {
+    if (!this.isSalaryHeader(header) || typeof cell.value !== 'number') {
+      return cell.value;
+    }
+    const formatted = String(cell.text ?? '').trim();
+    const format = String(cell.numFmt ?? '');
+    if (/[¥￥$€£]|元/.test(formatted)) return formatted;
+    if (/[¥￥]|元/.test(format)) {
+      return `¥${cell.value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+    return cell.value;
+  }
+
+  private isSalaryHeader(header: string): boolean {
+    const normalized = this.normalizeForMatch(header);
+    return normalized.includes('basesalary')
+      || normalized.includes('probationsalary')
+      || normalized.includes('基本工资')
+      || normalized.includes('试用期工资');
   }
 
   private normalizeCellValue(value: unknown): string | number | boolean | null {

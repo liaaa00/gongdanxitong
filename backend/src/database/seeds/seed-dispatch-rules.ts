@@ -41,7 +41,8 @@ const dispatchRuleSeeds: Array<{
   {
     name: 'payroll-bank-card-when-needed',
     orderType: OrderType.ONBOARDING,
-    triggerConditions: yesCondition('need_payroll_slip'),
+    // 每条成功入职数据都建立薪酬银行卡记录；工资单字段仅作为业务展示信息。
+    triggerConditions: null,
     targetModule: 'payroll_bank_card',
     strategy: DispatchStrategy.FIXED,
     priority: 35,

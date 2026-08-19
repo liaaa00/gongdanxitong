@@ -160,4 +160,22 @@ describe('Imports ExcelParserService', () => {
     ]);
   });
 
+  it('preserves currency formatting for base and probation salary cells', async () => {
+    const workbook = new Workbook();
+    const sheet = workbook.addWorksheet('sheet1');
+    sheet.getRow(1).values = ['基本工资', '试用期工资', '姓名'];
+    sheet.getRow(2).getCell(1).value = 2600;
+    sheet.getRow(2).getCell(1).numFmt = '¥#,##0.00';
+    sheet.getRow(2).getCell(2).value = 2400;
+    sheet.getRow(2).getCell(2).numFmt = '¥#,##0.00';
+    sheet.getRow(2).getCell(3).value = '张三';
+
+    const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+    const parsed = await new ExcelParserService().parseBuffer(buffer);
+
+    expect(String(parsed.rows[0]['基本工资'])).toMatch(/¥|￥/);
+    expect(String(parsed.rows[0]['试用期工资'])).toMatch(/¥|￥/);
+    expect(parsed.rows[0]['姓名']).toBe('张三');
+  });
+
 });

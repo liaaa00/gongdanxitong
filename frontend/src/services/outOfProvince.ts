@@ -73,7 +73,7 @@ export async function getOutOfProvinceOrders(params: PageParams): Promise<PageRe
   }) as RawListResponse;
   const source = raw.list || raw.items || raw.rows || [];
   if (source.some((row) => (row.businessScope ?? row.business_scope) === undefined)) {
-    throw new Error('省外列表响应缺少 businessScope，已阻止展示以避免与北仑数据混用');
+    throw new Error('菜鸟列表响应缺少 businessScope，已阻止展示以避免与北仑数据混用');
   }
   const list = source.map(normalizeOrder).filter((item): item is OutOfProvinceOrderItem => Boolean(item));
   const total = list.length === source.length ? toNumber(raw.total, list.length) : list.length;
@@ -179,7 +179,7 @@ export async function downloadOutOfProvinceImportErrorReport(jobId: string): Pro
   const blob = await response.blob();
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
-  link.download = '省外增减员导入错误-' + jobId + '.xlsx';
+  link.download = '菜鸟增减员导入错误-' + jobId + '.xlsx';
   link.click();
   URL.revokeObjectURL(link.href);
 }

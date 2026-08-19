@@ -5,6 +5,7 @@ import {
   RENEWAL_SIGNING_METHOD,
   buildInServiceMutableFields,
   buildRenewalConfiguredFields,
+  getInServiceDepartmentNotice,
   isRenewalFieldRequired,
   normalizeInServiceOrderFormValues,
 } from './InServiceOrderForm';
@@ -34,7 +35,15 @@ const field = (
 });
 
 describe('InServiceOrderForm renewal rules', () => {
-  it('combines legacy renewal fields with configured new-contract fields', () => {
+  it('shows the department inheritance notice only for renewal', () => {
+    expect(getInServiceDepartmentNotice(IN_SERVICE_ORDER_KINDS.CONTRACT_RENEWAL)).toMatchObject({
+      message: '续签发起部门',
+    });
+    expect(getInServiceDepartmentNotice(IN_SERVICE_ORDER_KINDS.CERTIFICATE)).toBeNull();
+    expect(getInServiceDepartmentNotice(IN_SERVICE_ORDER_KINDS.SINGLE_BUSINESS)).toBeNull();
+  });
+
+  it('combines renewal contract fields but excludes new-contract probation fields', () => {
     const result = buildRenewalConfiguredFields(
       [field('renewal_reason', '续签原因')],
       [
@@ -42,6 +51,10 @@ describe('InServiceOrderForm renewal rules', () => {
         field('contract_start_date', '合同开始日期', 'date'),
         field('contract_end_date', '合同终止日期', 'date'),
         field('probation_start_date', '试用期开始日期', 'date'),
+        field('probation_months', '试用期月数'),
+        field('probation_end_date', '试用期结束日期', 'date'),
+        field('probation_salary', '试用期工资'),
+        field('probation_other_salary', '试用期其他工资'),
         field('unrelated_field', '不相关字段'),
       ],
     );
@@ -51,13 +64,30 @@ describe('InServiceOrderForm renewal rules', () => {
       'contract_term_type',
       'contract_start_date',
       'contract_end_date',
-      'probation_start_date',
     ]);
     expect(result.find((item) => item.field_code === 'contract_start_date')).toMatchObject({
       is_required: true,
       default_required: true,
     });
-    expect(result.find((item) => item.field_code === 'probation_start_date')?.is_required).toBe(false);
+  });
+
+  it('adds any configured regional field to renewal without hard-coding its field code', () => {
+    const regionalField = {
+      ...field('regional_special_ratio', '区域特殊比例', 'dropdown'),
+      collection_group: '社保公积金信息',
+      is_included_in_template: false,
+    };
+    const unrelatedOptionalField = {
+      ...field('postal_code', '邮编'),
+      collection_group: '基本信息',
+      is_included_in_template: false,
+    };
+
+    const result = buildRenewalConfiguredFields([], [regionalField, unrelatedOptionalField]);
+
+    expect(result.map((item) => item.field_code)).toContain('regional_special_ratio');
+    expect(result.filter((item) => item.field_code === 'regional_special_ratio')).toHaveLength(1);
+    expect(result.map((item) => item.field_code)).toContain('postal_code');
   });
 
   it('locks renewal position fields to historical data instead of making them editable', () => {
@@ -84,13 +114,6 @@ describe('InServiceOrderForm renewal rules', () => {
     }
   });
 
-  it('requires probation details only after a probation start date is provided', () => {
-    for (const code of ['probation_months', 'probation_end_date', 'probation_salary']) {
-      const item = field(code, code);
-      expect(isRenewalFieldRequired(item, {})).toBe(false);
-      expect(isRenewalFieldRequired(item, { probation_start_date: '2026-08-01' })).toBe(true);
-    }
-  });
 
   it('fixes signing method to renewal and writes standard plus legacy aliases', () => {
     const normalized = normalizeInServiceOrderFormValues({

@@ -24,6 +24,7 @@ import { PROVINCE_SET } from 'src/common/constants/provinces';
 import {
   BusinessScope,
   BusinessType,
+  Department,
   DispatchModuleCode,
   DispatchStrategy,
   IN_SERVICE_BUSINESS_TYPE_MAPPING,
@@ -48,6 +49,8 @@ import {
 } from 'src/modules/dispatched-orders/handling-feedback';
 import { buildContractTermText } from 'src/modules/dispatched-orders/resignation-certificate';
 import { WorkflowDefinition, WorkflowDefinitionStatus } from 'src/modules/workflows/workflow.entity';
+import { RoleActionPermissionService } from 'src/modules/role-action-permissions/role-action-permission.service';
+import { WorkOrderValidationService } from 'src/modules/work-orders/work-order-validation.service';
 import {
   ApproveInServiceOrderDto,
   CancelInServiceOrderDto,
@@ -154,6 +157,13 @@ export class InServiceOrdersService {
     @InjectRepository(WorkflowDefinition)
     @Optional()
     private readonly workflowRepository: Repository<WorkflowDefinition> | null = null,
+    @Optional()
+    private readonly roleActionPermissionService?: RoleActionPermissionService,
+    @Optional()
+    private readonly workOrderValidationService?: WorkOrderValidationService,
+    @InjectRepository(Department)
+    @Optional()
+    private readonly departmentRepository?: Repository<Department>,
   ) {}
 
   async create(
@@ -165,8 +175,22 @@ export class InServiceOrdersService {
     if (orderKind === InServiceOrderKind.RESIGNATION_CERTIFICATE) {
       throw businessException(4814, HttpStatus.BAD_REQUEST, '离职证明必须从离职管理的离职证明子工单办理');
     }
-    const businessScope = this.resolveCreateBusinessScope(orderKind, dto.businessScope, user);
+    const businessScope = await this.resolveCreateBusinessScope(orderKind, dto.businessScope, user);
     let extraData = dto.extraData ?? {};
+    let departmentId = dto.departmentId;
+    if (orderKind === InServiceOrderKind.CONTRACT_RENEWAL) {
+      const renewalContext = await this.resolveRenewalContext(dto);
+      departmentId = renewalContext.departmentId;
+      extraData = {
+        ...extraData,
+        renewal_source: renewalContext.source,
+      };
+    } else if (this.workOrderValidationService) {
+      departmentId = await this.workOrderValidationService.resolveDepartmentId(undefined, user.sub);
+    }
+    if (!departmentId) {
+      throw businessException(3000, HttpStatus.BAD_REQUEST, '部门信息缺失，无法创建单项业务');
+    }
     if (orderKind === InServiceOrderKind.CERTIFICATE && dto.idCardNo) {
       const history = await this.getRenewalHistory(dto.customerId, dto.idCardNo);
       if (history.found) {
@@ -195,6 +219,7 @@ export class InServiceOrdersService {
     const now = new Date();
     const order = this.repository.create({
       ...dto,
+      departmentId,
       orderKind,
       businessScope,
       employeeName: dto.employeeName?.trim() || null,
@@ -250,9 +275,19 @@ export class InServiceOrdersService {
     if (items.some((item) => item.orderKind && item.orderKind !== InServiceOrderKind.CONTRACT_RENEWAL)) {
       throw new ForbiddenException('批量发起接口仅支持劳动合同续签');
     }
+    const seenKeys = new Set<string>();
     for (const item of items) {
       const extraData = item.extraData ?? {};
       this.validateKindPayload(InServiceOrderKind.CONTRACT_RENEWAL, { ...item, extraData });
+      const idCardNo = item.idCardNo?.trim().toUpperCase();
+      if (idCardNo) {
+        const key = `${item.customerId.trim()}:${idCardNo}`;
+        if (seenKeys.has(key)) {
+          throw businessException(4818, HttpStatus.CONFLICT, '同一客户和证件号码在本批次重复');
+        }
+        seenKeys.add(key);
+      }
+      await this.resolveRenewalContext(item);
       await this.assertRenewalSalary(item.customerId, item.idCardNo, extraData);
     }
     const results: InServiceOrderResponseDto[] = [];
@@ -285,7 +320,7 @@ export class InServiceOrdersService {
       .leftJoinAndSelect('order.creator', 'creator')
       .where('order.order_type = :orderType', { orderType: OrderType.IN_SERVICE });
 
-    const businessScope = this.resolveListBusinessScope(query, user);
+    const businessScope = await this.resolveListBusinessScope(query, user);
     qb.andWhere('order.business_scope = :businessScope', { businessScope });
 
     if (!isAdminRole(user.roles) && !hasManagementScopeRole(user.roles)) {
@@ -345,6 +380,32 @@ export class InServiceOrdersService {
     };
   }
 
+  private async resolveRenewalContext(dto: CreateInServiceOrderDto): Promise<{
+    departmentId: string;
+    source: 'matched_history' | 'legacy_stock';
+  }> {
+    const history = await this.getRenewalHistory(dto.customerId, dto.idCardNo ?? '');
+    if (history.found) {
+      if (!history.departmentId) {
+        throw businessException(4815, HttpStatus.BAD_REQUEST, '历史续签记录缺少发起部门，无法继续续签');
+      }
+      return { departmentId: history.departmentId, source: 'matched_history' };
+    }
+    const departmentId = dto.departmentId?.trim();
+    if (!departmentId) {
+      throw businessException(4815, HttpStatus.BAD_REQUEST, '系统无历史记录，发起部门不能为空');
+    }
+    if (this.departmentRepository) {
+      const department = await this.departmentRepository.findOne({
+        where: { id: departmentId, isActive: true },
+      });
+      if (!department) {
+        throw businessException(4815, HttpStatus.BAD_REQUEST, '发起部门不存在或已停用');
+      }
+    }
+    return { departmentId, source: 'legacy_stock' };
+  }
+
   async getRenewalHistory(customerId: string, idCardNo: string) {
     const normalizedCustomerId = customerId?.trim();
     const normalizedIdCardNo = idCardNo?.trim();
@@ -356,6 +417,7 @@ export class InServiceOrdersService {
         orderNo: null,
         employeeName: null,
         idCardNo: normalizedIdCardNo || null,
+        departmentId: null,
         extraData: {},
         fixedTermCount: 0,
         fixedTermRisk: false,
@@ -392,6 +454,7 @@ export class InServiceOrdersService {
           orderNo: order.orderNo,
           employeeName: order.employeeName,
           idCardNo: order.employeeIdCard,
+          departmentId: order.departmentId,
           extraData: order.extraData ?? {},
           createdAt: order.createdAt,
         })),
@@ -401,6 +464,7 @@ export class InServiceOrdersService {
         orderNo: order.orderNo,
         employeeName: order.employeeName,
         idCardNo: order.idCardNo,
+        departmentId: order.departmentId,
         extraData: order.extraData ?? {},
         createdAt: order.createdAt,
       })),
@@ -417,6 +481,7 @@ export class InServiceOrdersService {
       orderNo: latest?.orderNo ?? null,
       employeeName: latest?.employeeName ?? null,
       idCardNo: latest?.idCardNo ?? normalizedIdCardNo,
+      departmentId: latest?.departmentId ?? null,
       extraData: latest?.extraData ?? {},
       fixedTermCount,
       fixedTermRisk: fixedTermCount >= 2,
@@ -1341,15 +1406,16 @@ export class InServiceOrdersService {
     }
   }
 
-  private resolveCreateBusinessScope(
+  private async resolveCreateBusinessScope(
     orderKind: InServiceOrderKind,
     requestedScope: BusinessScope | undefined,
     user: JwtUserPayload,
-  ): BusinessScope {
+  ): Promise<BusinessScope> {
     if ([
       InServiceOrderKind.OUT_OF_PROVINCE_INCREASE,
       InServiceOrderKind.OUT_OF_PROVINCE_DECREASE,
     ].includes(orderKind)) {
+      await this.assertBusinessScopeAccess(user, BusinessScope.OUT_OF_PROVINCE);
       return BusinessScope.OUT_OF_PROVINCE;
     }
     if ([
@@ -1359,23 +1425,34 @@ export class InServiceOrdersService {
     ].includes(orderKind)) {
       return BusinessScope.BEILUN;
     }
-    if (user.roles.some((role) => BUSINESS_FRONT_ROLE_CODES.has(role))) {
-      return user.businessScope ?? BusinessScope.BEILUN;
+    const accountScope = user.businessScope ?? BusinessScope.BEILUN;
+    const scope = requestedScope ?? accountScope;
+    if (user.roles.some((role) => BUSINESS_FRONT_ROLE_CODES.has(role)) && scope === accountScope) {
+      return accountScope;
     }
-    return requestedScope ?? user.businessScope ?? BusinessScope.BEILUN;
+    await this.assertBusinessScopeAccess(user, scope);
+    return scope;
   }
 
-  private resolveListBusinessScope(
+  private async resolveListBusinessScope(
     query: ListInServiceOrderQueryDto,
     user: JwtUserPayload,
-  ): BusinessScope {
-    if (user.roles.some((role) => BUSINESS_FRONT_ROLE_CODES.has(role))) {
-      return user.businessScope ?? BusinessScope.BEILUN;
+  ): Promise<BusinessScope> {
+    const accountScope = user.businessScope ?? BusinessScope.BEILUN;
+    const scope = query.businessScope ?? query.business_scope ?? accountScope;
+    if (user.roles.some((role) => BUSINESS_FRONT_ROLE_CODES.has(role)) && scope === accountScope) {
+      return accountScope;
     }
-    return query.businessScope
-      ?? query.business_scope
-      ?? user.businessScope
-      ?? BusinessScope.BEILUN;
+    await this.assertBusinessScopeAccess(user, scope);
+    return scope;
+  }
+
+  private async assertBusinessScopeAccess(user: JwtUserPayload, businessScope: BusinessScope): Promise<void> {
+    if (isAdminRole(user.roles) || !user.businessScope || user.businessScope === businessScope) return;
+    const allowed = this.roleActionPermissionService
+      ? await this.roleActionPermissionService.hasAnyRoleAction(user.roles, 'business_scope.switch', businessScope)
+      : false;
+    if (!allowed) throw businessException(5000, HttpStatus.FORBIDDEN, '无权切换业务范围');
   }
 
   private async pickHandler(
@@ -1438,13 +1515,11 @@ export class InServiceOrdersService {
     }
 
     let transitions = getDefaultInServiceOrderTransitions(orderKind);
-    if (flowKey && flowKey !== 'contract_renewal' && this.workflowRepository) {
+    if (flowKey && this.workflowRepository) {
       const workflow = await this.workflowRepository.findOne({
         where: {
           flowKey,
-          businessScope: flowKey === 'single_business'
-            ? BusinessScope.BEILUN
-            : order.businessScope ?? BusinessScope.BEILUN,
+          businessScope: order.businessScope ?? BusinessScope.BEILUN,
           status: WorkflowDefinitionStatus.PUBLISHED,
         },
         order: { updatedAt: 'DESC' },

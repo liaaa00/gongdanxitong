@@ -443,6 +443,12 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
       render: (_, record) => String(record.extra_data?.stop_month || record.extra_data?.insurance_stop_month || '-'),
     },
     {
+      title: '增员报岗状态', key: 'data_entry_status', width: 130, hideInSearch: true,
+      render: (_, record) => record.module_code === 'contract' && record.data_entry_status
+        ? <Tag color={getStatusColor(record.data_entry_status)}>{getStatusText(record.data_entry_status)}</Tag>
+        : '-',
+    },
+    {
       title: '状态', dataIndex: 'status', key: 'status', width: 100, valueType: 'select',
       fieldProps: {
         options: isDoneMode
@@ -653,7 +659,7 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
         search={false} headerTitle={childTableTitle}
         options={false}
         toolBarRender={false}
-        pagination={{ defaultCurrent: cachedPageState.current || 1, defaultPageSize: cachedPageState.pageSize || 20, showSizeChanger: true }}
+        pagination={{ defaultCurrent: cachedPageState.current || 1, defaultPageSize: cachedPageState.pageSize || 20, pageSizeOptions: ['20', '50', '100', '200'], showSizeChanger: true }}
         scroll={{ x: 1500 }}
         dateFormatter="string"
         locale={{ emptyText }}

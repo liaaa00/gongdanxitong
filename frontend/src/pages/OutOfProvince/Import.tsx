@@ -60,18 +60,18 @@ const OutOfProvinceImport: React.FC = () => {
   ));
 
   return (
-    <PageContainer header={{ title: '省外增减员导入' }}>
+    <PageContainer header={{ title: '菜鸟增减员导入' }}>
       <Card>
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
 
           <Space>
             <span>导入类型：</span>
             <Segmented
-              aria-label="省外导入类型"
+              aria-label="菜鸟导入类型"
               value={orderType}
               options={[
-                { label: '省外增员', value: OUT_OF_PROVINCE_ORDER_TYPE.INCREASE },
-                { label: '省外减员', value: OUT_OF_PROVINCE_ORDER_TYPE.DECREASE },
+                { label: '菜鸟增员', value: OUT_OF_PROVINCE_ORDER_TYPE.INCREASE },
+                { label: '菜鸟减员', value: OUT_OF_PROVINCE_ORDER_TYPE.DECREASE },
               ]}
               onChange={(value) => setSearchParams({ orderType: value as OutOfProvinceOrderType }, { replace: true })}
             />
@@ -97,7 +97,7 @@ const OutOfProvinceImport: React.FC = () => {
                 : '/out-of-province/decrease',
             )}
           >
-            返回{orderType === OUT_OF_PROVINCE_ORDER_TYPE.INCREASE ? '省外增员' : '省外减员'}列表
+            返回{orderType === OUT_OF_PROVINCE_ORDER_TYPE.INCREASE ? '菜鸟增员' : '菜鸟减员'}列表
           </Button>
         </Space>
       </Card>

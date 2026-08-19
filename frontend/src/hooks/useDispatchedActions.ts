@@ -19,17 +19,17 @@ export function useDispatchedActions({ orderId, order, onOrderUpdated }: UseDisp
   const { message } = App.useApp();
   const [actionLoading, setActionLoading] = useState(false);
 
-  const handleAccept = useCallback(async (payload?: { signPlatform?: string; templateName?: string }) => {
+  const handleAccept = useCallback(async () => {
     setActionLoading(true);
     try {
-      const updated = await acceptDispatchedOrder(orderId, payload);
+      const updated = await acceptDispatchedOrder(orderId);
       onOrderUpdated(updated);
       const latest = await getDispatchedOrder(orderId).catch(() => null);
       if (latest) onOrderUpdated(latest);
-      message.success(payload?.signPlatform ? '已发起静默签' : '已接单');
+      message.success('已接单');
       return updated;
     } catch {
-      message.error(payload?.signPlatform ? '发起静默签失败' : '接单失败');
+      message.error('接单失败');
       return null;
     } finally { setActionLoading(false); }
   }, [orderId, onOrderUpdated]);

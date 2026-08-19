@@ -9,6 +9,7 @@ import InServiceOrderForm, {
 } from './components/InServiceOrderForm';
 import { createInServiceOrder } from '@/services/inServiceOrders';
 import {
+  getInServiceDetailPath,
   IN_SERVICE_ORDER_KINDS,
   IN_SERVICE_ORDER_KIND_META,
   type InServiceOrderKind,
@@ -42,7 +43,7 @@ export default function InServiceOrderNew({
           ? `工单 ${order.orderNo} 已自动派发给 ${order.handlerName}，当前待受理。`
           : `工单 ${order.orderNo} 已创建，负责人待配置。`,
         okText: '查看工单',
-        onOk: () => navigate('/in-service/' + order.id),
+        onOk: () => navigate(getInServiceDetailPath(orderKind, order.id, businessScope)),
       });
     } catch (error) {
       if ((error as { errorFields?: unknown[] })?.errorFields) {

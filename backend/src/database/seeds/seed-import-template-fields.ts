@@ -1,7 +1,7 @@
 import { DataSource } from 'typeorm';
 import { ImportTemplateField, OrderType } from 'src/entities';
 
-// 入职模板 61 字段，邮编保留为系统字段但不进入客户标准模板。
+// 入职通用模板字段；邮编和地区特殊字段保留为系统字段但不进入客户标准模板。
 export const ONBOARDING_TEMPLATE_ORDER = [
   'customer_name',
   'employee_name',

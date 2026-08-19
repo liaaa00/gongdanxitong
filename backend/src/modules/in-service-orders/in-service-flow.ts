@@ -19,6 +19,13 @@ export type InServiceFlowDefinition = {
   status_transitions: InServiceTransitionMap;
 };
 
+export type InServiceWorkflowSnapshot = {
+  flow_key: InServiceFlowKey;
+  status_transitions: InServiceTransitionMap;
+  nodes: Array<Record<string, string>>;
+  edges: Array<Record<string, string>>;
+};
+
 const SINGLE_BUSINESS_TRANSITIONS: InServiceTransitionMap = {
   [InServiceOrderStatus.DRAFT]: [
     InServiceOrderStatus.DISPATCHED,
@@ -144,7 +151,7 @@ function cloneTransitions(source: InServiceTransitionMap): InServiceTransitionMa
 const FLOW_DEFINITIONS: Record<InServiceFlowKey, InServiceFlowDefinition> = {
   single_business: {
     flow_key: 'single_business',
-    name: '北仑单项业务办理流程',
+    name: '单项业务办理流程',
     status_transitions: SINGLE_BUSINESS_TRANSITIONS,
   },
   contract_renewal: {
@@ -156,6 +163,44 @@ const FLOW_DEFINITIONS: Record<InServiceFlowKey, InServiceFlowDefinition> = {
     flow_key: 'certificate',
     name: '在职证明开具流程',
     status_transitions: CERTIFICATE_TRANSITIONS,
+  },
+};
+
+const FLOW_GRAPHS: Record<InServiceFlowKey, Pick<InServiceWorkflowSnapshot, 'nodes' | 'edges'>> = {
+  single_business: {
+    nodes: [
+      { id: 'start', type: 'start', label: '开始' },
+      { id: 'accepted', type: 'process', label: '受理与资料初审' },
+      { id: 'processing', type: 'process', label: '业务办理' },
+      { id: 'end', type: 'end', label: '办理结果' },
+    ],
+    edges: [
+      { id: 'start-accepted', source: 'start', target: 'accepted' },
+      { id: 'accepted-processing', source: 'accepted', target: 'processing' },
+      { id: 'processing-end', source: 'processing', target: 'end' },
+    ],
+  },
+  contract_renewal: {
+    nodes: [
+      { id: 'start', type: 'start', label: '未接单' },
+      { id: 'accepted', type: 'process', label: '已接单' },
+      { id: 'end', type: 'end', label: '已完成' },
+    ],
+    edges: [
+      { id: 'start-accepted', source: 'start', target: 'accepted' },
+      { id: 'accepted-end', source: 'accepted', target: 'end' },
+    ],
+  },
+  certificate: {
+    nodes: [
+      { id: 'start', type: 'start', label: '待开具' },
+      { id: 'processing', type: 'process', label: '开具中' },
+      { id: 'end', type: 'end', label: '已完成' },
+    ],
+    edges: [
+      { id: 'start-processing', source: 'start', target: 'processing' },
+      { id: 'processing-end', source: 'processing', target: 'end' },
+    ],
   },
 };
 
@@ -177,6 +222,17 @@ export function getDefaultInServiceFlowDefinition(flowKey: InServiceFlowKey): In
   return {
     ...definition,
     status_transitions: cloneTransitions(definition.status_transitions),
+  };
+}
+
+export function getDefaultInServiceWorkflowSnapshot(flowKey: InServiceFlowKey): InServiceWorkflowSnapshot {
+  const definition = getDefaultInServiceFlowDefinition(flowKey);
+  const graph = FLOW_GRAPHS[flowKey];
+  return {
+    flow_key: flowKey,
+    status_transitions: definition.status_transitions,
+    nodes: graph.nodes.map((node) => ({ ...node })),
+    edges: graph.edges.map((edge) => ({ ...edge })),
   };
 }
 

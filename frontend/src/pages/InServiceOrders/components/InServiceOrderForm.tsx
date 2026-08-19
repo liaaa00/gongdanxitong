@@ -34,7 +34,11 @@ import {
   type InServiceProcessType,
 } from '@/constants/inService';
 import { getRenewalHistory, type InServiceOrderPayload, type RenewalHistoryResult } from '@/services/inServiceOrders';
-import { getContractSubjects, type ContractSubjectItem } from '@/services/contractSubjects';
+import {
+  getAllowedFundRatios,
+  getContractSubjects,
+  type ContractSubjectItem,
+} from '@/services/contractSubjects';
 import { getOutOfProvinceAccounts, type OutOfProvinceAccount } from '@/services/outOfProvinceAccounts';
 
 export type InServiceOrderFormValues = InServiceOrderPayload;
@@ -81,16 +85,11 @@ const RENEWAL_CONTRACT_FIELD_CODES = [
   'contract_term',
   'contract_start_date',
   'contract_end_date',
-  'probation_start_date',
-  'probation_months',
-  'probation_end_date',
   'work_city',
   'work_hour_system',
   'salary_form',
   'base_salary',
   'other_salary',
-  'probation_salary',
-  'probation_other_salary',
   'payroll_cycle',
   'payroll_date',
   'current_address',
@@ -105,6 +104,8 @@ const RENEWAL_CONTRACT_FIELD_CODES = [
   'contract_template',
 ] as const;
 
+const RENEWAL_REGIONAL_FIELD_GROUPS = new Set(['社保公积金信息', '社保公积金类']);
+
 const RENEWAL_ALWAYS_REQUIRED = new Set([
   'contract_term_type',
   'contract_start_date',
@@ -112,6 +113,17 @@ const RENEWAL_ALWAYS_REQUIRED = new Set([
 ]);
 
 export const RENEWAL_SIGNING_METHOD = '续签';
+
+export function getInServiceDepartmentNotice(orderKind: InServiceOrderKind): {
+  message: string;
+  description: string;
+} | null {
+  if (orderKind !== IN_SERVICE_ORDER_KINDS.CONTRACT_RENEWAL) return null;
+  return {
+    message: '续签发起部门',
+    description: '系统有历史记录时自动继承部门；系统无历史记录时请选择存量员工所属部门。',
+  };
+}
 
 export function isRenewalFieldRequired(
   field: ImportTemplateFieldItem,
@@ -124,9 +136,6 @@ export function isRenewalFieldRequired(
   }
   if (code === 'esign_platform') return extraData.need_esign === '1.是';
   if (code === 'company_address') return extraData.esign_platform === 'E签宝';
-  if (['probation_months', 'probation_end_date', 'probation_salary'].includes(code)) {
-    return Boolean(extraData.probation_start_date);
-  }
   return false;
 }
 
@@ -136,11 +145,16 @@ export function buildRenewalConfiguredFields(
 ): ImportTemplateFieldItem[] {
   const renewalByCode = new Map(renewalFields.map((field) => [field.field_code, field]));
   const onboardingByCode = new Map(onboardingFields.map((field) => [field.field_code, field]));
-  return [
+  const configuredRegionalFields = onboardingFields.filter((field) => (
+    field.is_included_in_template === false
+    && RENEWAL_REGIONAL_FIELD_GROUPS.has(String(field.collection_group ?? '').trim())
+  ));
+  const selected = [
     ...RENEWAL_LEGACY_FIELD_CODES.map((code) => renewalByCode.get(code)),
     ...RENEWAL_CONTRACT_FIELD_CODES.map((code) => onboardingByCode.get(code)),
-  ]
-    .filter((field): field is ImportTemplateFieldItem => Boolean(field))
+    ...configuredRegionalFields,
+  ].filter((field): field is ImportTemplateFieldItem => Boolean(field));
+  return Array.from(new Map(selected.map((field) => [field.field_code, field])).values())
     .map((field, index) => {
       const positionLocked = field.field_code === 'position' || field.field_code === 'position_type';
       return {
@@ -377,23 +391,29 @@ export default function InServiceOrderForm({
   const idCardNo = Form.useWatch('idCardNo', form) as string | undefined;
 
   useEffect(() => {
-    Promise.all([getCustomers({ page: 1, pageSize: 100 }), getDepartments()])
+    Promise.all([
+      getCustomers({ page: 1, pageSize: 100 }),
+      effectiveKind === IN_SERVICE_ORDER_KINDS.CONTRACT_RENEWAL ? getDepartments() : Promise.resolve([]),
+    ])
       .then(([customerResult, departmentResult]) => {
         setCustomers(customerResult.list.filter((item) => item.is_active !== false));
         setDepartments(departmentResult.filter((item) => item.is_active !== false));
       })
       .catch(() => message.warning('客户或部门选项加载失败，请稍后刷新'))
       .finally(() => setOptionsLoaded(true));
-  }, [message]);
+  }, [effectiveKind, message]);
 
   const customerOptions = useMemo(() => customers.map((item) => ({
     value: item.id,
     label: [item.customer_code, item.customer_name].filter(Boolean).join(' - '),
   })), [customers]);
-  const departmentOptions = useMemo(() => departments.map((item) => ({
-    value: item.id,
-    label: item.name,
-  })), [departments]);
+  const departmentOptions = useMemo(() => {
+    const flatten = (items: DepartmentItem[]): DepartmentItem[] => items.flatMap((item) => [
+      ...(item.is_active !== false ? [item] : []),
+      ...flatten(item.children ?? []),
+    ]);
+    return flatten(departments).map((item) => ({ value: item.id, label: item.name }));
+  }, [departments]);
   const processOptions = getInServiceProcessOptions(businessType);
   const requirementOptions = getInServiceRequirementOptions(processType);
   const isSingleBusiness = effectiveKind === IN_SERVICE_ORDER_KINDS.SINGLE_BUSINESS;
@@ -403,6 +423,7 @@ export default function InServiceOrderForm({
   const isOutIncrease = effectiveKind === IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_INCREASE;
   const isOutDecrease = effectiveKind === IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_DECREASE;
   const isOutOfProvince = isOutIncrease || isOutDecrease;
+  const departmentNotice = getInServiceDepartmentNotice(effectiveKind);
 
   useEffect(() => {
     if (!isOutOfProvince) {
@@ -453,8 +474,11 @@ export default function InServiceOrderForm({
   useEffect(() => {
     if (!isRenewal || !customerId || !idCardNo?.trim()) {
       setRenewalHistory(null);
+      if (!readOnly) form.setFieldValue('departmentId', undefined);
       return;
     }
+    setRenewalHistory(null);
+    if (!readOnly) form.setFieldValue('departmentId', undefined);
     const timer = window.setTimeout(() => {
       setRenewalHistoryLoading(true);
       getRenewalHistory(customerId, idCardNo.trim())
@@ -465,6 +489,7 @@ export default function InServiceOrderForm({
           const currentEmployeeName = form.getFieldValue('employeeName');
           form.setFieldsValue({
             employeeName: currentEmployeeName || result.employeeName || undefined,
+            ...(result.departmentId ? { departmentId: result.departmentId } : {}),
             extraData: { ...result.extraData, ...currentExtraData },
           });
         })
@@ -504,6 +529,10 @@ export default function InServiceOrderForm({
     }, 350);
     return () => window.clearTimeout(timer);
   }, [customerId, form, idCardNo, isCertificate]);
+
+  const selectedRenewalContractSubject = contractSubjects.find(
+    (subject) => subject.subjectName === watchedExtraData?.contract_subject,
+  );
 
   const renewalFieldRules = (field: ImportTemplateFieldItem) => {
     const rules: Array<Record<string, unknown>> = [];
@@ -549,9 +578,50 @@ export default function InServiceOrderForm({
                   ...(form.getFieldValue('extraData') || {}),
                   contract_subject: value,
                   company_address: selected?.registeredAddress || undefined,
+                  fund_ratio: undefined,
+                  supplementary_fund_ratio: undefined,
                 },
               });
             }}
+          />
+        </Form.Item>
+      );
+    }
+    if (field.field_code === 'fund_ratio') {
+      const options = getAllowedFundRatios(selectedRenewalContractSubject);
+      return (
+        <Form.Item
+          {...commonProps}
+          required={options.length > 0}
+          rules={options.length > 0 ? [{ required: true, message: '该主体的公积金比例为必填项' }, ...commonProps.rules] : commonProps.rules}
+        >
+          <Select
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            disabled={options.length === 0}
+            placeholder={options.length > 0 ? '请选择公积金比例' : '该主体暂无正式公积金比例'}
+            options={options.map((value) => ({
+              value,
+              label: selectedRenewalContractSubject?.fundRatioMode === 'separate'
+                ? `单位${value.split('+')[0]} + 个人${value.split('+')[1]}`
+                : value,
+            }))}
+          />
+        </Form.Item>
+      );
+    }
+    if (field.field_code === 'supplementary_fund_ratio') {
+      const options = selectedRenewalContractSubject?.supplementaryFundRatioOptions ?? [];
+      if (options.length === 0) return null;
+      return (
+        <Form.Item {...commonProps}>
+          <Select
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            placeholder="请选择补充公积金比例"
+            options={options.map((value) => ({ value, label: value }))}
           />
         </Form.Item>
       );
@@ -640,13 +710,13 @@ export default function InServiceOrderForm({
       requiredMark
     >
       <Form.Item name="orderKind" hidden><Input /></Form.Item>
-      {optionsLoaded && (customerOptions.length === 0 || departmentOptions.length === 0) ? (
+      {optionsLoaded && customerOptions.length === 0 ? (
         <Alert
           type="warning"
           showIcon
           style={{ marginBottom: 16 }}
-          message="客户或部门选项暂不可用"
-          description="请确认当前账号具备客户、部门基础数据读取权限后刷新页面。"
+          message="客户选项暂不可用"
+          description="请确认当前账号具备客户基础数据读取权限后刷新页面。"
         />
       ) : null}
 
@@ -673,11 +743,34 @@ export default function InServiceOrderForm({
             />
           </Form.Item>
         </Col>
-        <Col {...formCol}>
-          <Form.Item name="departmentId" label="发起部门" rules={[{ required: true, message: '请选择发起部门' }]}>
-            <Select showSearch optionFilterProp="label" placeholder="请选择发起部门" options={departmentOptions} />
-          </Form.Item>
-        </Col>
+        {isRenewal ? (
+          <Col {...formCol}>
+            <Form.Item
+              name="departmentId"
+              label="发起部门"
+              rules={[{ required: true, message: '请选择发起部门' }]}
+              extra={renewalHistory?.found ? '已按客户和身份证号自动继承历史发起部门' : '系统无历史记录时必须明确选择存量员工所属部门'}
+            >
+              <Select
+                showSearch
+                optionFilterProp="label"
+                placeholder="请选择发起部门"
+                options={departmentOptions}
+                disabled={Boolean(renewalHistory?.found) || readOnly}
+              />
+            </Form.Item>
+          </Col>
+        ) : null}
+        {departmentNotice ? (
+          <Col {...formCol}>
+            <Alert
+              type="info"
+              showIcon
+              message={departmentNotice.message}
+              description={departmentNotice.description}
+            />
+          </Col>
+        ) : null}
         {(isSingleBusiness || isOutOfProvince) ? (
           <Col {...formCol}>
             <Form.Item

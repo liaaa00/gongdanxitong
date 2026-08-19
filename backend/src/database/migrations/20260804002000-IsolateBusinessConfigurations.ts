@@ -48,12 +48,24 @@ export class IsolateBusinessConfigurations20260804002000 implements MigrationInt
       }
     }
 
+    const certificateTypeNameColumn = await queryRunner.hasColumn('certificate_types', 'name')
+      ? 'name'
+      : await queryRunner.hasColumn('certificate_types', 'type_name')
+        ? 'type_name'
+        : 'display_name';
     const uniqueColumnIndexes: Array<{ table: string; columns: string[]; name: string }> = [
       { table: 'customers', columns: ['customer_code'], name: 'uq_customers_code_scope' },
       { table: 'departments', columns: ['code'], name: 'uq_departments_code_scope' },
-      { table: 'certificate_types', columns: ['name'], name: 'uq_certificate_types_name_scope' },
+      { table: 'certificate_types', columns: [certificateTypeNameColumn], name: 'uq_certificate_types_name_scope' },
       { table: 'branches', columns: ['branch_code'], name: 'uq_branches_code_scope' },
     ];
+    const foreignKeyReferencedIndexes = await queryRunner.query(
+      `SELECT i.relname AS indexname
+       FROM pg_constraint c
+       JOIN pg_class i ON i.oid = c.conindid
+       WHERE c.contype = 'f' AND c.conindid <> 0`,
+    ) as Array<{ indexname: string }>;
+    const protectedIndexNames = new Set(foreignKeyReferencedIndexes.map((item) => item.indexname));
 
     for (const item of uniqueColumnIndexes) {
       const constraints = await queryRunner.query(
@@ -64,6 +76,7 @@ export class IsolateBusinessConfigurations20260804002000 implements MigrationInt
            AND c.contype = 'u'`,
       ) as Array<{ conname: string }>;
       for (const constraint of constraints) {
+        if (protectedIndexNames.has(constraint.conname)) continue;
         await queryRunner.query(
           `ALTER TABLE "${item.table}" DROP CONSTRAINT IF EXISTS "${String(constraint.conname).replace(/"/g, '""')}"`,
         );
@@ -77,7 +90,7 @@ export class IsolateBusinessConfigurations20260804002000 implements MigrationInt
            AND indexdef ILIKE '%(${item.columns[0]})%'`,
       ) as Array<{ indexname: string }>;
       for (const index of indexes) {
-        if (index.indexname !== item.name) {
+        if (index.indexname !== item.name && !protectedIndexNames.has(index.indexname)) {
           await queryRunner.query(`DROP INDEX IF EXISTS "${String(index.indexname).replace(/"/g, '""')}"`);
         }
       }

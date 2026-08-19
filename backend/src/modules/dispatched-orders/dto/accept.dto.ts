@@ -5,14 +5,4 @@ export class AcceptDispatchedOrderDto {
   @IsString()
   @MaxLength(255)
   note?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(64)
-  signPlatform?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(128)
-  templateName?: string;
 }

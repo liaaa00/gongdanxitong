@@ -37,6 +37,7 @@ export const ROLE_ACTIONS = [
   'route.offboarding_contact_pool',
   'route.offboarding_social_suspend_pool',
   'route.leader_dashboard',
+  'business_scope.switch',
   'system.admin',
   'module.contract.manage',
   'module.onboarding_contact.manage',
@@ -133,6 +134,9 @@ const SOCIAL_INSURANCE_MODULE_ACTIONS: RoleActionCode[] = [
   ...MODULE_BATCH_BASE_ACTIONS,
   'dispatched_order.batch_feedback',
 ];
+// This role grants eligibility to switch scopes only. Business actions are assigned per person in the permission center.
+const BUSINESS_SCOPE_SWITCHER_ACTIONS: RoleActionCode[] = ['business_scope.switch'];
+
 const SOCIAL_INSURANCE_RESIGN_MODULE_ACTIONS: RoleActionCode[] = [
   'route.onboarding',
   'route.social_insurance_resign',
@@ -164,6 +168,9 @@ export const DEFAULT_ROLE_ACTION_PERMISSIONS: RoleActionPermissionMatrix = {
   social_insurance_specialist: ['work_order.view', 'work_order.export', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, ...SOCIAL_INSURANCE_MODULE_ACTIONS, ...SOCIAL_INSURANCE_RESIGN_MODULE_ACTIONS],
   welfare_specialist: ['work_order.view', 'work_order.export', ...DASHBOARD_ACTIONS, 'route.work_orders', 'route.work_order_detail'],
   social_security_team: ['work_order.view', 'work_order.export'],
+  // 管理员可将这两个最小能力角色逐人分配；默认不绑定任何现有账号。
+  payroll_bank_card_exporter: ['route.dashboard', 'route.onboarding', 'route.onboarding_payroll_bank_card', 'module.payroll_bank_card.manage'],
+  business_scope_switcher: BUSINESS_SCOPE_SWITCHER_ACTIONS,
 };
 
 /**
@@ -255,6 +262,7 @@ export class RoleActionPermissionService {
       { code: 'route.offboarding_contact_pool', name: '离职材料收集池入口', description: '允许访问离职材料收集池入口' },
       { code: 'route.offboarding_social_suspend_pool', name: '减员报岗录入池入口', description: '允许访问减员报岗录入池入口' },
       { code: 'route.leader_dashboard', name: '领导看板入口', description: '允许访问领导看板' },
+      { code: 'business_scope.switch', name: '业务范围切换', description: '允许在北仑与菜鸟业务范围之间切换' },
       { code: 'system.admin', name: '后台管理入口', description: '允许访问后台管理配置入口' },
       { code: 'module.contract.manage', name: '劳动合同新签模块', description: '允许访问劳动合同新签子工单模块' },
       { code: 'module.onboarding_contact.manage', name: '入职联系模块', description: '允许访问入职联系子工单模块' },

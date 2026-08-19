@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Customer, CustomerAssignee, FieldConfig, ImportJob, ImportTemplateField } from 'src/entities';
 import { AiModule } from 'src/modules/ai/ai.module';
 import { FieldsModule } from 'src/modules/admin/fields/fields.module';
+import { ContractSubjectsModule } from 'src/modules/contract-subjects/contract-subjects.module';
 import { DispatchEngineModule } from 'src/modules/dispatch-engine/dispatch-engine.module';
 import { InServiceOrdersModule } from 'src/modules/in-service-orders/in-service-orders.module';
 import { UploadsModule } from 'src/modules/uploads/uploads.module';
@@ -24,6 +25,7 @@ import { WorkOrderImportService } from './work-order-import.service';
     WorkOrderModule,
     InServiceOrdersModule,
     DispatchEngineModule,
+    ContractSubjectsModule,
     FieldsModule,
     AttachmentsModule,
     TypeOrmModule.forFeature([FieldConfig, ImportTemplateField, ImportJob, Customer, CustomerAssignee]),

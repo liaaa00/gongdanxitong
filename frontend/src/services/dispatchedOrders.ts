@@ -112,6 +112,10 @@ export interface DispatchedOrderItem {
   created_at: string;
   work_order_updated_at?: string;
   workOrderUpdatedAt?: string;
+  related_module_statuses?: Record<string, string>;
+  relatedModuleStatuses?: Record<string, string>;
+  data_entry_status?: string | null;
+  dataEntryStatus?: string | null;
 }
 
 const MODULE_META: Record<string, { name: string; visible_fields: string[]; supplementable_fields: string[] }> = {
@@ -227,12 +231,15 @@ function normalizeStringArray(value: unknown): string[] {
   return value.map((item) => String(item)).filter(Boolean);
 }
 
-function normalizeDispatchedOrderItem(raw: unknown): DispatchedOrderItem {
+export function normalizeDispatchedOrderItem(raw: unknown): DispatchedOrderItem {
   const row = (raw || {}) as Record<string, unknown>;
   const parent = (row.parentOrder || row.parent_order || {}) as Record<string, unknown>;
   const moduleCode = String(row.module_code ?? row.moduleCode ?? '');
   const meta = MODULE_META[moduleCode] || { name: moduleCode, visible_fields: [], supplementable_fields: [] };
-  const extraData = (row.extra_data ?? row.extraData ?? row.parent_extra_data ?? row.parentExtraData ?? parent.extra_data ?? parent.extraData) as Record<string, unknown> | undefined;
+  const fieldValues = Array.isArray(row.fields)
+    ? Object.fromEntries((row.fields as Array<Record<string, unknown>>).map((field) => [String(field.fieldCode ?? field.field_code ?? ''), field.value]).filter(([code]) => Boolean(code)))
+    : {};
+  const extraData = (row.extra_data ?? row.extraData ?? row.parent_extra_data ?? row.parentExtraData ?? parent.extra_data ?? parent.extraData ?? (Object.keys(fieldValues).length > 0 ? fieldValues : undefined)) as Record<string, unknown> | undefined;
   const creator = (row.creator ?? row.createdByUser ?? row.created_by_user ?? parent.creator ?? parent.createdByUser ?? parent.created_by_user) as Record<string, unknown> | undefined;
   const createdByRaw = row.created_by ?? row.createdBy ?? parent.created_by ?? parent.createdBy ?? '';
   const createdByNameRaw = row.created_by_name ?? row.createdByName ?? row.creator_name ?? row.creatorName
@@ -296,6 +303,10 @@ function normalizeDispatchedOrderItem(raw: unknown): DispatchedOrderItem {
     slaReminderBeforeHours: (row.slaReminderBeforeHours ?? row.sla_reminder_before_hours ?? null) as number | null,
     work_order_updated_at: String(row.work_order_updated_at ?? row.workOrderUpdatedAt ?? parent.updated_at ?? parent.updatedAt ?? ''),
     workOrderUpdatedAt: String(row.workOrderUpdatedAt ?? row.work_order_updated_at ?? parent.updatedAt ?? parent.updated_at ?? ''),
+    related_module_statuses: (row.related_module_statuses ?? row.relatedModuleStatuses ?? {}) as Record<string, string>,
+    relatedModuleStatuses: (row.relatedModuleStatuses ?? row.related_module_statuses ?? {}) as Record<string, string>,
+    data_entry_status: (row.data_entry_status ?? row.dataEntryStatus ?? (row.related_module_statuses as Record<string, unknown> | undefined)?.data_entry ?? (row.relatedModuleStatuses as Record<string, unknown> | undefined)?.data_entry ?? null) as string | null,
+    dataEntryStatus: (row.dataEntryStatus ?? row.data_entry_status ?? (row.relatedModuleStatuses as Record<string, unknown> | undefined)?.data_entry ?? (row.related_module_statuses as Record<string, unknown> | undefined)?.data_entry ?? null) as string | null,
     created_at: String(row.created_at ?? row.createdAt ?? row.dispatched_at ?? row.dispatchedAt ?? new Date().toISOString()),
   } as DispatchedOrderItem;
 }
@@ -348,6 +359,7 @@ function flattenDispatched(): DispatchedOrderItem[] {
   const parents = readParentOrders();
   const out: DispatchedOrderItem[] = [];
   for (const p of parents) {
+    const relatedModuleStatuses = Object.fromEntries((p.dispatched_orders || []).map((child) => [child.module_code, child.status]));
     for (const d of p.dispatched_orders || []) {
       const meta = MODULE_META[d.module_code] || { name: d.module_code, visible_fields: [], supplementable_fields: [] };
       out.push({
@@ -365,6 +377,11 @@ function flattenDispatched(): DispatchedOrderItem[] {
         customer_code: String(p.extra_data?.customer_code ?? p.customer_code ?? ''),
         created_by: String((p as unknown as Record<string, unknown>).created_by ?? (p as unknown as Record<string, unknown>).createdBy ?? ''),
         created_by_name: String((p as unknown as Record<string, unknown>).created_by_name ?? (p as unknown as Record<string, unknown>).createdByName ?? (p as unknown as Record<string, unknown>).created_by ?? (p as unknown as Record<string, unknown>).createdBy ?? ''),
+        extra_data: { ...(p.extra_data ?? {}) },
+        related_module_statuses: relatedModuleStatuses,
+        relatedModuleStatuses,
+        data_entry_status: relatedModuleStatuses.data_entry ?? null,
+        dataEntryStatus: relatedModuleStatuses.data_entry ?? null,
         order_type: String((p as unknown as Record<string, unknown>).order_type ?? (p as unknown as Record<string, unknown>).orderType ?? 'onboarding'),
         visible_fields: meta.visible_fields,
         return_reason: d.return_reason ?? null,
@@ -614,10 +631,7 @@ export async function getDispatchedOrder(id: string): Promise<DispatchedOrderIte
   return normalizeDispatchedOrderItem(raw);
 }
 
-export async function acceptDispatchedOrder(
-  id: string,
-  payload?: { signPlatform?: string; templateName?: string },
-): Promise<DispatchedOrderItem> {
+export async function acceptDispatchedOrder(id: string): Promise<DispatchedOrderItem> {
   if (isMockMode) {
     const updated = updateChildInParent(id, (c) => {
       c.status = 'processing';
@@ -626,7 +640,7 @@ export async function acceptDispatchedOrder(
     });
     return mockDelay(updated || ({} as DispatchedOrderItem));
   }
-  return request.post(`/dispatched-orders/${id}/accept`, payload || {}) as Promise<DispatchedOrderItem>;
+  return request.post(`/dispatched-orders/${id}/accept`, {}) as Promise<DispatchedOrderItem>;
 }
 
 export interface BatchAcceptResult {

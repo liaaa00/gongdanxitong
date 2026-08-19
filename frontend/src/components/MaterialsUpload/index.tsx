@@ -2,12 +2,13 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } fro
 import { Card, Upload, Button, Tag, Space, App, Popconfirm } from 'antd';
 import type { UploadFile } from 'antd/es/upload/interface';
 import {
-  CheckOutlined, CloseOutlined, DeleteOutlined, DownloadOutlined,
+  CheckOutlined, CloseOutlined, DeleteOutlined, DownloadOutlined, EyeOutlined,
   InboxOutlined, UploadOutlined,
 } from '@ant-design/icons';
 import {
   deleteOrderAttachment,
   downloadOrderAttachment,
+  previewOrderAttachment,
   listOrderAttachments,
   receiveOrderAttachment,
   reviewOrderAttachment,
@@ -29,6 +30,7 @@ interface MaterialsUploadProps {
   bizPurpose: 'benefit_material' | 'onboarding_material' | 'resignation_cert' | 'resignation_material' | 'renewal_contract';
   readOnly?: boolean;
   title?: string;
+  emptyText?: string;
 }
 
 // 提交前暂存能力：workOrderId 为空时选中的文件先本地缓存，
@@ -58,6 +60,7 @@ const MaterialsUpload = forwardRef<MaterialsUploadHandle, MaterialsUploadProps>(
   bizPurpose,
   readOnly = false,
   title: customTitle,
+  emptyText = '暂无材料',
 }, ref) => {
   const { message } = App.useApp();
   const [attachments, setAttachments] = useState<OrderAttachmentItem[]>([]);
@@ -157,6 +160,14 @@ const MaterialsUpload = forwardRef<MaterialsUploadHandle, MaterialsUploadProps>(
     }
   };
 
+  const handlePreview = async (item: OrderAttachmentItem) => {
+    try {
+      await previewOrderAttachment(item);
+    } catch (error) {
+      message.warning(error instanceof Error ? error.message : '文件暂不支持在线预览');
+    }
+  };
+
   const removeStaged = (uid: string) => {
     setStagedFiles((prev) => prev.filter((item) => item.uid !== uid));
   };
@@ -245,6 +256,19 @@ const MaterialsUpload = forwardRef<MaterialsUploadHandle, MaterialsUploadProps>(
                     </div>
                   </Space>
                   <Space size={4} wrap>
+                    {(() => {
+                      const fileName = item.original_name || item.file_name || '';
+                      const extension = fileName.split('.').pop()?.toLowerCase() || '';
+                      const mimeType = String(item.mime_type || '').toLowerCase();
+                      const previewable = mimeType.startsWith('image/')
+                        || mimeType === 'application/pdf'
+                        || ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'pdf'].includes(extension);
+                      return previewable ? (
+                        <Button type="link" size="small" icon={<EyeOutlined />} disabled={!item.download_url} onClick={() => handlePreview(item)}>
+                          预览
+                        </Button>
+                      ) : null;
+                    })()}
                     <Button type="link" size="small" icon={<DownloadOutlined />} disabled={!item.download_url} onClick={() => handleDownload(item)}>
                       下载
                     </Button>
@@ -261,7 +285,7 @@ const MaterialsUpload = forwardRef<MaterialsUploadHandle, MaterialsUploadProps>(
           {attachments.length === 0 && stagedFiles.length === 0 && (
             <div style={{ textAlign: 'center', color: '#999', padding: 24 }}>
               <InboxOutlined style={{ fontSize: 32 }} />
-              <div>暂无材料</div>
+              <div>{emptyText}</div>
             </div>
           )}
         </div>

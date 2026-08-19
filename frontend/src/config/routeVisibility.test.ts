@@ -13,6 +13,21 @@ const roles = (codes: string[]) => codes.map((code) => ({ code }));
 afterEach(() => setDynamicPermissionConfig(null));
 
 describe('routeVisibility admin-only configuration routes', () => {
+  it('keeps admins visible when the active payroll route only names an unassigned exporter role', () => {
+    setDynamicPermissionConfig({
+      version: 'payroll-admin-test',
+      roles: [],
+      routePermissions: [
+        { path: '/onboarding/payroll_bank_card', allowedRoles: ['payroll_bank_card_exporter'] },
+      ],
+      fieldPermissions: [],
+    });
+
+    expect(canAccessPath('/onboarding/payroll_bank_card', roles([ROLE.ADMIN]))).toBe(true);
+    expect(canAccessPath('/onboarding/payroll_bank_card', roles([ROLE.DATA_ENTRY_LEADER]))).toBe(false);
+    expect(canAccessPath('/onboarding/payroll_bank_card', roles([ROLE.PAYROLL_BANK_CARD_EXPORTER]))).toBe(true);
+  });
+
   it('uses the loaded permission-center route matrix before static fallback', () => {
     setDynamicPermissionConfig({
       version: '2.0.0',
@@ -160,6 +175,7 @@ describe('routeVisibility admin-only configuration routes', () => {
     expect(canAccessPath('/onboarding/resignation_contact', memberRoles)).toBe(true);
     expect(canAccessPath('/onboarding/data_entry_resign', memberRoles)).toBe(true);
     expect(canAccessPath('/onboarding/social_insurance_resign', memberRoles)).toBe(true);
+    expect(canAccessPath('/onboarding/payroll_bank_card', memberRoles)).toBe(true);
     expect(canAccessPath('/onboarding/resignation_cert', memberRoles)).toBe(false);
     expect(canAccessPath('/onboarding/renewal_contract', memberRoles)).toBe(false);
     expect(canAccessPath('/onboarding/benefit_apply', memberRoles)).toBe(false);

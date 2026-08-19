@@ -441,7 +441,7 @@ describe('WorkOrderService unit tests', () => {
       .flatMap((call) => (Array.isArray(call[0]) ? call[0] : [call[0]]))
       .map((entry: { moduleCode: string }) => entry.moduleCode)
       .sort();
-    expect(savedModules).toEqual(['contract', 'data_entry', 'onboarding_contact', 'social_insurance']);
+    expect(savedModules).toEqual(['contract', 'data_entry', 'onboarding_contact', 'payroll_bank_card', 'social_insurance']);
     expect(txNotificationRepo.save).toHaveBeenCalledTimes(4);
     const notifications = txNotificationRepo.save.mock.calls.map(([row]) => row as Notification);
     expect(notifications).toEqual(expect.arrayContaining([
@@ -454,19 +454,27 @@ describe('WorkOrderService unit tests', () => {
     expect(result.dispatchedOrders.map((item) => item.moduleCode).sort()).toEqual(['contract', 'data_entry', 'onboarding_contact', 'social_insurance']);
   });
 
-  it('filters list results by business group leader own created work orders and returns pagination metadata', async () => {
+  it('filters list results by own creator, submitted time, and returns pagination metadata', async () => {
     const rows = [makeWorkOrder({ id: 'wo-1' }), makeWorkOrder({ id: 'wo-2', orderNo: 'ON20260511002' })];
     const qb = createQueryBuilderMock(rows, 2);
     workOrderRepository.createQueryBuilder.mockReturnValue(qb);
 
     const result = await service.findAll(
-      { page: 2, pageSize: 10, status: WorkOrderStatus.PROCESSING },
+      {
+        page: 2,
+        pageSize: 10,
+        status: WorkOrderStatus.PROCESSING,
+        submittedAfter: '2026-08-01T00:00:00.000Z',
+        submittedBefore: '2026-08-31T23:59:59.999Z',
+      },
       makeUser({ sub: 'leader-1', roles: ['business_group_leader', 'salesperson'] }),
     );
 
     expect(validationService.resolveUserDepartmentIds).not.toHaveBeenCalled();
     expect(qb.andWhere).toHaveBeenCalledWith('w.created_by = :userId', { userId: 'leader-1' });
     expect(qb.andWhere).toHaveBeenCalledWith('w.status = :status', { status: WorkOrderStatus.PROCESSING });
+    expect(qb.andWhere).toHaveBeenCalledWith('w.submitted_at >= :submittedAfter', { submittedAfter: '2026-08-01T00:00:00.000Z' });
+    expect(qb.andWhere).toHaveBeenCalledWith('w.submitted_at <= :submittedBefore', { submittedBefore: '2026-08-31T23:59:59.999Z' });
     expect(qb.skip).toHaveBeenCalledWith(10);
     expect(qb.take).toHaveBeenCalledWith(10);
     expect(result).toMatchObject({ total: 2, page: 2, pageSize: 10 });
@@ -490,9 +498,23 @@ describe('WorkOrderService unit tests', () => {
     const order = makeWorkOrder({
       id: 'wo-export',
       orderType: OrderType.RESIGNATION,
-      extraData: { position: '工程师', bank_name: '=危险公式' },
+      extraData: {
+        position: '工程师',
+        bank_name: '=危险公式',
+        social_insurance_result: '是',
+        medical_insurance_result: '否',
+        housing_fund_result: '是',
+        social_insurance_remark: '已反馈',
+      },
     });
     workOrderRepository.find.mockResolvedValue([order]);
+    dispatchedOrderRepository.find.mockResolvedValue([
+      makeDispatched({
+        parentOrderId: 'wo-export',
+        moduleCode: 'social_insurance',
+        status: DispatchedOrderStatus.COMPLETED,
+      }),
+    ]);
     fieldConfigRepository.find.mockResolvedValue([
       { fieldCode: 'position', fieldName: '岗位', displayOrder: 1, isActive: true },
       { fieldCode: 'bank_name', fieldName: '开户银行', displayOrder: 2, isActive: true },
@@ -515,8 +537,18 @@ describe('WorkOrderService unit tests', () => {
     const workbook = new Workbook();
     await workbook.xlsx.load(result.buffer as never);
     const sheet = workbook.worksheets[0];
-    expect(sheet.getRow(1).values).toEqual(expect.arrayContaining(['工单编号', '员工姓名', '岗位', '开户银行']));
-    expect(sheet.getCell('L2').value).toBe("'=危险公式");
+    expect(sheet.getRow(1).values).toEqual(expect.arrayContaining([
+      '工单编号', '员工姓名', '岗位', '开户银行', '提交时间',
+      '社保公积金状态', '社保是否办结', '医保是否办结', '公积金是否办结', '社保公积金办理备注',
+    ]));
+    const headers = sheet.getRow(1).values as unknown[];
+    const statusColumn = headers.findIndex((value) => value === '社保公积金状态');
+    const feedbackColumn = headers.findIndex((value) => value === '社保是否办结');
+    expect(sheet.getRow(2).getCell(statusColumn).value).toBe('已完成');
+    expect(sheet.getRow(2).getCell(feedbackColumn).value).toBe('是');
+    const bankNameColumn = headers.findIndex((value) => value === '开户银行');
+    expect(bankNameColumn).toBeGreaterThan(0);
+    expect(sheet.getRow(2).getCell(bankNameColumn).value).toBe("'=危险公式");
   });
 
   it('rejects main-order export for non-administrators', async () => {

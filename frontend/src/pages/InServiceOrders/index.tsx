@@ -13,6 +13,7 @@ import {
   IN_SERVICE_ORDER_KIND_META,
   PROVINCES_27,
   getInServiceCategoryPath,
+  getInServiceDetailPath,
   getInServiceStatusFilterMeta,
   getInServiceStatusMeta,
   type InServiceBusinessType,
@@ -22,9 +23,11 @@ import {
 import {
   createBatchRenewalOrders,
   getInServiceOrders,
+  getRenewalHistory,
   type InServiceOrder,
   type InServiceOrderListQuery,
   type InServiceOrderPayload,
+  type RenewalHistoryResult,
 } from '@/services/inServiceOrders';
 import { downloadOutOfProvinceOrdersExport } from '@/services/outOfProvinceExport';
 import { getCustomers, type CustomerItem } from '@/services/customers';
@@ -57,6 +60,8 @@ export interface BatchRenewalPreviewRow {
   rowNumber: number;
   customerName: string;
   departmentName: string;
+  departmentError: string | null;
+  sourceLabel: '待匹配' | '系统历史' | '历史存量';
   employeeName: string;
   idCardNo: string;
   contractTermType: string;
@@ -110,7 +115,7 @@ function matchesValue(value: string, candidates: Array<string | undefined>): boo
 
 export function flattenDepartments(departments: DepartmentItem[]): DepartmentItem[] {
   return departments.flatMap((department) => [
-    department,
+    ...(department.is_active !== false ? [department] : []),
     ...flattenDepartments(department.children ?? []),
   ]);
 }
@@ -120,7 +125,7 @@ export function buildBatchRenewalRows(
   customers: CustomerItem[],
   departments: DepartmentItem[],
 ): BatchRenewalPreviewRow[] {
-  return rawRows
+  const rows = rawRows
     .filter((row) => Object.values(row).some((value) => toCellText(value)))
     .map((row, index) => {
       const customerName = toCellText(getExcelCell(row, ['客户名称', '客户全称', '客户编码']));
@@ -142,19 +147,21 @@ export function buildBatchRenewalRows(
         item.customerName,
         item.customerCode,
       ]));
-      const departmentMatches = departments.filter((item) => matchesValue(departmentName, [
+      const departmentMatches = departmentName ? departments.filter((item) => matchesValue(departmentName, [
         item.id,
         item.name,
         item.code,
-      ]));
+      ])) : [];
       const errors: string[] = [];
 
       if (!customerName) errors.push('客户名称不能为空');
       else if (customerMatches.length === 0) errors.push('客户不存在');
       else if (customerMatches.length > 1) errors.push('客户名称不唯一，请使用客户编码');
-      if (!departmentName) errors.push('发起部门不能为空');
-      else if (departmentMatches.length === 0) errors.push('部门不存在');
-      else if (departmentMatches.length > 1) errors.push('部门名称不唯一，请使用部门编码');
+      const departmentError = departmentName && departmentMatches.length === 0
+        ? '发起部门不存在'
+        : departmentMatches.length > 1
+          ? '发起部门名称不唯一，请使用部门编码'
+          : null;
       if (!employeeName) errors.push('姓名不能为空');
       if (!idCardNo) errors.push('证件号码不能为空');
       if (!['固定期限', '无固定期限'].includes(contractTermType)) errors.push('合同期限形式无效');
@@ -167,7 +174,7 @@ export function buildBatchRenewalRows(
 
       const payload = errors.length === 0 ? {
         customerId: customerMatches[0].id,
-        departmentId: departmentMatches[0].id,
+        ...(departmentMatches[0] ? { departmentId: departmentMatches[0].id } : {}),
         employeeName,
         idCardNo,
         extraData: {
@@ -183,7 +190,9 @@ export function buildBatchRenewalRows(
       return {
         rowNumber: index + 2,
         customerName,
-        departmentName,
+        departmentName: departmentName || '未填写',
+        departmentError,
+        sourceLabel: '待匹配' as const,
         employeeName,
         idCardNo,
         contractTermType,
@@ -195,6 +204,66 @@ export function buildBatchRenewalRows(
         payload,
       };
     });
+
+  const keyCounts = new Map<string, number>();
+  rows.forEach((row) => {
+    if (!row.payload) return;
+    const key = `${row.payload.customerId}:${row.idCardNo.toUpperCase()}`;
+    keyCounts.set(key, (keyCounts.get(key) ?? 0) + 1);
+  });
+  return rows.map((row) => {
+    if (!row.payload) return row;
+    const key = `${row.payload.customerId}:${row.idCardNo.toUpperCase()}`;
+    if ((keyCounts.get(key) ?? 0) < 2) return row;
+    return {
+      ...row,
+      error: '同一客户和证件号码在本批次重复',
+      payload: null,
+    };
+  });
+}
+
+export async function classifyBatchRenewalRows(
+  rows: BatchRenewalPreviewRow[],
+  historyLoader: (customerId: string, idCardNo: string) => Promise<RenewalHistoryResult> = getRenewalHistory,
+): Promise<BatchRenewalPreviewRow[]> {
+  return Promise.all(rows.map(async (row) => {
+    if (!row.payload || row.error) return row;
+    try {
+      const history = await historyLoader(row.payload.customerId, row.idCardNo);
+      if (history.found) {
+        if (!history.departmentId) {
+          return {
+            ...row,
+            sourceLabel: '系统历史' as const,
+            error: '历史记录缺少发起部门，无法续签',
+            payload: null,
+          };
+        }
+        return {
+          ...row,
+          sourceLabel: '系统历史' as const,
+          departmentName: history.departmentName || `自动继承（${history.departmentId}）`,
+          payload: { ...row.payload, departmentId: history.departmentId },
+        };
+      }
+      if (row.departmentError || !row.payload.departmentId) {
+        return {
+          ...row,
+          sourceLabel: '历史存量' as const,
+          error: row.departmentError || '系统无历史记录，发起部门不能为空',
+          payload: null,
+        };
+      }
+      return { ...row, sourceLabel: '历史存量' as const };
+    } catch (error) {
+      return {
+        ...row,
+        error: error instanceof Error ? `历史匹配失败：${error.message}` : '历史匹配失败',
+        payload: null,
+      };
+    }
+  }));
 }
 
 function downloadBatchRenewalTemplate(): void {
@@ -243,18 +312,7 @@ export function getOutOfProvinceImportPath(orderKind: InServiceOrderKind): strin
   return `/out-of-province/import?orderType=${orderKind}`;
 }
 
-export function getInServiceDetailPath(
-  orderKind: InServiceOrderKind,
-  id: string,
-  businessScope?: 'beilun' | 'out_of_province',
-): string {
-  if (orderKind === IN_SERVICE_ORDER_KINDS.CONTRACT_RENEWAL) return `/renewal/${id}`;
-  if (orderKind === IN_SERVICE_ORDER_KINDS.CERTIFICATE) return `/in-service/certificates/${id}`;
-  if (orderKind === IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_INCREASE) return `/out-of-province/increase/${id}`;
-  if (orderKind === IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_DECREASE) return `/out-of-province/decrease/${id}`;
-  if (businessScope === 'out_of_province') return `/out-of-province/single-business/${id}`;
-  return `/in-service/${id}`;
-}
+export { getInServiceDetailPath } from '@/constants/inService';
 
 export default function InServiceOrderList({
   orderKind = IN_SERVICE_ORDER_KINDS.SINGLE_BUSINESS,
@@ -299,9 +357,10 @@ export default function InServiceOrderList({
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       if (!worksheet) throw new Error('Excel 中没有可读取的工作表');
       const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: '' });
-      const rows = buildBatchRenewalRows(rawRows, customerResult.list, flattenDepartments(departments));
-      if (rows.length === 0) throw new Error('Excel 中没有续签资料');
-      if (rows.length > 100) throw new Error('单次最多导入 100 条续签资料');
+      const parsedRows = buildBatchRenewalRows(rawRows, customerResult.list, flattenDepartments(departments));
+      if (parsedRows.length === 0) throw new Error('Excel 中没有续签资料');
+      if (parsedRows.length > 100) throw new Error('单次最多导入 100 条续签资料');
+      const rows = await classifyBatchRenewalRows(parsedRows);
       setBatchRows(rows);
       if (rows.some((row) => row.error)) message.warning('部分行校验未通过，请修正 Excel 后重新上传');
     } catch (error) {
@@ -331,7 +390,7 @@ export default function InServiceOrderList({
     if (selectedOutOfProvinceRows.length === 0) return;
     setOutOfProvinceExporting(true);
     try {
-      const typeLabel = isOutIncrease ? '省外增员' : '省外减员';
+      const typeLabel = isOutIncrease ? '菜鸟增员' : '菜鸟减员';
       await downloadOutOfProvinceOrdersExport(
         selectedOutOfProvinceRows.map((row) => row.id),
         typeLabel,
@@ -629,12 +688,13 @@ export default function InServiceOrderList({
                 size="small"
                 rowKey="rowNumber"
                 pagination={false}
-                scroll={{ x: 1050, y: 320 }}
+                scroll={{ x: 1160, y: 320 }}
                 dataSource={batchRows}
                 columns={[
                   { title: '行', dataIndex: 'rowNumber', width: 60, fixed: 'left' },
                   { title: '客户', dataIndex: 'customerName', width: 170 },
-                  { title: '部门', dataIndex: 'departmentName', width: 130 },
+                  { title: '部门', dataIndex: 'departmentName', width: 150 },
+                  { title: '来源', dataIndex: 'sourceLabel', width: 100 },
                   { title: '姓名', dataIndex: 'employeeName', width: 100 },
                   { title: '证件号码', dataIndex: 'idCardNo', width: 180 },
                   { title: '期限形式', dataIndex: 'contractTermType', width: 110 },

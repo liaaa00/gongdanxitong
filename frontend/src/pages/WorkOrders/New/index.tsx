@@ -20,12 +20,21 @@ const ORDER_TYPE_LABEL: Record<SupportedOrderType, string> = {
   resignation: '离职',
 };
 
+const PAYROLL_BANK_CARD_FIELDS = ['bank_name', 'bank_account', 'bank_location', 'payroll_location'];
+
 export const CONDITIONAL_REQUIRED_BY_TYPE: Record<SupportedOrderType, ConditionalRequired[]> = {
   onboarding: [
     { field: 'need_company_contract', value: '是', requireFields: ['need_esign', 'esign_platform', 'contract_subject', 'project_name', 'work_arrangement', 'contract_template', 'need_contract_urge'] },
     { field: 'esign_platform', value: 'E签宝', requireFields: ['company_address'] },
     { field: 'need_company_payroll', value: '是', requireFields: ['payroll_location'] },
     { field: 'need_onboarding_contact', value: '否', requireFields: ['current_address'] },
+    {
+      conditions: [
+        { field: 'need_payroll_slip', value: '是' },
+        { field: 'need_onboarding_contact', value: '否' },
+      ],
+      requireFields: PAYROLL_BANK_CARD_FIELDS,
+    },
     { field: 'probation_start_date', operator: 'exists', requireFields: ['probation_months', 'probation_end_date', 'probation_salary'] },
     { field: 'is_common_template', value: '否', requireFields: ['template_name'] },
   ],

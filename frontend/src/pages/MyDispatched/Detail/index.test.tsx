@@ -556,6 +556,32 @@ describe('MyDispatchedDetail readonly and creator repair actions', () => {
     expect(within(dialog).getByLabelText('修改原因')).toBeRequired();
   });
 
+  it('prefills creator edit fields with the current order values', async () => {
+    mocks.fieldPermissions = {
+      employee_name: 'visible',
+      base_salary: 'visible',
+      bank_name: 'visible',
+    };
+    mocks.getDispatchedOrder.mockResolvedValue({
+      ...baseOrder,
+      visible_fields: ['employee_name', 'base_salary', 'bank_name'],
+      extra_data: {
+        employee_name: '张三',
+        base_salary: '¥2,600.00',
+        bank_name: '中国银行',
+      },
+    });
+
+    const user = userEvent.setup();
+    renderDetail('/my-dispatched/d-1');
+
+    await user.click(await screen.findByRole('button', { name: /修改/ }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByLabelText('员工姓名')).toHaveValue('张三');
+    expect(within(dialog).getByLabelText('基本工资')).toHaveValue('¥2,600.00');
+    expect(within(dialog).getByLabelText('开户银行')).toHaveValue('中国银行');
+  });
+
   it('submits one changed field without forcing old empty required fields to be completed', async () => {
     mocks.fieldPermissions = {
       employee_name: 'visible',
@@ -1098,7 +1124,7 @@ describe('MyDispatchedDetail readonly and creator repair actions', () => {
       {
         title: '薪酬银行卡信息',
         codes: [
-          'employee_name', 'id_card_no', 'bank_name', 'bank_account',
+          'employee_name', 'id_card_no', 'need_payroll_slip', 'bank_name', 'bank_account',
           'bank_location', 'branch_code', 'payroll_location',
         ],
       },
@@ -1111,7 +1137,7 @@ describe('MyDispatchedDetail readonly and creator repair actions', () => {
         title: '社保公积金',
         codes: [
           'insured_unit', 'social_insurance_remark', 'social_pay_region', 'start_month',
-          'social_base', 'fund_start_month', 'fund_base', 'fund_ratio',
+          'social_base', 'fund_start_month', 'fund_base', 'fund_ratio', 'supplementary_fund_ratio',
           'social_insurance_result', 'medical_insurance_result', 'housing_fund_result',
         ],
       },
@@ -1121,7 +1147,7 @@ describe('MyDispatchedDetail readonly and creator repair actions', () => {
         title: '社保公积金',
         codes: [
           'social_insurance_result', 'medical_insurance_result', 'housing_fund_result',
-          'social_pay_region', 'social_insurance_remark',
+          'social_pay_region', 'supplementary_fund_ratio', 'social_insurance_remark',
         ],
       },
       {

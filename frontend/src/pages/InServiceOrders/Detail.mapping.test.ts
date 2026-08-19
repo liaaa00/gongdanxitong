@@ -69,8 +69,10 @@ describe('independent in-service flow presentation', () => {
     });
   });
 
-  it('uses existing cancellation state for distinct renewal withdrawal and void commands', () => {
+  it('uses existing cancellation state for distinct renewal and certificate withdrawal commands', () => {
     expect(getInServiceClosureActions(IN_SERVICE_ORDER_KINDS.CONTRACT_RENEWAL, true))
+      .toEqual(['withdraw', 'void']);
+    expect(getInServiceClosureActions(IN_SERVICE_ORDER_KINDS.CERTIFICATE, true))
       .toEqual(['withdraw', 'void']);
     expect(getInServiceClosureActions(IN_SERVICE_ORDER_KINDS.SINGLE_BUSINESS, true))
       .toEqual(['void']);

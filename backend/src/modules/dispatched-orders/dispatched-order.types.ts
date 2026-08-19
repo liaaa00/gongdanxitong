@@ -157,6 +157,10 @@ export interface DispatchedOrderListItem {
   configured_handler_names?: string[];
   extraData?: Record<string, any>;
   extra_data?: Record<string, any>;
+  relatedModuleStatuses?: Record<string, string>;
+  related_module_statuses?: Record<string, string>;
+  dataEntryStatus?: string | null;
+  data_entry_status?: string | null;
 }
 
 export interface DispatchedOrderDetailItem extends DispatchedOrderListItem {

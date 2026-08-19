@@ -20,6 +20,7 @@ const RESIGNATION_FIELDS = [
   { field_code: 'contract_terminate_date', field_name: '合同解除日', field_type: 'DATE', required: true, order_type: 'resignation' },
   { field_code: 'handover_person', field_name: '工作交接人', field_type: 'TEXT', required: false, order_type: 'resignation' },
   { field_code: 'need_resignation_cert', field_name: '是否需要开具离职证明', field_type: 'DROPDOWN', required: true, order_type: 'resignation', dropdown_options: '是,否' },
+  { field_code: 'resignation_cert_format', field_name: '离职证明形式', field_type: 'DROPDOWN', required: false, order_type: 'resignation', dropdown_options: '电子证明,纸质证明' },
   { field_code: 'cert_delivery_address', field_name: '送达地址', field_type: 'TEXT', required: false, order_type: 'resignation' },
 ];
 

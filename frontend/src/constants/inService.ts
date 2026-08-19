@@ -9,6 +9,19 @@ export const IN_SERVICE_ORDER_KINDS = {
 
 export type InServiceOrderKind = typeof IN_SERVICE_ORDER_KINDS[keyof typeof IN_SERVICE_ORDER_KINDS];
 
+export function getInServiceDetailPath(
+  orderKind: InServiceOrderKind,
+  id: string,
+  businessScope?: 'beilun' | 'out_of_province',
+): string {
+  if (orderKind === IN_SERVICE_ORDER_KINDS.CONTRACT_RENEWAL) return `/renewal/${id}`;
+  if (orderKind === IN_SERVICE_ORDER_KINDS.CERTIFICATE) return `/in-service/certificates/${id}`;
+  if (orderKind === IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_INCREASE) return `/out-of-province/increase/${id}`;
+  if (orderKind === IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_DECREASE) return `/out-of-province/decrease/${id}`;
+  if (businessScope === 'out_of_province') return `/out-of-province/single-business/${id}`;
+  return `/in-service/${id}`;
+}
+
 export const IN_SERVICE_ORDER_KIND_META: Record<InServiceOrderKind, {
   label: string;
   listTitle: string;
@@ -18,8 +31,8 @@ export const IN_SERVICE_ORDER_KIND_META: Record<InServiceOrderKind, {
   contract_renewal: { label: '劳动合同续签', listTitle: '劳动合同续签', createTitle: '发起劳动合同续签' },
   certificate: { label: '证明开具', listTitle: '证明开具', createTitle: '发起证明开具' },
   resignation_certificate: { label: '离职证明', listTitle: '离职证明', createTitle: '发起离职证明' },
-  out_of_province_increase: { label: '省外增员', listTitle: '省外增员', createTitle: '新建省外增员' },
-  out_of_province_decrease: { label: '省外减员', listTitle: '省外减员', createTitle: '新建省外减员' },
+  out_of_province_increase: { label: '菜鸟增员', listTitle: '菜鸟增员', createTitle: '新建菜鸟增员' },
+  out_of_province_decrease: { label: '菜鸟减员', listTitle: '菜鸟减员', createTitle: '新建菜鸟减员' },
 };
 
 export const PROVINCES_27 = [

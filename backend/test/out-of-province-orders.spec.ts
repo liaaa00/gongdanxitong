@@ -52,11 +52,15 @@ function makeService(options: { rows?: WorkOrder[]; scoped?: WorkOrder | null } 
     resubmit: jest.fn(),
   };
   const validationService = { resolveUserDepartmentIds: jest.fn(async () => ['dep-1']) };
+  const roleActionPermissionService = {
+    hasAnyRoleAction: jest.fn(async () => true),
+  };
   const service = new OutOfProvinceOrdersService(
     workOrderRepository as unknown as Repository<WorkOrder>,
     dispatchedOrderRepository as never,
     workOrderService as never,
     validationService as never,
+    roleActionPermissionService as never,
   );
   return { service, qb, workOrderRepository, workOrderService };
 }
@@ -103,6 +107,7 @@ describe('out-of-province order scope', () => {
         ],
       },
     );
+    expect(qb.orderBy).toHaveBeenCalledWith('w.createdAt', 'DESC');
   });
 
   it('does not resolve a Beilun order from the province detail endpoint', async () => {

@@ -151,6 +151,24 @@ describe('OnboardingModule header table filters', () => {
     expect(fundStopMonth?.renderText(undefined, { extra_data: { socialStopMonth: '2026-08' } })).toBe('2026-08');
   });
 
+  it('shows increase reporting status only on the contract list', () => {
+    mocks.moduleCode = 'contract';
+    const { unmount } = render(<OnboardingModule />);
+
+    let columns = mocks.latestProTableProps.columns as Array<Record<string, any>>;
+    const relatedStatus = columns.find((column) => column.key === 'data_entry_status');
+    expect(relatedStatus).toBeDefined();
+    expect(relatedStatus?.render(undefined, { data_entry_status: 'completed' })).toMatchObject({
+      props: { children: '已完成' },
+    });
+
+    unmount();
+    mocks.moduleCode = 'data_entry';
+    render(<OnboardingModule />);
+    columns = mocks.latestProTableProps.columns as Array<Record<string, any>>;
+    expect(columns.find((column) => column.key === 'data_entry_status')).toBeUndefined();
+  });
+
   it('maps social_insurance_resign route to backend resignation_social_insurance module code', async () => {
     mocks.moduleCode = 'social_insurance_resign';
 
@@ -206,13 +224,13 @@ describe('OnboardingModule payroll bank card export list', () => {
     const columns = mocks.latestProTableProps.columns as Array<Record<string, unknown>>;
     const visibleTitles = columns.filter((column) => !column.hideInTable).map((column) => column.title);
     expect(visibleTitles).toEqual([
-      '姓名', '证件号码', '开户行', '银行账号', '开户地', '商社代码', '发薪地',
+      '姓名', '证件号码', '是否需要工资单', '资料状态', '开户行', '银行账号', '开户地', '商社代码', '发薪地',
     ]);
     expect(visibleTitles).not.toEqual(expect.arrayContaining([
       '查看', '状态', '资料状态', '派发时间', '完成时间',
     ]));
 
-    expect(mocks.latestProTableProps.headerTitle).toBe('可直接导出数据');
+    expect(mocks.latestProTableProps.headerTitle).toBe('薪酬银行卡记录');
     const actions = mocks.latestProTableProps.toolBarRender() as React.ReactElement[];
     expect(actions.map((action) => action.key)).toEqual(['columns', 'export']);
     expect(mocks.latestProTableProps.rowSelection).toBeDefined();
@@ -220,6 +238,12 @@ describe('OnboardingModule payroll bank card export list', () => {
       id: 'payroll-1',
       module_code: 'payroll_bank_card',
       status: 'pending',
+      extra_data: {
+        bank_name: '中国银行',
+        bank_account: '6222000000000000',
+        bank_location: '宁波',
+        payroll_location: '宁波',
+      },
     })).toEqual({ disabled: false });
     expect(mocks.latestProTableProps.tableAlertRender).not.toBe(false);
   });
@@ -430,14 +454,28 @@ describe('OnboardingModule action permission baseline', () => {
     expect(state.canBatchComplete).toBe(true);
   });
 
-  it('keeps payroll bank card as an admin-only export list', () => {
-    const nonAdmin = getOnboardingModulePermissionState({
+  it('binds payroll bank-card visibility and export to one configured module permission', () => {
+    const unconfigured = getOnboardingModulePermissionState({
       currentModule: 'payroll_bank_card',
       userPermissions: DEFAULT_MATRIX.data_entry_leader,
       hasRole: hasRoleFactory(['data_entry_leader']),
     });
-    expect(nonAdmin.canOperateCurrentModule).toBe(false);
-    expect(nonAdmin.canSelectRows).toBe(false);
+    expect(unconfigured.canOperateCurrentModule).toBe(false);
+    expect(unconfigured.canSelectRows).toBe(false);
+
+    const configured = getOnboardingModulePermissionState({
+      currentModule: 'payroll_bank_card',
+      userPermissions: ['route.onboarding', 'route.onboarding_payroll_bank_card', 'module.payroll_bank_card.manage'],
+      hasRole: hasRoleFactory(['payroll_bank_card_exporter']),
+    });
+    expect(configured).toMatchObject({ canOperateCurrentModule: true, canBatchExport: true, canSelectRows: true });
+
+    const salesperson = getOnboardingModulePermissionState({
+      currentModule: 'payroll_bank_card',
+      userPermissions: ['route.onboarding'],
+      hasRole: hasRoleFactory(['business_group_member']),
+    });
+    expect(salesperson).toMatchObject({ canOperateCurrentModule: true, canBatchExport: true, canSelectRows: true });
 
     const admin = getOnboardingModulePermissionState({
       currentModule: 'payroll_bank_card',

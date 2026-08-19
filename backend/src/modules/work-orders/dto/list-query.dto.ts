@@ -43,6 +43,14 @@ export class ListWorkOrderQueryDto extends PaginationQueryDto {
   createdBefore?: string;
 
   @IsOptional()
+  @IsDateString()
+  submittedAfter?: string;
+
+  @IsOptional()
+  @IsDateString()
+  submittedBefore?: string;
+
+  @IsOptional()
   @Type(() => Number)
   @IsUUID()
   createdBy?: string;

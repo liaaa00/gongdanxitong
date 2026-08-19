@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 import { businessException } from 'src/common/exceptions/business-exception';
 import { OrderAttachment } from 'src/entities';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
+import { normalizeUploadedFileName } from 'src/modules/upload/upload.service';
 import { UploadsService } from 'src/modules/uploads/uploads.service';
 import {
   ListOrderAttachmentsDto,
@@ -184,7 +185,7 @@ export class AttachmentsService {
       biz_purpose: row.bizPurpose,
       file_id: row.fileId,
       file_name: row.fileName,
-      original_name: row.originalName,
+      original_name: normalizeUploadedFileName(row.originalName),
       mime_type: row.mimeType,
       file_path: row.filePath,
       file_size: row.fileSize,

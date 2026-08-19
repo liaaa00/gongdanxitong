@@ -29,6 +29,15 @@ export class ContractSubject {
   @Column({ name: 'registered_address', type: 'text' })
   registeredAddress!: string;
 
+  @Column({ name: 'fund_ratio_options', type: 'jsonb', default: () => "'[]'::jsonb" })
+  fundRatioOptions!: string[];
+
+  @Column({ name: 'supplementary_fund_ratio_options', type: 'jsonb', default: () => "'[]'::jsonb" })
+  supplementaryFundRatioOptions!: string[];
+
+  @Column({ name: 'fund_ratio_mode', type: 'varchar', length: 16, default: 'same' })
+  fundRatioMode!: 'same' | 'separate';
+
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive!: boolean;
 

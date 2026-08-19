@@ -111,9 +111,77 @@ describe('WorkOrderValidationService submit validation', () => {
       need_company_contract: '否',
       need_onboarding_contact: '否',
       current_address: '',
+      bank_name: '测试银行',
+      bank_account: '62220001',
+      bank_location: '宁波',
+      payroll_location: '北仑',
     }))).rejects.toMatchObject({
       response: expect.objectContaining({
         details: expect.objectContaining({ missing: ['current_address'] }),
+      }),
+    });
+  });
+
+  it('requires all payroll bank fields without centralized collection regardless of payroll-slip choice', async () => {
+    await expect(service.validateWorkOrder(makeWorkOrder({
+      employee_name: '工资卡缺失',
+      id_card_no: '330102199001010011',
+      need_company_contract: '否',
+      need_payroll_slip: '否',
+      need_onboarding_contact: '否',
+      current_address: '浙江杭州文一路1号',
+    }))).rejects.toMatchObject({
+      response: expect.objectContaining({
+        details: expect.objectContaining({
+          missing: ['bank_name', 'bank_account', 'bank_location', 'payroll_location'],
+        }),
+      }),
+    });
+  });
+
+  it('allows missing payroll bank fields when centralized collection is enabled', async () => {
+    await expect(service.validateWorkOrder(makeWorkOrder({
+      employee_name: '集约收集',
+      id_card_no: '330102199001010011',
+      need_company_contract: '否',
+      need_payroll_slip: '是',
+      need_onboarding_contact: '是',
+    }))).resolves.toBeUndefined();
+  });
+
+  it('does not block an unrelated patch because of historical payroll bank gaps', async () => {
+    const baselineExtraData = {
+      employee_name: '历史缺失',
+      id_card_no: '330102199001010011',
+      need_company_contract: '否',
+      need_payroll_slip: '是',
+      need_onboarding_contact: '2.否',
+      current_address: '浙江杭州文一路1号',
+      household_type: '',
+    };
+    await expect(service.validateWorkOrder(
+      makeWorkOrder({ ...baselineExtraData, household_type: '城镇户口' }),
+      { baselineExtraData, changedFieldCodes: ['household_type'] },
+    )).resolves.toBeUndefined();
+  });
+
+  it('validates every payroll bank field when a patch activates creator collection', async () => {
+    const baselineExtraData = {
+      employee_name: '条件切换',
+      id_card_no: '330102199001010011',
+      need_company_contract: '否',
+      need_payroll_slip: '1.是',
+      need_onboarding_contact: '是',
+      current_address: '浙江杭州文一路1号',
+    };
+    await expect(service.validateWorkOrder(
+      makeWorkOrder({ ...baselineExtraData, need_onboarding_contact: '2.否' }),
+      { baselineExtraData, changedFieldCodes: ['need_onboarding_contact'] },
+    )).rejects.toMatchObject({
+      response: expect.objectContaining({
+        details: expect.objectContaining({
+          missing: ['bank_name', 'bank_account', 'bank_location', 'payroll_location'],
+        }),
       }),
     });
   });
@@ -187,6 +255,10 @@ describe('WorkOrderValidationService submit validation', () => {
       need_company_contract: '否',
       need_onboarding_contact: '是',
       current_address: '',
+      bank_name: '测试银行',
+      bank_account: '62220001',
+      bank_location: '宁波',
+      payroll_location: '北仑',
     };
     await expect(service.validateWorkOrder(
       makeWorkOrder({ ...baselineExtraData, need_onboarding_contact: '否' }),

@@ -1,9 +1,16 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, ILike, Repository } from 'typeorm';
+import { Optional } from '@nestjs/common';
 import { businessException } from 'src/common/exceptions/business-exception';
-import { BusinessScope, FieldConfig, WorkOrder } from 'src/entities';
+import { BusinessScope, FieldConfig, OrderType, WorkOrder } from 'src/entities';
+import { ContractSubjectsService, getAllowedFundRatios } from 'src/modules/contract-subjects/contract-subjects.service';
 import { AstEvaluator } from 'src/modules/dispatch-engine/ast-evaluator';
+import {
+  getCreatorRequiredMissingPayrollBankCardFields,
+  PAYROLL_BANK_CARD_FIELD_NAMES,
+  requiresCreatorPayrollBankCardFields,
+} from 'src/modules/dispatched-orders/payroll-bank-card';
 
 const STRICT_REQUIRED_FIELD_CODES = new Set([
   'employee_name',
@@ -44,6 +51,7 @@ export class WorkOrderValidationService {
     private readonly workOrderRepository: Repository<WorkOrder>,
     private readonly dataSource: DataSource,
     private readonly astEvaluator: AstEvaluator,
+    @Optional() private readonly contractSubjectsService?: ContractSubjectsService,
   ) {}
 
   async validateWorkOrder(
@@ -106,6 +114,29 @@ export class WorkOrderValidationService {
       }
     }
 
+    const subjectFieldsChanged = !changedFieldCodes || [
+      'contract_subject', 'company_address', 'fund_ratio', 'supplementary_fund_ratio',
+    ].some((fieldCode) => changedFieldCodes.has(fieldCode));
+    if (workOrder.orderType === OrderType.ONBOARDING && subjectFieldsChanged && this.contractSubjectsService) {
+      await this.validateContractSubjectRelations(workOrder.extraData, missing, missingNames, invalid);
+    }
+
+    if (workOrder.orderType === OrderType.ONBOARDING) {
+      const creatorMissingFields = getCreatorRequiredMissingPayrollBankCardFields(workOrder.extraData);
+      const creatorRequirementActivated = changedFieldCodes
+        && !requiresCreatorPayrollBankCardFields(baselineExtraData)
+        && requiresCreatorPayrollBankCardFields(workOrder.extraData);
+      const missingFieldsToValidate = !changedFieldCodes || creatorRequirementActivated
+        ? creatorMissingFields
+        : creatorMissingFields.filter((fieldCode) => changedFieldCodes.has(fieldCode));
+      for (const fieldCode of missingFieldsToValidate) {
+        if (!missing.includes(fieldCode)) {
+          missing.push(fieldCode);
+          missingNames.push(PAYROLL_BANK_CARD_FIELD_NAMES[fieldCode]);
+        }
+      }
+    }
+
     if (missing.length > 0) {
       const label = missingNames.length > 0 ? `：${missingNames.join('、')}` : '';
       throw businessException(4110, HttpStatus.BAD_REQUEST, `必填字段缺失${label}`, { missing });
@@ -137,6 +168,37 @@ export class WorkOrderValidationService {
           idCardNo,
         });
       }
+    }
+  }
+
+  private async validateContractSubjectRelations(
+    extraData: Record<string, unknown>,
+    missing: string[],
+    missingNames: string[],
+    invalid: Array<{ fieldCode: string; reason: string }>,
+  ): Promise<void> {
+    const subjectName = typeof extraData.contract_subject === 'string' ? extraData.contract_subject.trim() : '';
+    if (!subjectName || !this.contractSubjectsService) return;
+    const subject = await this.contractSubjectsService.findByName(subjectName);
+    if (!subject) {
+      invalid.push({ fieldCode: 'contract_subject', reason: '主体不在正式目录' });
+      return;
+    }
+    if (this.hasValue(extraData.company_address)
+      && String(extraData.company_address).trim() !== subject.registeredAddress.trim()) {
+      invalid.push({ fieldCode: 'company_address', reason: '主体注册地不匹配' });
+    }
+    const allowedRatios = getAllowedFundRatios(subject);
+    if (allowedRatios.length > 0 && !this.hasValue(extraData.fund_ratio)) {
+      missing.push('fund_ratio');
+      missingNames.push('公积金比例');
+    } else if (this.hasValue(extraData.fund_ratio) && !allowedRatios.includes(String(extraData.fund_ratio))) {
+      invalid.push({ fieldCode: 'fund_ratio', reason: '公积金比例不属于主体允许值' });
+    }
+    const supplementaryOptions = subject.supplementaryFundRatioOptions ?? [];
+    if (this.hasValue(extraData.supplementary_fund_ratio)
+      && !supplementaryOptions.includes(String(extraData.supplementary_fund_ratio))) {
+      invalid.push({ fieldCode: 'supplementary_fund_ratio', reason: '补充公积金比例不匹配' });
     }
   }
 

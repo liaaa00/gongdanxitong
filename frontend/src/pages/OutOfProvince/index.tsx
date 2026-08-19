@@ -13,8 +13,8 @@ import {
 } from '@/services/outOfProvince';
 
 const ORDER_TYPE_LABEL: Record<string, string> = {
-  [OUT_OF_PROVINCE_ORDER_TYPE.INCREASE]: '省外增员',
-  [OUT_OF_PROVINCE_ORDER_TYPE.DECREASE]: '省外减员',
+  [OUT_OF_PROVINCE_ORDER_TYPE.INCREASE]: '菜鸟增员',
+  [OUT_OF_PROVINCE_ORDER_TYPE.DECREASE]: '菜鸟减员',
 };
 
 const OutOfProvinceList: React.FC = () => {
@@ -49,13 +49,13 @@ const OutOfProvinceList: React.FC = () => {
   ], []);
 
   return (
-    <PageContainer header={{ title: '省外增减员列表' }}>
+    <PageContainer header={{ title: '菜鸟增减员列表' }}>
       <MultiViewTable<OutOfProvinceOrderItem>
         viewId="out-of-province-orders"
         listStateKey="out-of-province-orders"
         columns={columns}
         rowKey="id"
-        headerTitle="省外增减员"
+        headerTitle="菜鸟增减员"
         search={false}
         request={async (params) => {
           const result = await getOutOfProvinceOrders(params);
@@ -65,10 +65,10 @@ const OutOfProvinceList: React.FC = () => {
         toolBarRender={() => [
           <Space key="actions">
             <Button icon={<ImportOutlined />} onClick={() => navigate('/out-of-province/import')}>
-              省外增减员导入
+              菜鸟增减员导入
             </Button>
             <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/out-of-province/new')}>
-              新建省外工单
+              新建菜鸟工单
             </Button>
           </Space>,
         ]}
