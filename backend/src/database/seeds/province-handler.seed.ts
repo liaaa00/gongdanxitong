@@ -137,6 +137,14 @@ export function provinceHandlerNamespace(
   return [moduleCode, province, city].filter(Boolean).join('__');
 }
 
+export function provinceHandlerConfigScope(mappingSource: ProvinceMappingSource): BusinessScope {
+  return mappingSource === 'sheet5' ? BusinessScope.OUT_OF_PROVINCE : BusinessScope.BEILUN;
+}
+
+export function provinceHandlerAccountScope(_mappingSource: ProvinceMappingSource): BusinessScope {
+  return BusinessScope.OUT_OF_PROVINCE;
+}
+
 export async function seedProvinceHandlers(dataSource: DataSource): Promise<void> {
   validateSheet(PROVINCE_HANDLER_SEEDS, 'sheet4');
   validateSheet(PROVINCE_HANDLER_SEEDS, 'sheet5');
@@ -154,11 +162,12 @@ export async function seedProvinceHandlers(dataSource: DataSource): Promise<void
 
   for (const row of rows) {
     const moduleCode = provinceHandlerNamespace(row.moduleCode, row.province, row.city);
-    const businessScope = row.mappingSource === 'sheet5' ? BusinessScope.OUT_OF_PROVINCE : BusinessScope.BEILUN;
+    const configScope = provinceHandlerConfigScope(row.mappingSource);
+    const accountScope = provinceHandlerAccountScope(row.mappingSource);
     const expectedHandlers: Array<{ user: User; weight: number }> = [];
 
     for (const username of row.handlerUsernames) {
-      const user = await userRepository.findOne({ where: { username, isActive: true, businessScope } });
+      const user = await userRepository.findOne({ where: { username, isActive: true, businessScope: accountScope } });
       if (!user) {
         logger.warn({ mappingSource: row.mappingSource, province: row.province, city: row.city, username, reason: 'handler account not found' });
         continue;
@@ -167,7 +176,7 @@ export async function seedProvinceHandlers(dataSource: DataSource): Promise<void
     }
 
     const expectedIds = new Set(expectedHandlers.map(({ user }) => user.id));
-    const existingRows = await moduleHandlerRepository.find({ where: { moduleCode, businessScope } });
+    const existingRows = await moduleHandlerRepository.find({ where: { moduleCode, businessScope: configScope } });
     for (const existing of existingRows) {
       const shouldBeActive = expectedIds.has(existing.handlerId);
       if (
@@ -188,7 +197,7 @@ export async function seedProvinceHandlers(dataSource: DataSource): Promise<void
       if (existing) continue;
       await moduleHandlerRepository.save(moduleHandlerRepository.create({
         moduleCode,
-        businessScope,
+        businessScope: configScope,
         handlerId: user.id,
         weight,
         isBackup: false,

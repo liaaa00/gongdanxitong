@@ -2195,3 +2195,25 @@
 - 规则：按客户+证件号查询本系统历史；命中入职/续签时自动继承最新有效部门并覆盖表格部门；无历史时作为系统上线前历史存量，必须显式填写启用部门，禁止回退当前账号部门；后端写入 `legacy_stock` / `matched_history` 来源标记，批内重复、历史缺部门、部门无效或缺部门均阻断。单条续签同步显示部门下拉，历史命中只读继承，无历史必填手选。
 - 测试：后端续签定向测试 `46/46`，前端续签定向测试 `17/17`，固定回归 `140/140`，前后端 production build 通过。浏览器真实上传续签模板预览验证系统历史覆盖、历史存量保留部门、缺部门阻断；隔离库 `ticket_system_e2e_20260730` 真实 API E2E 创建存量续签、历史再匹配并自动撤回成功，最终状态 `cancelled`。
 - 限制：当前 3000 服务账号已失效，未在未知业务库重置密码或写入数据；未连接生产服务器，未执行服务器同步。
+
+## 2026-08-19 本地版本覆盖生产同步
+
+- 发布来源：本地已验证提交 `94946eb5bd3cb82e1fdedc4848f5b6f888fbd6eb`，使用提交归档和 Git bundle；服务器部署目录源码 `905/905` 个文件原始 Git 对象校验通过。
+- 发布范围：以本地代码覆盖服务器 backend/frontend；执行 12 条已批准数据库迁移；生产 `AUTO_SEED=false`，未执行全量 seed。
+- 已批准数据变更：75 条合同主体配置初始化；94 条社保子工单、26 条离职社保子工单的 `visible_fields` 追加 `supplementary_fund_ratio`，合计 120 条。未创建、删除或覆盖工单、附件、用户、客户等业务记录。
+- 保护验证：`work_orders=120`、`dispatched_orders=377`、`users=42`、`operation_logs=2231`、`contract_subjects=75`；主工单、用户及子工单非 `visible_fields` 保护哈希与部署前一致；120/120 目标子工单包含新字段。
+- 运行验收：backend healthy、frontend running、`/api/health` 返回 200、首页返回 200；生产登录页浏览器检查通过且控制台错误为 0，未填写账号密码、未创建登录会话。备份目录 `/data/apps/work-order-system/backups/local-authoritative_20260819_120000`，回滚镜像标签已保留。
+
+## 2026-08-19 执行生产全量 seed
+
+- 执行方式：使用生产 backend 镜像单独运行 `npm run seed`，未重启现有 backend，未重新执行迁移；执行前创建完整数据库、用户密码哈希、用户角色关系和业务保护快照，备份目录为 `/data/apps/work-order-system/backups/full-seed_20260819_125625`。
+- 执行结果：seed 成功，退出码为 0。用户总数仍为 `42`，无新增、删除或用户密码变化；用户角色关系无变化；用户其他字段哈希无变化。
+- 业务数据保护：`work_orders=120`、`dispatched_orders=377`、`operation_logs=2231` 保持不变；主工单哈希、子工单非 `visible_fields` 保护哈希均未变化；未新增或修改工单。
+- 后续复核：负责人账号实际均已存在；警告根因不是缺少账号，而是旧 seed 对 Sheet4 错用了 `beilun` 账号范围，导致 28 条 Sheet4 映射未命中。该判断已在下述修复中更正。
+
+## 2026-08-19 省份负责人 seed 跨业务范围修复与生产发布
+
+- 根因与修复：9 名福报专员账号均正确属于 `out_of_province`。Sheet4 配置继续写入 `beilun`，Sheet5 配置继续写入 `out_of_province`，两者统一从 `out_of_province` 账号池解析负责人；未新增用户，未修改用户业务范围、密码或角色。
+- 发布：修复提交 `f2d3f643fda8bf30b0fee39cbca7f3718daadcdb` 已部署；备份目录为 `/data/apps/work-order-system/backups/province-handler-scope_20260819_133647`，回滚镜像为 `work-order-system-backend:province-handler-scope-backup-20260819_133647`。全量 seed 执行成功，Sheet4 和 Sheet5 均为 `28` 条活动映射，各覆盖 `9` 名负责人。
+- 数据保护：seed 前后用户全表、密码哈希、用户角色关系以及 `work_orders=120`、`dispatched_orders=377` 等工单表整行哈希完全一致，未新增或修改用户、密码、角色及工单数据。
+- 验证：省份映射 seed 定向测试 `7/7`、后端 production build、固定回归 `140/140` 通过；生产 backend 已重建并保持 healthy，`127.0.0.1:3000/api/health` 返回 `status=ok`。

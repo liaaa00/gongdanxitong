@@ -1,6 +1,10 @@
 import { PROVINCES_27 } from 'src/common/constants/provinces';
-import { PROVINCE_HANDLER_SEEDS } from 'src/database/seeds/province-handler.seed';
-import { DispatchModuleCode, ModuleType, OrderType, TeamRole } from 'src/entities';
+import {
+  provinceHandlerAccountScope,
+  provinceHandlerConfigScope,
+  PROVINCE_HANDLER_SEEDS,
+} from 'src/database/seeds/province-handler.seed';
+import { BusinessScope, DispatchModuleCode, ModuleType, OrderType, TeamRole } from 'src/entities';
 
 describe('province handler seed contract', () => {
   it('keeps Sheet4 and Sheet5 as two complete independent scans', () => {
@@ -45,5 +49,16 @@ describe('province handler seed contract', () => {
       expect(sheet5ByProvince.get(row.province)).toEqual(row.handlerUsernames);
       expect(row.isActive).toBe(row.handlerUsernames.length === 1);
     }
+  });
+
+  it.each([
+    ['sheet4', BusinessScope.BEILUN],
+    ['sheet5', BusinessScope.OUT_OF_PROVINCE],
+  ] as const)('stores %s mappings in the correct config scope', (mappingSource, expectedScope) => {
+    expect(provinceHandlerConfigScope(mappingSource)).toBe(expectedScope);
+  });
+
+  it.each(['sheet4', 'sheet5'] as const)('resolves %s handlers from out_of_province accounts', (mappingSource) => {
+    expect(provinceHandlerAccountScope(mappingSource)).toBe(BusinessScope.OUT_OF_PROVINCE);
   });
 });
