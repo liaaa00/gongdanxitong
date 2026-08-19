@@ -2223,3 +2223,5 @@
 - 根因：离职模板生成器追加的“附件”列仅用于按物理行号提取嵌入文件或超链接，不对应数据库业务字段；解析器为保留附件信息必须输出该表头，但导入任务的结构列过滤只识别空占位列，导致预览把“附件”计入未匹配表头，确认导入时也可能要求无意义的手工映射。
 - 修复：导入任务把“附件”及英文 `attachment/attachments`（含重复列后缀）识别为结构列；预览不再显示未匹配警告，确认导入不再因该列阻断。解析器仍保留附件列，嵌入附件、超链接和按物理行号关联逻辑均不改变。
 - 验证：`import-job.service.spec.ts` 与 `excel-parser.service.spec.ts` 定向测试 `15/15` 通过；新增用例确认原始 headers 保留“附件”，但未匹配列表和字段映射列表排除该列。
+- 生产发布：运行时文件补丁来源为提交 `32beebdb1f92d03b884218986e88bf276e1aebe3`，目标 blob `5a2d8e72e0906a02b8724420c88e5afebe4e8c0c`；基础源码标记保持 `f2d3f643fda8bf30b0fee39cbca7f3718daadcdb`，独立记录 `SOURCE_PATCH_COMMIT`。备份目录为 `/data/apps/work-order-system/backups/resignation-attachment-header_20260819_154240`，回滚镜像为 `work-order-system-backend:resignation-attachment-header-backup-20260819_154240`。
+- 生产验收：仅重建 backend，未执行迁移或 seed；容器 healthy，`/api/health` 返回 `status=ok`。运行容器模拟“姓名+附件”预览后 `unmatchedHeaders=[]`，映射列表仅含姓名且原始 headers 仍保留附件。部署前后 `work_orders`、`dispatched_orders`、`users`、`user_roles`、`customers`、`order_attachments`、`import_jobs` 的计数和整行哈希一致；新增 1 条 `operation_logs` 已确认是并发生产用户执行离职录入批量导出的正常审计记录。
