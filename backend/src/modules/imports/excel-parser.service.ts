@@ -386,7 +386,9 @@ export class ExcelParserService {
 
   private normalizeCellValue(value: unknown): string | number | boolean | null {
     if (value === null || value === undefined) return null;
-    if (value instanceof Date) return value.toISOString().slice(0, 10);
+    if (value instanceof Date) {
+      return Number.isNaN(value.getTime()) ? null : value.toISOString().slice(0, 10);
+    }
     if (typeof value === 'string') return value.replace(/　/g, ' ').trim();
     if (typeof value === 'number' || typeof value === 'boolean') return value;
     if (typeof value === 'object') {

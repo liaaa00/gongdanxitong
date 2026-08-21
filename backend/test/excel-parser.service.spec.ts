@@ -178,4 +178,16 @@ describe('Imports ExcelParserService', () => {
     expect(parsed.rows[0]['姓名']).toBe('张三');
   });
 
+  it('normalizes invalid Date values from formula results without throwing', () => {
+    const service = new ExcelParserService();
+    const normalizeCellValue = (
+      service as unknown as {
+        normalizeCellValue(value: unknown): string | number | boolean | null;
+      }
+    ).normalizeCellValue.bind(service);
+
+    expect(normalizeCellValue(new Date(Number.NaN))).toBeNull();
+    expect(normalizeCellValue({ result: new Date(Number.NaN) })).toBeNull();
+    expect(normalizeCellValue({ result: new Date('2026-08-21T00:00:00.000Z') })).toBe('2026-08-21');
+  });
 });
