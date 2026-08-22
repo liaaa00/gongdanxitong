@@ -1,3 +1,5 @@
+import { DEFAULT_MAX_ATTACHMENT_SIZE_MB, DEFAULT_MAX_IMPORT_SIZE_MB, parseUploadSizeMb } from './upload-limits';
+
 export interface AppConfig {
   app: {
     nodeEnv: string;
@@ -102,8 +104,8 @@ const configuration = (): AppConfig => {
   },
   upload: {
     dir: process.env.UPLOAD_DIR ?? 'uploads',
-    maxExcelSizeMb: Number(process.env.MAX_IMPORT_SIZE_MB ?? 10),
-    maxAttachmentSizeMb: Number(process.env.MAX_ATTACHMENT_SIZE_MB ?? 20),
+    maxExcelSizeMb: parseUploadSizeMb(process.env.MAX_IMPORT_SIZE_MB, DEFAULT_MAX_IMPORT_SIZE_MB),
+    maxAttachmentSizeMb: parseUploadSizeMb(process.env.MAX_ATTACHMENT_SIZE_MB, DEFAULT_MAX_ATTACHMENT_SIZE_MB),
   },
   operationLog: {
     retentionDays: Number(process.env.OPERATION_LOG_RETENTION_DAYS ?? 365),

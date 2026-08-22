@@ -6,6 +6,7 @@ import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { businessException } from 'src/common/exceptions/business-exception';
 import { UploadsService } from './uploads.service';
+import { getMaxAttachmentUploadBytes, getMaxExcelUploadBytes } from 'src/config/upload-limits';
 
 const excelFilter = (_req: unknown, file: Express.Multer.File, callback: (error: Error | null, acceptFile: boolean) => void): void => {
   const ok = file.originalname.toLowerCase().endsWith('.xlsx') || file.originalname.toLowerCase().endsWith('.xls');
@@ -24,7 +25,7 @@ export class UploadsController {
   constructor(private readonly uploadsService: UploadsService) {}
 
   @Post('upload/excel')
-  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 }, fileFilter: excelFilter }))
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: getMaxExcelUploadBytes() }, fileFilter: excelFilter }))
   async uploadExcel(@UploadedFile() file: Express.Multer.File | undefined, @CurrentUser() user: JwtUserPayload) {
     if (!file) {
       throw businessException(4400, 400, 'Excel文件缺失');
@@ -40,7 +41,7 @@ export class UploadsController {
   }
 
   @Post('upload/attachment')
-  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 }, fileFilter: attachmentFilter }))
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: getMaxAttachmentUploadBytes() }, fileFilter: attachmentFilter }))
   async uploadAttachment(@UploadedFile() file: Express.Multer.File | undefined, @CurrentUser() user: JwtUserPayload) {
     if (!file) {
       throw businessException(4401, 400, '附件缺失');

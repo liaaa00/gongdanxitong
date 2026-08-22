@@ -18,6 +18,7 @@ import { ImportTemplateFieldItemDto, ReplaceImportTemplateFieldsDto } from './dt
 import { PreviewImportDto } from './dto/preview-import.dto';
 import { ImportJobService } from './import-job.service';
 import { ImportTemplateConfigService } from './import-template-config.service';
+import { getMaxExcelUploadBytes } from 'src/config/upload-limits';
 import { ImportTemplateService } from './import-template.service';
 import { assertCanImportWorkOrder, FIRST_PHASE_IMPORT_ORDER_TYPES } from './import-permissions';
 
@@ -62,7 +63,7 @@ export class ImportsController {
 
   @Post('import/preview')
   @BusinessPermission('work_order.import')
-  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 }, fileFilter: excelFilter }))
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: getMaxExcelUploadBytes() }, fileFilter: excelFilter }))
   async preview(
     @Body() payload: PreviewImportDto,
     @UploadedFile() file: Express.Multer.File | undefined,

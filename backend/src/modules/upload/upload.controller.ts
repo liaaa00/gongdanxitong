@@ -4,6 +4,7 @@ import { memoryStorage } from 'multer';
 import { Response } from 'express';
 import { businessException } from 'src/common/exceptions/business-exception';
 import { UploadService } from './upload.service';
+import { getMaxAttachmentUploadBytes, getMaxExcelUploadBytes } from 'src/config/upload-limits';
 
 const excelFileFilter = (_req: unknown, file: Express.Multer.File, callback: (error: Error | null, acceptFile: boolean) => void): void => {
   const isExcel = file.originalname.toLowerCase().endsWith('.xlsx') || file.originalname.toLowerCase().endsWith('.xls');
@@ -22,7 +23,7 @@ export class UploadController {
   constructor(private readonly uploadService: UploadService) {}
 
   @Post('excel')
-  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 }, fileFilter: excelFileFilter }))
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: getMaxExcelUploadBytes() }, fileFilter: excelFileFilter }))
   async uploadExcel(@UploadedFile() file: Express.Multer.File | undefined) {
     if (!file) {
       throw businessException(4400, 400, 'Excel文件缺失');
@@ -32,7 +33,7 @@ export class UploadController {
   }
 
   @Post('attachment')
-  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 }, fileFilter: attachmentFilter }))
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: getMaxAttachmentUploadBytes() }, fileFilter: attachmentFilter }))
   async uploadAttachment(@UploadedFile() file: Express.Multer.File | undefined) {
     if (!file) {
       throw businessException(4401, 400, '附件缺失');
