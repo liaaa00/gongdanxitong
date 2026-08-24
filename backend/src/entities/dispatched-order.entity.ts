@@ -53,6 +53,12 @@ export class DispatchedOrder {
   @Column({ name: 'return_reason', type: 'varchar', length: 512, nullable: true })
   returnReason!: string | null;
 
+  @Column({ name: 'return_target_type', type: 'varchar', length: 32, nullable: true })
+  returnTargetType!: string | null;
+
+  @Column({ name: 'return_target_id', type: 'uuid', nullable: true })
+  returnTargetId!: string | null;
+
   @Column({ name: 'flow_round', type: 'int', default: 0 })
   flowRound!: number;
 

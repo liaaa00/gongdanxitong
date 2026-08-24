@@ -17,6 +17,12 @@ describe('field fallback configuration', () => {
     ]);
   });
 
+  it('includes 北仑总发薪 in the onboarding payroll-location fallback options', () => {
+    const field = getFallbackFields('onboarding').find((item) => item.field_code === 'payroll_location');
+
+    expect(field?.dropdown_options?.map((option) => option.value)).toContain('北仑总发薪');
+  });
+
   it('keeps onboarding other salary fields as text with explicit input hints', () => {
     const fields = getFallbackFields('onboarding');
     const byCode = new Map(fields.map((field) => [field.field_code, field]));

@@ -8,6 +8,7 @@ import {
   BUSINESS_LEADER_ROLES,
   BUSINESS_MANAGER_ROLES,
   BUSINESS_MEMBER_ROLES,
+  CONTRACT_MODULE_ROLES,
   DATA_ENTRY_MODULE_ROLES,
   SOCIAL_INSURANCE_MODULE_ROLES,
   hasAnyRole,
@@ -86,7 +87,7 @@ import { FeedbackDispatchedOrderDto } from './dto/feedback.dto';
 import { ExportDispatchedOrderDto } from './dto/export.dto';
 import { ListDispatchedOrderQueryDto } from './dto/list-query.dto';
 import { ReassignDispatchedOrderDto } from './dto/reassign.dto';
-import { ReturnDispatchedOrderDto } from './dto/return.dto';
+import { ReturnDispatchedOrderDto, ReturnTargetType } from './dto/return.dto';
 import { ResubmitDispatchedOrderDto } from './dto/resubmit.dto';
 import { SupplementFieldDto } from './dto/supplement.dto';
 import { getMissingPayrollBankCardFields } from './payroll-bank-card';
@@ -611,6 +612,58 @@ export class DispatchedOrderService {
     return this.findOne(id, user);
   }
 
+  async getReturnTargets(
+    id: string,
+    user: JwtUserPayload,
+  ): Promise<{
+    defaultTargetType: ReturnTargetType;
+    targets: Array<{ type: ReturnTargetType; id: string; name: string; moduleCode?: string }>;
+  }> {
+    const order = await this.loadDispatchedOrder(id);
+    this.assertWorkflowOperationSupported(order, '查看退回对象');
+    if (order.status === DispatchedOrderStatus.COMPLETED) {
+      await this.assertCanReturnCompleted(order, user);
+    } else {
+      await this.assertCanHandle(order, user);
+    }
+
+    const targets: Array<{ type: ReturnTargetType; id: string; name: string; moduleCode?: string }> = [];
+    const creator = order.parentOrder.creator;
+    if (creator?.id) {
+      targets.push({
+        type: 'creator',
+        id: creator.id,
+        name: creator.realName || creator.username || creator.id,
+      });
+    }
+
+    const businessScope = order.parentOrder.businessScope ?? BusinessScope.BEILUN;
+    const loadHandlers = async (moduleCode: string, type: ReturnTargetType) => {
+      const rows = await this.moduleHandlerRepository.find({
+        where: { moduleCode, businessScope, isActive: true },
+        relations: { handler: true },
+        order: { isBackup: 'ASC', weight: 'DESC' },
+      });
+      for (const row of rows) {
+        if (!row.handler?.isActive || !row.handlerId) continue;
+        if (targets.some((target) => target.type === type && target.id === row.handlerId)) continue;
+        targets.push({
+          type,
+          id: row.handlerId,
+          name: row.handler.realName || row.handler.username || row.handlerId,
+          moduleCode,
+        });
+      }
+    };
+
+    await loadHandlers(this.resolveHandlerModuleCode(order), 'module_handler');
+    if (order.moduleCode === DispatchModuleCode.RESIGNATION_CERT) {
+      await loadHandlers(DispatchModuleCode.RESIGNATION_CONTACT, 'supplement_handler');
+    }
+
+    return { defaultTargetType: 'creator', targets };
+  }
+
   async returnOrder(
     id: string,
     payload: ReturnDispatchedOrderDto,
@@ -632,14 +685,73 @@ export class DispatchedOrderService {
       await this.assertCanHandle(order, user);
     }
 
+    const targetType: ReturnTargetType = payload.returnTargetType ?? 'creator';
+    const targetId = payload.returnTargetId?.trim() || order.parentOrder.createdBy;
+    if (!targetId) {
+      throw businessException(4220, HttpStatus.BAD_REQUEST, '退回目标不能为空');
+    }
+
+    let targetModuleCode: string | null = null;
+    if (targetType === 'creator') {
+      if (targetId !== order.parentOrder.createdBy) {
+        throw businessException(4220, HttpStatus.BAD_REQUEST, '退回给发起业务员时目标必须是当前工单发起人');
+      }
+    } else if (targetType === 'module_handler') {
+      targetModuleCode = this.resolveHandlerModuleCode(order);
+      const handler = await this.moduleHandlerRepository.findOne({
+        where: { moduleCode: targetModuleCode, businessScope: order.parentOrder.businessScope ?? BusinessScope.BEILUN, handlerId: targetId, isActive: true },
+      });
+      if (!handler) {
+        throw businessException(4220, HttpStatus.BAD_REQUEST, '退回目标未配置在当前模块');
+      }
+    } else if (targetType === 'supplement_handler') {
+      if (order.moduleCode !== DispatchModuleCode.RESIGNATION_CERT) {
+        throw businessException(4220, HttpStatus.BAD_REQUEST, '当前子工单不支持跨模块补材料退回');
+      }
+      targetModuleCode = DispatchModuleCode.RESIGNATION_CONTACT;
+      const handler = await this.moduleHandlerRepository.findOne({
+        where: { moduleCode: targetModuleCode, businessScope: order.parentOrder.businessScope ?? BusinessScope.BEILUN, handlerId: targetId, isActive: true },
+      });
+      if (!handler) {
+        throw businessException(4220, HttpStatus.BAD_REQUEST, '补材料负责人未配置在离职材料模块');
+      }
+    }
+
     const beforeSnapshot = this.snapshot(order);
     const beforeStatus = order.status;
-    order.status = DispatchedOrderStatus.RETURNED;
+    const isDirectHandlerReturn = targetType === 'module_handler';
+    const isSupplementReturn = targetType === 'supplement_handler';
+    order.status = isDirectHandlerReturn ? DispatchedOrderStatus.PENDING : DispatchedOrderStatus.RETURNED;
     order.returnReason = reason;
+    order.returnTargetType = targetType;
+    order.returnTargetId = targetId;
     order.completedAt = null;
-    await this.dispatchedOrderRepository.save(order);
+    if (isDirectHandlerReturn) {
+      order.handlerId = targetId;
+      order.acceptedAt = null;
+    }
 
-    order.parentOrder.status = WorkOrderStatus.RETURNED;
+    if (isSupplementReturn) {
+      const materialOrder = await this.dispatchedOrderRepository.findOne({
+        where: { parentOrderId: order.parentOrderId, moduleCode: DispatchModuleCode.RESIGNATION_CONTACT },
+      });
+      if (!materialOrder) {
+        throw businessException(4220, HttpStatus.CONFLICT, '未找到离职材料收集子工单，无法退回补材料');
+      }
+      materialOrder.status = DispatchedOrderStatus.PENDING;
+      materialOrder.handlerId = targetId;
+      materialOrder.acceptedAt = null;
+      materialOrder.completedAt = null;
+      materialOrder.returnReason = `离职证明退回补材料：${reason}`;
+      materialOrder.returnTargetType = 'supplement_handler';
+      materialOrder.returnTargetId = targetId;
+      await this.dispatchedOrderRepository.save(materialOrder);
+    }
+
+    await this.dispatchedOrderRepository.save(order);
+    order.parentOrder.status = isDirectHandlerReturn || isSupplementReturn
+      ? WorkOrderStatus.PROCESSING
+      : WorkOrderStatus.RETURNED;
     order.parentOrder.completedAt = null;
     await this.workOrderRepository.save(order.parentOrder);
     if (this.returnRecordRepository) {
@@ -650,12 +762,33 @@ export class DispatchedOrderService {
         returnedBy: user.sub,
         returnReason: reason,
         beforeStatus,
-        afterStatus: DispatchedOrderStatus.RETURNED,
-        payload: { returnedFields: payload.returnedFields ?? [] },
+        afterStatus: order.status,
+        payload: {
+          returnedFields: payload.returnedFields ?? [],
+          returnTargetType: targetType,
+          returnTargetId: targetId,
+          targetModuleCode,
+        },
       }));
     }
-    await this.notifyCreator(order, 'dispatched_returned', '子工单已退回', reason);
-    await this.writeLog('dispatched_order', id, user.sub, beforeStatus === DispatchedOrderStatus.COMPLETED ? 'return_completed' : 'return', beforeSnapshot, { returnReason: reason, returnedFields: payload.returnedFields ?? [] });
+
+    if (targetType === 'creator') {
+      await this.notifyCreator(order, 'dispatched_returned', '子工单已退回', reason);
+    } else if (targetType === 'module_handler') {
+      await this.notifyUsers(order, [targetId], 'dispatch_return_to_handler', '子工单已退回给指定处理人', reason);
+    } else {
+      await this.notifyUsers(order, [targetId], 'dispatch_return_for_supplement', '离职证明退回补材料', reason);
+      await this.notifyCreator(order, 'dispatched_returned_for_supplement', '子工单已退回补材料', `已通知补材料负责人处理：${reason}`);
+    }
+
+    await this.writeLog('dispatched_order', id, user.sub, isSupplementReturn ? 'return_for_supplement' : isDirectHandlerReturn ? 'return_to_handler' : beforeStatus === DispatchedOrderStatus.COMPLETED ? 'return_completed' : 'return', beforeSnapshot, {
+      returnReason: reason,
+      returnedFields: payload.returnedFields ?? [],
+      returnTargetType: targetType,
+      returnTargetId: targetId,
+      targetModuleCode,
+      status: order.status,
+    });
 
     return this.findOne(id, user);
   }
@@ -1369,6 +1502,8 @@ export class DispatchedOrderService {
     order.completedAt = null;
     order.acceptedAt = null;
     order.returnReason = null;
+    order.returnTargetType = null;
+    order.returnTargetId = null;
     order.dispatchedAt = new Date();
 
     // 父工单若处于终态/撤回/作废，重提后回到处理中，使整单可继续流转。
@@ -1395,6 +1530,9 @@ export class DispatchedOrderService {
     const recipients = await this.resolveDispatchedRecipients(order);
     await this.notifyUsers(order, recipients, 'dispatch_resubmit', '子工单已重新提交', reason || '业务员已重新提交该子工单，请继续办理');
 
+    if (order.moduleCode === DispatchModuleCode.RESIGNATION_CERT && order.parentOrder.createdBy === user.sub) {
+      return this.toDetailItem(order, 0, user);
+    }
     return this.findOne(order.id, user);
   }
 
@@ -2171,15 +2309,29 @@ export class DispatchedOrderService {
       'materials_completed',
       manager,
     );
-    if (!certificate?.created) return;
+    if (!certificate) return;
 
     const child = certificate.order;
+    let trigger = 'materials_completed';
+    if (!certificate.created) {
+      if (child.status !== DispatchedOrderStatus.RETURNED || child.returnTargetType !== 'supplement_handler') return;
+      child.status = DispatchedOrderStatus.PENDING;
+      child.returnReason = null;
+      child.returnTargetType = null;
+      child.returnTargetId = null;
+      child.acceptedAt = null;
+      child.completedAt = null;
+      child.dispatchedAt = new Date();
+      await manager.getRepository(DispatchedOrder).save(child);
+      trigger = 'materials_completed_after_return';
+    }
+
     const operationLogRepository = manager.getRepository(OperationLog);
     await operationLogRepository.save(operationLogRepository.create({
       entityType: 'dispatched_order',
       entityId: child.id,
       userId: actorUserId,
-      actionType: 'dispatched',
+      actionType: certificate.created ? 'dispatched' : 'return_reactivated',
       beforeData: null,
       afterData: {
         parentOrderId: order.parentOrderId,
@@ -2188,7 +2340,7 @@ export class DispatchedOrderService {
         handlerId: child.handlerId,
         toUserId: child.handlerId,
         status: child.status,
-        trigger: 'materials_completed',
+        trigger,
       },
       ipAddress: null,
     }));
@@ -2197,16 +2349,18 @@ export class DispatchedOrderService {
       const notificationRepository = manager.getRepository(Notification);
       await notificationRepository.save(notificationRepository.create({
         userId: child.handlerId,
-        bizType: 'dispatch',
-        title: '新子工单待处理',
-        content: `主工单 ${order.parentOrder.orderNo} 分派到 离职证明`,
+        bizType: certificate.created ? 'dispatch' : 'dispatch_return_reactivated',
+        title: certificate.created ? '新子工单待处理' : '补材料已完成，离职证明已恢复',
+        content: certificate.created
+          ? `主工单 ${order.parentOrder.orderNo} 分派到 离职证明`
+          : `主工单 ${order.parentOrder.orderNo} 的离职材料已补齐，请继续办理离职证明`,
         link: `/dispatched-orders/${child.id}`,
         payload: {
           workOrderId: order.parentOrderId,
           dispatchedOrderId: child.id,
           moduleCode: child.moduleCode,
           moduleName: '离职证明',
-          trigger: 'materials_completed',
+          trigger,
         },
         isRead: false,
         readAt: null,
@@ -2222,6 +2376,9 @@ export class DispatchedOrderService {
       'dispatch_resubmit',
       'dispatched_new',
       'dispatch_reassign',
+      'dispatch_return_to_handler',
+      'dispatch_return_for_supplement',
+      'dispatch_return_reactivated',
       'reassigned_to_you',
       'pool_new',
       'creator_modify_request',
@@ -3007,6 +3164,10 @@ export class DispatchedOrderService {
       business_scope: order.parentOrder.businessScope ?? BusinessScope.BEILUN,
       returnReason: order.returnReason,
       return_reason: order.returnReason,
+      returnTargetType: order.returnTargetType ?? null,
+      return_target_type: order.returnTargetType ?? null,
+      returnTargetId: order.returnTargetId ?? null,
+      return_target_id: order.returnTargetId ?? null,
       flowRound: order.flowRound ?? 0,
       flow_round: order.flowRound ?? 0,
       completionRemark: order.completionRemark ?? null,
@@ -3055,6 +3216,11 @@ export class DispatchedOrderService {
       return;
     }
     if (this.isAdmin(user)) return;
+    if (
+      order.parentOrder.createdBy === user.sub
+      && order.status === DispatchedOrderStatus.RETURNED
+      && order.returnTargetType === 'creator'
+    ) return;
     if (order.moduleCode === 'resignation_cert') {
       if (isResignationCertHandler(user)) return;
       throw new ForbiddenException('无权访问该离职证明子工单');
@@ -3153,11 +3319,18 @@ export class DispatchedOrderService {
       return;
     }
 
+    if (
+      order.moduleCode === DispatchModuleCode.CONTRACT
+      && hasAnyRole(user.roles, [...CONTRACT_MODULE_ROLES, 'shared_team_owner', 'shared_leader'])
+    ) {
+      return;
+    }
+
     const operatorKeys = [user.username, user.realName, user.real_name]
       .map((value) => String(value || '').trim())
       .filter(Boolean);
     if (order.moduleCode !== SUPPLEMENT_ALLOWED_MODULE_CODE || !operatorKeys.some((key) => SUPPLEMENT_ALLOWED_USERNAMES.has(key))) {
-      throw businessException(5001, HttpStatus.FORBIDDEN, '仅毛雅妮、江璐或社保专员可补充对应子工单字段');
+      throw businessException(5001, HttpStatus.FORBIDDEN, '当前用户无权补充该子工单字段');
     }
   }
 

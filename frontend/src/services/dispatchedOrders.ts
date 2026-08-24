@@ -3,6 +3,20 @@ import { isMockMode, mockDelay, type PageParams, type PageResult } from './mock'
 import { addMockNotification } from './notifications';
 import { reloadMockWorkOrders } from './workOrders';
 
+export type ReturnTargetType = 'creator' | 'module_handler' | 'supplement_handler';
+
+export interface ReturnTargetOption {
+  type: ReturnTargetType;
+  id: string;
+  name: string;
+  moduleCode?: string;
+}
+
+export interface DispatchedOrderReturnTargets {
+  defaultTargetType: ReturnTargetType;
+  targets: ReturnTargetOption[];
+}
+
 export interface DispatchedOrderTimelineChange {
   fieldCode: string;
   fieldLabel: string;
@@ -80,6 +94,8 @@ export interface DispatchedOrderItem {
   fields?: DispatchedOrderDetailField[];
   _fieldPermissions?: Record<string, 'visible' | 'hidden' | 'readonly' | 'masked'>;
   return_reason: string | null;
+  return_target_type?: ReturnTargetType | null;
+  return_target_id?: string | null;
   returned_fields?: string[];
   dispatched_at: string | null;
   accepted_at: string | null;
@@ -146,10 +162,10 @@ const MODULE_META: Record<string, { name: string; visible_fields: string[]; supp
       'salary_form', 'base_salary', 'other_salary', 'probation_salary',
       'payroll_cycle', 'payroll_date',
       'business_mode', 'employee_type',
-      'need_company_contract', 'contract_subject', 'contract_template',
+      'need_company_contract', 'need_esign', 'esign_platform', 'contract_subject', 'contract_template', 'paper_contract_template',
       'contract_urge', 'contract_feedback',
     ],
-    supplementable_fields: ['contract_subject', 'contract_template'],
+    supplementable_fields: ['contract_subject', 'contract_template', 'paper_contract_template'],
   },
   onboarding_contact: {
     name: '入职联系',
@@ -201,8 +217,12 @@ interface ParentChild {
   status: string;
   handler_name: string | null;
   return_reason?: string | null;
+  return_target_type?: ReturnTargetType | null;
+  return_target_id?: string | null;
   returned_fields?: string[];
   handler_id?: string | null;
+  created_by?: string | null;
+  createdBy?: string | null;
   dispatched_at: string | null;
   accepted_at: string | null;
   completed_at: string | null;
@@ -278,6 +298,8 @@ export function normalizeDispatchedOrderItem(raw: unknown): DispatchedOrderItem 
     visible_fields: mergedVisibleFields.length > 0 ? mergedVisibleFields : meta.visible_fields,
     _fieldPermissions: (row._fieldPermissions ?? row._field_permissions ?? {}) as Record<string, 'visible' | 'hidden' | 'readonly' | 'masked'>,
     return_reason: (row.return_reason ?? row.returnReason ?? null) as string | null,
+    return_target_type: (row.return_target_type ?? row.returnTargetType ?? null) as ReturnTargetType | null,
+    return_target_id: (row.return_target_id ?? row.returnTargetId ?? null) as string | null,
     returned_fields: normalizeStringArray(row.returned_fields ?? row.returnedFields),
     dispatched_at: (row.dispatched_at ?? row.dispatchedAt ?? null) as string | null,
     accepted_at: (row.accepted_at ?? row.acceptedAt ?? null) as string | null,
@@ -631,6 +653,18 @@ export async function getDispatchedOrder(id: string): Promise<DispatchedOrderIte
   return normalizeDispatchedOrderItem(raw);
 }
 
+export async function getDispatchedOrderReturnTargets(id: string): Promise<DispatchedOrderReturnTargets> {
+  if (isMockMode) {
+    const order = flattenDispatched().find((item) => item.id === id);
+    const creatorId = order?.created_by || order?.createdBy || '';
+    return mockDelay({
+      defaultTargetType: 'creator',
+      targets: creatorId ? [{ type: 'creator', id: creatorId, name: order?.created_by_name || order?.createdByName || creatorId }] : [],
+    });
+  }
+  return request.get(`/dispatched-orders/${id}/return-targets`) as Promise<DispatchedOrderReturnTargets>;
+}
+
 export async function acceptDispatchedOrder(id: string): Promise<DispatchedOrderItem> {
   if (isMockMode) {
     const updated = updateChildInParent(id, (c) => {
@@ -755,11 +789,18 @@ export function isDispatchedAcceptedByBackend(order?: Pick<DispatchedOrderItem, 
   return Boolean(order?.accepted_at) || order?.status === 'processing' || order?.status === 'accepted';
 }
 
-export async function returnDispatchedOrder(id: string, reason: string, fields?: string[]): Promise<DispatchedOrderItem> {
+export async function returnDispatchedOrder(
+  id: string,
+  reason: string,
+  fields?: string[],
+  target?: { type?: ReturnTargetType; id?: string },
+): Promise<DispatchedOrderItem> {
   if (isMockMode) {
     const updated = updateChildInParent(id, (c) => {
-      c.status = 'returned';
+      c.status = target?.type === 'module_handler' ? 'pending' : 'returned';
       c.return_reason = reason;
+      c.return_target_type = target?.type || 'creator';
+      c.return_target_id = target?.id || c.created_by || c.createdBy || null;
       c.returned_fields = fields;
     });
     if (updated) {
@@ -797,6 +838,8 @@ export async function returnDispatchedOrder(id: string, reason: string, fields?:
   return request.post(`/dispatched-orders/${id}/return`, {
     returnReason: reason,
     returnedFields: fields,
+    returnTargetType: target?.type,
+    returnTargetId: target?.id,
   }) as Promise<DispatchedOrderItem>;
 }
 
@@ -1093,6 +1136,7 @@ export interface DispatchedOrderExportResult {
   fileName?: string;
   downloadUrl?: string;
   files?: DispatchedOrderExportFile[];
+  skippedPaperContracts?: number;
 }
 
 export function resolveExportDownloadUrl(result: DispatchedOrderExportResult): string {

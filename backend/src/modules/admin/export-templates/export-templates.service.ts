@@ -285,13 +285,22 @@ export class ExportTemplatesService {
       throw new BadRequestException('不能跨北仑和省外账套混合导出');
     }
     const businessScope = [...orderScopes][0] ?? user.businessScope ?? BusinessScope.BEILUN;
-    if (templateId) return this.apply(templateId, ids, user, businessScope);
+    const paperContractCount = orders.filter((order) => this.isPaperContract(order)).length;
+    const exportOrders = orders.filter((order) => !this.isPaperContract(order));
+    if (paperContractCount > 0 && exportOrders.length === 0) {
+      throw new BadRequestException(`没有可导出的电子签合同，已跳过 ${paperContractCount} 条纸质合同`);
+    }
+    const exportIds = exportOrders.map((order) => order.id);
+    if (templateId) {
+      const result = await this.apply(templateId, exportIds, user, businessScope);
+      return paperContractCount > 0 ? { ...result, skippedPaperContracts: paperContractCount } : result;
+    }
 
     const fieldNameMap = await this.loadFieldNameMap();
     const fieldOptionsMap = await this.loadFieldOptionsMap();
     let rowCount = 0;
     const grouped = new Map<string, { moduleCode: string; signPlatform: string | null; businessScope: BusinessScope; orders: DispatchedOrder[] }>();
-    for (const order of orders) {
+    for (const order of exportOrders) {
       const moduleCode = order.moduleCode;
       const signPlatform = this.resolveTemplateRouteSignPlatform(order);
       const orderBusinessScope = order.parentOrder?.businessScope ?? businessScope;
@@ -374,7 +383,7 @@ export class ExportTemplatesService {
       userId: user.sub,
       actionType: 'batch_export_auto_template',
       beforeData: null,
-      afterData: { dispatchedOrderIds: ids, fileIds: files.map((f) => f.fileId), rowCount, moduleCodes, exportGroups },
+      afterData: { dispatchedOrderIds: ids, fileIds: files.map((f) => f.fileId), rowCount, moduleCodes, exportGroups, skippedPaperContracts: paperContractCount },
       ipAddress: null,
     }));
     return {
@@ -388,7 +397,15 @@ export class ExportTemplatesService {
       fileName: primary?.fileName,
       downloadUrl: primary?.downloadUrl,
       files,
+      skippedPaperContracts: paperContractCount || undefined,
     };
+  }
+
+  private isPaperContract(order: DispatchedOrder): boolean {
+    if (order.moduleCode !== 'contract') return false;
+    const extra = order.parentOrder?.extraData ?? {};
+    const needEsign = this.readString(extra['need_esign'] ?? extra['needEsign'])?.trim().toLowerCase();
+    return ['2.否', '否', '2', 'no', 'false'].includes(needEsign ?? '');
   }
 
   private async applyTemplateToOrders(

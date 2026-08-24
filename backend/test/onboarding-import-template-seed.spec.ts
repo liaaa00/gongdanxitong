@@ -25,7 +25,7 @@ describe('onboarding import template seeds', () => {
     expect(ONBOARDING_TEMPLATE_ORDER).not.toContain('supplementary_fund_ratio');
     expect(ONBOARDING_TEMPLATE_ORDER.at(-1)).toBe('special_remark');
     expect(ONBOARDING_TEMPLATE_ORDER.indexOf('need_payroll_slip')).toBe(ONBOARDING_TEMPLATE_ORDER.indexOf('remark') - 1);
-    expect(ONBOARDING_TEMPLATE_ORDER.slice(36, 53)).toEqual([
+    expect(ONBOARDING_TEMPLATE_ORDER.slice(36, 54)).toEqual([
       'household_address',
       'bank_location',
       'bank_name',
@@ -42,6 +42,7 @@ describe('onboarding import template seeds', () => {
       'project_name',
       'work_arrangement',
       'contract_template',
+      'paper_contract_template',
       'need_contract_urge',
     ]);
     expect(ONBOARDING_TEMPLATE_ORDER).not.toContain('postal_code');

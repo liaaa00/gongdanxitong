@@ -127,6 +127,10 @@ export interface DispatchedOrderListItem {
   business_scope?: BusinessScope;
   returnReason: string | null;
   return_reason?: string | null;
+  returnTargetType?: string | null;
+  return_target_type?: string | null;
+  returnTargetId?: string | null;
+  return_target_id?: string | null;
   flowRound?: number;
   flow_round?: number;
   completionRemark?: string | null;
@@ -215,4 +219,5 @@ export interface DispatchedOrderExportResult {
   downloadUrl?: string;
   rowCount?: number;
   files?: DispatchedOrderExportFile[];
+  skippedPaperContracts?: number;
 }

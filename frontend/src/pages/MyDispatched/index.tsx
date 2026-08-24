@@ -359,8 +359,10 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
     try {
       const result = await batchExportDispatchedOrders(ids);
       await downloadDispatchedExport(result, '批量导出子工单.xlsx');
-      message.success('导出成功');
-    } catch { message.error('导出失败'); }
+      const skipped = result.skippedPaperContracts ?? 0;
+      if (skipped > 0) message.warning(`电子签合同导出成功，已跳过 ${skipped} 条纸质合同`);
+      else message.success('导出成功');
+    } catch (error) { message.error(error instanceof Error && error.message ? error.message : '导出失败'); }
     finally { setExporting(false); }
   };
 

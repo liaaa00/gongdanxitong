@@ -7,6 +7,7 @@ import MyDispatchedDetail, { getDispatchedDetailFieldGroups, inferResignationRea
 
 const mocks = vi.hoisted(() => ({
   getDispatchedOrder: vi.fn(),
+  getDispatchedOrderReturnTargets: vi.fn(),
   getDispatchedOrderTimeline: vi.fn(),
   confirmDispatchedDirtyRead: vi.fn(),
   getFields: vi.fn(),
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   getSupplementLogs: vi.fn(),
   getActiveDetailViewTemplate: vi.fn(),
   supplementField: vi.fn(),
+  returnDispatchedOrder: vi.fn(),
   creatorUpdateDispatchedOrderFields: vi.fn(),
   resubmitDispatchedOrder: vi.fn(),
   downloadResignationCertificate: vi.fn(),
@@ -76,12 +78,13 @@ vi.mock('@/services/dispatchedOrders', () => ({
       _fieldPermissions: order?._fieldPermissions ?? mocks.fieldPermissions,
     };
   },
+  getDispatchedOrderReturnTargets: (...args: unknown[]) => mocks.getDispatchedOrderReturnTargets(...args),
   getDispatchedOrderTimeline: (...args: unknown[]) => mocks.getDispatchedOrderTimeline(...args),
   confirmDispatchedDirtyRead: (...args: unknown[]) => mocks.confirmDispatchedDirtyRead(...args),
   returnCompletedDispatchedOrder: vi.fn(),
   acceptDispatchedOrder: vi.fn(),
   completeDispatchedOrder: vi.fn(),
-  returnDispatchedOrder: vi.fn(),
+  returnDispatchedOrder: (...args: unknown[]) => mocks.returnDispatchedOrder(...args),
   supplementField: (...args: unknown[]) => mocks.supplementField(...args),
   exportDispatchedOrder: vi.fn(),
   downloadDispatchedExport: vi.fn(),
@@ -309,6 +312,10 @@ describe('MyDispatchedDetail readonly and creator repair actions', () => {
     mocks.getFallbackFields.mockReturnValue(fields);
     mocks.getSupplementLogs.mockResolvedValue([]);
     mocks.getDispatchedOrderTimeline.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 50 });
+    mocks.getDispatchedOrderReturnTargets.mockResolvedValue({
+      defaultTargetType: 'creator',
+      targets: [{ type: 'creator', id: 'creator-1', name: '发起人' }],
+    });
     mocks.creatorUpdateDispatchedOrderFields.mockResolvedValue({ ...baseOrder, status: 'modify_pending' });
     mocks.resubmitDispatchedOrder.mockResolvedValue({ ...baseOrder, status: 'pending' });
     mocks.getActiveDetailViewTemplate.mockResolvedValue(null);
@@ -723,6 +730,40 @@ describe('MyDispatchedDetail readonly and creator repair actions', () => {
 
     expect(await screen.findByRole('button', { name: /接单/ })).toBeInTheDocument();
     expect(screen.queryByText('我的工单只读详情')).not.toBeInTheDocument();
+  });
+
+  it('selects a configured return target and sends the target type/id', async () => {
+    mocks.currentUser = {
+      id: 'handler-1',
+      username: 'handler',
+      real_name: '办理人',
+      roles: [{ code: 'labor_contract_member' }],
+    };
+    mocks.getDispatchedOrder.mockResolvedValue({ ...baseOrder, handler_id: 'handler-1' });
+    mocks.getDispatchedOrderReturnTargets.mockResolvedValue({
+      defaultTargetType: 'creator',
+      targets: [
+        { type: 'creator', id: 'creator-1', name: '发起业务员' },
+        { type: 'module_handler', id: 'handler-2', name: '另一名合同专员', moduleCode: 'contract' },
+      ],
+    });
+    mocks.returnDispatchedOrder.mockResolvedValue({ ...baseOrder, status: 'returned' });
+
+    renderDetail('/my-dispatched/d-1');
+    fireEvent.click(await screen.findByRole('button', { name: /退回/ }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('退回对象')).toBeInTheDocument();
+    fireEvent.mouseDown(within(dialog).getByRole('combobox'));
+    fireEvent.click(await screen.findByText('同模块处理人：另一名合同专员'));
+    fireEvent.change(within(dialog).getByLabelText('退回原因'), { target: { value: '需要补充合同信息' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: /OK|确\s*定/ }));
+
+    await waitFor(() => expect(mocks.returnDispatchedOrder).toHaveBeenCalledWith(
+      'd-1',
+      '需要补充合同信息',
+      undefined,
+      { type: 'module_handler', id: 'handler-2' },
+    ));
   });
 
   it('collects an optional reason when a returned child order is resubmitted', async () => {

@@ -45,6 +45,10 @@ const fields = [
   field({ fieldCode: 'probation_other_salary', fieldName: '试用期其他工资', fieldType: FieldType.TEXT }),
   field({ fieldCode: 'contract_subject', fieldName: '劳动合同主体', conditionalRequired: { field: 'need_company_contract', op: 'EQ', value: '是' } }),
   field({ fieldCode: 'contract_template', fieldName: '劳动合同模板（标准模板/特殊模板）', conditionalRequired: { field: 'need_company_contract', op: 'EQ', value: '是' } }),
+  field({ fieldCode: 'paper_contract_template', fieldName: '纸质合同模板名称', conditionalRequired: { op: 'AND', children: [
+    { field: 'need_company_contract', op: 'EQ', value: '是' },
+    { field: 'need_esign', op: 'EQ', value: '2.否' },
+  ] } }),
   field({ fieldCode: 'household_address', fieldName: '户籍地址', isRequired: true, defaultRequired: true }),
   field({ fieldCode: 'household_type', fieldName: '户籍性质', fieldType: FieldType.DROPDOWN, dropdownOptions: ['农业', '非农业'] }),
   field({ fieldCode: 'need_onboarding_contact', fieldName: '入职材料是否需要集约收集', fieldType: FieldType.DROPDOWN, isRequired: true, defaultRequired: true, dropdownOptions: ['是', '否'] }),
@@ -367,14 +371,29 @@ describe('ImportFieldValidationService scenarios', () => {
       raw: {
         ...validRow({ 姓名: '钱七', 是否签合同: '是', 合同主体: '北仑', 是否电子签: '2.否' }),
         '劳动合同模板（标准模板/ 特殊模板）': '标准模板',
+        '纸质合同模板名称': '纸质合同2026版',
       },
-      mapping: [...mapping, { header: '劳动合同模板', fieldCode: 'contract_template' }],
+      mapping: [...mapping, { header: '劳动合同模板', fieldCode: 'contract_template' }, { header: '纸质合同模板名称', fieldCode: 'paper_contract_template' }],
       fields,
     });
 
     expect(result.ok).toBe(true);
     expect(result.normalized.contract_template).toBe('标准模板');
+    expect(result.normalized.paper_contract_template).toBe('纸质合同2026版');
     expect(result.errors).not.toContainEqual(expect.objectContaining({ fieldCode: 'contract_template' }));
+    expect(result.errors).not.toContainEqual(expect.objectContaining({ fieldCode: 'paper_contract_template' }));
+  });
+
+  it('requires paper_contract_template only for non-electronic contracts', async () => {
+    const result = await service.validateRow({
+      rowNo: 10,
+      raw: validRow({ 姓名: '缺纸质模板', 是否签合同: '是', 合同主体: '北仑', 是否电子签: '2.否' }),
+      mapping: [...mapping, { header: '劳动合同模板', fieldCode: 'contract_template' }, { header: '纸质合同模板名称', fieldCode: 'paper_contract_template' }],
+      fields,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContainEqual(expect.objectContaining({ fieldCode: 'paper_contract_template', reason: 'required' }));
   });
 
   it('requires esign_platform only when need_esign is yes', async () => {

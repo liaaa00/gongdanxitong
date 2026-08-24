@@ -46,11 +46,15 @@ export function useDispatchedActions({ orderId, order, onOrderUpdated }: UseDisp
     return null;
   }, [orderId, onOrderUpdated]);
 
-  const handleReturn = useCallback(async (reason: string, fields?: string[]) => {
+  const handleReturn = useCallback(async (
+    reason: string,
+    fields?: string[],
+    target?: { type?: 'creator' | 'module_handler' | 'supplement_handler'; id?: string },
+  ) => {
     if (!reason.trim()) return null;
     setActionLoading(true);
     try {
-      const updated = await returnDispatchedOrder(orderId, reason, fields);
+      const updated = await returnDispatchedOrder(orderId, reason, fields, target);
       onOrderUpdated(updated);
       message.success('已退回');
       return updated;

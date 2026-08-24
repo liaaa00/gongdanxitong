@@ -16,12 +16,13 @@ import MaterialsUpload from '@/components/MaterialsUpload';
 import { useDispatchedActions } from '@/hooks/useDispatchedActions';
 import {
   getDispatchedOrder,
+  getDispatchedOrderReturnTargets,
   getDispatchedOrderTimeline,
   confirmDispatchedDirtyRead,
   downloadResignationCertificate,
   returnCompletedDispatchedOrder,
 } from '@/services/dispatchedOrders';
-import type { DirtyFieldMark, DispatchedOrderItem, DispatchedOrderTimelineItem } from '@/services/dispatchedOrders';
+import type { DirtyFieldMark, DispatchedOrderItem, DispatchedOrderReturnTargets, DispatchedOrderTimelineItem, ReturnTargetType } from '@/services/dispatchedOrders';
 import { getFallbackFields, getFields } from '@/services/fields';
 import { getSupplementLogs } from '@/services/supplementLogs';
 import type { SupplementLogItem } from '@/services/supplementLogs';
@@ -51,7 +52,7 @@ const FIELD_GROUPS: Array<{ title: string; codes: string[] }> = [
   },
   {
     title: '合同信息',
-    codes: ['contract_term_type', 'contract_term', 'contract_start_date', 'contract_end_date', 'probation_start_date', 'probation_months', 'probation_end_date', 'work_city', 'work_hour_system', 'work_cycle', 'need_company_contract', 'contract_subject', 'contract_template', 'need_contract_urge', 'contract_feedback'],
+    codes: ['contract_term_type', 'contract_term', 'contract_start_date', 'contract_end_date', 'probation_start_date', 'probation_months', 'probation_end_date', 'work_city', 'work_hour_system', 'work_cycle', 'need_company_contract', 'need_esign', 'esign_platform', 'contract_subject', 'contract_template', 'paper_contract_template', 'need_contract_urge', 'contract_feedback'],
   },
   {
     title: '薪资与发薪',
@@ -272,6 +273,8 @@ const MyDispatchedDetail: React.FC = () => {
 
   const [returnModalOpen, setReturnModalOpen] = useState(false);
   const [returnForm] = Form.useForm();
+  const [returnTargets, setReturnTargets] = useState<DispatchedOrderReturnTargets | null>(null);
+  const [returnTargetsLoading, setReturnTargetsLoading] = useState(false);
 
   const [returnCompletedOpen, setReturnCompletedOpen] = useState(false);
   const [returnCompletedForm] = Form.useForm();
@@ -526,12 +529,14 @@ const MyDispatchedDetail: React.FC = () => {
   const isMyWorkReadOnlyView = isReadOnlyView && readonlyFrom === 'my-work';
   const isAdminUser = hasRole('admin');
   const canBackendOperateByRole = isAdminUser || hasRole('data_entry_leader') || hasRole('shared_team_owner')
-    || hasRole('labor_contract_member') || hasRole('onboarding_resignation_member') || hasRole('social_insurance_specialist');
+    || hasRole('labor_contract_member') || hasRole('contract_specialist') || hasRole('contract_team') || hasRole('shared_leader')
+    || hasRole('onboarding_resignation_member') || hasRole('social_insurance_specialist');
   const canBackendOperate = canBackendOperateByRole && !isReadOnlyView;
   const isOrderCreator = Boolean(user?.id && parentCreatedBy === user.id);
   const isCreator = isAdminUser || isOrderCreator;
   const isVoided = Boolean(order?.void_at || order?.voidAt || order?.status === 'void');
   const isResubmittableStatus = Boolean(order && (['returned', 'withdrawn', 'void'].includes(order.status) || isVoided));
+  const isAwaitingSupplement = order?.return_target_type === 'supplement_handler';
   const isSocialInsuranceOrder = isSocialInsuranceModule(order?.module_code);
   const dataEntryStatus = order?.data_entry_status
     ?? order?.dataEntryStatus
@@ -546,8 +551,10 @@ const MyDispatchedDetail: React.FC = () => {
   const canReturn = canBackendOperate && !isVoided && (order?.status === 'processing' || order?.status === 'pending');
   const canSupplementOnboarding = order?.module_code === SUPPLEMENT_ALLOWED_MODULE_CODE && isAllowedSupplementOperator(user);
   const canSupplementSocialInsurance = isSocialInsuranceOrder && hasRole('social_insurance_specialist');
+  const canSupplementContract = order?.module_code === 'contract'
+    && (hasRole('labor_contract_member') || hasRole('contract_specialist') || hasRole('contract_team') || hasRole('shared_team_owner') || hasRole('shared_leader'));
   const canSupplement = canBackendOperate
-    && (canSupplementOnboarding || canSupplementSocialInsurance)
+    && (canSupplementOnboarding || canSupplementSocialInsurance || canSupplementContract)
     && !isVoided
     && order?.status === 'processing'
     && supplementableFields.length > 0;
@@ -557,7 +564,7 @@ const MyDispatchedDetail: React.FC = () => {
   const isTerminal = isVoided || (isTerminalStatus && !isRepairableStatus);
   const canCreatorOperate = Boolean(order && isCreator && !isReadOnlyView && (!isTerminalStatus || isRepairableStatus || order.status === 'completed'));
   const canCreatorUpdate = canCreatorOperate && !isApprovalStatus && !isVoided;
-  const canCreatorResubmit = canCreatorOperate && isResubmittableStatus;
+  const canCreatorResubmit = canCreatorOperate && isResubmittableStatus && !isAwaitingSupplement;
   const canCreatorUrge = canCreatorOperate && !isResubmittableStatus && !isApprovalStatus && order?.status !== 'completed';
   const canShowCreatorWithdraw = canCreatorOperate && !isApprovalStatus && !isResubmittableStatus && !isVoided;
   const canShowCreatorVoid = canCreatorOperate && !isApprovalStatus && !isVoided;
@@ -763,10 +770,36 @@ const MyDispatchedDetail: React.FC = () => {
     if (updated) setApprovalOpen(false);
   };
 
+  const openReturnModal = async () => {
+    returnForm.resetFields();
+    setReturnTargets(null);
+    setReturnModalOpen(true);
+    if (!effectiveOrderId) return;
+    setReturnTargetsLoading(true);
+    try {
+      const result = await getDispatchedOrderReturnTargets(effectiveOrderId);
+      setReturnTargets(result);
+      const defaultTarget = result.targets.find((target) => target.type === result.defaultTargetType) ?? result.targets[0];
+      if (defaultTarget) returnForm.setFieldsValue({ targetKey: `${defaultTarget.type}:${defaultTarget.id}` });
+    } catch {
+      message.error('退回对象加载失败，请刷新后重试');
+    } finally {
+      setReturnTargetsLoading(false);
+    }
+  };
+
   const handleReturnOk = async () => {
     const values = await returnForm.validateFields();
-    await handleReturn(values.reason, values.fields);
-    setReturnModalOpen(false);
+    const selected = (returnTargets?.targets || []).find((target) => `${target.type}:${target.id}` === values.targetKey);
+    if (!selected) {
+      message.warning('请选择退回对象');
+      return;
+    }
+    const updated = await handleReturn(values.reason, values.fields, {
+      type: selected.type,
+      id: selected.id,
+    });
+    if (updated) setReturnModalOpen(false);
   };
 
   const handleReturnCompletedOk = async () => {
@@ -1020,19 +1053,18 @@ const MyDispatchedDetail: React.FC = () => {
                 onClick={openCompleteModal}>完成</Button>
             )}
             {!isTerminal && canReturn && (
-              <Button danger icon={<RollbackOutlined />}
-                onClick={() => { returnForm.resetFields(); setReturnModalOpen(true); }}>退回</Button>
+              <Button danger icon={<RollbackOutlined />} onClick={() => { void openReturnModal(); }}>退回</Button>
             )}
             {canReturnCompleted && (
               <Button danger icon={<RollbackOutlined />}
                 onClick={() => { returnCompletedForm.resetFields(); setReturnCompletedOpen(true); }}>退回已完成节点</Button>
             )}
-            {!isTerminal && canSupplementOnboarding && (
+            {!isTerminal && (canSupplementOnboarding || canSupplementContract) && (
               <Button icon={<PlusCircleOutlined />}
                 onClick={() => {
                   supplementForm.setFieldsValue(order.extra_data || {});
                   setSupplementModalOpen(true);
-                }}>补充/修改暂存字段</Button>
+                }}>{canSupplementContract ? '补充/修改字段' : '补充/修改暂存字段'}</Button>
             )}
              {/* 转交功能按 P2 要求暂时隐藏，相关代码保留以便后续恢复。 */}
           </Space>
@@ -1092,7 +1124,7 @@ const MyDispatchedDetail: React.FC = () => {
           }]}
         />
 
-        {canSupplementOnboarding && emptySupplementFields.length > 0 && (
+        {(canSupplementOnboarding || canSupplementContract) && emptySupplementFields.length > 0 && (
           <Alert
             message="待补充字段（紫色标记项为空，请尽快补充）"
             type="warning"
@@ -1157,15 +1189,15 @@ const MyDispatchedDetail: React.FC = () => {
               );
             })}
             {canSupplement && (
-              <Card title={canSupplementSocialInsurance ? '可编辑字段' : '补充字段（可编辑）'} size="small" type="inner">
+              <Card title={canSupplementSocialInsurance ? '可编辑字段' : canSupplementContract ? '合同字段（可编辑）' : '补充字段（可编辑）'} size="small" type="inner">
                 <DynamicForm
                   key={`${order.id}:${order.work_order_updated_at || order.workOrderUpdatedAt || ''}`}
-                  fields={canSupplementSocialInsurance ? supplementableFields.map(withRequiredLabel) : dynamicVisibleFields}
+                  fields={(canSupplementSocialInsurance || canSupplementContract) ? supplementableFields.map(withRequiredLabel) : dynamicVisibleFields}
                   fieldPermissions={visibleFieldPermissions}
                   orderType={order.order_type || 'onboarding'}
                   initialValues={order.extra_data || {}}
                   readOnly={false}
-                  onFinish={canSupplementSocialInsurance ? async (values) => {
+                  onFinish={(canSupplementSocialInsurance || canSupplementContract) ? async (values) => {
                     const original = order.extra_data || {};
                     const changed = Object.fromEntries(Object.entries(values).filter(([fieldCode, value]) => (
                       String(original[fieldCode] ?? '') !== String(value ?? '')
@@ -1178,7 +1210,7 @@ const MyDispatchedDetail: React.FC = () => {
                     if (updated) refreshLogs();
                   } : undefined}
                   submitText="保存字段"
-                  validateChangedFieldsOnly={canSupplementSocialInsurance}
+                  validateChangedFieldsOnly={canSupplementSocialInsurance || canSupplementContract}
                   loading={actionLoading}
                 />
               </Card>
@@ -1345,9 +1377,27 @@ const MyDispatchedDetail: React.FC = () => {
         </Modal>
 
         <Modal title="退回工单" open={returnModalOpen} onOk={handleReturnOk}
-          onCancel={() => setReturnModalOpen(false)} confirmLoading={actionLoading}
+          onCancel={() => setReturnModalOpen(false)} confirmLoading={actionLoading || returnTargetsLoading}
           okButtonProps={{ danger: true }} destroyOnHidden>
           <Form form={returnForm} layout="vertical">
+            <Form.Item
+              name="targetKey"
+              label="退回对象"
+              rules={[{ required: true, message: '请选择退回对象' }]}
+            >
+              <Select
+                loading={returnTargetsLoading}
+                placeholder="请选择退回对象"
+                options={(returnTargets?.targets || []).map((target) => ({
+                  value: `${target.type}:${target.id}`,
+                  label: target.type === 'creator'
+                    ? `发起业务员：${target.name}`
+                    : target.type === 'supplement_handler'
+                      ? `补材料负责人：${target.name}`
+                      : `同模块处理人：${target.name}`,
+                }))}
+              />
+            </Form.Item>
             <Form.Item name="reason" label="退回原因"
               rules={[
                 { required: true, message: '请填写退回原因' },

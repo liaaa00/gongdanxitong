@@ -169,6 +169,24 @@ describe('OnboardingModule header table filters', () => {
     expect(columns.find((column) => column.key === 'data_entry_status')).toBeUndefined();
   });
 
+  it('shows electronic-sign status and paper contract template on the contract list', () => {
+    mocks.moduleCode = 'contract';
+
+    render(<OnboardingModule />);
+
+    const columns = mocks.latestProTableProps.columns as Array<Record<string, any>>;
+    const esignStatus = columns.find((column) => column.key === 'need_esign');
+    expect(esignStatus?.title).toBe('是否电子签');
+    expect(esignStatus?.renderText(undefined, { extra_data: { need_esign: '1.是' } })).toBe('1.是');
+    expect(esignStatus?.renderText(undefined, { extra_data: { need_esign: '2.否' } })).toBe('2.否');
+    expect(esignStatus?.renderText(undefined, { extra_data: {} })).toBe('-');
+
+    const paperTemplate = columns.find((column) => column.key === 'paper_contract_template');
+    expect(paperTemplate?.title).toBe('纸质合同模板名称');
+    expect(paperTemplate?.renderText(undefined, { extra_data: { paper_contract_template: '劳动合同2026版' } })).toBe('劳动合同2026版');
+    expect(paperTemplate?.renderText(undefined, { extra_data: {} })).toBe('-');
+  });
+
   it('maps social_insurance_resign route to backend resignation_social_insurance module code', async () => {
     mocks.moduleCode = 'social_insurance_resign';
 

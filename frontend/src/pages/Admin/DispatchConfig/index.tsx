@@ -47,12 +47,24 @@ import type { CustomerItem } from '@/services/customers';
 import { useAuth } from '@/hooks/useAuth';
 import { buildModuleLabelMap, getModuleConfigs } from '@/services/moduleConfigs';
 import type { BusinessScope } from '@/utils/businessScope';
+import {
+  getMissingHandlerRoles,
+  getModuleHandlerRoleCodes,
+  isEligibleModuleHandler,
+  isEligibleModuleHandlerRoles,
+} from '@/utils/moduleHandlerEligibility';
+import {
+  DISPATCH_CATEGORY_COLORS,
+  DISPATCH_CATEGORY_LABELS,
+  getDispatchCategory,
+  getDispatchCategoryOrder,
+} from '@/utils/dispatchConfigCategory';
 
 const { Text, Paragraph } = Typography;
 
 type ConfigType = 'default' | 'exception';
 type ActiveTab = 'default' | 'customerException' | 'delegations';
-type Option = { value: string; label: string };
+type Option = { value: string; label: string; disabled?: boolean };
 
 const ORDER_TYPES: Option[] = [
   { label: '入职', value: 'onboarding' },
@@ -198,6 +210,25 @@ const rowSlaReminderBeforeHours = (row: DispatchConfigItem): number | null => {
 const userDisplay = (u: UserItem) =>
   u.real_name || (u as any).realName || u.username || (u as any).userName || u.id;
 
+const userOption = (
+  user: UserItem,
+  moduleCode?: string,
+  selectedIds: readonly string[] = [],
+): Option => {
+  const roleCodes = getModuleHandlerRoleCodes(user);
+  const missingRoles = getMissingHandlerRoles(moduleCode, roleCodes);
+  const eligible = isEligibleModuleHandler(moduleCode, user);
+  const baseLabel = `${userDisplay(user)} (${user.username || (user as any).userName || user.id})`;
+  const label = !eligible
+    ? `${baseLabel} - 缺少角色：${missingRoles.join('、')}`
+    : baseLabel;
+  return {
+    value: user.id,
+    label,
+    disabled: !eligible && !selectedIds.includes(user.id),
+  };
+};
+
 const customerDisplay = (c: CustomerItem) => {
   const name = c.customer_name || c.customerName || c.id;
   const code = c.customer_code || c.customerCode;
@@ -235,6 +266,7 @@ const AdminDispatchConfig: React.FC = () => {
   const customerExceptionActionRef = useRef<ActionType>();
   const delegationActionRef = useRef<ActionType>();
   const [users, setUsers] = useState<Option[]>([]);
+  const [userRecords, setUserRecords] = useState<UserItem[]>([]);
   const [customers, setCustomers] = useState<Option[]>([]);
   const [customerCodeOptions, setCustomerCodeOptions] = useState<Option[]>([]);
   const [activeTab, setActiveTab] = useState<ActiveTab>('default');
@@ -257,6 +289,12 @@ const AdminDispatchConfig: React.FC = () => {
   const watchedStrategy = Form.useWatch('dispatch_strategy', form) as string | undefined;
   const watchedSla = Form.useWatch('sla_hours', form) as number | undefined;
   const watchedReminder = Form.useWatch('sla_reminder_before_hours', form) as number | undefined;
+  const watchedPrimaryUserId = Form.useWatch('primary_user_id', form) as string | undefined;
+  const watchedBackupUserId = Form.useWatch('backup1_user_id', form) as string | undefined;
+  const watchedExceptionModule = Form.useWatch('moduleCode', customerExceptionForm) as string | undefined;
+  const watchedExceptionHandler = Form.useWatch('handlerId', customerExceptionForm) as string | undefined;
+  const watchedDelegationModule = Form.useWatch('moduleCode', delegationForm) as string | undefined;
+  const watchedDelegateHandler = Form.useWatch('delegateHandlerId', delegationForm) as string | undefined;
 
   const subModuleOptions = useMemo(() => {
     const staticOptions = orderType ? SUB_MODULES.filter((item) => item.orderType === orderType) : SUB_MODULES;
@@ -286,6 +324,7 @@ const AdminDispatchConfig: React.FC = () => {
           getModuleConfigs({ businessScope, isActive: true }).catch(() => []),
         ]);
         const userList = Array.isArray(u) ? u : u?.list || [];
+        setUserRecords(userList.filter((x: UserItem) => x.is_active ?? x.isActive ?? true));
         const customerList = Array.isArray(c) ? c : c?.list || [];
         setModuleLabels(buildModuleLabelMap(modules));
         setUsers(userList
@@ -309,6 +348,13 @@ const AdminDispatchConfig: React.FC = () => {
     try {
       const result = await getUsers({ page: 1, pageSize: 50, keyword, isActive: true, businessScope });
       const list = Array.isArray(result) ? result : result?.list || [];
+      setUserRecords((previous) => {
+        const merged = new Map(previous.map((user) => [user.id, user]));
+        for (const user of list as UserItem[]) {
+          if (user.is_active ?? user.isActive ?? true) merged.set(user.id, user);
+        }
+        return Array.from(merged.values());
+      });
       setUsers(list.map((user: UserItem) => ({
         value: user.id,
         label: `${userDisplay(user)} (${user.username || user.id}) · ${(user.roles || []).map((role) => role.role_name).filter(Boolean).join('、') || '未配置角色'}`,
@@ -324,16 +370,36 @@ const AdminDispatchConfig: React.FC = () => {
     delegationActionRef.current?.reload();
   };
 
-  const userLabel = (userId?: string) => userId ? users.find((item) => item.value === userId)?.label : undefined;
+  const userLabel = (userId?: string) => {
+    const user = userRecords.find((item) => item.id === userId);
+    return user ? userOption(user).label : users.find((item) => item.value === userId)?.label;
+  };
   const moduleLabel = (moduleCode?: string) => moduleCode
     ? (moduleLabels[moduleCode] || SUB_MODULES.find((item) => item.value === moduleCode)?.label || '模块名称待配置')
     : '—';
+  const activeHandlerModule = customerExceptionOpen
+    ? watchedExceptionModule
+    : delegationOpen
+      ? watchedDelegationModule
+      : watchedModule;
+  const activeSelectedHandlerIds = customerExceptionOpen
+    ? [watchedExceptionHandler].filter((id): id is string => Boolean(id))
+    : delegationOpen
+      ? [watchedDelegateHandler].filter((id): id is string => Boolean(id))
+      : [watchedPrimaryUserId, watchedBackupUserId, ...(watchedHandlers || [])]
+        .filter((id): id is string => Boolean(id));
   const remoteUserSelectProps = {
     showSearch: true,
     filterOption: false as const,
-    options: users,
+    options: userRecords
+      .filter((item) => item.is_active ?? item.isActive ?? true)
+      .map((item) => userOption(item, activeHandlerModule, activeSelectedHandlerIds)),
     onSearch: (keyword: string) => void searchUserOptions(keyword),
   };
+  const invalidSelectedHandlerIds = activeSelectedHandlerIds.filter((id) => {
+    const user = userRecords.find((item) => item.id === id);
+    return user ? !isEligibleModuleHandler(activeHandlerModule, user) : false;
+  });
 
   const loadSourceHandlers = async (moduleCode: string) => {
     const handlers = await getModuleHandlers(moduleCode, true, businessScope);
@@ -444,6 +510,7 @@ const AdminDispatchConfig: React.FC = () => {
     const values = await customerExceptionForm.validateFields();
     const moduleCode = String(values.moduleCode || '').trim();
     const handlerId = String(values.handlerId || '').trim();
+    validateSelectedHandlers(moduleCode, [handlerId]);
     const selectedCodes = Array.isArray(values.customerCodes) ? values.customerCodes : [];
     const customerCodes: string[] = Array.from(new Set<string>(selectedCodes
       .map((value: unknown) => String(value || '').trim().toUpperCase())
@@ -525,9 +592,12 @@ const AdminDispatchConfig: React.FC = () => {
           const name = userLabel(handlerId) || personName(person) || handlerId;
           const active = person?.isActive !== false;
           const roleText = person?.roleCodes?.length ? person.roleCodes.join('、') : '未返回角色信息';
+          const moduleCode = rowModuleCode(row);
+          const missingRoles = getMissingHandlerRoles(moduleCode, person?.roleCodes || []);
+          const eligible = isEligibleModuleHandlerRoles(moduleCode, person?.roleCodes || []);
           return (
             <Tooltip key={handlerId} title={`账号：${active ? '启用' : '停用'}；角色：${roleText}`}>
-              <Tag color={active ? 'blue' : 'error'}>{name} · 待办 {person?.openOrderCount ?? 0}</Tag>
+              <Tag color={!eligible ? 'error' : active ? 'blue' : 'error'}>{name} · 待办 {person?.openOrderCount ?? 0}</Tag>
             </Tooltip>
           );
         })}
@@ -623,11 +693,22 @@ const AdminDispatchConfig: React.FC = () => {
     });
   };
 
+  const validateSelectedHandlers = (moduleCode: string, handlerIds: readonly string[]) => {
+    const invalid = handlerIds
+      .map((id) => userRecords.find((user) => user.id === id))
+      .filter((user): user is UserItem => Boolean(user && !isEligibleModuleHandler(moduleCode, user)));
+    if (invalid.length > 0) {
+      const names = invalid.map((user) => userDisplay(user)).join('、');
+      throw new Error(`负责人 ${names} 不具备模块 ${moduleLabel(moduleCode)} 所需角色，请先更换负责人`);
+    }
+  };
+
   const submit = async () => {
     const values = await form.validateFields();
     try {
       if (editing) {
         if (editing.source === 'rules') {
+          validateSelectedHandlers(values.sub_module, [values.primary_user_id, values.backup1_user_id].filter(Boolean));
           await updateDispatchRule(editing.id, {
             rule_name: values.rule_name,
             order_type: values.order_type,
@@ -650,6 +731,7 @@ const AdminDispatchConfig: React.FC = () => {
             throw new Error('编辑配置时不能更换办理模块，请新建对应模块配置');
           }
           const handlerIds = Array.isArray(values.handler_ids) ? values.handler_ids : [];
+          validateSelectedHandlers(nextModuleCode, handlerIds);
           if (handlerIds.length > 1 && values.dispatch_strategy === 'fixed') {
             throw new Error('多人共同负责时请选择轮流分配或按待办量分配');
           }
@@ -666,6 +748,7 @@ const AdminDispatchConfig: React.FC = () => {
         const moduleCode = values.sub_module;
         if (!moduleCode) throw new Error('请选择办理模块');
         const handlerIds = Array.isArray(values.handler_ids) ? values.handler_ids : [];
+        validateSelectedHandlers(moduleCode, handlerIds);
         if (handlerIds.length > 1 && values.dispatch_strategy === 'fixed') {
           throw new Error('多人共同负责时请选择轮流分配或按待办量分配');
         }
@@ -707,7 +790,13 @@ const AdminDispatchConfig: React.FC = () => {
     try {
       const list = await getDispatchConfig(businessScope);
       setConfigLoadFailed(false);
-      const data = list.filter((row) => type === 'exception' ? row.source === 'rules' : row.source !== 'rules');
+      const data = list
+        .filter((row) => type === 'exception' ? row.source === 'rules' : row.source !== 'rules')
+        .sort((left, right) => {
+          const categoryDiff = getDispatchCategoryOrder(rowModuleCode(left)) - getDispatchCategoryOrder(rowModuleCode(right));
+          if (categoryDiff !== 0) return categoryDiff;
+          return rowModuleLabel(left, moduleLabels).localeCompare(rowModuleLabel(right, moduleLabels), 'zh-CN');
+        });
       return { data, success: true, total: data.length };
     } catch {
       setConfigLoadFailed(true);
@@ -733,6 +822,14 @@ const AdminDispatchConfig: React.FC = () => {
   };
 
   const defaultColumns: ProColumns<DispatchConfigItem>[] = [
+    {
+      title: '业务分类',
+      width: 120,
+      render: (_, row) => {
+        const category = getDispatchCategory(rowModuleCode(row));
+        return <Tag color={DISPATCH_CATEGORY_COLORS[category]}>{DISPATCH_CATEGORY_LABELS[category]}</Tag>;
+      },
+    },
     { title: '模块', width: 220, render: (_, row) => <Text strong>{rowModuleLabel(row, moduleLabels)}</Text> },
     { title: '共同负责人', width: 360, render: (_, row) => renderHandlers(row) },
     {
@@ -862,8 +959,16 @@ const AdminDispatchConfig: React.FC = () => {
             key: 'default',
             label: '默认负责人配置',
             children: (
-              <ProTable<DispatchConfigItem>
-                key={`default-${businessScope}`}
+              <>
+                <Alert
+                  style={{ marginBottom: 12 }}
+                  type="info"
+                  showIcon
+                  message="默认派发按业务阶段分类"
+                  description="入职、在职、离职配置按业务阶段排序；系统/兼容项放在最后。默认负责人为空时，工单会进入公共池或按模块规则处理。"
+                />
+                <ProTable<DispatchConfigItem>
+                  key={`default-${businessScope}`}
                 actionRef={defaultActionRef}
                 columns={defaultColumns}
                 request={() => loadConfig('default')}
@@ -875,8 +980,9 @@ const AdminDispatchConfig: React.FC = () => {
                   <Button key="add" type="primary" icon={<PlusOutlined />} onClick={() => openCreate('default')}>新增默认负责人</Button>,
                 ]}
                 pagination={{ defaultPageSize: 20 }}
-                dateFormatter="string"
-              />
+                  dateFormatter="string"
+                />
+              </>
             ),
           },
           {
@@ -1044,6 +1150,15 @@ const AdminDispatchConfig: React.FC = () => {
             </>
           ) : (
             <>
+              {invalidSelectedHandlerIds.length > 0 && (
+                <Alert
+                  type="error"
+                  showIcon
+                  style={{ marginBottom: 16 }}
+                  message="已选择的负责人不具备当前模块所需角色"
+                  description="请移除标红账号后重新选择具备该模块角色的负责人。"
+                />
+              )}
               <Form.Item name="handler_ids" label="共同负责人" rules={[{ required: true, message: '请选择至少一名共同负责人' }]}>
                 <Select mode="multiple" {...remoteUserSelectProps} placeholder="输入姓名、账号或角色搜索共同负责人" maxTagCount="responsive" />
               </Form.Item>

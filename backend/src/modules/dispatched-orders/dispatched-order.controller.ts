@@ -102,6 +102,14 @@ export class DispatchedOrderController {
     res.end(result.buffer);
   }
 
+  @Get(':id/return-targets')
+  @ApiResponse({ status: 404, description: '子工单不存在' })
+  @ApiResponse({ status: 403, description: '无权访问该子工单' })
+  @FieldPermissionScenario('dispatched:auto')
+  getReturnTargets(@Param('id') id: string, @CurrentUser() user: JwtUserPayload) {
+    return this.dispatchedOrderService.getReturnTargets(assertUuidParam(id, '子工单不存在'), user);
+  }
+
   @Get(':id')
   @ApiResponse({ status: 404, description: '子工单不存在' })
   @ApiResponse({ status: 403, description: '无权访问该子工单' })

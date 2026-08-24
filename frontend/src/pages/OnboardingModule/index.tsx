@@ -503,6 +503,21 @@ const OnboardingModule: React.FC = () => {
               : '-',
           }]
         : []),
+      ...(currentModule === 'contract'
+        ? [{
+            title: '是否电子签',
+            key: 'need_esign',
+            width: 110,
+            hideInSearch: true,
+            renderText: (_: unknown, record: DispatchedOrderItem) => record.extra_data?.need_esign ?? '-',
+          }, {
+            title: '纸质合同模板名称',
+            key: 'paper_contract_template',
+            width: 200,
+            hideInSearch: true,
+            renderText: (_: unknown, record: DispatchedOrderItem) => record.extra_data?.paper_contract_template ?? '-',
+          }]
+        : []),
       {
         title: '子工单号',
         dataIndex: 'order_no',
@@ -660,7 +675,9 @@ const OnboardingModule: React.FC = () => {
           }
         }
         if (failed === 0) {
-          message.success(files.length > 1 ? `导出成功，共 ${files.length} 个文件` : '导出成功');
+          const skipped = result.skippedPaperContracts ?? 0;
+          if (skipped > 0) message.warning(`电子签合同导出成功，已跳过 ${skipped} 条纸质合同`);
+          else message.success(files.length > 1 ? `导出成功，共 ${files.length} 个文件` : '导出成功');
         } else if (failed < files.length) {
           message.warning(`部分导出失败，${files.length - failed} 个文件已下载，${failed} 个失败`);
         } else {
@@ -668,10 +685,12 @@ const OnboardingModule: React.FC = () => {
         }
       } else {
         await downloadDispatchedExport(result, isResignationCertificateModule ? '离职证明.docx' : `${exportFileBaseName}.xlsx`);
-        message.success('导出成功');
+        const skipped = result.skippedPaperContracts ?? 0;
+        if (skipped > 0) message.warning(`电子签合同导出成功，已跳过 ${skipped} 条纸质合同`);
+        else message.success('导出成功');
       }
-    } catch {
-      message.error('导出失败');
+    } catch (error) {
+      message.error(error instanceof Error && error.message ? error.message : '导出失败');
     } finally {
       setExporting(false);
     }

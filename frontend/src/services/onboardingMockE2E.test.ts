@@ -33,7 +33,7 @@ const FIELD_CODES = [
   'work_hour_system', 'work_cycle', 'salary_form', 'base_salary', 'other_salary', 'probation_salary',
   'payroll_cycle', 'payroll_date', 'social_location', 'start_month', 'social_base', 'fund_base',
   'fund_ratio', 'bank_name', 'bank_account', 'remark', 'business_mode', 'employee_type',
-  'need_company_contract', 'contract_subject', 'contract_template', 'need_contract_urge',
+  'need_company_contract', 'need_esign', 'esign_platform', 'contract_subject', 'contract_template', 'paper_contract_template', 'need_contract_urge',
   'contract_feedback', 'need_onboarding_contact', 'onboarding_feedback', 'need_company_payroll',
   'payroll_location', 'special_remark', 'data_entry_feedback',
 ] as const;
@@ -83,8 +83,11 @@ function buildComplete54FieldOrder() {
     business_mode: '北仑自营',
     employee_type: '全日制',
     need_company_contract: '是',
+    need_esign: '1.是',
+    esign_platform: '速创',
     contract_subject: '端到端测试合同主体有限公司',
     contract_template: '标准模板',
+    paper_contract_template: '',
     need_contract_urge: '否',
     contract_feedback: '',
     need_onboarding_contact: '是',
@@ -117,19 +120,19 @@ describe('onboarding mock end-to-end workflow', () => {
     const created = await workOrders.createWorkOrder({ ...extraData, order_type: 'onboarding', _action: 'submit' });
     expect(created.status).toBe('processing');
     const childModules = (created.dispatched_orders ?? []).map((d) => d.module_code).sort();
-    expect(childModules).toEqual(['contract', 'data_entry', 'onboarding_contact', 'social_insurance'].sort());
-    record('S2', '业务员导入/提交后系统自动派发3个子工单', 'PASS', {
+    expect(childModules).toEqual(['contract', 'data_entry', 'onboarding_contact', 'payroll_bank_card', 'social_insurance'].sort());
+    record('S2', '业务员导入/提交后系统自动派发子工单', 'PASS', {
       workOrderId: created.id,
       orderNo: created.order_no,
       modules: childModules,
     });
 
     const allChildren = await dispatchedOrders.getDispatchedOrders({ page: 1, pageSize: 20, keyword: created.employee_name });
-    expect(allChildren.list).toHaveLength(4);
-    for (const moduleCode of ['data_entry', 'onboarding_contact', 'contract', 'social_insurance']) {
+    expect(allChildren.list).toHaveLength(5);
+    for (const moduleCode of ['data_entry', 'onboarding_contact', 'contract', 'payroll_bank_card', 'social_insurance']) {
       expect(allChildren.list.some((item) => item.module_code === moduleCode)).toBe(true);
     }
-    record('S3', '后道工作台可查询到3类子工单', 'PASS', { total: allChildren.total });
+    record('S3', '后道工作台可查询到入职子工单', 'PASS', { total: allChildren.total });
 
     for (const moduleCode of ['data_entry', 'onboarding_contact', 'contract']) {
       const child = allChildren.list.find((item) => item.module_code === moduleCode)!;

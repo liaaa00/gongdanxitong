@@ -17,9 +17,12 @@ const SUCHUANG_SHEET = '\u52b3\u52a8\u5408\u540c\u6279\u5bfc\u5165\u6a21\u677f20
 
 describe('ExportTemplatesService platform routing', () => {
   it('splits mixed contract batch exports by electronic-sign platform and uses matching templates', async () => {
+    const paperOrder = makeOrder('do-paper', '\u738b\u4e94', SUCHUANG);
+    paperOrder.parentOrder!.extraData = { need_esign: '2.否', paper_contract_template: '纸质合同2026版' };
     const orders = [
       makeOrder('do-suchuang', '\u5f20\u4e09', SUCHUANG),
       makeOrder('do-esign', '\u674e\u56db', ESIGN),
+      paperOrder,
     ];
     const suchuangTemplate = makeTemplate('tpl-suchuang', '\u52b3\u52a8\u5408\u540c\u7b7e\u8ba2\u6279\u5bfc\u51fa\u6a21\u677f-\u901f\u521b', SUCHUANG, [
       { fieldCode: 'customer_code', order: 1 },
@@ -84,10 +87,11 @@ describe('ExportTemplatesService platform routing', () => {
       upload as never,
     );
 
-    const result = await service.exportDispatchedOrdersAuto(['do-suchuang', 'do-esign'], undefined, { sub: 'admin-1' } as never);
+    const result = await service.exportDispatchedOrdersAuto(['do-suchuang', 'do-esign', 'do-paper'], undefined, { sub: 'admin-1' } as never);
 
     expect(result.moduleCode).toBe('contract');
     expect(result.rowCount).toBe(2);
+    expect(result.skippedPaperContracts).toBe(1);
     expect(result.files).toHaveLength(2);
     expect(templateRepo.findOne).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({ moduleCode: 'contract', isShared: true, signPlatform: SUCHUANG }),

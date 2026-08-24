@@ -134,4 +134,5 @@ export const PAYROLL_LOCATIONS = [
   '北仑佛山分发薪',
   '北仑济南历下分发薪',
   '北仑泰安分发薪',
+  '北仑总发薪',
 ] as const;

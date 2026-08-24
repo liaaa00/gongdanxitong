@@ -9,7 +9,8 @@ import { ImportTemplateService } from 'src/modules/imports/import-template.servi
 describe('contract subject fund rules', () => {
   it('keeps the workbook-backed subject and payroll counts', () => {
     expect(CONTRACT_SUBJECT_FUND_RULES).toHaveLength(54);
-    expect(PAYROLL_LOCATIONS).toHaveLength(66);
+    expect(PAYROLL_LOCATIONS).toHaveLength(67);
+    expect(PAYROLL_LOCATIONS).toContain('北仑总发薪');
     expect(CONTRACT_SUBJECT_FUND_RULES.find((item) => item.socialCreditCode === '91440104MAEWCWHD91')).toMatchObject({
       fundRatioMode: 'separate',
       fundRatioOptions: expect.arrayContaining(['5%+5%', '12%+12%']),

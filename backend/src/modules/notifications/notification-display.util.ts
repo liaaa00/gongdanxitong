@@ -87,6 +87,7 @@ export const FALLBACK_FIELD_LABELS: Record<string, string> = {
   need_company_contract: '是否企服发起劳动合同',
   contract_subject: '劳动合同主体',
   contract_template: '劳动合同模板',
+  paper_contract_template: '纸质合同模板名称',
   need_contract_urge: '劳动合同签署是否需要催办员工',
   contract_feedback: '劳动合同新签反馈',
   onboarding_feedback: '入职联系反馈',
