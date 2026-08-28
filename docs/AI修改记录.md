@@ -2493,3 +2493,11 @@
 - 验证：固定快速回归 `回归测试.ps1 -SkipBuild` 前端关键测试 `153/153` 通过；此前后端/前端 production build 与本次功能定向测试均已通过；暂存检查 `git diff --cached --check` 通过。
 - 边界：服务器业务表和用户/通知/附件数据保持只读保护；服务器 `AUTO_SEED=false`，仅按迁移逐条应用，不运行全量 seed。发布前需备份数据库、配置表和 127 条合同子工单字段快照，并逐文件校验提交原始 Git blob。
 - 状态：已创建可复现提交，尚未对服务器执行本次同步写入。
+
+## 2026-08-28 生产同步完成
+
+- 来源与发布：从提交 `23dc942` 生成 LF 归档并校验 SHA256 `184d9c4e38009d1e6cd02e3c5586853efa3201770aef97b5fb49edc8ea4c090f`；上传后仅替换 backend/frontend，分别重建镜像，未重启 PostgreSQL/Nginx。
+- 备份：`/data/apps/work-order-system/backups/ai_sync_20260828_170237`，包含完整数据库 dump、配置表、129 条合同子工单 `visible_fields` 快照、源码/Compose、旧镜像标签。
+- 数据库：服务器迁移由 108 条增至 115 条，7 条目标迁移全部执行，`AUTO_SEED=false` 且 seed 跳过；129 条发布前合同快照均保留 `special_contract_template_name` 并移除 `paper_contract_template`。
+- 验证：SOURCE_COMMIT=`23dc942`，backend/frontend 新镜像均已运行，backend/nginx/PostgreSQL healthy；Nginx 登录页及资源请求 200、控制台无错误；北仑 `data_entry_resign` 唯一启用负责人为陈雨杰。
+- 保护边界：发布窗口操作日志显示有 5 条并发业务写入，业务表计数相对备份基线增加（工单 166→167、子工单 555→559、附件 23→25、通知 1397→1399、操作日志 3049→3054），未将其归因于同步；未复制本地业务数据、未运行全量 seed。回滚镜像为 `work-order-system-backend:ai_sync-backup-20260828_170237` 与 `work-order-system-frontend:ai_sync-backup-20260828_170237`。
