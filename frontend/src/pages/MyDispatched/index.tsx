@@ -39,6 +39,7 @@ import {
   applyCachedColumnFilters,
   getCachedListPageState,
   getCachedMonthOrNull,
+  KEEP_ALIVE_ROUTE_ACTIVATED_EVENT,
   normalizeCachedFilters,
   toMonthKey,
   updateCachedListPageState,
@@ -129,6 +130,16 @@ const MyDispatched: React.FC<MyDispatchedProps> = ({ mode }) => {
   const isInitiatedMode = currentMode === 'initiated';
   const isReturnedMode = currentMode === 'returned';
   const isBusinessSideUser = hasAnyRole([ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER]);
+
+  useEffect(() => {
+    const handleKeepAliveRouteActivated = (event: Event) => {
+      const detail = (event as CustomEvent<{ pathname?: string; search?: string; refreshAll?: boolean }>).detail;
+      if (!detail?.refreshAll && (detail?.pathname !== location.pathname || (detail.search || '') !== (location.search || ''))) return;
+      actionRef.current?.reload();
+    };
+    window.addEventListener(KEEP_ALIVE_ROUTE_ACTIVATED_EVENT, handleKeepAliveRouteActivated);
+    return () => window.removeEventListener(KEEP_ALIVE_ROUTE_ACTIVATED_EVENT, handleKeepAliveRouteActivated);
+  }, [location.pathname, location.search]);
 
   // 发起人视图由路由 mode 控制，数据范围由后端 scope 兜底。
   const headerTitle = isDoneMode ? '我的已办' : isInitiatedMode ? '我发起的' : isReturnedMode ? '我的退回' : '我的待办';

@@ -11,8 +11,11 @@ import type { ProFormInstance } from '@ant-design/pro-components';
 import { App, Card, Col, Row } from 'antd';
 import type { Dayjs } from 'dayjs';
 import {
+  findFundRuleForLocation,
   getAllowedFundRatios,
   getContractSubjects,
+  getFundLocations,
+  getFundRulesByLocation,
   type ContractSubjectItem,
 } from '@/services/contractSubjects';
 
@@ -171,12 +174,23 @@ function DynamicForm({
   const internalFormRef = useRef<ProFormInstance>();
   const effectiveFormRef = formRef ?? internalFormRef;
   const [contractSubjects, setContractSubjects] = useState<ContractSubjectItem[]>([]);
-  const hasContractSubjectFields = fields.some((field) => [
-    'contract_subject',
-    'company_address',
-    'fund_ratio',
-    'supplementary_fund_ratio',
-  ].includes(field.field_code));
+  const [fundLocations, setFundLocations] = useState<string[]>([]);
+  const [fundRules, setFundRules] = useState<ContractSubjectItem[]>([]);
+  const hasContractSubjectFields = fields.some((field) => ['contract_subject', 'company_address'].includes(field.field_code));
+  const hasPaymentLocationFields = fields.some((field) => ['social_location', 'social_pay_region'].includes(field.field_code));
+  const hasFundRatioFields = fields.some((field) => ['fund_ratio', 'supplementary_fund_ratio'].includes(field.field_code));
+  const socialLocation = String(currentValues.social_location ?? currentValues.social_pay_region ?? '').trim();
+  const previousSocialLocationRef = useRef(socialLocation);
+
+  useEffect(() => {
+    const previous = previousSocialLocationRef.current;
+    if (previous !== socialLocation) {
+      const cleared = { fund_ratio: undefined, supplementary_fund_ratio: undefined };
+      effectiveFormRef.current?.setFieldsValue(cleared);
+      setCurrentValues((values) => ({ ...values, ...cleared }));
+    }
+    previousSocialLocationRef.current = socialLocation;
+  }, [effectiveFormRef, socialLocation]);
 
   useEffect(() => {
     if (!hasContractSubjectFields) {
@@ -187,6 +201,34 @@ function DynamicForm({
       .then(setContractSubjects)
       .catch(() => message.warning('劳动合同主体目录加载失败，可稍后刷新重试'));
   }, [hasContractSubjectFields, message]);
+
+  useEffect(() => {
+    if (!hasPaymentLocationFields) {
+      setFundLocations((previous) => (previous.length === 0 ? previous : []));
+      return;
+    }
+    getFundLocations()
+      .then((locations) => setFundLocations(Array.from(new Set(locations)).sort()))
+      .catch(() => message.warning('缴纳地城市目录加载失败，请稍后刷新'));
+  }, [hasPaymentLocationFields, message]);
+
+  useEffect(() => {
+    if (!hasFundRatioFields || !socialLocation) {
+      setFundRules((previous) => (previous.length === 0 ? previous : []));
+      return;
+    }
+    let active = true;
+    getFundRulesByLocation(socialLocation)
+      .then((rules) => {
+        if (active) setFundRules(rules);
+      })
+      .catch(() => {
+        if (active) message.warning('参保地公积金规则加载失败，请稍后刷新');
+      });
+    return () => {
+      active = false;
+    };
+  }, [hasFundRatioFields, message, socialLocation]);
 
   const fieldNameMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -298,9 +340,7 @@ function DynamicForm({
     return rules;
   };
 
-  const selectedContractSubject = contractSubjects.find(
-    (subject) => subject.subjectName === currentValues.contract_subject,
-  );
+  const selectedFundRule = findFundRuleForLocation(fundRules, socialLocation);
 
   const renderField = (field: FieldConfig) => {
     const perm = getPermission(field.field_code, fieldPermissions, readOnly);
@@ -343,8 +383,6 @@ function DynamicForm({
             const changed = {
               contract_subject: value,
               company_address: address,
-              fund_ratio: undefined,
-              supplementary_fund_ratio: undefined,
             };
             const nextValues = { ...currentValues, ...changed };
             effectiveFormRef.current?.setFieldsValue(changed);
@@ -365,8 +403,28 @@ function DynamicForm({
       );
     }
 
+    if (field.field_code === 'social_location' || field.field_code === 'social_pay_region') {
+      const currentLocation = String(currentValues[field.field_code] ?? '').trim();
+      const locationOptions = [...fundLocations];
+      if (currentLocation && !locationOptions.includes(currentLocation)) locationOptions.unshift(currentLocation);
+      return (
+        <ProFormSelect
+          key={field.field_code}
+          {...commonProps}
+          options={locationOptions.map((value) => ({ value, label: value }))}
+          fieldProps={{
+            ...commonProps.fieldProps,
+            showSearch: true,
+            allowClear: true,
+            optionFilterProp: 'label',
+            getPopupContainer: (triggerNode: HTMLElement) => triggerNode.parentElement || document.body,
+          }}
+        />
+      );
+    }
+
     if (field.field_code === 'fund_ratio') {
-      const options = getAllowedFundRatios(selectedContractSubject);
+      const options = getAllowedFundRatios(selectedFundRule);
       return (
         <ProFormSelect
           key={field.field_code}
@@ -384,7 +442,7 @@ function DynamicForm({
           }}
           options={options.map((value) => ({
             value,
-            label: selectedContractSubject?.fundRatioMode === 'separate'
+            label: selectedFundRule?.fundRatioMode === 'separate'
               ? `单位${value.split('+')[0]} + 个人${value.split('+')[1]}`
               : value,
           }))}
@@ -393,7 +451,7 @@ function DynamicForm({
     }
 
     if (field.field_code === 'supplementary_fund_ratio') {
-      const options = selectedContractSubject?.supplementaryFundRatioOptions ?? [];
+      const options = selectedFundRule?.supplementaryFundRatioOptions ?? [];
       if (options.length === 0) return null;
       return (
         <ProFormSelect

@@ -36,6 +36,7 @@ export const CONDITIONAL_REQUIRED_BY_TYPE: Record<SupportedOrderType, Conditiona
       requireFields: PAYROLL_BANK_CARD_FIELDS,
     },
     { field: 'probation_start_date', operator: 'exists', requireFields: ['probation_months', 'probation_end_date', 'probation_salary'] },
+    { field: 'contract_template', value: '特殊模板', requireFields: ['special_contract_template_name'] },
     { field: 'is_common_template', value: '否', requireFields: ['template_name'] },
   ],
   resignation: [

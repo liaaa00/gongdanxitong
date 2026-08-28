@@ -4,13 +4,18 @@ import userEvent from '@testing-library/user-event';
 import DynamicForm from './index';
 import type { FieldConfig, ConditionalRequired } from './index';
 
-const { mockGetContractSubjects } = vi.hoisted(() => ({
+const { mockGetContractSubjects, mockGetFundLocations, mockGetFundRulesByLocation } = vi.hoisted(() => ({
   mockGetContractSubjects: vi.fn(),
+  mockGetFundLocations: vi.fn(),
+  mockGetFundRulesByLocation: vi.fn(),
 }));
 
 vi.mock('@/services/contractSubjects', () => ({
-  getAllowedFundRatios: () => [],
+  findFundRuleForLocation: (rules: unknown[]) => rules[0],
+  getAllowedFundRatios: (subject: { fundRatioOptions?: string[] } | undefined) => subject?.fundRatioOptions ?? [],
   getContractSubjects: mockGetContractSubjects,
+  getFundLocations: mockGetFundLocations,
+  getFundRulesByLocation: mockGetFundRulesByLocation,
 }));
 
 const mockFields: FieldConfig[] = [
@@ -24,6 +29,7 @@ const mockFields: FieldConfig[] = [
 describe('DynamicForm', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetFundLocations.mockResolvedValue(['宁波']);
   });
 
   it('renders all 5 field types', async () => {
@@ -209,6 +215,74 @@ describe('DynamicForm', () => {
       expect.objectContaining({ contract_subject: subjectName }),
       expect.anything(),
     ));
+  });
+
+  it('uses contract subject cities as the payment location dropdown', async () => {
+    render(
+      <DynamicForm
+        fields={[{
+          field_code: 'social_location',
+          field_name: '缴纳地',
+          field_type: 'text',
+          is_required: true,
+          default_required: true,
+          display_order: 1,
+        }]}
+      />,
+    );
+
+    const location = await screen.findByLabelText('缴纳地');
+    await userEvent.click(location);
+    expect(await screen.findByText('宁波')).toBeInTheDocument();
+    expect(mockGetFundRulesByLocation).not.toHaveBeenCalled();
+  });
+
+  it('loads fund ratio rules using the current payment location', async () => {
+    mockGetFundRulesByLocation.mockResolvedValue([{
+      id: 'location:zhejiang/ningbo',
+      subjectName: '浙江/宁波',
+      socialCreditCode: null,
+      province: '浙江',
+      city: '宁波',
+      registeredAddress: '',
+      fundRatioOptions: ['5%+5%', '8%+8%'],
+      supplementaryFundRatioOptions: [],
+      fundRatioMode: 'same',
+      isActive: true,
+    }]);
+
+    render(
+      <DynamicForm
+        fields={[
+          { field_code: 'social_location', field_name: '缴纳地', field_type: 'text', is_required: false, default_required: false, display_order: 1 },
+          { field_code: 'fund_ratio', field_name: '公积金比例', field_type: 'dropdown', is_required: false, default_required: false, display_order: 2 },
+        ]}
+        initialValues={{ social_location: '宁波' }}
+      />,
+    );
+
+    await waitFor(() => expect(mockGetFundRulesByLocation).toHaveBeenCalledWith('宁波'));
+    expect(await screen.findByText('公积金比例')).toBeInTheDocument();
+  });
+
+  it('clears stale fund ratios when the payment location is cleared', async () => {
+    mockGetFundRulesByLocation.mockResolvedValue([]);
+    const formRef = { current: undefined } as any;
+
+    render(
+      <DynamicForm
+        fields={[
+          { field_code: 'social_location', field_name: '缴纳地', field_type: 'text', is_required: false, default_required: false, display_order: 1 },
+          { field_code: 'fund_ratio', field_name: '公积金比例', field_type: 'dropdown', is_required: false, default_required: false, display_order: 2 },
+        ]}
+        initialValues={{ social_location: '宁波', fund_ratio: '5%+5%' }}
+        formRef={formRef}
+      />,
+    );
+
+    const location = await screen.findByLabelText('缴纳地');
+    await userEvent.clear(location);
+    await waitFor(() => expect(formRef.current?.getFieldValue('fund_ratio')).toBeUndefined());
   });
 
   it('marks highlighted fields with stable focus anchor', async () => {

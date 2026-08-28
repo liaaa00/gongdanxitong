@@ -481,6 +481,16 @@ export class UsersService {
     const user = await this.loadEntity(id, businessScope);
     await this.assertNoProcessingDispatchedOrders(id);
 
+    if (this.moduleHandlerRepository) {
+      const handlers = await this.moduleHandlerRepository.find({
+        where: { handlerId: id, isActive: true },
+      });
+      if (handlers.length > 0) {
+        handlers.forEach((handler) => { handler.isActive = false; });
+        await this.moduleHandlerRepository.save(handlers);
+      }
+    }
+
     user.isActive = false;
     user.authVersion = (user.authVersion ?? 0) + 1;
     await this.userRepository.save(user);

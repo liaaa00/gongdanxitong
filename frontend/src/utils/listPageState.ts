@@ -9,6 +9,8 @@ export const KEEP_ALIVE_ROUTE_ACTIVATED_EVENT = 'work-order:keep-alive-route-act
 export interface KeepAliveRouteActivatedDetail {
   pathname: string;
   search: string;
+  /** 审批等跨列表更新时，让所有相关缓存列表重新取数。 */
+  refreshAll?: boolean;
 }
 
 export function notifyKeepAliveRouteActivated(detail: KeepAliveRouteActivatedDetail) {

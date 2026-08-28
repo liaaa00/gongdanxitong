@@ -34,11 +34,10 @@ export interface NewFieldDraft {
 const { Dragger } = Upload;
 const { Text } = Typography;
 
-const DEPRECATED_FIELDS = new Set([
-  'social_location', 'start_month', 'social_base', 'fund_base', 'fund_ratio',
-]);
+// 入职模板中的缴纳地、公积金字段是正式字段，必须参与批量导入预检。
+const DEPRECATED_FIELDS = new Set<string>();
 
-function filterDeprecatedFields(codes: string[] | undefined): string[] {
+export function filterDeprecatedFields(codes: string[] | undefined): string[] {
   if (!codes) return [];
   return codes.filter((c) => !DEPRECATED_FIELDS.has(c));
 }

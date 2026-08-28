@@ -1,5 +1,5 @@
 import { Repository } from 'typeorm';
-import { BusinessScope, DispatchRule, DispatchStrategy, OrderType, RoleLevel, User, UserRole, WorkOrder } from 'src/entities';
+import { BusinessScope, DispatchRule, DispatchStrategy, ModuleHandler, OrderType, RoleLevel, User, UserRole, WorkOrder } from 'src/entities';
 import { DispatchEngineService } from 'src/modules/dispatch-engine/dispatch-engine.service';
 import { AstEvaluator } from 'src/modules/dispatch-engine/ast-evaluator';
 import { HandlerPickerService } from 'src/modules/dispatch-engine/handler-picker.service';
@@ -269,5 +269,35 @@ describe('UsersService role presentation', () => {
       role_codes: ['biz_member'],
       roles: [expect.objectContaining({ role_code: 'biz_member', role_name: '业务员（组员）' })],
     });
+  });
+
+  it('deactivates active handler rows when a user without open orders is stopped', async () => {
+    const user = Object.assign(new User(), {
+      id: 'user-to-stop',
+      businessScope: BusinessScope.BEILUN,
+      isActive: true,
+      authVersion: 2,
+    });
+    const handlers = [
+      Object.assign(new ModuleHandler(), { handlerId: user.id, moduleCode: 'data_entry_resign', isActive: true }),
+      Object.assign(new ModuleHandler(), { handlerId: user.id, moduleCode: 'resignation_contact', isActive: true }),
+    ];
+    const userRepository = repo<User>({ findOne: jest.fn(async () => user) });
+    const moduleHandlerRepository = repo<ModuleHandler>({ find: jest.fn(async () => handlers) });
+    const service = new UsersService(
+      {} as never,
+      userRepository,
+      repo() as never,
+      repo() as never,
+      repo() as never,
+      repo() as never,
+      moduleHandlerRepository,
+    );
+
+    await expect(service.disable(user.id, BusinessScope.BEILUN)).resolves.toEqual({ success: true });
+    expect(handlers.every((handler) => !handler.isActive)).toBe(true);
+    expect(moduleHandlerRepository.save).toHaveBeenCalledWith(handlers);
+    expect(user.isActive).toBe(false);
+    expect(user.authVersion).toBe(3);
   });
 });

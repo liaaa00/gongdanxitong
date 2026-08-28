@@ -27,19 +27,26 @@ import {
   Department,
   DispatchModuleCode,
   DispatchStrategy,
+  FieldConfig,
+  FieldPermissionMode,
   IN_SERVICE_BUSINESS_TYPE_MAPPING,
   IN_SERVICE_PROCESS_TYPE_MAPPING,
   InServiceHandleChannel,
   InServiceOrder,
   InServiceOrderKind,
   InServiceOrderStatus,
+  ModuleHandler,
+  Notification,
+  OperationLog,
   OrderType,
   WorkOrder,
   WorkOrderStatus,
   ProcessType,
   RequirementType,
 } from 'src/entities';
+import { DetailViewTemplatesService } from 'src/modules/admin/detail-view-templates/detail-view-templates.service';
 import { ExportTemplatesService } from 'src/modules/admin/export-templates/export-templates.service';
+import { FieldPermissionService } from 'src/modules/field-permissions/field-permission.service';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { HandlerPickerService } from 'src/modules/dispatch-engine/handler-picker.service';
 import { assertInServiceOrderTransition } from 'src/modules/dispatched-orders/dispatched-order.service';
@@ -164,6 +171,22 @@ export class InServiceOrdersService {
     @InjectRepository(Department)
     @Optional()
     private readonly departmentRepository?: Repository<Department>,
+    @InjectRepository(ModuleHandler)
+    @Optional()
+    private readonly moduleHandlerRepository?: Repository<ModuleHandler>,
+    @InjectRepository(Notification)
+    @Optional()
+    private readonly notificationRepository?: Repository<Notification>,
+    @InjectRepository(OperationLog)
+    @Optional()
+    private readonly operationLogRepository?: Repository<OperationLog>,
+    @InjectRepository(FieldConfig)
+    @Optional()
+    private readonly fieldConfigRepository?: Repository<FieldConfig>,
+    @Optional()
+    private readonly fieldPermissionService?: FieldPermissionService,
+    @Optional()
+    private readonly detailViewTemplatesService?: DetailViewTemplatesService,
   ) {}
 
   async create(
@@ -262,7 +285,9 @@ export class InServiceOrdersService {
       completedAt: null,
       closedAt: null,
     });
-    return this.saveAndRespond(order);
+    const response = await this.saveAndRespond(order);
+    await this.notifyAssigned(order, 'in_service_order_created', '在职工单已创建', `工单 ${order.orderNo} 已自动派发给你`);
+    return response;
   }
 
   async batchCreateRenewals(
@@ -323,6 +348,15 @@ export class InServiceOrdersService {
     const businessScope = await this.resolveListBusinessScope(query, user);
     qb.andWhere('order.business_scope = :businessScope', { businessScope });
 
+    if (query.onlyUnassigned) {
+      if (!isAdminRole(user.roles)) {
+        throw new ForbiddenException('仅管理员可查看未指派历史工单');
+      }
+      qb.andWhere('order.handler_id IS NULL');
+      qb.andWhere('order.order_kind = :historyOrderKind', { historyOrderKind: InServiceOrderKind.CERTIFICATE });
+      qb.andWhere('order.status = :historyOrderStatus', { historyOrderStatus: InServiceOrderStatus.DISPATCHED });
+    }
+
     if (!isAdminRole(user.roles) && !hasManagementScopeRole(user.roles)) {
       qb.andWhere(new Brackets((scope) => {
         scope.where('order.created_by = :userId', { userId: user.sub })
@@ -352,7 +386,13 @@ export class InServiceOrdersService {
           .orWhere('order.business_description ILIKE :keyword', { keyword: `%${query.keyword!.trim()}%` })
           .orWhere('customer.customer_name ILIKE :keyword', { keyword: `%${query.keyword!.trim()}%` })
           .orWhere('customer.customer_code ILIKE :keyword', { keyword: `%${query.keyword!.trim()}%` })
-          .orWhere('creator.real_name ILIKE :keyword', { keyword: `%${query.keyword!.trim()}%` });
+          .orWhere('creator.real_name ILIKE :keyword', { keyword: `%${query.keyword!.trim()}%` })
+          .orWhere('creator.username ILIKE :keyword', { keyword: `%${query.keyword!.trim()}%` })
+          .orWhere('handler.real_name ILIKE :keyword', { keyword: `%${query.keyword!.trim()}%` })
+          .orWhere('handler.username ILIKE :keyword', { keyword: `%${query.keyword!.trim()}%` })
+          .orWhere('order.order_kind::text ILIKE :keyword', { keyword: `%${query.keyword!.trim()}%` })
+          .orWhere('order.business_type::text ILIKE :keyword', { keyword: `%${query.keyword!.trim()}%` })
+          .orWhere('order.process_type::text ILIKE :keyword', { keyword: `%${query.keyword!.trim()}%` });
       }));
     }
 
@@ -537,7 +577,57 @@ export class InServiceOrdersService {
   async findOne(id: string, user: JwtUserPayload): Promise<InServiceOrderResponseDto> {
     const order = await this.findEntity(id);
     this.assertCanView(order, user);
-    return InServiceOrderResponseDto.fromEntity(order);
+    const response = InServiceOrderResponseDto.fromEntity(order) as InServiceOrderResponseDto & {
+      _detailTemplateFieldCodes?: string[];
+      fields?: Array<Record<string, unknown>>;
+      visibleFields?: string[];
+      readonlyFields?: string[];
+      _fieldPermissions?: Record<string, string>;
+    };
+    const moduleCode = this.getHandlerModuleCode(
+      order.orderKind ?? InServiceOrderKind.SINGLE_BUSINESS,
+      order.businessScope ?? BusinessScope.BEILUN,
+    );
+    const template = this.detailViewTemplatesService
+      ? await this.detailViewTemplatesService.getActiveByModule(moduleCode, order.businessScope ?? BusinessScope.BEILUN)
+      : null;
+    const templateCodes = template
+      ? Array.from(new Set((template.fieldList ?? []).map((item) => String(item.fieldCode ?? item.field_code ?? item.code ?? '').trim()).filter(Boolean)))
+      : [];
+    if (templateCodes.length > 0) response._detailTemplateFieldCodes = templateCodes;
+
+    if (this.fieldConfigRepository && this.fieldPermissionService && user) {
+      const permissions = await this.fieldPermissionService.getPermissionsForUser(
+        user.sub,
+        'main',
+        order.businessScope ?? BusinessScope.BEILUN,
+      );
+      const effectivePermissions = new Map(permissions);
+      for (const fieldCode of templateCodes) {
+        if (!effectivePermissions.get(fieldCode) || effectivePermissions.get(fieldCode) === FieldPermissionMode.HIDDEN) {
+          effectivePermissions.set(fieldCode, FieldPermissionMode.READONLY);
+        }
+      }
+      const fieldConfigs = await this.fieldConfigRepository.find({
+        where: { isActive: true },
+        order: { displayOrder: 'ASC' },
+      });
+      const allowedCodes = templateCodes.length > 0 ? new Set(templateCodes) : null;
+      const selectedFields = allowedCodes
+        ? fieldConfigs.filter((field) => allowedCodes.has(field.fieldCode))
+        : fieldConfigs;
+      const filtered = this.fieldPermissionService.buildFieldViews(
+        selectedFields,
+        order.extraData ?? {},
+        effectivePermissions,
+      );
+      response.fields = filtered.map((field) => ({ ...field }));
+      response.visibleFields = filtered.map((field) => field.fieldCode);
+      response.readonlyFields = filtered.filter((field) => field.permission === FieldPermissionMode.READONLY).map((field) => field.fieldCode);
+      response._fieldPermissions = Object.fromEntries(filtered.map((field) => [field.fieldCode, field.permission]));
+      response.extraData = this.fieldPermissionService.applyExtraData(order.extraData ?? {}, effectivePermissions).data;
+    }
+    return response;
   }
 
   async update(
@@ -588,7 +678,9 @@ export class InServiceOrdersService {
     order.approvedBy = user.sub;
     order.approvedAt = new Date();
     order.dispatchedAt = order.approvedAt;
-    return this.saveAndRespond(order);
+    const response = await this.saveAndRespond(order);
+    await this.notifyAssigned(order, 'in_service_order_approved', '在职工单已审批派发', `工单 ${order.orderNo} 已审批并派发给你`);
+    return response;
   }
 
   async reject(
@@ -639,7 +731,24 @@ export class InServiceOrdersService {
     if (![InServiceOrderStatus.DISPATCHED, InServiceOrderStatus.ACCEPTED].includes(order.status)) {
       throw businessException(4808, HttpStatus.BAD_REQUEST, '仅待受理或已受理工单可转派');
     }
+    const handlerModuleCode = this.getHandlerModuleCode(order.orderKind, order.businessScope ?? BusinessScope.BEILUN);
+    if (this.moduleHandlerRepository) {
+      const configured = await this.moduleHandlerRepository.findOne({
+        where: {
+          moduleCode: handlerModuleCode,
+          businessScope: order.businessScope ?? BusinessScope.BEILUN,
+          handlerId: dto.handlerId,
+          isActive: true,
+        },
+        relations: { handler: true },
+      });
+      if (!configured || configured.handler?.isActive === false) {
+        throw businessException(4808, HttpStatus.BAD_REQUEST, '转派失败：目标人员不是该业务的启用负责人');
+      }
+    }
     const fromHandlerId = order.handlerId;
+    const previousStatus = order.status;
+    const transferredAt = new Date().toISOString();
     order.handlerId = dto.handlerId;
     order.handler = null;
     order.status = InServiceOrderStatus.DISPATCHED;
@@ -651,10 +760,12 @@ export class InServiceOrdersService {
         toHandlerId: dto.handlerId,
         operatorId: user.sub,
         reason: dto.reason?.trim() || null,
-        transferredAt: new Date().toISOString(),
+        transferredAt,
       },
     ];
-    return this.saveAndRespond(order);
+    const response = await this.saveAndRespond(order);
+    await this.recordTransferAudit(order, fromHandlerId, previousStatus, user.sub, dto.reason, handlerModuleCode);
+    return response;
   }
 
   async startProcessing(
@@ -746,7 +857,9 @@ export class InServiceOrdersService {
     order.status = target;
     order.pendingReturnStatus = null;
     order.pendingInfoReason = null;
-    return this.saveAndRespond(order);
+    const response = await this.saveAndRespond(order);
+    await this.notifyAssigned(order, 'in_service_order_resubmitted', '在职工单已重新提交', `工单 ${order.orderNo} 已补充材料并重新提交`);
+    return response;
   }
 
   async requestMaterialChange(
@@ -1453,6 +1566,101 @@ export class InServiceOrdersService {
       ? await this.roleActionPermissionService.hasAnyRoleAction(user.roles, 'business_scope.switch', businessScope)
       : false;
     if (!allowed) throw businessException(5000, HttpStatus.FORBIDDEN, '无权切换业务范围');
+  }
+
+  private getHandlerModuleCode(orderKind: InServiceOrderKind, businessScope: BusinessScope): DispatchModuleCode {
+    if (
+      orderKind === InServiceOrderKind.SINGLE_BUSINESS
+      || orderKind === InServiceOrderKind.OUT_OF_PROVINCE_INCREASE
+      || orderKind === InServiceOrderKind.OUT_OF_PROVINCE_DECREASE
+    ) {
+      return businessScope === BusinessScope.OUT_OF_PROVINCE
+        ? DispatchModuleCode.OUT_OF_PROVINCE_DISPATCH
+        : DispatchModuleCode.IN_SERVICE_SINGLE_BUSINESS;
+    }
+    return orderKind === InServiceOrderKind.CONTRACT_RENEWAL
+      ? DispatchModuleCode.RENEWAL_CONTRACT
+      : orderKind === InServiceOrderKind.CERTIFICATE
+        ? DispatchModuleCode.IN_SERVICE_CERTIFICATE
+        : DispatchModuleCode.RESIGNATION_CERT;
+  }
+
+  private async notifyAssigned(
+    order: InServiceOrder,
+    bizType: string,
+    title: string,
+    content: string,
+  ): Promise<void> {
+    if (!this.notificationRepository || !order.handlerId) return;
+    const detailPath = order.orderKind === InServiceOrderKind.CERTIFICATE
+      ? `/in-service/certificates/${order.id}`
+      : order.orderKind === InServiceOrderKind.CONTRACT_RENEWAL
+        ? `/renewal/${order.id}`
+        : `/in-service/${order.id}`;
+    try {
+      await this.notificationRepository.save(this.notificationRepository.create({
+        userId: order.handlerId,
+        bizType,
+        title,
+        content,
+        link: detailPath,
+        payload: { inServiceOrderId: order.id, orderNo: order.orderNo },
+        isRead: false,
+        readAt: null,
+      }));
+    } catch {
+      // ponytail: notification persistence is secondary to a successful order transition.
+    }
+  }
+
+  private async recordTransferAudit(
+    order: InServiceOrder,
+    previousHandlerId: string | null,
+    previousStatus: InServiceOrderStatus,
+    operatorId: string,
+    reason: string | undefined,
+    handlerModuleCode: DispatchModuleCode,
+  ): Promise<void> {
+    const normalizedReason = reason?.trim() || null;
+    if (this.operationLogRepository) {
+      await this.operationLogRepository.save(this.operationLogRepository.create({
+        entityType: 'in_service_order',
+        entityId: order.id,
+        userId: operatorId,
+        actionType: 'reassign',
+        beforeData: { handlerId: previousHandlerId, status: previousStatus },
+        afterData: {
+          handlerId: order.handlerId,
+          status: order.status,
+          moduleCode: handlerModuleCode,
+          reason: normalizedReason,
+        },
+        ipAddress: null,
+      }));
+    }
+    if (this.notificationRepository && order.handlerId) {
+      const detailPath = order.orderKind === InServiceOrderKind.CERTIFICATE
+        ? `/in-service/certificates/${order.id}`
+        : order.orderKind === InServiceOrderKind.CONTRACT_RENEWAL
+          ? `/renewal/${order.id}`
+          : `/in-service/${order.id}`;
+      await this.notificationRepository.save(this.notificationRepository.create({
+        userId: order.handlerId,
+        bizType: 'in_service_order_reassign',
+        title: '在职工单已派发',
+        content: normalizedReason || `工单 ${order.orderNo} 已由管理员派发给你`,
+        link: detailPath,
+        payload: {
+          inServiceOrderId: order.id,
+          orderNo: order.orderNo,
+          moduleCode: handlerModuleCode,
+          previousHandlerId,
+          operatorId,
+        },
+        isRead: false,
+        readAt: null,
+      }));
+    }
   }
 
   private async pickHandler(

@@ -3,13 +3,12 @@ import { PageContainer } from '@ant-design/pro-components';
 import type { ProColumns, ActionType } from '@ant-design/pro-components';
 import { ProTable } from '@ant-design/pro-components';
 import { Button, Tag, Space, App, Popconfirm, Modal, Form, Input, Switch, Select, Segmented, Alert, Drawer, Descriptions, Typography } from 'antd';
-import { LockOutlined, LogoutOutlined, UserSwitchOutlined, StopOutlined, CheckCircleOutlined, PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined, QuestionCircleOutlined } from '@ant-design/icons';
-import { executeUserHandover, getUserHandoverPreview, getUsers, resetUserPassword, forceLogoutUser, toggleUserActive, createUser, updateUser, deleteUser, getUserPasswordStatus } from '@/services/users';
+import { LockOutlined, LogoutOutlined, UserSwitchOutlined, StopOutlined, CheckCircleOutlined, PlusOutlined, EditOutlined, EyeOutlined, QuestionCircleOutlined } from '@ant-design/icons';
+import { executeUserHandover, getUserHandoverPreview, getUsers, resetUserPassword, forceLogoutUser, toggleUserActive, createUser, updateUser, getUserPasswordStatus } from '@/services/users';
 import type { UserHandoverPreview, UserItem } from '@/services/users';
 import { getRoles, flattenRoles } from '@/services/roles';
 import type { RoleItem } from '@/services/roles';
 import type { PageParams } from '@/services/mock';
-import { useAuth } from '@/hooks/useAuth';
 import { canonicalRoleCode, ROLE } from '@/constants/roles';
 import { ROUTE_VISIBILITY } from '@/config/routeVisibility';
 import { getModuleHandlers } from '@/services/moduleHandlers';
@@ -143,8 +142,6 @@ function getRoleContributions(user: UserItem) {
 
 const AdminUsers: React.FC = () => {
   const { message } = App.useApp();
-  const { hasRole } = useAuth();
-  const isAdmin = hasRole('admin');
   const actionRef = useRef<ActionType>();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<UserItem | null>(null);
@@ -254,14 +251,11 @@ const AdminUsers: React.FC = () => {
   const handleToggleActive = async (user: UserItem) => {
     try {
       const result = await toggleUserActive(user.id);
-      message.success(result.is_active ? '已启用' : '已禁用');
+      message.success(result.is_active ? '已启用' : '已停用');
       actionRef.current?.reload();
-    } catch { message.error('操作失败'); }
-  };
-
-  const handleDelete = async (user: UserItem) => {
-    try { await deleteUser(user.id); message.success('已删除'); actionRef.current?.reload(); }
-    catch { message.error('删除失败'); }
+    } catch (error: any) {
+      message.error(error?._friendlyMsg || error?.message || '停用失败');
+    }
   };
 
   const openCreate = async () => {
@@ -424,16 +418,15 @@ const AdminUsers: React.FC = () => {
               离职交接
             </Button>
           )}
-          <Popconfirm title={r.is_active ? '确定禁用该用户？' : '确定启用该用户？'} onConfirm={() => handleToggleActive(r)}>
+          <Popconfirm
+            title={r.is_active ? '确定停用该用户？' : '确定启用该用户？'}
+            description={r.is_active ? '有未完成工单的离职人员，请使用“离职交接”后再停用。' : undefined}
+            onConfirm={() => handleToggleActive(r)}
+          >
             <Button type="link" size="small" danger={r.is_active} icon={r.is_active ? <StopOutlined /> : <CheckCircleOutlined />}>
-              {r.is_active ? '禁用' : '启用'}
+              {r.is_active ? '停用' : '启用'}
             </Button>
           </Popconfirm>
-          {isAdmin && (
-            <Popconfirm title="确定删除该用户？" onConfirm={() => handleDelete(r)}>
-              <Button type="link" size="small" danger icon={<DeleteOutlined />}>删除</Button>
-            </Popconfirm>
-          )}
         </Space>
       ),
     },

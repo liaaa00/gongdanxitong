@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormInstance } from 'antd';
 import {
   Alert,
@@ -35,8 +35,11 @@ import {
 } from '@/constants/inService';
 import { getRenewalHistory, type InServiceOrderPayload, type RenewalHistoryResult } from '@/services/inServiceOrders';
 import {
+  findFundRuleForLocation,
   getAllowedFundRatios,
   getContractSubjects,
+  getFundLocations,
+  getFundRulesByLocation,
   type ContractSubjectItem,
 } from '@/services/contractSubjects';
 import { getOutOfProvinceAccounts, type OutOfProvinceAccount } from '@/services/outOfProvinceAccounts';
@@ -378,6 +381,8 @@ export default function InServiceOrderForm({
   const [optionsLoaded, setOptionsLoaded] = useState(false);
   const [renewalConfiguredFields, setRenewalConfiguredFields] = useState<ImportTemplateFieldItem[]>([]);
   const [contractSubjects, setContractSubjects] = useState<ContractSubjectItem[]>([]);
+  const [fundLocations, setFundLocations] = useState<string[]>([]);
+  const [fundRules, setFundRules] = useState<ContractSubjectItem[]>([]);
   const [renewalHistory, setRenewalHistory] = useState<RenewalHistoryResult | null>(null);
   const [renewalHistoryLoading, setRenewalHistoryLoading] = useState(false);
   const effectiveKind = orderKind
@@ -387,7 +392,17 @@ export default function InServiceOrderForm({
   const processType = Form.useWatch('processType', form) as InServiceProcessType | undefined;
   const certificateType = Form.useWatch(['extraData', 'certificateType'], form) as string | undefined;
   const watchedExtraData = Form.useWatch('extraData', form) as Record<string, unknown> | undefined;
+  const socialLocation = String(readExtraAlias(watchedExtraData || {}, 'social_location', 'socialLocation', 'social_pay_region', 'socialPayRegion') ?? '').trim();
+  const previousSocialLocationRef = useRef(socialLocation);
   const customerId = Form.useWatch('customerId', form) as string | undefined;
+
+  useEffect(() => {
+    const previous = previousSocialLocationRef.current;
+    if (previous !== socialLocation && !readOnly) {
+      form.setFieldsValue({ extraData: { ...(form.getFieldValue('extraData') || {}), fund_ratio: undefined, supplementary_fund_ratio: undefined } });
+    }
+    previousSocialLocationRef.current = socialLocation;
+  }, [form, readOnly, socialLocation]);
   const idCardNo = Form.useWatch('idCardNo', form) as string | undefined;
 
   useEffect(() => {
@@ -454,22 +469,44 @@ export default function InServiceOrderForm({
   useEffect(() => {
     if (!isRenewal) {
       setRenewalConfiguredFields([]);
+      setContractSubjects([]);
+      setFundLocations([]);
       return;
     }
     Promise.all([
       getCreateWorkOrderFields('renewal'),
       getCreateWorkOrderFields('onboarding'),
       getContractSubjects(),
+      getFundLocations(),
     ])
-      .then(([renewalFields, onboardingFields, subjects]) => {
+      .then(([renewalFields, onboardingFields, subjects, locations]) => {
         setRenewalConfiguredFields(buildRenewalConfiguredFields(renewalFields, onboardingFields));
         setContractSubjects(subjects);
+        setFundLocations(Array.from(new Set(locations)).sort());
       })
       .catch(() => {
         setRenewalConfiguredFields([]);
         message.warning('续签字段配置加载失败，请刷新后重试');
       });
   }, [isRenewal, message]);
+
+  useEffect(() => {
+    if (!isRenewal || !socialLocation) {
+      setFundRules((previous) => (previous.length === 0 ? previous : []));
+      return;
+    }
+    let active = true;
+    getFundRulesByLocation(socialLocation)
+      .then((rules) => {
+        if (active) setFundRules(rules);
+      })
+      .catch(() => {
+        if (active) message.warning('续签公积金规则加载失败，请刷新后重试');
+      });
+    return () => {
+      active = false;
+    };
+  }, [isRenewal, message, socialLocation]);
 
   useEffect(() => {
     if (!isRenewal || !customerId || !idCardNo?.trim()) {
@@ -530,9 +567,7 @@ export default function InServiceOrderForm({
     return () => window.clearTimeout(timer);
   }, [customerId, form, idCardNo, isCertificate]);
 
-  const selectedRenewalContractSubject = contractSubjects.find(
-    (subject) => subject.subjectName === watchedExtraData?.contract_subject,
-  );
+  const selectedRenewalFundRule = findFundRuleForLocation(fundRules, socialLocation);
 
   const renewalFieldRules = (field: ImportTemplateFieldItem) => {
     const rules: Array<Record<string, unknown>> = [];
@@ -578,8 +613,6 @@ export default function InServiceOrderForm({
                   ...(form.getFieldValue('extraData') || {}),
                   contract_subject: value,
                   company_address: selected?.registeredAddress || undefined,
-                  fund_ratio: undefined,
-                  supplementary_fund_ratio: undefined,
                 },
               });
             }}
@@ -587,8 +620,24 @@ export default function InServiceOrderForm({
         </Form.Item>
       );
     }
+    if (field.field_code === 'social_location' || field.field_code === 'social_pay_region') {
+      const currentLocation = String(watchedExtraData?.[field.field_code] ?? '').trim();
+      const locationOptions = [...fundLocations];
+      if (currentLocation && !locationOptions.includes(currentLocation)) locationOptions.unshift(currentLocation);
+      return (
+        <Form.Item {...commonProps}>
+          <Select
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            placeholder="请选择缴纳地"
+            options={locationOptions.map((value) => ({ value, label: value }))}
+          />
+        </Form.Item>
+      );
+    }
     if (field.field_code === 'fund_ratio') {
-      const options = getAllowedFundRatios(selectedRenewalContractSubject);
+      const options = getAllowedFundRatios(selectedRenewalFundRule);
       return (
         <Form.Item
           {...commonProps}
@@ -603,7 +652,7 @@ export default function InServiceOrderForm({
             placeholder={options.length > 0 ? '请选择公积金比例' : '该主体暂无正式公积金比例'}
             options={options.map((value) => ({
               value,
-              label: selectedRenewalContractSubject?.fundRatioMode === 'separate'
+              label: selectedRenewalFundRule?.fundRatioMode === 'separate'
                 ? `单位${value.split('+')[0]} + 个人${value.split('+')[1]}`
                 : value,
             }))}
@@ -612,7 +661,7 @@ export default function InServiceOrderForm({
       );
     }
     if (field.field_code === 'supplementary_fund_ratio') {
-      const options = selectedRenewalContractSubject?.supplementaryFundRatioOptions ?? [];
+      const options = selectedRenewalFundRule?.supplementaryFundRatioOptions ?? [];
       if (options.length === 0) return null;
       return (
         <Form.Item {...commonProps}>

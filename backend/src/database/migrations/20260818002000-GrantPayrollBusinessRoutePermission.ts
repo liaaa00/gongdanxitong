@@ -76,7 +76,7 @@ export class GrantPayrollBusinessRoutePermission20260818002000 implements Migrat
       const source = typeof row.config === 'string' ? JSON.parse(row.config) : row.config;
       const next = grantPayrollRoute(source ?? {});
       await queryRunner.query(
-        'UPDATE permission_config_versions SET config = $1::jsonb, updated_at = now() WHERE id = $2',
+        'UPDATE permission_config_versions SET config = $1::jsonb WHERE id = $2',
         [JSON.stringify(next), row.id],
       );
     }

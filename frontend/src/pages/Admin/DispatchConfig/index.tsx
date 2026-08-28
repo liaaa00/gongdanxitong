@@ -46,6 +46,8 @@ import { getCustomers } from '@/services/customers';
 import type { CustomerItem } from '@/services/customers';
 import { useAuth } from '@/hooks/useAuth';
 import { buildModuleLabelMap, getModuleConfigs } from '@/services/moduleConfigs';
+import { getInServiceOrders, transferInServiceOrder } from '@/services/inServiceOrders';
+import type { InServiceOrder } from '@/services/inServiceOrders';
 import type { BusinessScope } from '@/utils/businessScope';
 import {
   getMissingHandlerRoles,
@@ -58,16 +60,18 @@ import {
   DISPATCH_CATEGORY_LABELS,
   getDispatchCategory,
   getDispatchCategoryOrder,
+  shouldShowDefaultDispatchRow,
 } from '@/utils/dispatchConfigCategory';
 
 const { Text, Paragraph } = Typography;
 
 type ConfigType = 'default' | 'exception';
-type ActiveTab = 'default' | 'customerException' | 'delegations';
+type ActiveTab = 'default' | 'customerException' | 'historyDispatch' | 'delegations';
 type Option = { value: string; label: string; disabled?: boolean };
 
 const ORDER_TYPES: Option[] = [
   { label: '入职', value: 'onboarding' },
+  { label: '在职', value: 'in_service' },
   { label: '续签', value: 'renewal' },
   { label: '离职', value: 'resignation' },
   { label: '待遇申报', value: 'benefit' },
@@ -80,6 +84,7 @@ const SUB_MODULES: Array<Option & { orderType: string }> = [
   { label: '劳动合同新签', value: 'contract', orderType: 'onboarding' },
   { label: '劳动合同新签', value: 'contract_signing', orderType: 'onboarding' },
   { label: '劳动合同续签', value: 'renewal_contract', orderType: 'renewal' },
+  { label: '证明开具', value: 'in_service_certificate', orderType: 'in_service' },
   { label: '待遇申报', value: 'benefit', orderType: 'benefit' },
   { label: '待遇申报', value: 'benefit_apply', orderType: 'benefit' },
   { label: '离职材料收集', value: 'resignation_contact', orderType: 'resignation' },
@@ -264,6 +269,7 @@ const AdminDispatchConfig: React.FC = () => {
   const isAdmin = hasRole('admin');
   const defaultActionRef = useRef<ActionType>();
   const customerExceptionActionRef = useRef<ActionType>();
+  const historyDispatchActionRef = useRef<ActionType>();
   const delegationActionRef = useRef<ActionType>();
   const [users, setUsers] = useState<Option[]>([]);
   const [userRecords, setUserRecords] = useState<UserItem[]>([]);
@@ -271,18 +277,23 @@ const AdminDispatchConfig: React.FC = () => {
   const [customerCodeOptions, setCustomerCodeOptions] = useState<Option[]>([]);
   const [activeTab, setActiveTab] = useState<ActiveTab>('default');
   const [configLoadFailed, setConfigLoadFailed] = useState(false);
+  const [showUnconfigured, setShowUnconfigured] = useState(false);
   const [open, setOpen] = useState(false);
   const [defaultFormDirty, setDefaultFormDirty] = useState(false);
   const [editing, setEditing] = useState<DispatchConfigItem | null>(null);
   const [customerExceptionOpen, setCustomerExceptionOpen] = useState(false);
   const [editingCustomerException, setEditingCustomerException] = useState<ExceptionModuleHandlerItem | null>(null);
   const [delegationOpen, setDelegationOpen] = useState(false);
+  const [historyDispatchOpen, setHistoryDispatchOpen] = useState(false);
+  const [historyDispatchTarget, setHistoryDispatchTarget] = useState<InServiceOrder | null>(null);
+  const [historyHandlerOptions, setHistoryHandlerOptions] = useState<Option[]>([]);
   const [businessScope, setBusinessScope] = useState<BusinessScope>('beilun');
   const [sourceHandlerOptions, setSourceHandlerOptions] = useState<Option[]>([]);
   const [moduleLabels, setModuleLabels] = useState<Record<string, string>>({});
   const [form] = Form.useForm();
   const [customerExceptionForm] = Form.useForm();
   const [delegationForm] = Form.useForm();
+  const [historyDispatchForm] = Form.useForm<{ handlerId: string; reason: string }>();
   const orderType = Form.useWatch('order_type', form) as string | undefined;
   const watchedModule = Form.useWatch('sub_module', form) as string | undefined;
   const watchedHandlers = Form.useWatch('handler_ids', form) as string[] | undefined;
@@ -367,7 +378,55 @@ const AdminDispatchConfig: React.FC = () => {
   const reload = () => {
     defaultActionRef.current?.reload();
     customerExceptionActionRef.current?.reload();
+    historyDispatchActionRef.current?.reload();
     delegationActionRef.current?.reload();
+  };
+
+  const loadHistoryUnassigned = async (params: { current?: number; pageSize?: number }) => {
+    const result = await getInServiceOrders({
+      page: Number(params.current || 1),
+      pageSize: Number(params.pageSize || 20),
+      orderKind: 'certificate',
+      status: 'dispatched',
+      businessScope,
+      onlyUnassigned: true,
+    });
+    return { data: result.items, success: true, total: result.total };
+  };
+
+  const openHistoryDispatch = async (order: InServiceOrder) => {
+    setHistoryDispatchTarget(order);
+    historyDispatchForm.resetFields();
+    setHistoryHandlerOptions([]);
+    setHistoryDispatchOpen(true);
+    try {
+      const handlers = await getModuleHandlers('in_service_certificate', true, businessScope);
+      const options = handlers.map((handler) => {
+        const user = userRecords.find((item) => item.id === handler.handler_id);
+        return {
+          value: handler.handler_id,
+          label: `${user ? userDisplay(user) : handler.handler_name || handler.handler_id}（${user?.username || handler.handler_id}）`,
+        };
+      });
+      setHistoryHandlerOptions(options);
+    } catch {
+      message.error('加载在职证明负责人失败');
+    }
+  };
+
+  const submitHistoryDispatch = async () => {
+    if (!historyDispatchTarget) return;
+    const values = await historyDispatchForm.validateFields();
+    try {
+      await transferInServiceOrder(historyDispatchTarget.id, values.handlerId, values.reason.trim());
+      message.success('历史工单已派发');
+      setHistoryDispatchOpen(false);
+      setHistoryDispatchTarget(null);
+      historyDispatchForm.resetFields();
+      historyDispatchActionRef.current?.reload();
+    } catch (error: any) {
+      message.error(error?.message || '历史工单派发失败');
+    }
   };
 
   const userLabel = (userId?: string) => {
@@ -792,6 +851,11 @@ const AdminDispatchConfig: React.FC = () => {
       setConfigLoadFailed(false);
       const data = list
         .filter((row) => type === 'exception' ? row.source === 'rules' : row.source !== 'rules')
+        .filter((row) => type === 'exception' || shouldShowDefaultDispatchRow(
+          rowModuleCode(row),
+          rowHandlerIds(row).length > 0,
+          showUnconfigured,
+        ))
         .sort((left, right) => {
           const categoryDiff = getDispatchCategoryOrder(rowModuleCode(left)) - getDispatchCategoryOrder(rowModuleCode(right));
           if (categoryDiff !== 0) return categoryDiff;
@@ -905,6 +969,21 @@ const AdminDispatchConfig: React.FC = () => {
     },
   ];
 
+  const historyDispatchColumns: ProColumns<InServiceOrder>[] = [
+    { title: '工单编号', dataIndex: 'orderNo', width: 190, copyable: true },
+    { title: '员工姓名', dataIndex: 'employeeName', width: 120, renderText: (value) => value || '-' },
+    { title: '证件号', dataIndex: 'idCardNo', width: 180, renderText: (value) => value || '-' },
+    { title: '客户名称', dataIndex: 'customerName', width: 200, renderText: (value, row) => value || row.customerId || '-' },
+    { title: '创建时间', dataIndex: 'createdAt', width: 180, renderText: (value) => value || '-' },
+    { title: '状态', width: 100, render: () => <Tag color="processing">待开具</Tag> },
+    {
+      title: '操作',
+      width: 110,
+      fixed: 'right',
+      render: (_, row) => <Button size="small" type="primary" onClick={() => void openHistoryDispatch(row)}>派发</Button>,
+    },
+  ];
+
   const editingRules = editing?.source === 'rules';
   const showExceptionFields = editingRules;
 
@@ -921,6 +1000,7 @@ const AdminDispatchConfig: React.FC = () => {
         onChange={(value) => {
           setOpen(false);
           setCustomerExceptionOpen(false);
+          setHistoryDispatchOpen(false);
           setDelegationOpen(false);
           setDefaultFormDirty(false);
           setBusinessScope(value as BusinessScope);
@@ -965,10 +1045,10 @@ const AdminDispatchConfig: React.FC = () => {
                   type="info"
                   showIcon
                   message="默认派发按业务阶段分类"
-                  description="入职、在职、离职配置按业务阶段排序；系统/兼容项放在最后。默认负责人为空时，工单会进入公共池或按模块规则处理。"
+                  description="默认只显示已配置负责人的实际业务模块；需要补充负责人时，打开右侧“显示未配置模块”。系统/兼容项、导出模块和历史兼容模块不列入默认派发。"
                 />
                 <ProTable<DispatchConfigItem>
-                  key={`default-${businessScope}`}
+                  key={`default-${businessScope}-${showUnconfigured ? 'all' : 'configured'}`}
                 actionRef={defaultActionRef}
                 columns={defaultColumns}
                 request={() => loadConfig('default')}
@@ -977,6 +1057,13 @@ const AdminDispatchConfig: React.FC = () => {
                 scroll={{ x: 1150 }}
                 headerTitle="未命中例外时使用的负责人"
                 toolBarRender={() => [
+                  <Space key="visibility" size="small">
+                    <Switch
+                      checked={showUnconfigured}
+                      onChange={setShowUnconfigured}
+                    />
+                    <span>显示未配置模块</span>
+                  </Space>,
                   <Button key="add" type="primary" icon={<PlusOutlined />} onClick={() => openCreate('default')}>新增默认负责人</Button>,
                 ]}
                 pagination={{ defaultPageSize: 20 }}
@@ -1016,6 +1103,33 @@ const AdminDispatchConfig: React.FC = () => {
             ),
           },
           {
+            key: 'historyDispatch',
+            label: '历史工单补派',
+            children: (
+              <>
+                <Alert
+                  style={{ marginBottom: 12 }}
+                  type="info"
+                  showIcon
+                  message="管理员可补派历史未指派在职证明"
+                  description="这里只显示已派发但尚未指派负责人的历史证明工单；配置负责人不会自动改写历史单，派发后会记录日志并通知新负责人。"
+                />
+                <ProTable<InServiceOrder>
+                  key={`history-dispatch-${businessScope}`}
+                  actionRef={historyDispatchActionRef}
+                  columns={historyDispatchColumns}
+                  request={loadHistoryUnassigned}
+                  rowKey="id"
+                  search={false}
+                  scroll={{ x: 1100 }}
+                  headerTitle="未指派的历史在职证明"
+                  pagination={{ defaultPageSize: 20 }}
+                  dateFormatter="string"
+                />
+              </>
+            ),
+          },
+          {
             key: 'delegations',
             label: '临时代理 / 休假',
             children: (
@@ -1047,6 +1161,33 @@ const AdminDispatchConfig: React.FC = () => {
           },
         ]}
       />
+
+      <Modal
+        title="历史工单补派"
+        open={historyDispatchOpen}
+        width={560}
+        okText="确认派发"
+        cancelText="取消"
+        onOk={submitHistoryDispatch}
+        onCancel={() => { setHistoryDispatchOpen(false); setHistoryDispatchTarget(null); historyDispatchForm.resetFields(); }}
+        destroyOnHidden
+      >
+        <Alert
+          style={{ marginBottom: 16 }}
+          type="warning"
+          showIcon
+          message={historyDispatchTarget ? `工单 ${historyDispatchTarget.orderNo} 将进入待开具状态` : '请选择历史工单'}
+          description="派发后会写入操作日志并通知负责人；已完成、审批中或已终止工单不会出现在此列表。"
+        />
+        <Form form={historyDispatchForm} layout="vertical">
+          <Form.Item name="handlerId" label="在职证明负责人" rules={[{ required: true, message: '请选择负责人' }]}>
+            <Select options={historyHandlerOptions} placeholder="仅显示已配置的启用负责人" />
+          </Form.Item>
+          <Form.Item name="reason" label="派发原因" rules={[{ required: true, message: '请填写派发原因' }, { max: 512, message: '不超过512字符' }]}>
+            <Input.TextArea rows={3} showCount maxLength={512} placeholder="例如：补派历史未指派在职证明" />
+          </Form.Item>
+        </Form>
+      </Modal>
 
       <Modal
         title="新增临时代理 / 暂停派单"

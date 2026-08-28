@@ -75,7 +75,7 @@ export class BackfillOutOfProvinceBusinessScope20260804003000 implements Migrati
     await queryRunner.query(
       `UPDATE dispatch_rules
        SET business_scope = 'out_of_province'
-       WHERE order_type IN ('out_of_province_increase', 'out_of_province_decrease')`,
+       WHERE order_type::text IN ('out_of_province_increase', 'out_of_province_decrease')`,
     );
 
     await queryRunner.query(
@@ -94,7 +94,7 @@ export class BackfillOutOfProvinceBusinessScope20260804003000 implements Migrati
     await queryRunner.query(
       `UPDATE dispatch_rules
        SET business_scope = 'beilun'
-       WHERE order_type IN ('out_of_province_increase', 'out_of_province_decrease')`,
+       WHERE order_type::text IN ('out_of_province_increase', 'out_of_province_decrease')`,
     );
     await queryRunner.query(
       `UPDATE module_supervisors SET business_scope = 'beilun' WHERE module_code LIKE 'out_of_province_%'`,

@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import OnboardingModule, { getOnboardingModulePermissionState } from './index';
 import { DEFAULT_MATRIX } from '@/services/roleActionPermissions';
+import { KEEP_ALIVE_ROUTE_ACTIVATED_EVENT } from '@/utils/listPageState';
 
 
 const mocks = vi.hoisted(() => ({
@@ -78,6 +79,18 @@ describe('OnboardingModule header table filters', () => {
     mocks.getDispatchedOrders.mockResolvedValue({ list: [], total: 0 });
   });
 
+  it('reloads when the cached module list becomes active again', async () => {
+    render(<OnboardingModule />);
+
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent(KEEP_ALIVE_ROUTE_ACTIVATED_EVENT, {
+        detail: { pathname: '/onboarding/data_entry', search: '' },
+      }));
+    });
+
+    expect(mocks.reload).toHaveBeenCalled();
+  });
+
   it('reloads and sends a single selected status when status header filter changes', async () => {
     render(<OnboardingModule />);
 
@@ -112,6 +125,31 @@ describe('OnboardingModule header table filters', () => {
       statuses: 'processing',
       createdByName: '张三',
     })));
+  });
+
+  it('sends the single toolbar keyword to the child-order backend search', async () => {
+    render(<OnboardingModule />);
+    const initialRequest = mocks.latestProTableProps.request;
+    const actions = mocks.latestProTableProps.toolBarRender() as React.ReactElement[];
+    render(<>{actions}</>);
+
+    const keywordAction = actions.find((action) => action.key === 'keyword') as React.ReactElement<{
+      onSearch?: (value: string) => void;
+    }>;
+    await act(async () => {
+      keywordAction.props.onSearch?.('张三');
+    });
+
+    await waitFor(() => expect(mocks.latestProTableProps.request).not.toBe(initialRequest));
+
+    await act(async () => {
+      await mocks.latestProTableProps.request({ current: 1, pageSize: 20 }, {}, {});
+    });
+
+    expect(mocks.getDispatchedOrders).toHaveBeenLastCalledWith(expect.objectContaining({
+      keyword: '张三',
+      module_code: 'data_entry',
+    }));
   });
 
   it('shows the workbook 14-column social increase list', () => {
@@ -181,10 +219,10 @@ describe('OnboardingModule header table filters', () => {
     expect(esignStatus?.renderText(undefined, { extra_data: { need_esign: '2.否' } })).toBe('2.否');
     expect(esignStatus?.renderText(undefined, { extra_data: {} })).toBe('-');
 
-    const paperTemplate = columns.find((column) => column.key === 'paper_contract_template');
-    expect(paperTemplate?.title).toBe('纸质合同模板名称');
-    expect(paperTemplate?.renderText(undefined, { extra_data: { paper_contract_template: '劳动合同2026版' } })).toBe('劳动合同2026版');
-    expect(paperTemplate?.renderText(undefined, { extra_data: {} })).toBe('-');
+    const specialTemplate = columns.find((column) => column.key === 'special_contract_template_name');
+    expect(specialTemplate?.title).toBe('特殊合同模板名称');
+    expect(specialTemplate?.renderText(undefined, { extra_data: { special_contract_template_name: '劳动合同特殊版' } })).toBe('劳动合同特殊版');
+    expect(specialTemplate?.renderText(undefined, { extra_data: {} })).toBe('-');
   });
 
   it('maps social_insurance_resign route to backend resignation_social_insurance module code', async () => {
@@ -250,7 +288,7 @@ describe('OnboardingModule payroll bank card export list', () => {
 
     expect(mocks.latestProTableProps.headerTitle).toBe('薪酬银行卡记录');
     const actions = mocks.latestProTableProps.toolBarRender() as React.ReactElement[];
-    expect(actions.map((action) => action.key)).toEqual(['columns', 'export']);
+    expect(actions.map((action) => action.key)).toEqual(['keyword', 'columns', 'export']);
     expect(mocks.latestProTableProps.rowSelection).toBeDefined();
     expect(mocks.latestProTableProps.rowSelection.getCheckboxProps({
       id: 'payroll-1',

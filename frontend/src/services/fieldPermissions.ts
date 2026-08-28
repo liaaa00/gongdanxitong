@@ -25,9 +25,9 @@ const FIELD_NAMES: Record<string, string> = {
   social_location: '缴纳地', start_month: '起始月', social_base: '社保基数', fund_base: '公积金基数', fund_ratio: '公积金比例',
   bank_name: '开户银行信息', bank_account: '银行借记卡帐号', remark: '备注',
   business_mode: '业务模式', employee_type: '人员类型',
-  need_company_contract: '是否企服发起劳动合同', need_esign: '是否电子签', esign_platform: '电子签平台', contract_subject: '劳动合同主体', contract_template: '劳动合同模板', paper_contract_template: '纸质合同模板名称',
+  need_company_contract: '是否企服发起劳动合同', need_esign: '是否电子签', esign_platform: '电子签平台', contract_subject: '劳动合同主体', contract_template: '劳动合同模板', special_contract_template_name: '特殊合同模板名称',
   contract_urge: '劳动合同签署是否需要催办员工', contract_feedback: '劳动合同新签反馈',
-  need_onboarding_contact: '入职材料是否需要集约收集', onboarding_feedback: '入职联系反馈',
+  need_onboarding_contact: '入职材料是否需要集约收集', is_common_template: '是否使用通用材料', template_name: '特殊材料收集内容', onboarding_feedback: '入职联系反馈',
   need_company_payroll: '是否企服发薪', pay_location: '发薪地',
   special_remark: '特殊备注', data_entry_feedback: '增员报岗录入反馈',
 };
@@ -53,7 +53,7 @@ const BASIC_FIELDS = [
 const CONTRACT_FIELDS = [
   'contract_term_type', 'contract_term', 'contract_start_date', 'contract_end_date',
   'probation_start_date', 'probation_months', 'probation_end_date',
-  'need_company_contract', 'need_esign', 'esign_platform', 'contract_subject', 'contract_template', 'paper_contract_template',
+  'need_company_contract', 'need_esign', 'esign_platform', 'contract_subject', 'contract_template', 'special_contract_template_name',
   'contract_urge', 'contract_feedback',
 ];
 

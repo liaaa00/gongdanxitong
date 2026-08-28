@@ -496,6 +496,190 @@ describe('MyDispatchedDetail readonly and creator repair actions', () => {
     expect(await screen.findByText('Fallback Only Field')).toBeInTheDocument();
     expect(screen.getByText('fallback value')).toBeInTheDocument();
   });
+  it('shows the readonly resignation certificate format configured in the active detail template', async () => {
+    mocks.currentUser = {
+      id: 'jianglu-1',
+      username: 'jianglu',
+      real_name: '江璐',
+      roles: [{ code: 'onboarding_resignation_member' }],
+    };
+    mocks.fieldPermissions = { resignation_cert_format: 'readonly' };
+    mocks.getFields.mockResolvedValue([{
+      field_code: 'resignation_cert_format',
+      field_name: '离职证明形式',
+      field_type: 'dropdown',
+      is_required: false,
+      is_active: true,
+      display_order: 1,
+      collection_group: '离职信息',
+    }]);
+    mocks.getActiveDetailViewTemplate.mockResolvedValue({
+      id: 'detail-resignation-cert',
+      module_code: 'resignation_cert',
+      field_list: [{ field_code: 'resignation_cert_format' }],
+    });
+    mocks.getDispatchedOrder.mockResolvedValue({
+      ...baseOrder,
+      module_code: 'resignation_cert',
+      module_name: '离职证明',
+      business_scope: 'beilun',
+      visible_fields: ['resignation_cert_format'],
+      extra_data: { resignation_cert_format: '电子证明' },
+      _fieldPermissions: mocks.fieldPermissions,
+    });
+
+    renderDetail('/my-dispatched/d-1');
+
+    expect(await screen.findByText('离职证明形式')).toBeInTheDocument();
+    expect(screen.getByText('电子证明')).toBeInTheDocument();
+  });
+
+  it('uses the detail field snapshot when the admin-only field catalogue is forbidden', async () => {
+    mocks.currentUser = {
+      id: 'jianglu-1',
+      username: 'jianglu',
+      real_name: '江璐',
+      roles: [{ code: 'onboarding_resignation_member' }],
+    };
+    mocks.fieldPermissions = { resignation_cert_format: 'readonly' };
+    mocks.getFields.mockRejectedValue(new Error('403 Forbidden'));
+    mocks.getActiveDetailViewTemplate.mockResolvedValue({
+      id: 'detail-resignation-cert',
+      module_code: 'resignation_cert',
+      field_list: [{ field_code: 'resignation_cert_format' }],
+    });
+    mocks.getDispatchedOrder.mockResolvedValue({
+      ...baseOrder,
+      module_code: 'resignation_cert',
+      module_name: '离职证明',
+      business_scope: 'beilun',
+      fields: [{
+        fieldCode: 'resignation_cert_format',
+        fieldName: '离职证明形式',
+        fieldType: 'dropdown',
+        value: '电子证明',
+        permission: 'readonly',
+        validation: { required: true },
+        dropdownOptions: [{ label: '电子证明', value: '电子证明' }, { label: '纸质证明', value: '纸质证明' }],
+      }],
+      visible_fields: ['resignation_cert_format'],
+      extra_data: { resignation_cert_format: '电子证明' },
+      _fieldPermissions: mocks.fieldPermissions,
+    });
+
+    renderDetail('/my-dispatched/d-1');
+
+    expect(await screen.findByText('离职证明形式')).toBeInTheDocument();
+    expect(screen.getByText('电子证明')).toBeInTheDocument();
+  });
+
+  it('shows backend-readonly template fields while keeping hidden fields outside the template out of detail', async () => {
+    mocks.fieldPermissions = {
+      resignation_cert_format: 'readonly',
+      secret_note: 'hidden',
+    };
+    mocks.getFields.mockResolvedValue([{
+      field_code: 'resignation_cert_format',
+      field_name: '离职证明形式',
+      field_type: 'dropdown',
+      is_required: false,
+      is_active: true,
+      display_order: 1,
+      collection_group: '离职信息',
+    }, {
+      field_code: 'secret_note',
+      field_name: '内部备注',
+      field_type: 'text',
+      is_required: false,
+      is_active: true,
+      display_order: 2,
+      collection_group: '离职信息',
+    }]);
+    mocks.getActiveDetailViewTemplate.mockResolvedValue({
+      id: 'detail-resignation-cert',
+      module_code: 'resignation_cert',
+      field_list: [{ field_code: 'resignation_cert_format' }],
+    });
+    mocks.getDispatchedOrder.mockResolvedValue({
+      ...baseOrder,
+      module_code: 'resignation_cert',
+      visible_fields: ['resignation_cert_format'],
+      extra_data: { resignation_cert_format: '电子证明' },
+      _fieldPermissions: mocks.fieldPermissions,
+    });
+
+    renderDetail('/my-dispatched/d-1');
+
+    await waitFor(() => expect(mocks.getActiveDetailViewTemplate).toHaveBeenCalledWith('resignation_cert', 'beilun'));
+    expect(screen.getByText('离职证明形式')).toBeInTheDocument();
+    expect(screen.getByText('电子证明')).toBeInTheDocument();
+    expect(screen.queryByText('内部备注')).not.toBeInTheDocument();
+  });
+
+  it('renders the group names and field order saved by the active detail template', async () => {
+    mocks.fieldPermissions = {
+      need_onboarding_contact: 'readonly',
+      is_common_template: 'readonly',
+      template_name: 'readonly',
+    };
+    mocks.getFields.mockResolvedValue([
+      {
+        field_code: 'need_onboarding_contact',
+        field_name: '入职材料是否需要集约收集',
+        field_type: 'dropdown',
+        is_required: true,
+        is_active: true,
+        display_order: 1,
+      },
+      {
+        field_code: 'is_common_template',
+        field_name: '是否使用通用材料',
+        field_type: 'dropdown',
+        is_required: false,
+        is_active: true,
+        display_order: 2,
+      },
+      {
+        field_code: 'template_name',
+        field_name: '特殊材料收集内容',
+        field_type: 'text',
+        is_required: false,
+        is_active: true,
+        display_order: 3,
+      },
+    ]);
+    mocks.getActiveDetailViewTemplate.mockResolvedValue({
+      id: 'detail-data-entry',
+      module_code: 'data_entry',
+      field_list: [
+        { kind: 'group', value: '入职材料收集' },
+        { kind: 'field', field_code: 'need_onboarding_contact' },
+        { kind: 'field', field_code: 'is_common_template' },
+        { kind: 'field', field_code: 'template_name' },
+      ],
+    });
+    mocks.getDispatchedOrder.mockResolvedValue({
+      ...baseOrder,
+      module_code: 'data_entry',
+      module_name: '增员报岗录入',
+      visible_fields: ['need_onboarding_contact', 'is_common_template', 'template_name'],
+      extra_data: {
+        need_onboarding_contact: '是',
+        is_common_template: '否',
+        template_name: '学生证、毕业证',
+      },
+      _fieldPermissions: mocks.fieldPermissions,
+    });
+
+    renderDetail('/my-dispatched/d-1');
+
+    expect(await screen.findByText('入职材料收集')).toBeInTheDocument();
+    expect(screen.getByText('是否使用通用材料')).toBeInTheDocument();
+    expect(screen.getByText('特殊材料收集内容')).toBeInTheDocument();
+    expect(screen.queryByText('离职信息')).not.toBeInTheDocument();
+    expect(screen.queryByText('后道反馈')).not.toBeInTheDocument();
+  });
+
   it('uses the active detail template fields for contract detail', async () => {
     mocks.getActiveDetailViewTemplate.mockResolvedValue({
       id: 'detail-contract',
@@ -533,7 +717,7 @@ describe('MyDispatchedDetail readonly and creator repair actions', () => {
     expect(document.body).not.toHaveTextContent('出生日期');
   });
 
-  it('keeps a newly authorized dynamic template field available for original-order supplementation', async () => {
+  it('does not append fields outside the active detail template for original-order supplementation', async () => {
     mocks.fieldPermissions = {
       employee_name: 'visible',
       custom_template_only: 'visible',
@@ -546,7 +730,7 @@ describe('MyDispatchedDetail readonly and creator repair actions', () => {
     });
     mocks.getDispatchedOrder.mockResolvedValue({
       ...baseOrder,
-      visible_fields: ['employee_name', 'custom_template_only'],
+      visible_fields: ['employee_name'],
       extra_data: {
         employee_name: '张三',
         custom_template_only: '',
@@ -556,10 +740,11 @@ describe('MyDispatchedDetail readonly and creator repair actions', () => {
 
     renderDetail('/my-dispatched/d-1');
 
-    expect(await screen.findByText('模板专用字段')).toBeInTheDocument();
+    expect(await screen.findByText('员工姓名')).toBeInTheDocument();
+    expect(screen.queryByText('模板专用字段')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /修改/ }));
     const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByLabelText('模板专用字段')).toBeInTheDocument();
+    expect(within(dialog).queryByLabelText('模板专用字段')).not.toBeInTheDocument();
     expect(within(dialog).getByLabelText('修改原因')).toBeRequired();
   });
 

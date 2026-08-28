@@ -162,10 +162,10 @@ const MODULE_META: Record<string, { name: string; visible_fields: string[]; supp
       'salary_form', 'base_salary', 'other_salary', 'probation_salary',
       'payroll_cycle', 'payroll_date',
       'business_mode', 'employee_type',
-      'need_company_contract', 'need_esign', 'esign_platform', 'contract_subject', 'contract_template', 'paper_contract_template',
+      'need_company_contract', 'need_esign', 'esign_platform', 'contract_subject', 'contract_template', 'special_contract_template_name',
       'contract_urge', 'contract_feedback',
     ],
-    supplementable_fields: ['contract_subject', 'contract_template', 'paper_contract_template'],
+    supplementable_fields: ['contract_subject', 'contract_template', 'special_contract_template_name'],
   },
   onboarding_contact: {
     name: '入职联系',

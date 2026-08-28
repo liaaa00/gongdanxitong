@@ -2,7 +2,7 @@
 import { validateSync } from 'class-validator';
 import { Repository } from 'typeorm';
 import * as JSZip from 'jszip';
-import { BusinessScope, DispatchedOrder, DispatchedOrderStatus, FieldConfig, FieldPermissionMode, ModuleField, ModuleHandler, Notification, OperationLog, OrderType, RoleLevel, User, UserRole, WorkOrder, WorkOrderFieldDirtyMark, WorkOrderStatus } from 'src/entities';
+import { BusinessScope, DispatchModuleCode, DispatchedOrder, DispatchedOrderStatus, FieldConfig, FieldPermissionMode, ModuleField, ModuleHandler, Notification, OperationLog, OrderType, RoleLevel, User, UserRole, WorkOrder, WorkOrderFieldDirtyMark, WorkOrderStatus } from 'src/entities';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { FieldPermissionService } from 'src/modules/field-permissions/field-permission.service';
 import { FieldSupplementService } from 'src/modules/field-supplement/field-supplement.service';
@@ -541,6 +541,91 @@ describe('DispatchedOrderService', () => {
     ]);
     expect(result.fields.some((field) => field.fieldCode === 'social_insurance_result')).toBe(false);
     expect(result.visibleFields).toEqual(result.fields.map((field) => field.fieldCode));
+  });
+
+  it('uses active detail template fields despite hidden role permissions', async () => {
+    const order = {
+      ...makeDispatchedOrder(DispatchedOrderStatus.PENDING),
+      moduleCode: DispatchModuleCode.RESIGNATION_CERT,
+      visibleFields: ['employee_name', 'secret_note'],
+      parentOrder: {
+        ...makeDispatchedOrder().parentOrder,
+        orderType: OrderType.RESIGNATION,
+        extraData: {
+          employee_name: '胡盛威',
+          resignation_cert_format: '电子证明',
+          secret_note: '不应显示',
+        },
+      },
+    } as DispatchedOrder;
+    const fields = [
+      { fieldCode: 'employee_name', fieldName: '员工姓名', displayOrder: 1 },
+      { fieldCode: 'resignation_cert_format', fieldName: '离职证明形式', displayOrder: 2 },
+      { fieldCode: 'secret_note', fieldName: '内部备注', displayOrder: 3 },
+    ].map((field) => ({
+      ...field,
+      fieldType: 'text',
+      orderType: OrderType.RESIGNATION,
+      businessContext: [OrderType.RESIGNATION],
+      isActive: true,
+      isRequired: false,
+      defaultRequired: false,
+    } as unknown as FieldConfig));
+    const fieldPermissionService = {
+      getPermissionsForUser: jest.fn(async () => new Map([
+        ['employee_name', FieldPermissionMode.HIDDEN],
+        ['resignation_cert_format', FieldPermissionMode.HIDDEN],
+        ['secret_note', FieldPermissionMode.VISIBLE],
+      ])),
+    } as unknown as FieldPermissionService;
+    const detailViewTemplatesService = {
+      getActiveByModule: jest.fn(async () => ({
+        moduleCode: DispatchModuleCode.RESIGNATION_CERT,
+        businessScope: BusinessScope.BEILUN,
+        fieldList: [
+          { fieldCode: 'resignation_cert_format' },
+          { fieldCode: 'employee_name' },
+        ],
+      })),
+    };
+    const service = new DispatchedOrderService(
+      repoMock<DispatchedOrder>({ findOne: jest.fn(async () => order) }),
+      repoMock<WorkOrder>(),
+      repoMock<ModuleHandler>(),
+      repoMock<UserRole>(),
+      repoMock<FieldConfig>({ find: jest.fn(async () => fields) }),
+      repoMock<Notification>(),
+      repoMock<OperationLog>(),
+      fieldPermissionService,
+      { getLogs: jest.fn() } as unknown as FieldSupplementService,
+      { exportSingleDispatchedOrder: jest.fn() } as never,
+      validationServiceMock as never,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      detailViewTemplatesService as never,
+    );
+
+    const result = await service.findOne(order.id, {
+      sub: 'jiang-id', username: 'jianglu', roles: ['shared_leader'],
+    } as JwtUserPayload);
+
+    expect(detailViewTemplatesService.getActiveByModule).toHaveBeenCalledWith(
+      DispatchModuleCode.RESIGNATION_CERT,
+      BusinessScope.BEILUN,
+    );
+    expect(result.fields.map((field) => field.fieldCode)).toEqual([
+      'resignation_cert_format',
+      'employee_name',
+    ]);
+    expect(result.fields.every((field) => field.permission === FieldPermissionMode.HIDDEN)).toBe(true);
+    expect(result.visibleFields).toEqual(['resignation_cert_format', 'employee_name']);
+    expect(result._detailTemplateFieldCodes).toEqual(['resignation_cert_format', 'employee_name']);
   });
 
   it('keeps an assigned province handler visible regardless of legacy module roles', async () => {

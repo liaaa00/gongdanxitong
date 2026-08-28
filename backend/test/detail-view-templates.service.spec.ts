@@ -5,6 +5,7 @@ import { DetailViewTemplatesService } from 'src/modules/admin/detail-view-templa
 describe('DetailViewTemplatesService contract permissions', () => {
   it('extracts unique field codes from supported detail template keys', () => {
     expect(getDetailViewFieldCodes([
+      { kind: 'group', value: '基础信息' },
       { fieldCode: 'employee_name' },
       { field_code: 'employee_name' },
       { code: 'mobile' },

@@ -7,6 +7,7 @@ import {
   ContractSubjectItem,
   ContractSubjectsService,
   getAllowedFundRatios,
+  normalizeFundLocation,
 } from 'src/modules/contract-subjects/contract-subjects.service';
 import { ImportTemplateConfigService, ImportTemplateFieldView } from './import-template-config.service';
 
@@ -53,9 +54,12 @@ export class ImportTemplateService {
   async generate(orderType: OrderType, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<ImportTemplateResult> {
     const configuredFields = await this.templateConfigService.list(orderType, businessScope);
     const fields = configuredFields.map((item) => this.toTemplateField(item));
-    const subjects = orderType === OrderType.ONBOARDING && this.contractSubjectsService
-      ? await this.contractSubjectsService.list()
-      : [];
+    const [subjects, fundRules] = orderType === OrderType.ONBOARDING && this.contractSubjectsService
+      ? await Promise.all([
+        this.contractSubjectsService.list(),
+        this.contractSubjectsService.listFundLocationRules(),
+      ])
+      : [[], []];
     if (fields.length === 0) {
       throw businessException(4400, HttpStatus.BAD_REQUEST, 'NO_FIELDS');
     }
@@ -70,7 +74,7 @@ export class ImportTemplateService {
       this.writeAttachmentHintColumn(sheet, fields.length);
     }
     this.applyColumnWidths(sheet, fields);
-    this.applyDropdownValidations(sheet, optionsSheet, fields, orderType, subjects);
+    this.applyDropdownValidations(sheet, optionsSheet, fields, orderType, subjects, fundRules);
 
     const rawBuffer = Buffer.from(await workbook.xlsx.writeBuffer());
     const buffer = await this.normalizeFontElementOrder(rawBuffer);
@@ -238,6 +242,7 @@ export class ImportTemplateService {
     fields: TemplateField[],
     orderType: OrderType,
     subjects: ContractSubjectItem[] = [],
+    fundRules: ContractSubjectItem[] = [],
   ): void {
     const dataStartRow = orderType === OrderType.ONBOARDING ? 6 : 5;
     const validations = (sheet as Worksheet & {
@@ -267,66 +272,116 @@ export class ImportTemplateService {
       });
     });
 
-    if (orderType !== OrderType.ONBOARDING || subjects.length === 0) return;
+    if (orderType !== OrderType.ONBOARDING) return;
     const subjectFieldIndex = fields.findIndex((field) => field.fieldCode === 'contract_subject');
-    if (subjectFieldIndex < 0) return;
-    const subjectColumn = this.columnLetter(subjectFieldIndex + 2);
     const addressFieldIndex = fields.findIndex((field) => field.fieldCode === 'company_address');
+    const locationFieldIndex = fields.findIndex((field) => (
+      field.fieldCode === 'social_location' || field.fieldCode === 'social_pay_region'
+    ));
     const ratioFieldIndex = fields.findIndex((field) => field.fieldCode === 'fund_ratio');
     const supplementaryFieldIndex = fields.findIndex((field) => field.fieldCode === 'supplementary_fund_ratio');
+
     const subjectColumnLetter = this.columnLetter(SPECIAL_OPTIONS_BASE_COLUMN);
     const addressColumnLetter = this.columnLetter(SPECIAL_OPTIONS_BASE_COLUMN + 1);
-    const ratioColumnLetter = this.columnLetter(SPECIAL_OPTIONS_BASE_COLUMN + 2);
-    const supplementaryColumnLetter = this.columnLetter(SPECIAL_OPTIONS_BASE_COLUMN + 66);
     subjects.forEach((subject, rowIndex) => {
       const row = rowIndex + 1;
       optionsSheet.getCell(`${subjectColumnLetter}${row}`).value = subject.subjectName;
       optionsSheet.getCell(`${addressColumnLetter}${row}`).value = subject.registeredAddress;
-      const ratios = getAllowedFundRatios(subject);
-      ratios.forEach((ratio, optionIndex) => {
-        optionsSheet.getCell(`${this.columnLetter(SPECIAL_OPTIONS_BASE_COLUMN + 2 + optionIndex)}${row}`).value = ratio;
+    });
+
+    const fundLocationColumnLetter = this.columnLetter(SPECIAL_OPTIONS_BASE_COLUMN + 2);
+    const fundLocationKeyColumnLetter = this.columnLetter(SPECIAL_OPTIONS_BASE_COLUMN + 3);
+    const ratioColumnLetter = this.columnLetter(SPECIAL_OPTIONS_BASE_COLUMN + 4);
+    const supplementaryColumnLetter = this.columnLetter(SPECIAL_OPTIONS_BASE_COLUMN + 68);
+    fundRules.forEach((rule, rowIndex) => {
+      const row = rowIndex + 1;
+      optionsSheet.getCell(`${fundLocationColumnLetter}${row}`).value = rule.city;
+      optionsSheet.getCell(`${fundLocationKeyColumnLetter}${row}`).value = normalizeFundLocation(rule.city);
+      getAllowedFundRatios(rule).forEach((ratio, optionIndex) => {
+        optionsSheet.getCell(`${this.columnLetter(SPECIAL_OPTIONS_BASE_COLUMN + 4 + optionIndex)}${row}`).value = ratio;
       });
-      (subject.supplementaryFundRatioOptions ?? []).forEach((ratio, optionIndex) => {
-        optionsSheet.getCell(`${this.columnLetter(SPECIAL_OPTIONS_BASE_COLUMN + 66 + optionIndex)}${row}`).value = ratio;
+      (rule.supplementaryFundRatioOptions ?? []).forEach((ratio, optionIndex) => {
+        optionsSheet.getCell(`${this.columnLetter(SPECIAL_OPTIONS_BASE_COLUMN + 68 + optionIndex)}${row}`).value = ratio;
       });
     });
 
-    const lastSubjectRow = subjects.length;
-    const subjectList = `=${OPTIONS_SHEET_NAME}!$${subjectColumnLetter}$1:$${subjectColumnLetter}$${lastSubjectRow}`;
-    const subjectRange = `${subjectColumn}${dataStartRow}:${subjectColumn}${dataStartRow + DATA_VALIDATION_ROWS - 1}`;
-    validations.add(subjectRange, {
-      type: 'list', allowBlank: true, formulae: [subjectList], showErrorMessage: true,
-      errorStyle: 'warning', error: '请选择有效的劳动合同主体',
-    });
-    for (let row = dataStartRow; row < dataStartRow + DATA_VALIDATION_ROWS; row += 1) {
-      const matchOffset = `MATCH(${subjectColumn}${row},${OPTIONS_SHEET_NAME}!$${subjectColumnLetter}$1:$${subjectColumnLetter}$${lastSubjectRow},0)-1`;
+    if (subjectFieldIndex >= 0 && subjects.length > 0) {
+      const subjectColumn = this.columnLetter(subjectFieldIndex + 2);
+      const lastSubjectRow = subjects.length;
+      const subjectList = `=${OPTIONS_SHEET_NAME}!$${subjectColumnLetter}$1:$${subjectColumnLetter}$${lastSubjectRow}`;
+      const subjectRange = `${subjectColumn}${dataStartRow}:${subjectColumn}${dataStartRow + DATA_VALIDATION_ROWS - 1}`;
+      validations.add(subjectRange, {
+        type: 'list', allowBlank: true, formulae: [subjectList], showErrorMessage: true,
+        errorStyle: 'warning', error: '请选择有效的劳动合同主体',
+      });
       if (addressFieldIndex >= 0) {
         const addressColumn = this.columnLetter(addressFieldIndex + 2);
-        validations.add(`${addressColumn}${row}`, {
-          type: 'list', allowBlank: true,
-          formulae: [`=OFFSET(${OPTIONS_SHEET_NAME}!$${addressColumnLetter}$1,${matchOffset},0,1,1)`],
-          showErrorMessage: true, errorStyle: 'warning', error: '请选择与劳动合同主体对应的注册地址',
-        });
+        for (let row = dataStartRow; row < dataStartRow + DATA_VALIDATION_ROWS; row += 1) {
+          const subjectMatchOffset = `MATCH(${subjectColumn}${row},${OPTIONS_SHEET_NAME}!$${subjectColumnLetter}$1:$${subjectColumnLetter}$${lastSubjectRow},0)-1`;
+          validations.add(`${addressColumn}${row}`, {
+            type: 'list', allowBlank: true,
+            formulae: [`=OFFSET(${OPTIONS_SHEET_NAME}!$${addressColumnLetter}$1,${subjectMatchOffset},0,1,1)`],
+            showErrorMessage: true, errorStyle: 'warning', error: '请选择与劳动合同主体对应的注册地址',
+          });
+        }
       }
-      if (ratioFieldIndex >= 0) {
-        const ratioColumn = this.columnLetter(ratioFieldIndex + 2);
-        validations.add(`${ratioColumn}${row}`, {
-          type: 'list', allowBlank: true,
-          formulae: [`=OFFSET(${OPTIONS_SHEET_NAME}!$${ratioColumnLetter}$1,${matchOffset},0,1,MAX(1,COUNTA(OFFSET(${OPTIONS_SHEET_NAME}!$${ratioColumnLetter}$1,${matchOffset},0,1,64))))`],
-          showErrorMessage: true, errorStyle: 'warning', error: '请选择该劳动合同主体允许的公积金比例',
-        });
-      }
-      if (supplementaryFieldIndex >= 0) {
-        const supplementaryColumn = this.columnLetter(supplementaryFieldIndex + 2);
-        validations.add(`${supplementaryColumn}${row}`, {
-          type: 'list', allowBlank: true,
-          formulae: [`=OFFSET(${OPTIONS_SHEET_NAME}!$${supplementaryColumnLetter}$1,${matchOffset},0,1,MAX(1,COUNTA(OFFSET(${OPTIONS_SHEET_NAME}!$${supplementaryColumnLetter}$1,${matchOffset},0,1,2))))`],
-          showErrorMessage: true, errorStyle: 'warning', error: '请选择该上海主体允许的补充公积金比例',
-        });
+    }
+
+    if (locationFieldIndex >= 0 && fundRules.length > 0) {
+      const locationColumn = this.columnLetter(locationFieldIndex + 2);
+      const lastFundRuleRow = fundRules.length;
+      const locationList = `=${OPTIONS_SHEET_NAME}!$${fundLocationColumnLetter}$1:$${fundLocationColumnLetter}$${lastFundRuleRow}`;
+      validations.add(`${locationColumn}${dataStartRow}:${locationColumn}${dataStartRow + DATA_VALIDATION_ROWS - 1}`, {
+        type: 'list', allowBlank: true, formulae: [locationList],
+        showErrorMessage: true, errorStyle: 'warning', error: '请选择有效的缴纳地城市',
+      });
+      for (let row = dataStartRow; row < dataStartRow + DATA_VALIDATION_ROWS; row += 1) {
+        const normalizedLocation = this.normalizeExcelLocation(`${locationColumn}${row}`);
+        const locationMatchOffset = `MATCH(${normalizedLocation},${OPTIONS_SHEET_NAME}!$${fundLocationKeyColumnLetter}$1:$${fundLocationKeyColumnLetter}$${lastFundRuleRow},0)-1`;
+        if (ratioFieldIndex >= 0) {
+          const ratioColumn = this.columnLetter(ratioFieldIndex + 2);
+          validations.add(`${ratioColumn}${row}`, {
+            type: 'list', allowBlank: true,
+            formulae: [`=OFFSET(${OPTIONS_SHEET_NAME}!$${ratioColumnLetter}$1,${locationMatchOffset},0,1,MAX(1,COUNTA(OFFSET(${OPTIONS_SHEET_NAME}!$${ratioColumnLetter}$1,${locationMatchOffset},0,1,64))))`],
+            showErrorMessage: true, errorStyle: 'warning', error: '请选择该缴纳地允许的公积金比例',
+          });
+        }
+        if (supplementaryFieldIndex >= 0) {
+          const supplementaryColumn = this.columnLetter(supplementaryFieldIndex + 2);
+          validations.add(`${supplementaryColumn}${row}`, {
+            type: 'list', allowBlank: true,
+            formulae: [`=OFFSET(${OPTIONS_SHEET_NAME}!$${supplementaryColumnLetter}$1,${locationMatchOffset},0,1,MAX(1,COUNTA(OFFSET(${OPTIONS_SHEET_NAME}!$${supplementaryColumnLetter}$1,${locationMatchOffset},0,1,8))))`],
+            showErrorMessage: true, errorStyle: 'warning', error: '请选择该缴纳地允许的补充公积金比例',
+          });
+        }
       }
     }
   }
 
+
+  private normalizeExcelLocation(cellReference: string): string {
+    return [
+      'SUBSTITUTE(',
+      'SUBSTITUTE(',
+      'SUBSTITUTE(',
+      'SUBSTITUTE(',
+      'SUBSTITUTE(',
+      'SUBSTITUTE(',
+      'SUBSTITUTE(',
+      'SUBSTITUTE(',
+      'SUBSTITUTE(',
+      cellReference,
+      ',"工业园区","园区")',
+      ',"自治区","")',
+      ',"自治州","")',
+      ',"省","")',
+      ',"市","")',
+      ',"区","")',
+      ',"县","")',
+      ',"/","")',
+      '," ","")',
+    ].join('');
+  }
 
   private async normalizeFontElementOrder(buffer: Buffer): Promise<Buffer> {
     const zip = await JSZip.loadAsync(buffer);

@@ -67,7 +67,7 @@ export class FixPayrollAdminRoutePermission20260817002000 implements MigrationIn
       const config = allowAdminPayrollBankCardRoute(source ?? {});
       await queryRunner.query(
         `UPDATE permission_config_versions
-         SET config = $1::jsonb, updated_at = now()
+         SET config = $1::jsonb
          WHERE id = $2`,
         [JSON.stringify(config), row.id],
       );

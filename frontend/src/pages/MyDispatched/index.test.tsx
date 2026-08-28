@@ -1,6 +1,7 @@
 import { act, render, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import MyDispatched from './index';
+import { KEEP_ALIVE_ROUTE_ACTIVATED_EVENT } from '@/utils/listPageState';
 
 
 const mocks = vi.hoisted(() => ({
@@ -73,6 +74,18 @@ describe('MyDispatched processing status filter', () => {
     const columns = mocks.latestProTableProps.columns as Array<Record<string, any>>;
     return columns.find((column) => column.dataIndex === dataIndexOrKey || column.key === dataIndexOrKey);
   }
+
+  it('reloads when the cached pending list becomes active again', async () => {
+    render(<MyDispatched mode="pending" />);
+
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent(KEEP_ALIVE_ROUTE_ACTIVATED_EVENT, {
+        detail: { pathname: '/my-work/pending', search: '' },
+      }));
+    });
+
+    expect(mocks.reload).toHaveBeenCalled();
+  });
 
   it('shows the nine status options and sends a single selected status', async () => {
     render(<MyDispatched mode="pending" />);

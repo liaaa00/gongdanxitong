@@ -24,6 +24,54 @@ export function getAllowedFundRatios(subject: ContractSubjectItem | undefined): 
   return values.flatMap((unit) => values.map((personal) => `${unit}%+${personal}%`));
 }
 
+function normalizeFundLocation(value: string): string {
+  return value
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/工业园区/g, '园区')
+    .replace(/自治区|自治州|省|市|区|县/g, '')
+    .replace(/[\\/|,，、\-\s]/g, '');
+}
+
+export function findFundRuleForLocation(
+  rules: ContractSubjectItem[],
+  location: string,
+): ContractSubjectItem | undefined {
+  const normalized = normalizeFundLocation(location);
+  if (!normalized) return undefined;
+  return rules.find((rule) => (
+    normalizeFundLocation(rule.subjectName) === normalized
+    || normalizeFundLocation(rule.city) === normalized
+  ));
+}
+
+const MOCK_FUND_RULES: ContractSubjectItem[] = [
+  {
+    id: 'mock-fund-rule-ningbo',
+    subjectName: '浙江省/宁波市',
+    socialCreditCode: null,
+    province: '浙江省',
+    city: '宁波市',
+    registeredAddress: '',
+    fundRatioOptions: ['5%+5%', '6%+6%', '7%+7%', '8%+8%', '9%+9%', '10%+10%', '11%+11%', '12%+12%'],
+    supplementaryFundRatioOptions: [],
+    fundRatioMode: 'same',
+    isActive: true,
+  },
+  {
+    id: 'mock-fund-rule-hangzhou',
+    subjectName: '浙江省/杭州',
+    socialCreditCode: null,
+    province: '浙江省',
+    city: '杭州',
+    registeredAddress: '',
+    fundRatioOptions: ['5%+5%', '6%+6%', '7%+7%', '8%+8%', '9%+9%', '10%+10%', '11%+11%', '12%+12%'],
+    supplementaryFundRatioOptions: [],
+    fundRatioMode: 'same',
+    isActive: true,
+  },
+];
+
 function normalizeSubject(raw: any): ContractSubjectItem {
   return {
     id: String(raw.id ?? ''),
@@ -46,6 +94,30 @@ function normalizeSubject(raw: any): ContractSubjectItem {
 export async function getContractSubjects(keyword?: string): Promise<ContractSubjectItem[]> {
   if (isMockMode) return mockDelay([]);
   const result = await request.get('/contract-subjects', { params: keyword ? { keyword } : undefined }) as any;
+  const list = Array.isArray(result) ? result : (result?.items ?? result?.list ?? result?.data ?? []);
+  return (Array.isArray(list) ? list : []).map(normalizeSubject).filter((item) => item.id && item.subjectName);
+}
+
+export async function getFundLocations(): Promise<string[]> {
+  if (isMockMode) {
+    return mockDelay(Array.from(new Set(MOCK_FUND_RULES.map((rule) => rule.city))).sort((left, right) => left.localeCompare(right, 'zh-CN')));
+  }
+  const result = await request.get('/contract-subjects/fund-locations') as any;
+  const list = Array.isArray(result) ? result : (result?.items ?? result?.list ?? result?.data ?? []);
+  return (Array.isArray(list) ? list : []).map(String).map((item) => item.trim()).filter(Boolean);
+}
+
+/** 公积金比例按缴纳地读取；返回值复用比例结构，subjectName 为城市键。 */
+export async function getFundRulesByLocation(location?: string): Promise<ContractSubjectItem[]> {
+  const normalizedLocation = location?.trim();
+  if (!normalizedLocation) return [];
+  if (isMockMode) {
+    const matched = findFundRuleForLocation(MOCK_FUND_RULES, normalizedLocation);
+    return mockDelay(matched ? [matched] : []);
+  }
+  const result = await request.get('/contract-subjects/fund-rules', {
+    params: { location: normalizedLocation },
+  }) as any;
   const list = Array.isArray(result) ? result : (result?.items ?? result?.list ?? result?.data ?? []);
   return (Array.isArray(list) ? list : []).map(normalizeSubject).filter((item) => item.id && item.subjectName);
 }

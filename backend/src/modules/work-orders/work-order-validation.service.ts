@@ -115,7 +115,8 @@ export class WorkOrderValidationService {
     }
 
     const subjectFieldsChanged = !changedFieldCodes || [
-      'contract_subject', 'company_address', 'fund_ratio', 'supplementary_fund_ratio',
+      'contract_subject', 'company_address', 'social_location', 'social_pay_region',
+      'fund_ratio', 'supplementary_fund_ratio',
     ].some((fieldCode) => changedFieldCodes.has(fieldCode));
     if (workOrder.orderType === OrderType.ONBOARDING && subjectFieldsChanged && this.contractSubjectsService) {
       await this.validateContractSubjectRelations(workOrder.extraData, missing, missingNames, invalid);
@@ -177,28 +178,41 @@ export class WorkOrderValidationService {
     missingNames: string[],
     invalid: Array<{ fieldCode: string; reason: string }>,
   ): Promise<void> {
+    if (!this.contractSubjectsService) return;
     const subjectName = typeof extraData.contract_subject === 'string' ? extraData.contract_subject.trim() : '';
-    if (!subjectName || !this.contractSubjectsService) return;
-    const subject = await this.contractSubjectsService.findByName(subjectName);
-    if (!subject) {
+    const subject = subjectName
+      ? await this.contractSubjectsService.findByName(subjectName)
+      : null;
+    if (subjectName && !subject) {
       invalid.push({ fieldCode: 'contract_subject', reason: '主体不在正式目录' });
-      return;
     }
-    if (this.hasValue(extraData.company_address)
+    if (subject && this.hasValue(extraData.company_address)
       && String(extraData.company_address).trim() !== subject.registeredAddress.trim()) {
       invalid.push({ fieldCode: 'company_address', reason: '主体注册地不匹配' });
     }
-    const allowedRatios = getAllowedFundRatios(subject);
+    const socialLocation = this.readText(extraData.social_location ?? extraData.social_pay_region);
+    const fundRule = socialLocation
+      ? await this.contractSubjectsService.findFundRuleByLocation(socialLocation)
+      : null;
+    if (!fundRule) {
+      if (socialLocation) {
+        invalid.push({ fieldCode: 'social_location', reason: '缴纳地未匹配正式公积金规则' });
+      } else if (this.hasValue(extraData.fund_ratio) || this.hasValue(extraData.supplementary_fund_ratio)) {
+        invalid.push({ fieldCode: 'social_location', reason: '填写公积金比例前必须选择缴纳地' });
+      }
+      return;
+    }
+    const allowedRatios = getAllowedFundRatios(fundRule);
     if (allowedRatios.length > 0 && !this.hasValue(extraData.fund_ratio)) {
       missing.push('fund_ratio');
       missingNames.push('公积金比例');
     } else if (this.hasValue(extraData.fund_ratio) && !allowedRatios.includes(String(extraData.fund_ratio))) {
-      invalid.push({ fieldCode: 'fund_ratio', reason: '公积金比例不属于主体允许值' });
+      invalid.push({ fieldCode: 'fund_ratio', reason: '公积金比例不属于参保地允许值' });
     }
-    const supplementaryOptions = subject.supplementaryFundRatioOptions ?? [];
+    const supplementaryOptions = fundRule?.supplementaryFundRatioOptions ?? [];
     if (this.hasValue(extraData.supplementary_fund_ratio)
       && !supplementaryOptions.includes(String(extraData.supplementary_fund_ratio))) {
-      invalid.push({ fieldCode: 'supplementary_fund_ratio', reason: '补充公积金比例不匹配' });
+      invalid.push({ fieldCode: 'supplementary_fund_ratio', reason: '补充公积金比例不匹配参保地规则' });
     }
   }
 

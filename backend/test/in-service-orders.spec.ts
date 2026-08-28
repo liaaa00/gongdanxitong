@@ -90,6 +90,9 @@ function makeService(
   workflow?: Partial<WorkflowDefinition>,
   workOrderValidationService?: { resolveDepartmentId: jest.Mock },
   departmentRepositoryOverride?: { findOne: jest.Mock },
+  moduleHandlerRepositoryOverride?: { findOne: jest.Mock },
+  notificationRepositoryOverride?: { create: jest.Mock; save: jest.Mock },
+  operationLogRepositoryOverride?: { create: jest.Mock; save: jest.Mock },
 ) {
   let current = initial;
   const repository = {
@@ -140,6 +143,9 @@ function makeService(
       undefined,
       workOrderValidationService as any,
       departmentRepository as unknown as Repository<Department>,
+      moduleHandlerRepositoryOverride as unknown as Repository<import('src/entities').ModuleHandler>,
+      notificationRepositoryOverride as unknown as Repository<import('src/entities').Notification>,
+      operationLogRepositoryOverride as unknown as Repository<import('src/entities').OperationLog>,
     ),
     picker: picker as unknown as { pick: jest.Mock },
     exporter: exporter as unknown as { exportContractRenewal: jest.Mock },
@@ -380,6 +386,90 @@ describe('InServiceOrdersService', () => {
     expect(current().status).toBe(InServiceOrderStatus.DISPATCHED);
     expect(current().handlerId).toBe('44444444-4444-4444-8444-444444444444');
     expect(current().transferHistory).toHaveLength(1);
+  });
+
+  it('allows an admin to assign an unassigned certificate and records audit plus notification', async () => {
+    const order = Object.assign(makeOrder(InServiceOrderStatus.DISPATCHED), {
+      orderKind: InServiceOrderKind.CERTIFICATE,
+      handlerId: null,
+    });
+    const moduleHandlerRepository = {
+      findOne: jest.fn(async () => ({ isActive: true, handler: { isActive: true } })),
+    };
+    const notificationRepository = {
+      create: jest.fn((input) => input),
+      save: jest.fn(async (input) => input),
+    };
+    const operationLogRepository = {
+      create: jest.fn((input) => input),
+      save: jest.fn(async (input) => input),
+    };
+    const { service, current } = makeService(
+      order,
+      null,
+      undefined,
+      undefined,
+      undefined,
+      moduleHandlerRepository,
+      notificationRepository,
+      operationLogRepository,
+    );
+    const admin = { sub: 'admin-1', username: 'admin', roles: ['admin'] } as JwtUserPayload;
+    const targetHandlerId = '44444444-4444-4444-8444-444444444444';
+
+    await service.transfer(order.id, { handlerId: targetHandlerId, reason: '补派历史证明单' }, admin);
+
+    expect(current().status).toBe(InServiceOrderStatus.DISPATCHED);
+    expect(current().handlerId).toBe(targetHandlerId);
+    expect(current().transferHistory).toEqual([
+      expect.objectContaining({ fromHandlerId: null, toHandlerId: targetHandlerId, reason: '补派历史证明单' }),
+    ]);
+    expect(operationLogRepository.create).toHaveBeenCalledWith(expect.objectContaining({
+      entityType: 'in_service_order',
+      actionType: 'reassign',
+      beforeData: { handlerId: null, status: InServiceOrderStatus.DISPATCHED },
+      afterData: expect.objectContaining({ handlerId: targetHandlerId, moduleCode: DispatchModuleCode.IN_SERVICE_CERTIFICATE }),
+    }));
+    expect(notificationRepository.create).toHaveBeenCalledWith(expect.objectContaining({
+      userId: targetHandlerId,
+      link: `/in-service/certificates/${order.id}`,
+      bizType: 'in_service_order_reassign',
+    }));
+  });
+
+  it('restricts onlyUnassigned to admins and dispatched certificate orders', async () => {
+    const queryBuilder = {
+      leftJoinAndSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      addOrderBy: jest.fn().mockReturnThis(),
+      skip: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
+      getManyAndCount: jest.fn(async () => [[], 0]),
+    };
+    const context = makeService();
+    (context.repository as any).createQueryBuilder = jest.fn(() => queryBuilder);
+
+    await expect(context.service.list(
+      { page: 1, pageSize: 20, onlyUnassigned: true } as any,
+      creator,
+    )).rejects.toThrow('仅管理员可查看未指派历史工单');
+
+    await context.service.list(
+      { page: 1, pageSize: 20, onlyUnassigned: true } as any,
+      { sub: 'admin-1', username: 'admin', roles: ['admin'] } as JwtUserPayload,
+    );
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith('order.handler_id IS NULL');
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+      'order.order_kind = :historyOrderKind',
+      { historyOrderKind: InServiceOrderKind.CERTIFICATE },
+    );
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+      'order.status = :historyOrderStatus',
+      { historyOrderStatus: InServiceOrderStatus.DISPATCHED },
+    );
   });
 
   it('supports success and failure terminal outcomes', async () => {

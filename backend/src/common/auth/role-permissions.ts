@@ -31,6 +31,7 @@ export const CONTRACT_MODULE_ROLES = ['contract_specialist', 'labor_contract_mem
 export const ONBOARDING_RESIGNATION_MODULE_ROLES = ['onboarding_specialist', 'onboarding_resignation_member', 'onboarding_team', 'contract_team'] as const;
 export const DATA_ENTRY_MODULE_ROLES = ['data_entry_leader', 'data_entry_team', 'data_entry_supervisor', 'data_entry_specialist'] as const;
 export const SOCIAL_INSURANCE_MODULE_ROLES = ['social_insurance_specialist', 'social_insurance_team', 'social_insurance_supervisor', 'social_security_supervisor'] as const;
+export const IN_SERVICE_CERTIFICATE_MODULE_ROLES = ['shared_leader', 'shared_team_owner', 'labor_contract_member', 'onboarding_resignation_member'] as const;
 
 const RESIGNATION_CERT_HANDLER_USERNAMES = new Set(['yangchun', 'jianglu']);
 const RESIGNATION_CERT_HANDLER_REAL_NAMES = new Set(['杨纯', '江璐']);
@@ -53,6 +54,7 @@ const MODULE_HANDLER_ROLES: Record<string, readonly string[]> = {
   onboarding_contact: ONBOARDING_RESIGNATION_MODULE_ROLES,
   resignation_contact: ONBOARDING_RESIGNATION_MODULE_ROLES,
   resignation_cert: ONBOARDING_RESIGNATION_MODULE_ROLES,
+  in_service_certificate: IN_SERVICE_CERTIFICATE_MODULE_ROLES,
   data_entry: DATA_ENTRY_MODULE_ROLES,
   data_entry_resign: DATA_ENTRY_MODULE_ROLES,
   social_insurance: SOCIAL_INSURANCE_MODULE_ROLES,

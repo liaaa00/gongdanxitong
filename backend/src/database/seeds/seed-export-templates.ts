@@ -39,8 +39,8 @@ const onboardingContactColumns: Array<[string, string]> = [
   ['major', '专业'],
   ['graduation_date', '毕业时间'],
   ['feedback_deadline', '需要反馈截止日期'],
-  ['is_common_template', '是否为通用模板'],
-  ['template_name', '模板名称'],
+  ['is_common_template', '是否使用通用材料'],
+  ['template_name', '特殊材料收集内容'],
   ['email', '邮箱（选填）'],
   ['created_by_name', '发起人'],
 ];
@@ -178,8 +178,8 @@ const resignationContactColumns: Array<[string, string]> = [
   ['social_stop_month', '停保月份'],
   ['resignation_date', '离职日期'],
   ['feedback_deadline', '需要反馈截止日期'],
-  ['is_common_template', '是否为通用模板'],
-  ['template_name', '模板名称'],
+  ['is_common_template', '是否使用通用材料'],
+  ['template_name', '特殊材料收集内容'],
   ['attachments_summary', '附件'],
 ];
 

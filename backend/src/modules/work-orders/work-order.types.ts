@@ -26,6 +26,8 @@ export interface WorkOrderListItem {
   employee_name?: string;
   employeeIdCard: string;
   employee_id_card?: string;
+  lastWorkDate?: string | null;
+  last_work_date?: string | null;
   createdBy?: string;
   created_by?: string;
   createdByName?: string | null;

@@ -66,12 +66,23 @@ import {
   transferInServiceOrder,
   type InServiceMaterialChangeRequest,
   type InServiceOrder,
+  type InServiceOrderField,
 } from '@/services/inServiceOrders';
 import { downloadDispatchedExport } from '@/services/dispatchedOrders';
 import { getUsers, type UserItem } from '@/services/users';
 
 function formatDate(value?: string | null) {
   return value ? dayjs(value).format('YYYY-MM-DD HH:mm') : '-';
+}
+
+function formatConfiguredFieldValue(field: InServiceOrderField): string {
+  const value = field.value;
+  if (value === undefined || value === null || value === '') return '-';
+  if (Array.isArray(value)) return value.join('、');
+  if (typeof value === 'object') {
+    try { return JSON.stringify(value); } catch { return String(value); }
+  }
+  return String(value);
 }
 
 export function isCertificateTemplateOrder(orderKind: string): boolean {
@@ -916,6 +927,18 @@ export default function InServiceOrderDetail() {
             ) : null}
           </Descriptions>
         </Card>
+
+        {order.fields && order.fields.length > 0 ? (
+          <Card size="small" title="配置字段">
+            <Descriptions bordered size="small" column={{ xs: 1, sm: 2, lg: 3 }}>
+              {order.fields.map((field) => (
+                <Descriptions.Item key={field.fieldCode} label={field.fieldName || field.fieldCode}>
+                  {formatConfiguredFieldValue(field)}
+                </Descriptions.Item>
+              ))}
+            </Descriptions>
+          </Card>
+        ) : null}
 
         <Card size="small" title={flowUiPolicy.progressTitle}>
           <Steps

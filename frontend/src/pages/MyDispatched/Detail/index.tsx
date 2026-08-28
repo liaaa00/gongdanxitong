@@ -30,6 +30,8 @@ import { getActiveDetailViewTemplate } from '@/services/detailViewTemplates';
 import { getModuleColor, getModuleLabel, isSocialInsuranceModule } from '@/constants/modules';
 import { canAccessPath } from '@/config/routeVisibility';
 import { getStatusColor, getStatusText } from '@/constants/dictionaries';
+import { notifyKeepAliveRouteActivated } from '@/utils/listPageState';
+import { getDefaultDetailFieldGroups, parseDetailTemplateGroups, type DetailTemplateFieldGroup } from '@/utils/detailViewTemplateLayout';
 import { useAuth } from '@/hooks/useAuth';
 import { getUsersByTeam } from '@/services/users';
 import type { UserItem } from '@/services/users';
@@ -45,96 +47,12 @@ const HANDLING_RESULT_OPTIONS = [
   { label: '否', value: '否' },
 ];
 
-const FIELD_GROUPS: Array<{ title: string; codes: string[] }> = [
-  {
-    title: '基础信息',
-    codes: ['customer_name', 'customer_code', 'outsource_type', 'position', 'position_type', 'employee_name', 'id_card_type', 'id_card_no', 'gender', 'birth_date', 'age', 'household_type', 'ethnicity', 'marital_status', 'mobile', 'email', 'current_address', 'household_address', 'postal_code', 'business_mode', 'employee_type'],
-  },
-  {
-    title: '合同信息',
-    codes: ['contract_term_type', 'contract_term', 'contract_start_date', 'contract_end_date', 'probation_start_date', 'probation_months', 'probation_end_date', 'work_city', 'work_hour_system', 'work_cycle', 'need_company_contract', 'need_esign', 'esign_platform', 'contract_subject', 'contract_template', 'paper_contract_template', 'need_contract_urge', 'contract_feedback'],
-  },
-  {
-    title: '薪资与发薪',
-    codes: ['salary_form', 'base_salary', 'other_salary', 'probation_salary', 'payroll_cycle', 'payroll_date', 'need_company_payroll', 'payroll_location', 'pay_location'],
-  },
-  {
-    title: '社保公积金',
-    codes: ['social_location', 'start_month', 'social_base', 'fund_base', 'fund_ratio', 'social_insurance_feedback', ...HANDLING_FEEDBACK_FIELDS.map((item) => item.result), HANDLING_SHARED_REMARK],
-  },
-  {
-    title: '学历信息',
-    codes: ['education', 'graduation_school', 'major', 'graduation_date'],
-  },
-  {
-    title: '银行与备注',
-    codes: ['bank_name', 'bank_account', 'remark', 'special_remark'],
-  },
-  {
-    title: '离职信息',
-    codes: ['resignation_type', 'resignation_reason', 'last_work_date', 'contract_terminate_date', 'handover_person', 'need_resignation_cert', 'resignation_cert_format', 'cert_delivery_address', 'is_common_template', 'template_name'],
-  },
-  {
-    title: '后道反馈',
-    codes: ['need_onboarding_contact', 'onboarding_feedback', 'data_entry_feedback', 'resignation_contact_feedback', 'resignation_cert_status', 'social_handover_done', 'final_salary_settled', 'resignation_remark'],
-  },
-];
-
-const PAYROLL_BANK_CARD_FIELD_GROUPS: Array<{ title: string; codes: string[] }> = [
-  {
-    title: '薪酬银行卡信息',
-    codes: ['employee_name', 'id_card_no', 'need_payroll_slip', 'bank_name', 'bank_account', 'bank_location', 'branch_code', 'payroll_location'],
-  },
-];
-
-const SOCIAL_INCREASE_FIELD_GROUPS: Array<{ title: string; codes: string[] }> = [
-  {
-    title: '社保公积金',
-    codes: [
-      'insured_unit',
-      'social_insurance_remark',
-      'social_pay_region',
-      'start_month',
-      'social_base',
-      'fund_start_month',
-      'fund_base',
-      'fund_ratio',
-      'supplementary_fund_ratio',
-      ...HANDLING_FEEDBACK_FIELDS.map((item) => item.result),
-    ],
-  },
-];
-
-const SOCIAL_DECREASE_FIELD_GROUPS: Array<{ title: string; codes: string[] }> = [
-  {
-    title: '社保公积金',
-    codes: [
-      ...HANDLING_FEEDBACK_FIELDS.map((item) => item.result),
-      'social_pay_region',
-      'supplementary_fund_ratio',
-      'social_insurance_remark',
-    ],
-  },
-  {
-    title: '其他字段',
-    codes: [
-      'insured_unit',
-      'social_insurance_remark',
-      'social_stop_month',
-      'fund_stop_month',
-      'last_work_date',
-    ],
-  },
-];
-
-export const getDispatchedDetailFieldGroups = (moduleCode?: string): Array<{ title: string; codes: string[] }> => {
-  if (moduleCode === 'payroll_bank_card') return PAYROLL_BANK_CARD_FIELD_GROUPS;
-  if (moduleCode === 'social_insurance') return SOCIAL_INCREASE_FIELD_GROUPS;
-  if (moduleCode === 'resignation_social_insurance' || moduleCode === 'social_insurance_resign') {
-    return SOCIAL_DECREASE_FIELD_GROUPS;
-  }
-  return FIELD_GROUPS;
-};
+export const getDispatchedDetailFieldGroups = (moduleCode?: string): Array<{ title: string; codes: string[] }> => (
+  getDefaultDetailFieldGroups(moduleCode).map((group) => ({
+    title: group.title,
+    codes: group.fieldCodes,
+  }))
+);
 
 const FEEDBACK_FIELD_MAP: Record<string, string> = {
   contract: 'contract_feedback', onboarding_contact: 'onboarding_feedback',
@@ -232,7 +150,7 @@ function getOperatorDisplay(order: DispatchedOrderItem) {
 
 const withRequiredLabel = (field: FieldConfig): FieldConfig => field;
 
-const toSocialDetailFieldConfig = (
+const toDetailFieldConfig = (
   field: NonNullable<DispatchedOrderItem['fields']>[number],
   index: number,
 ): FieldConfig => ({
@@ -247,6 +165,8 @@ const toSocialDetailFieldConfig = (
   display_order: index + 1,
   is_active: field.permission !== 'hidden',
 });
+
+const toSocialDetailFieldConfig = toDetailFieldConfig;
 
 const filterByVisibleFields = (allFields: FieldConfig[], visibleFields?: string[]) => {
   const visibleSet = new Set((visibleFields || []).filter(Boolean));
@@ -266,6 +186,7 @@ const MyDispatchedDetail: React.FC = () => {
   const permissions = order?._fieldPermissions ?? {};
   const [fields, setFields] = useState<FieldConfig[]>([]);
   const [detailTemplateApplied, setDetailTemplateApplied] = useState(false);
+  const [templateFieldGroups, setTemplateFieldGroups] = useState<DetailTemplateFieldGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [supplementLogs, setSupplementLogs] = useState<SupplementLogItem[]>([]);
   const [dirtyCleared, setDirtyCleared] = useState(false);
@@ -337,7 +258,14 @@ const MyDispatchedDetail: React.FC = () => {
       } catch {
         backendFields = [];
       }
-      const configuredFields = backendFields.length > 0 ? backendFields : fallbackFields;
+      // The detail endpoint already returns the caller-authorized field snapshot.
+      // It must win over the admin-only system field catalogue, which may return 403.
+      const detailSnapshotFields = (orderData.fields ?? [])
+        .filter((field) => field.permission !== 'hidden')
+        .map(toDetailFieldConfig);
+      const configuredFields = detailSnapshotFields.length > 0 && !isSocialInsuranceModule(moduleCode)
+        ? detailSnapshotFields
+        : (backendFields.length > 0 ? backendFields : fallbackFields);
       const socialDetailFields = isSocialInsuranceModule(moduleCode)
         ? (orderData.fields ?? [])
           .filter((field) => field.permission !== 'hidden')
@@ -351,6 +279,7 @@ const MyDispatchedDetail: React.FC = () => {
         : configuredFields;
 
       let visibleFieldCodes: string[] | undefined;
+      let activeTemplateGroups: DetailTemplateFieldGroup[] = [];
       if (moduleCode && !isSocialInsuranceModule(moduleCode)) {
         try {
           const businessScope = orderData.business_scope ?? orderData.businessScope ?? 'beilun';
@@ -360,6 +289,7 @@ const MyDispatchedDetail: React.FC = () => {
             visibleFieldCodes = list
               .map((f: any) => f.fieldCode ?? f.field_code)
               .filter(Boolean) as string[];
+            activeTemplateGroups = parseDetailTemplateGroups(list);
           }
         } catch {
           // 无配置或加载失败，回退到子工单字段范围。
@@ -370,6 +300,7 @@ const MyDispatchedDetail: React.FC = () => {
       setSupplementLogs(logs);
       setDirtyCleared(false);
 
+      setTemplateFieldGroups(activeTemplateGroups);
       if (isSocialInsuranceModule(moduleCode)) {
         const fieldMap = new Map(fieldList.map((field) => [field.field_code, field]));
         const orderedFields = (orderData.visible_fields ?? [])
@@ -385,13 +316,7 @@ const MyDispatchedDetail: React.FC = () => {
           const field = fieldMap.get(code);
           if (field) orderedFields.push(field);
         });
-        const authorizedDynamicFields = fieldList.filter((field) => (
-          (field.field_code.startsWith('custom_') || field.field_code.startsWith('f_'))
-          && field.is_included_in_template !== false
-          && orderData.visible_fields.includes(field.field_code)
-          && !visibleFieldCodes?.includes(field.field_code)
-        ));
-        setFields([...orderedFields, ...authorizedDynamicFields]);
+        setFields(orderedFields);
         setDetailTemplateApplied(orderedFields.length > 0);
       } else {
         setFields(fieldList);
@@ -435,8 +360,10 @@ const MyDispatchedDetail: React.FC = () => {
   );
   const visibleDetailFields = useMemo(() => filterByVisibleFields(fields, visibleFields), [fields, visibleFields]);
   const detailFieldGroups = useMemo(
-    () => getDispatchedDetailFieldGroups(order?.module_code),
-    [order?.module_code],
+    () => templateFieldGroups.length > 0
+      ? templateFieldGroups.map((group) => ({ title: group.title, codes: group.fieldCodes }))
+      : getDispatchedDetailFieldGroups(order?.module_code),
+    [order?.module_code, templateFieldGroups],
   );
   const groupedFieldCodes = useMemo(
     () => new Set(detailFieldGroups.flatMap((group) => group.codes)),
@@ -767,7 +694,12 @@ const MyDispatchedDetail: React.FC = () => {
       : approvalType === 'withdraw'
         ? await handleApproveWithdraw(approvalApproved, comment)
         : await handleApproveVoid(approvalApproved, comment);
-    if (updated) setApprovalOpen(false);
+    if (updated) {
+      setApprovalOpen(false);
+      const listPath = getDispatchedListPath(updated, user?.roles, user?.permissions);
+      const [pathname, search = ''] = listPath.split('?');
+      notifyKeepAliveRouteActivated({ pathname, search: search ? `?${search}` : '', refreshAll: true });
+    }
   };
 
   const openReturnModal = async () => {

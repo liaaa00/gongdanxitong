@@ -28,6 +28,7 @@ import { normalizePayrollSlipDisplay } from '@/utils/payrollBankCard';
 import { DISPATCHED_NINE_STATUS_OPTIONS } from '@/utils/dispatchedStatusFilter';
 import {
   getCachedMonthOrNull,
+  KEEP_ALIVE_ROUTE_ACTIVATED_EVENT,
   toMonthKey,
   updateCachedListPageState,
 } from '@/utils/listPageState';
@@ -349,6 +350,9 @@ const OnboardingModule: React.FC = () => {
   const [batchForm] = Form.useForm();
   const [batchImportMode, setBatchImportMode] = useState<DispatchedBatchImportMode | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [searchKeyword, setSearchKeyword] = useState('');
+  const [appliedSearchKeyword, setAppliedSearchKeyword] = useState('');
+  const [searchVersion, setSearchVersion] = useState(0);
 
   const currentModule = moduleCode || '';
   const pageStateKey = `onboarding-module-${currentModule || 'unknown'}`;
@@ -368,6 +372,16 @@ const OnboardingModule: React.FC = () => {
     ));
     setSelectedRows((previousRows) => (previousRows.length === 0 ? previousRows : []));
   }, [currentModule, pageStateKey]);
+
+  useEffect(() => {
+    const handleKeepAliveRouteActivated = (event: Event) => {
+      const detail = (event as CustomEvent<{ pathname?: string; refreshAll?: boolean }>).detail;
+      if (!detail?.refreshAll && detail?.pathname !== `/onboarding/${currentModule}`) return;
+      actionRef.current?.reload();
+    };
+    window.addEventListener(KEEP_ALIVE_ROUTE_ACTIVATED_EVENT, handleKeepAliveRouteActivated);
+    return () => window.removeEventListener(KEEP_ALIVE_ROUTE_ACTIVATED_EVENT, handleKeepAliveRouteActivated);
+  }, [currentModule]);
 
   useEffect(() => {
     if (!didMountFilterReloadRef.current) {
@@ -511,11 +525,11 @@ const OnboardingModule: React.FC = () => {
             hideInSearch: true,
             renderText: (_: unknown, record: DispatchedOrderItem) => record.extra_data?.need_esign ?? '-',
           }, {
-            title: '纸质合同模板名称',
-            key: 'paper_contract_template',
+            title: '特殊合同模板名称',
+            key: 'special_contract_template_name',
             width: 200,
             hideInSearch: true,
-            renderText: (_: unknown, record: DispatchedOrderItem) => record.extra_data?.paper_contract_template ?? '-',
+            renderText: (_: unknown, record: DispatchedOrderItem) => record.extra_data?.special_contract_template_name ?? '-',
           }]
         : []),
       {
@@ -565,9 +579,10 @@ const OnboardingModule: React.FC = () => {
       ...headerFilters,
       module_code: backendModuleCode,
       orderMonth: month ? month.format('YYYY-MM') : undefined,
+      keyword: appliedSearchKeyword || undefined,
     });
     return { data: result.list, success: true, total: result.total };
-  }, [backendModuleCode, month, tableFilters]);
+  }, [appliedSearchKeyword, backendModuleCode, month, tableFilters]);
 
   const handleBatchAccept = async (rows: DispatchedOrderItem[] = selectedRows) => {
     const ids = rows
@@ -762,7 +777,7 @@ const OnboardingModule: React.FC = () => {
       ],
     }}>
       <ProTable<DispatchedOrderItem>
-        key={currentModule}
+        key={`${currentModule}-${searchVersion}`}
         getPopupContainer={() => document.body}
         actionRef={actionRef}
         columns={resolvedColumns}
@@ -777,6 +792,19 @@ const OnboardingModule: React.FC = () => {
             : `${moduleLabel}列表`}
         options={false}
         toolBarRender={() => [
+          <Input.Search
+            key="keyword"
+            allowClear
+            value={searchKeyword}
+            enterButton={<SearchOutlined />}
+            placeholder="搜索工单号、客户、员工或证件号"
+            onChange={(event) => setSearchKeyword(event.target.value)}
+            onSearch={(value) => {
+              setAppliedSearchKeyword(value.trim());
+              setSearchVersion((current) => current + 1);
+            }}
+            style={{ width: 280 }}
+          />,
           <span key="columns">{columnConfig.button}</span>,
           canBatchImport && <Button key="import-status" icon={<UploadOutlined />} onClick={() => setBatchImportMode('status')}>
             导入办理结果

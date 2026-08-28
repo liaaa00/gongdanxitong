@@ -16,7 +16,7 @@ import {
   ModuleHandler,
 } from 'src/entities';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
-import { toWorkOrderSubOrderItems } from 'src/modules/work-orders/work-order.mapper';
+import { toWorkOrderListItem, toWorkOrderSubOrderItems } from 'src/modules/work-orders/work-order.mapper';
 import {
   requiresResignationAttachmentOnSubmission,
   shouldDispatchWorkOrderChildAtSubmission,
@@ -542,7 +542,32 @@ describe('WorkOrderService unit tests', () => {
     expect(result.items).toHaveLength(2);
   });
 
-  it('lets an explicit created-time sort override the default status priority', async () => {
+  it('uses latest submitted time by default and leaves drafts last', async () => {
+    const qb = createQueryBuilderMock([makeWorkOrder()], 1);
+    workOrderRepository.createQueryBuilder.mockReturnValue(qb);
+
+    await service.findAll(
+      { page: 1, pageSize: 20 },
+      makeUser({ roles: ['admin'] }),
+    );
+
+    expect(qb.orderBy).toHaveBeenCalledWith('w.submittedAt', 'DESC', 'NULLS LAST');
+    expect(qb.orderBy).not.toHaveBeenCalledWith('status_priority', 'ASC');
+  });
+
+  it('supports explicit submitted-time and created-time sorting', async () => {
+    const qb = createQueryBuilderMock([makeWorkOrder()], 1);
+    workOrderRepository.createQueryBuilder.mockReturnValue(qb);
+
+    await service.findAll(
+      { page: 1, pageSize: 20, sort: 'submitted_at:asc' },
+      makeUser({ roles: ['admin'] }),
+    );
+
+    expect(qb.orderBy).toHaveBeenCalledWith('w.submittedAt', 'ASC');
+  });
+
+  it('lets an explicit created-time sort override the default submitted-time order', async () => {
     const qb = createQueryBuilderMock([makeWorkOrder()], 1);
     workOrderRepository.createQueryBuilder.mockReturnValue(qb);
 
@@ -552,7 +577,6 @@ describe('WorkOrderService unit tests', () => {
     );
 
     expect(qb.orderBy).toHaveBeenCalledWith('w.createdAt', 'ASC');
-    expect(qb.orderBy).not.toHaveBeenCalledWith('status_priority', 'ASC');
   });
 
   it('exports only selected onboarding/resignation main orders for administrators', async () => {
@@ -720,6 +744,18 @@ describe('WorkOrderService unit tests', () => {
     expect(children).toEqual([
       expect.objectContaining({ id: 'do-contract', moduleCode: 'contract' }),
     ]);
+  });
+
+  it('maps resignation_date to last_work_date in the resignation list', () => {
+    const item = toWorkOrderListItem(makeWorkOrder({
+      orderType: OrderType.RESIGNATION,
+      extraData: { resignation_date: '2026-08-24' },
+    }));
+
+    expect(item).toMatchObject({
+      lastWorkDate: '2026-08-24',
+      last_work_date: '2026-08-24',
+    });
   });
 
   it('restricts resignation certificate child summaries to Yang Chun, Jiang Lu, and admins', async () => {

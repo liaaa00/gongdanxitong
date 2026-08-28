@@ -4,7 +4,7 @@ import { FieldType } from 'src/entities';
 import { ONBOARDING_TEMPLATE_ORDER, seedImportTemplateFields } from 'src/database/seeds/seed-import-template-fields';
 
 describe('onboarding import template seeds', () => {
-  it('keeps the universal order without regional supplementary fund and preserves special remark as the final column', async () => {
+  it('keeps supplementary fund ratio in the universal order and preserves special remark as the final column', async () => {
     const saved: Array<Record<string, unknown>> = [];
     const repository = {
       delete: jest.fn().mockResolvedValue(undefined),
@@ -22,10 +22,11 @@ describe('onboarding import template seeds', () => {
     await seedImportTemplateFields(dataSource);
 
     expect(new Set(ONBOARDING_TEMPLATE_ORDER)).toHaveProperty('size', ONBOARDING_TEMPLATE_ORDER.length);
-    expect(ONBOARDING_TEMPLATE_ORDER).not.toContain('supplementary_fund_ratio');
+    expect(ONBOARDING_TEMPLATE_ORDER).toContain('supplementary_fund_ratio');
+    expect(ONBOARDING_TEMPLATE_ORDER.indexOf('supplementary_fund_ratio')).toBe(ONBOARDING_TEMPLATE_ORDER.indexOf('fund_ratio') + 1);
     expect(ONBOARDING_TEMPLATE_ORDER.at(-1)).toBe('special_remark');
     expect(ONBOARDING_TEMPLATE_ORDER.indexOf('need_payroll_slip')).toBe(ONBOARDING_TEMPLATE_ORDER.indexOf('remark') - 1);
-    expect(ONBOARDING_TEMPLATE_ORDER.slice(36, 54)).toEqual([
+    expect(ONBOARDING_TEMPLATE_ORDER.slice(ONBOARDING_TEMPLATE_ORDER.indexOf('household_address'), ONBOARDING_TEMPLATE_ORDER.indexOf('need_contract_urge') + 1)).toEqual([
       'household_address',
       'bank_location',
       'bank_name',
@@ -42,7 +43,7 @@ describe('onboarding import template seeds', () => {
       'project_name',
       'work_arrangement',
       'contract_template',
-      'paper_contract_template',
+      'special_contract_template_name',
       'need_contract_urge',
     ]);
     expect(ONBOARDING_TEMPLATE_ORDER).not.toContain('postal_code');
@@ -126,7 +127,7 @@ describe('onboarding import template seeds', () => {
     });
     expect(byCode.get('education')).toMatchObject({ isIncludedInTemplate: true });
     expect(byCode.get('supplementary_fund_ratio')).toMatchObject({
-      isIncludedInTemplate: false,
+      isIncludedInTemplate: true,
       businessContext: ['onboarding', 'resignation'],
       isRequired: false,
       defaultRequired: false,

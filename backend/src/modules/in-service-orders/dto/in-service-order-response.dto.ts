@@ -12,6 +12,21 @@ import {
 } from 'src/entities';
 
 export class InServiceOrderResponseDto {
+  /** 当前用户可见的详情字段快照，由字段权限拦截器和详情模板共同裁剪。 */
+  fields?: Array<{
+    fieldCode: string;
+    fieldName: string;
+    fieldType: string;
+    value: unknown;
+    permission: string;
+    supplementable?: boolean;
+    dropdownOptions?: Array<{ label: string; value: string }>;
+    validation?: { required: boolean; regex?: string; regexMsg?: string };
+  }>;
+  visibleFields?: string[];
+  readonlyFields?: string[];
+  _fieldPermissions?: Record<string, string>;
+  _detailTemplateFieldCodes?: string[];
   id!: string;
   orderNo!: string;
   orderType!: OrderType;

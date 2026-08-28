@@ -22,6 +22,7 @@ const modules: Array<Partial<WorkOrderModuleConfig>> = [
   { moduleCode: 'renewal_contract', moduleName: '劳动合同续签', moduleType: 'sub_module', parentModuleCode: 'employment_management', displayOrder: 21, description: '续签合同办理；第一阶段隐藏' },
   { moduleCode: 'benefit_apply', moduleName: '待遇申报', moduleType: 'sub_module', parentModuleCode: 'employment_management', displayOrder: 22, description: '在职待遇申报办理；第一阶段隐藏' },
   { moduleCode: 'social_insurance_change', moduleName: '社保公积金变更', moduleType: 'sub_module', parentModuleCode: 'employment_management', displayOrder: 23, description: '在职社保公积金变更；第一阶段隐藏' },
+  { moduleCode: 'in_service_certificate', moduleName: '证明开具', moduleType: 'sub_module', parentModuleCode: 'employment_management', displayOrder: 24, description: '在职证明开具，支持管理员补派历史未指派工单' },
   { moduleCode: 'resignation_contact', moduleName: '离职材料收集', moduleType: 'sub_module', parentModuleCode: 'resignation_management', displayOrder: 31, description: '离职材料收集办理' },
   { moduleCode: 'data_entry_resign', moduleName: '减员报岗录入', moduleType: 'sub_module', parentModuleCode: 'resignation_management', displayOrder: 32, description: '离职减员报岗录入' },
   { moduleCode: 'resignation_social_insurance', moduleName: '社保公积金减员', moduleType: 'sub_module', parentModuleCode: 'resignation_management', displayOrder: 33, description: '离职社保公积金减员，负责人傅倩雯' },
@@ -39,6 +40,7 @@ const defaultSlaByModule: Record<string, { slaHours: number; reminderBeforeHours
   benefit: { slaHours: 48, reminderBeforeHours: 8 },
   benefit_apply: { slaHours: 48, reminderBeforeHours: 8 },
   social_insurance_change: { slaHours: 48, reminderBeforeHours: 8 },
+  in_service_certificate: { slaHours: 24, reminderBeforeHours: 4 },
   resignation_contact: { slaHours: 24, reminderBeforeHours: 4 },
   resignation_cert: { slaHours: 24, reminderBeforeHours: 4 },
   data_entry_resign: { slaHours: 24, reminderBeforeHours: 4 },
@@ -68,7 +70,7 @@ const contractFields = [
   'base_salary', 'other_salary', 'probation_salary',
   'payroll_cycle', 'payroll_date',
   'business_mode', 'employee_type',
-  'need_company_contract', 'need_esign', 'esign_platform', 'contract_subject', 'contract_template', 'paper_contract_template', 'need_contract_urge',
+  'need_company_contract', 'need_esign', 'esign_platform', 'contract_subject', 'contract_template', 'special_contract_template_name', 'need_contract_urge',
   'contract_feedback',
 ];
 

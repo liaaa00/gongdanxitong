@@ -18,6 +18,7 @@ export interface WorkOrderItem {
   createdByName?: string | null;
   department_id: string;
   extra_data: Record<string, unknown>;
+  last_work_date?: string | null;
   submitted_at: string | null;
   completed_at: string | null;
   created_at: string;
@@ -398,8 +399,8 @@ const mockExtraData: Record<string, unknown> = {
   need_esign: '1.是',
   esign_platform: '速创',
   contract_subject: '浙江企服服务外包有限公司',
-  contract_template: '标准',
-  paper_contract_template: '',
+  contract_template: '标准模板',
+  special_contract_template_name: '',
   need_contract_urge: '否',
   contract_feedback: '',
   need_onboarding_contact: '是',
@@ -556,12 +557,12 @@ const AVAILABLE_FIELDS_MOCK = [
   { field_code: 'project_name', field_name: '项目名称' },
   { field_code: 'work_arrangement', field_name: '安排或调整工作的情况' },
   { field_code: 'contract_template', field_name: '劳动合同模板（标准模板/特殊模板）' },
-  { field_code: 'paper_contract_template', field_name: '纸质合同模板名称' },
+  { field_code: 'special_contract_template_name', field_name: '特殊合同模板名称' },
   { field_code: 'need_contract_urge', field_name: '劳动合同签署是否需要催办员工' },
   { field_code: 'need_onboarding_contact', field_name: '入职材料是否需要集约收集', is_required: true },
   { field_code: 'feedback_deadline', field_name: '反馈截止日期' },
-  { field_code: 'is_common_template', field_name: '是否为通用模板' },
-  { field_code: 'template_name', field_name: '模板名称' },
+  { field_code: 'is_common_template', field_name: '是否使用通用材料' },
+  { field_code: 'template_name', field_name: '特殊材料收集内容' },
   { field_code: 'need_company_payroll', field_name: '是否企服发薪', is_required: true },
   { field_code: 'payroll_location', field_name: '发薪地' },
   { field_code: 'social_urge', field_name: '社保公积金未办是否需要催办', is_required: true },
@@ -850,6 +851,7 @@ function normalizeWorkOrderResponse(raw: unknown): WorkOrderItem {
     createdByName: (source.createdByName ?? source.created_by_name ?? (source.createdBy as any)?.realName ?? (source.createdBy as any)?.username ?? null) as string | null,
     department_id: String(source.department_id ?? source.departmentId ?? (source.department as any)?.id ?? ''),
     extra_data: extra,
+    last_work_date: (source.last_work_date ?? source.lastWorkDate ?? extra.last_work_date ?? extra.lastWorkDate ?? extra.resignation_date ?? null) as string | null,
     submitted_at: (source.submitted_at ?? source.submittedAt ?? null) as string | null,
     completed_at: (source.completed_at ?? source.completedAt ?? null) as string | null,
     created_at: String(source.created_at ?? source.createdAt ?? ''),

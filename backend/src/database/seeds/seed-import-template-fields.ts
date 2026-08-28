@@ -32,6 +32,7 @@ export const ONBOARDING_TEMPLATE_ORDER = [
   'social_base',
   'fund_base',
   'fund_ratio',
+  'supplementary_fund_ratio',
   'need_payroll_slip',
   'remark',
   'household_type',
@@ -55,7 +56,7 @@ export const ONBOARDING_TEMPLATE_ORDER = [
   'project_name',
   'work_arrangement',
   'contract_template',
-  'paper_contract_template',
+  'special_contract_template_name',
   'need_contract_urge',
   'need_onboarding_contact',
   'feedback_deadline',
@@ -69,7 +70,7 @@ export const ONBOARDING_TEMPLATE_ORDER = [
 
 const ONBOARDING_TEMPLATE_HEADER_ALIASES: Partial<Record<(typeof ONBOARDING_TEMPLATE_ORDER)[number], string>> = {
   company_address: '劳动合同主体注册地',
-  paper_contract_template: '纸质合同模板名称',
+  special_contract_template_name: '特殊合同模板名称',
 };
 
 const ONBOARDING_TEMPLATE_REQUIRED_OVERRIDES: Partial<Record<(typeof ONBOARDING_TEMPLATE_ORDER)[number], boolean>> = {

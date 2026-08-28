@@ -49,6 +49,17 @@ export interface InServiceTransferRecord {
   transferredAt: string;
 }
 
+export interface InServiceOrderField {
+  fieldCode: string;
+  fieldName: string;
+  fieldType: string;
+  value: unknown;
+  permission: 'visible' | 'hidden' | 'readonly' | 'masked' | string;
+  supplementable?: boolean;
+  dropdownOptions?: Array<{ label: string; value: string }>;
+  validation?: { required: boolean; regex?: string; regexMsg?: string };
+}
+
 export interface InServiceOrder extends InServiceOrderPayload {
   departmentId: string;
   id: string;
@@ -89,6 +100,11 @@ export interface InServiceOrder extends InServiceOrderPayload {
   createdAt: string;
   updatedAt: string;
   version: number;
+  fields?: InServiceOrderField[];
+  visibleFields?: string[];
+  readonlyFields?: string[];
+  _fieldPermissions?: Record<string, string>;
+  _detailTemplateFieldCodes?: string[];
 }
 
 export interface InServiceOrderListQuery {
@@ -97,6 +113,7 @@ export interface InServiceOrderListQuery {
   customerId?: string;
   departmentId?: string;
   handlerId?: string;
+  onlyUnassigned?: boolean;
   orderKind?: InServiceOrderKind;
   businessScope?: 'beilun' | 'out_of_province';
   businessType?: InServiceBusinessType;
@@ -299,6 +316,30 @@ export function normalizeInServiceOrder(raw: RawRecord): InServiceOrder {
     createdAt: asIso(raw.createdAt ?? raw.created_at) || new Date().toISOString(),
     updatedAt: asIso(raw.updatedAt ?? raw.updated_at) || new Date().toISOString(),
     version: Number(raw.version ?? 1),
+    fields: Array.isArray(raw.fields)
+      ? raw.fields.map((field: RawRecord) => ({
+          fieldCode: String(field.fieldCode ?? field.field_code ?? ''),
+          fieldName: String(field.fieldName ?? field.field_name ?? field.fieldCode ?? field.field_code ?? ''),
+          fieldType: String(field.fieldType ?? field.field_type ?? 'text'),
+          value: field.value ?? null,
+          permission: String(field.permission ?? 'visible'),
+          supplementable: Boolean(field.supplementable),
+          dropdownOptions: Array.isArray(field.dropdownOptions ?? field.dropdown_options)
+            ? (field.dropdownOptions ?? field.dropdown_options)
+            : undefined,
+          validation: field.validation,
+        }))
+      : undefined,
+    visibleFields: Array.isArray(raw.visibleFields ?? raw.visible_fields)
+      ? (raw.visibleFields ?? raw.visible_fields).map(String)
+      : undefined,
+    readonlyFields: Array.isArray(raw.readonlyFields ?? raw.readonly_fields)
+      ? (raw.readonlyFields ?? raw.readonly_fields).map(String)
+      : undefined,
+    _fieldPermissions: (raw._fieldPermissions ?? raw._field_permissions ?? {}) as Record<string, string>,
+    _detailTemplateFieldCodes: Array.isArray(raw._detailTemplateFieldCodes ?? raw._detail_template_field_codes)
+      ? (raw._detailTemplateFieldCodes ?? raw._detail_template_field_codes).map(String)
+      : undefined,
   };
 }
 
@@ -323,6 +364,7 @@ export async function getInServiceOrders(query: InServiceOrderListQuery = {}): P
       if (query.customerId && item.customerId !== query.customerId) return false;
       if (query.departmentId && item.departmentId !== query.departmentId) return false;
       if (query.handlerId && item.handlerId !== query.handlerId) return false;
+      if (query.onlyUnassigned && item.handlerId) return false;
       if (query.orderKind && item.orderKind !== query.orderKind) return false;
       if (query.businessScope && item.businessScope !== query.businessScope) return false;
       if (query.businessType && item.businessType !== query.businessType) return false;

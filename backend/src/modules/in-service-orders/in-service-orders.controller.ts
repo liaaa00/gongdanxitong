@@ -16,6 +16,7 @@ import {
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
+import { FieldPermissionScenario } from 'src/modules/field-permissions/field-permission.decorator';
 import {
   ApproveInServiceOrderDto,
   CancelInServiceOrderDto,
@@ -107,6 +108,7 @@ export class InServiceOrdersController {
   }
 
   @Get(':id')
+  @FieldPermissionScenario('main')
   findOne(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: JwtUserPayload) {
     return this.service.findOne(id, user);
   }

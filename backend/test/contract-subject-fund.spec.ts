@@ -39,10 +39,10 @@ describe('contract subject fund rules', () => {
   });
 
   it('writes dependent Excel validations for subject, address and fund fields', async () => {
-    const fields = ['contract_subject', 'company_address', 'fund_ratio', 'supplementary_fund_ratio'].map((fieldCode, index) => ({
+    const fields = ['contract_subject', 'company_address', 'social_location', 'fund_ratio', 'supplementary_fund_ratio'].map((fieldCode, index) => ({
       fieldCode,
       fieldName: fieldCode,
-      fieldType: fieldCode === 'contract_subject' || fieldCode === 'company_address' ? 'text' : 'dropdown',
+      fieldType: ['contract_subject', 'company_address', 'social_location'].includes(fieldCode) ? 'text' : 'dropdown',
       isRequired: false,
       defaultRequired: false,
       conditionalRequired: null,
@@ -70,6 +70,18 @@ describe('contract subject fund rules', () => {
           fundRatioMode: 'same',
           isActive: true,
         }]),
+        listFundLocationRules: jest.fn().mockResolvedValue([{
+          id: 'location:上海/上海',
+          subjectName: '上海/上海',
+          socialCreditCode: null,
+          province: '上海',
+          city: '上海',
+          registeredAddress: '',
+          fundRatioOptions: ['5%+5%'],
+          supplementaryFundRatioOptions: ['2%+2%', '3%+3%'],
+          fundRatioMode: 'same',
+          isActive: true,
+        }]),
       } as any,
     );
 
@@ -80,9 +92,14 @@ describe('contract subject fund rules', () => {
     const options = workbook.getWorksheet('__options')!;
     expect(options.getCell('CB1').value).toBe('上海主体');
     expect(options.getCell('CC1').value).toBe('上海地址');
+    expect(options.getCell('CD1').value).toBe('上海');
     expect(sheet.getCell('B6').dataValidation?.formulae?.[0]).toContain('__options');
-    expect(sheet.getCell('C6').dataValidation?.formulae?.[0]).toContain('MATCH');
-    expect(sheet.getCell('D6').dataValidation?.formulae?.[0]).toContain('MATCH');
-    expect(sheet.getCell('E6').dataValidation?.formulae?.[0]).toContain('MATCH');
+    expect(sheet.getCell('C6').dataValidation?.formulae?.[0]).toContain('MATCH(B6');
+    expect(sheet.getCell('D6').dataValidation?.formulae?.[0]).toContain('__options');
+    expect(sheet.getCell('D6').dataValidation?.error).toContain('有效的缴纳地城市');
+    expect(sheet.getCell('E6').dataValidation?.formulae?.[0]).toContain('D6');
+    expect(sheet.getCell('E6').dataValidation?.error).toContain('缴纳地');
+    expect(sheet.getCell('F6').dataValidation?.formulae?.[0]).toContain('D6');
+    expect(sheet.getCell('F6').dataValidation?.error).toContain('缴纳地');
   });
 });

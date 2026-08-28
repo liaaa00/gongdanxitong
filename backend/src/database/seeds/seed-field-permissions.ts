@@ -95,9 +95,9 @@ const SOCIAL_INSURANCE_ROLE_CODES = [
 // 各子工单可见字段严格按《浙江企服服务外包增员信息表》「涉及工单」标注重建（杭州 sheet）。
 // 反馈类字段（contract_feedback/onboarding_feedback/data_entry_feedback）不在导入表列中，按口径不显示。
 const CONTRACT_VISIBLE = new Set([
-  'customer_name','customer_code','outsource_type','position','position_type','employee_name','id_card_type','id_card_no','gender','mobile','email','current_address','household_address','contract_term_type','contract_term','contract_start_date','contract_end_date','probation_start_date','probation_months','probation_end_date','work_city','work_hour_system','salary_form','base_salary','other_salary','probation_salary','probation_other_salary','payroll_cycle','payroll_date','bank_name','bank_account','business_mode','employee_type','need_company_contract','need_esign','esign_platform','contract_subject','company_address','project_name','work_arrangement','contract_template','paper_contract_template','need_contract_urge',
+  'customer_name','customer_code','outsource_type','position','position_type','employee_name','id_card_type','id_card_no','gender','mobile','email','current_address','household_address','contract_term_type','contract_term','contract_start_date','contract_end_date','probation_start_date','probation_months','probation_end_date','work_city','work_hour_system','salary_form','base_salary','other_salary','probation_salary','probation_other_salary','payroll_cycle','payroll_date','bank_name','bank_account','business_mode','employee_type','need_company_contract','need_esign','esign_platform','contract_subject','company_address','project_name','work_arrangement','contract_template','special_contract_template_name','need_contract_urge',
 ]);
-const CONTRACT_EDITABLE = new Set(['contract_feedback', 'paper_contract_template', 'special_remark']);
+const CONTRACT_EDITABLE = new Set(['contract_feedback', 'special_contract_template_name', 'special_remark']);
 
 const ONBOARDING_VISIBLE = new Set([
   'customer_name','customer_code','employee_name','id_card_no','mobile','email',

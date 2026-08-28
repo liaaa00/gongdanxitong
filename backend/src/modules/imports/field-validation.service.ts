@@ -112,7 +112,7 @@ const HEADER_ALIASES: Record<string, string[]> = {
   need_company_contract: ['是否企服发起劳动合同', '是否签订劳动合同', '是否需要劳动合同', '是否发起劳动合同', '是否公司发起劳动合同', '是否企服发起合同'],
   contract_subject: ['劳动合同主体', '合同主体', '签约主体'],
   contract_template: ['劳动合同模板', '合同模板', '合同版本', '标准模板', '特殊模板'],
-  paper_contract_template: ['纸质合同模板名称', '纸质合同模板', '纸质合同版本', '纸质劳动合同模板'],
+  special_contract_template_name: ['特殊合同模板名称', '特殊合同模板', '合同特殊模板名称'],
   need_contract_urge: ['劳动合同签署是否需要催办员工', '合同签署是否需要催办', '是否需要催签合同', '是否催办合同', '是否需催办劳动合同签署', '是否需要催办劳动合同签署', '劳动合同催办', '劳动合同签署催办'],
   social_urge: ['社保公积金未办是否需要催办', '社保公积金未办是否需要催办员工', '社保公积金是否需要催办', '社保公积金催办', '社保公积金未办催办', '社保公积金办理是否催办', '社保催办', '公积金催办'],
   contract_feedback: ['劳动合同新签反馈', '劳动合同签订反馈', '合同新签反馈', '合同签订反馈', '合同反馈'],
@@ -135,8 +135,8 @@ const HEADER_ALIASES: Record<string, string[]> = {
   project_name: ['项目名称', '项目', '所属项目'],
   work_arrangement: ['安排或调整工作的情况', '工作安排', '安排或调整工作', '可调整工作地点', '工作调整情况'],
   feedback_deadline: ['反馈截止日期', '需要反馈截止日期', '反馈截止时间', '反馈期限'],
-  is_common_template: ['是否为通用模板', '是否通用模板', '通用模板'],
-  template_name: ['模板名称', '模版名称', '通用模板名称'],
+  is_common_template: ['是否使用通用材料', '是否为通用模板', '是否通用模板', '通用模板'],
+  template_name: ['特殊材料收集内容', '模板名称', '模版名称', '通用模板名称'],
   social_pay_region: ['缴纳地区', '社保缴纳地区', '参保地区', '社保公积金缴纳地区', '社保公积金缴纳地'],
   social_stop_month: ['社保公积金停保月', '停保月', '社保停保月', '公积金停保月', '减员月份', '停保月份'],
   resignation_reason: ['离职原因', '减员原因', '离职事由'],
@@ -362,31 +362,47 @@ export class ImportFieldValidationService {
     fields: FieldConfig[],
     errors: RowValidationError[],
   ): Promise<void> {
-    if (!this.contractSubjectsService || !fields.some((field) => field.fieldCode === 'contract_subject')) return;
+    const relationshipFields = new Set([
+      'contract_subject', 'company_address', 'social_location', 'social_pay_region',
+      'fund_ratio', 'supplementary_fund_ratio',
+    ]);
+    if (!this.contractSubjectsService || !fields.some((field) => relationshipFields.has(field.fieldCode))) return;
     const subjectName = typeof normalized.contract_subject === 'string'
       ? normalized.contract_subject.trim()
       : '';
-    if (!subjectName) return;
-    const subject = await this.contractSubjectsService.findByName(subjectName);
-    if (!subject) {
+    const subject = subjectName
+      ? await this.contractSubjectsService.findByName(subjectName)
+      : null;
+    if (subjectName && !subject) {
       errors.push({ fieldCode: 'contract_subject', reason: 'enum', message: '劳动合同主体不在正式主体目录中' });
-      return;
     }
     const address = normalized.company_address;
-    if (this.hasValue(address) && String(address).trim() !== subject.registeredAddress.trim()) {
+    if (subject && this.hasValue(address) && String(address).trim() !== subject.registeredAddress.trim()) {
       errors.push({ fieldCode: 'company_address', reason: 'relation', message: '劳动合同主体注册地必须与主体目录一致' });
     }
-    const allowedRatios = getAllowedFundRatios(subject);
+    const socialLocation = this.readText(normalized.social_location ?? normalized.social_pay_region);
+    const fundRule = socialLocation
+      ? await this.contractSubjectsService.findFundRuleByLocation(socialLocation)
+      : null;
+    if (!fundRule) {
+      if (socialLocation) {
+        errors.push({ fieldCode: 'social_location', reason: 'relation', message: '缴纳地未匹配正式公积金规则' });
+      } else if (this.hasValue(normalized.fund_ratio) || this.hasValue(normalized.supplementary_fund_ratio)) {
+        errors.push({ fieldCode: 'social_location', reason: 'required', message: '填写公积金比例前必须选择缴纳地' });
+      }
+      return;
+    }
+    const allowedRatios = getAllowedFundRatios(fundRule);
     const ratio = normalized.fund_ratio;
     if (allowedRatios.length > 0 && !this.hasValue(ratio)) {
-      errors.push({ fieldCode: 'fund_ratio', reason: 'required', message: '该劳动合同主体已开公积金户，公积金比例为必填项' });
+      errors.push({ fieldCode: 'fund_ratio', reason: 'required', message: '该参保地已开公积金户，公积金比例为必填项' });
     } else if (this.hasValue(ratio) && !allowedRatios.includes(String(ratio))) {
-      errors.push({ fieldCode: 'fund_ratio', reason: 'relation', message: '公积金比例不属于该劳动合同主体允许的比例' });
+      errors.push({ fieldCode: 'fund_ratio', reason: 'relation', message: '公积金比例不属于该参保地允许的比例' });
     }
     const supplementary = normalized.supplementary_fund_ratio;
-    const supplementaryOptions = subject.supplementaryFundRatioOptions ?? [];
+    const supplementaryOptions = fundRule?.supplementaryFundRatioOptions ?? [];
     if (this.hasValue(supplementary) && !supplementaryOptions.includes(String(supplementary))) {
-      errors.push({ fieldCode: 'supplementary_fund_ratio', reason: 'relation', message: '补充公积金比例不属于该上海主体允许的比例' });
+      errors.push({ fieldCode: 'supplementary_fund_ratio', reason: 'relation', message: '补充公积金比例不匹配参保地规则' });
     }
   }
 
@@ -559,6 +575,12 @@ export class ImportFieldValidationService {
     if (typeof value === 'string') return value.trim().length > 0;
     if (Array.isArray(value)) return value.length > 0;
     return true;
+  }
+
+  private readText(value: unknown): string | null {
+    if (value === null || value === undefined) return null;
+    const text = String(value).trim();
+    return text || null;
   }
 
   private headerMatchKeys(header: string, field: FieldConfig, includeFieldAliases: boolean): Set<string> {

@@ -1,4 +1,5 @@
 import {
+  BusinessScope,
   DispatchModuleCode,
   DispatchStrategy,
   DispatchedOrder,
@@ -11,6 +12,7 @@ import {
 } from 'src/entities';
 import { seedDispatchRules } from 'src/database/seeds/seed-dispatch-rules';
 import {
+  assertResignationCertificateIssueAfterLastWorkDate,
   buildResignationCertificateResultPatch,
   canStartResignationCertificate,
 } from 'src/modules/dispatched-orders/dispatched-order.service';
@@ -37,6 +39,26 @@ describe('离职证明子工单', () => {
       completedAt,
       '材料已收齐',
     )).toEqual({});
+  });
+
+  it('requires certificate completion after the last work date', () => {
+    expect(() => assertResignationCertificateIssueAfterLastWorkDate(
+      DispatchModuleCode.RESIGNATION_CERT,
+      { last_work_date: '2026-08-25' },
+      new Date('2026-08-25T10:00:00.000Z'),
+    )).toThrow('离职证明开具时间必须晚于最后工作日');
+
+    expect(() => assertResignationCertificateIssueAfterLastWorkDate(
+      DispatchModuleCode.RESIGNATION_CERT,
+      { last_work_date: '2026-08-25' },
+      new Date('2026-08-25T16:00:00.000Z'),
+    )).not.toThrow();
+
+    expect(() => assertResignationCertificateIssueAfterLastWorkDate(
+      DispatchModuleCode.RESIGNATION_CERT,
+      {},
+      new Date('2026-08-25T16:00:00.000Z'),
+    )).not.toThrow();
   });
 
   it('waits for material collection only when the resignation requires it', () => {
@@ -399,5 +421,41 @@ describe('离职证明子工单', () => {
       }),
     }));
     expect(workOrderTransactionRepository.save.mock.calls[0][0].extraData).not.toHaveProperty('resignation_cert_file_id');
+  });
+
+  it('notifies only active same-scope recipients when handler configuration contains stale accounts', async () => {
+    const moduleHandlerRepository = {
+      find: jest.fn(async () => [
+        { handlerId: 'chenyujie-id' },
+        { handlerId: 'annazhen-id' },
+      ]),
+    };
+    const userRepository = {
+      find: jest.fn(async () => [{ id: 'chenyujie-id' }]),
+    };
+    const service = new (await import('src/modules/dispatched-orders/dispatched-order.service')).DispatchedOrderService(
+      {} as never,
+      {} as never,
+      moduleHandlerRepository as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    Object.defineProperty(service, 'userRepository', { value: userRepository });
+    const order = Object.assign(new DispatchedOrder(), {
+      handlerId: 'missing-user-id',
+      moduleCode: DispatchModuleCode.DATA_ENTRY_RESIGN,
+      parentOrder: Object.assign(new WorkOrder(), { businessScope: BusinessScope.BEILUN }),
+    });
+
+    await expect((service as any).resolveDispatchedRecipients(order)).resolves.toEqual(['chenyujie-id']);
+    expect(userRepository.find).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ businessScope: BusinessScope.BEILUN, isActive: true }),
+    }));
   });
 });

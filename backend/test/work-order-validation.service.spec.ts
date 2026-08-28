@@ -2,6 +2,7 @@ import { DataSource, Repository } from 'typeorm';
 import { BusinessScope, FieldConfig, FieldType, OrderType, WorkOrder, WorkOrderStatus } from 'src/entities';
 import { AstEvaluator } from 'src/modules/dispatch-engine/ast-evaluator';
 import { WorkOrderValidationService } from 'src/modules/work-orders/work-order-validation.service';
+import { ContractSubjectsService } from 'src/modules/contract-subjects/contract-subjects.service';
 
 function field(input: Partial<FieldConfig>): FieldConfig {
   return {
@@ -358,6 +359,31 @@ describe('WorkOrderValidationService submit validation', () => {
       expect.stringContaining('ON CONFLICT (customer_code, business_scope)'),
       ['C-NEW', '新客户', BusinessScope.OUT_OF_PROVINCE],
     );
+  });
+
+  it('rejects an onboarding order whose payment location has no fund rule', async () => {
+    const contractSubjectsService = {
+      findByName: jest.fn().mockResolvedValue(null),
+      findFundRuleByLocation: jest.fn().mockResolvedValue(null),
+    } as unknown as ContractSubjectsService;
+    const scopedService = new WorkOrderValidationService(
+      { find: jest.fn().mockResolvedValue([]) } as unknown as Repository<FieldConfig>,
+      { count: jest.fn() } as unknown as Repository<WorkOrder>,
+      { query: jest.fn() } as unknown as DataSource,
+      new AstEvaluator(),
+      contractSubjectsService,
+    );
+
+    await expect(scopedService.validateWorkOrder(makeWorkOrder({ social_location: '' }))).resolves.toBeUndefined();
+    await expect(scopedService.validateWorkOrder(makeWorkOrder({ social_location: '不存在的地区', fund_ratio: '5%+5%' }))).rejects.toMatchObject({
+      response: expect.objectContaining({
+        details: expect.objectContaining({
+          invalid: expect.arrayContaining([
+            expect.objectContaining({ fieldCode: 'social_location' }),
+          ]),
+        }),
+      }),
+    });
   });
 
   it('reports the chinese field name when requireText fails', () => {

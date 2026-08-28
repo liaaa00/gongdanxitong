@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import WorkOrders from './index';
+import WorkOrders, { shouldRefreshWorkOrdersOnActivation } from './index';
 
 const mocks = vi.hoisted(() => ({
   latestTableProps: undefined as any,
@@ -70,6 +70,19 @@ vi.mock('@/services/workOrders', () => ({
 }));
 
 describe('WorkOrders initiated read-only view', () => {
+  it('matches keep-alive activation only for the current list route', () => {
+    expect(shouldRefreshWorkOrdersOnActivation(
+      { pathname: '/work-orders', search: '?orderType=resignation' },
+      '/work-orders',
+      '?orderType=resignation',
+    )).toBe(true);
+    expect(shouldRefreshWorkOrdersOnActivation(
+      { pathname: '/work-orders', search: '?orderType=onboarding' },
+      '/work-orders',
+      '?orderType=resignation',
+    )).toBe(false);
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.latestTableProps = undefined;
@@ -148,6 +161,26 @@ describe('WorkOrders initiated read-only view', () => {
     expect(mocks.getWorkOrders).toHaveBeenCalledWith(expect.not.objectContaining({ createdAfter: expect.anything() }));
   });
 
+  it('sends the single toolbar keyword to the backend search', async () => {
+    mocks.pathname = '/work-orders';
+    mocks.search = '';
+
+    render(<WorkOrders />);
+
+    const keyword = screen.getByPlaceholderText('搜索工单号、客户、员工或证件号');
+    fireEvent.change(keyword, { target: { value: '客户A' } });
+    fireEvent.keyDown(keyword, { key: 'Enter', code: 'Enter' });
+
+    await act(async () => {
+      await Promise.resolve();
+      await mocks.latestTableProps.request({ current: 1, pageSize: 100 });
+    });
+
+    expect(mocks.getWorkOrders).toHaveBeenLastCalledWith(expect.objectContaining({
+      keyword: '客户A',
+    }));
+  });
+
   it('main work-order list keeps detail, single create, batch import, delete and batch delete operations', async () => {
     mocks.pathname = '/work-orders';
     mocks.search = '';
@@ -203,6 +236,38 @@ describe('WorkOrders initiated read-only view', () => {
     expect(result.data).toHaveLength(2);
   });
 
+  it('refreshes the cached resignation list when it becomes active again', async () => {
+    mocks.pathname = '/work-orders';
+    mocks.search = '?orderType=resignation';
+    const { unmount } = render(<WorkOrders />);
+    const previousProps = mocks.latestTableProps;
+
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('work-order:keep-alive-route-activated', {
+        detail: { pathname: '/work-orders', search: '?orderType=resignation' },
+      }));
+    });
+
+    await waitFor(() => expect(mocks.latestTableProps).not.toBe(previousProps));
+    unmount();
+  });
+
+  it('refreshes the main list after a child approval even when the event targets another list route', async () => {
+    mocks.pathname = '/work-orders';
+    mocks.search = '?orderType=resignation';
+    const { unmount } = render(<WorkOrders />);
+    const previousProps = mocks.latestTableProps;
+
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('work-order:keep-alive-route-activated', {
+        detail: { pathname: '/onboarding/resignation_cert', search: '', refreshAll: true },
+      }));
+    });
+
+    await waitFor(() => expect(mocks.latestTableProps).not.toBe(previousProps));
+    unmount();
+  });
+
   it('shows resignation-specific create and import actions when opened from resignation menu', async () => {
     mocks.pathname = '/work-orders';
     mocks.search = '?orderType=resignation';
@@ -222,6 +287,10 @@ describe('WorkOrders initiated read-only view', () => {
       orderType: 'resignation',
     }));
     expect(mocks.getWorkOrders).toHaveBeenCalledWith(expect.not.objectContaining({ createdAfter: expect.anything() }));
+
+    const lastWorkDateColumn = getColumn('last_work_date');
+    expect(lastWorkDateColumn).toBeDefined();
+    expect(lastWorkDateColumn.renderText?.(null, { last_work_date: '2026-08-25T00:00:00.000Z' })).toBe('2026-08-25');
   });
 
   it('passes the created-time sort through the main work-order request', async () => {

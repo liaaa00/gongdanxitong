@@ -15,7 +15,13 @@ import { ROLE } from '@/constants/roles';
 import { getModuleLabel } from '@/constants/modules';
 import { WORK_ORDER_STATUS_CODES, getStatusColor, getStatusText } from '@/constants/dictionaries';
 import { isPhase1VisibleOrderType } from '@/utils/moduleAccess';
-import { getCachedListPageState, getCachedMonthOrNull, toMonthKey, updateCachedListPageState } from '@/utils/listPageState';
+import {
+  KEEP_ALIVE_ROUTE_ACTIVATED_EVENT,
+  getCachedListPageState,
+  getCachedMonthOrNull,
+  toMonthKey,
+  updateCachedListPageState,
+} from '@/utils/listPageState';
 
 const RefButton = forwardRef<HTMLButtonElement, React.ComponentProps<typeof Button>>((props, ref) => (
   <Button ref={ref} {...props} />
@@ -38,6 +44,11 @@ function getMonthRange(value?: Dayjs | null): { submittedAfter: string; submitte
     submittedAfter: value.startOf('month').toISOString(),
     submittedBefore: value.endOf('month').toISOString(),
   };
+}
+
+function displayDateOnly(value: unknown): string {
+  const text = String(value ?? '').trim();
+  return text ? text.slice(0, 10) : '-';
 }
 
 const textHeaderFilter = (placeholder: string): Pick<ProColumns<WorkOrderItem>, 'filterDropdown' | 'filterIcon'> => ({
@@ -132,6 +143,14 @@ interface WorkOrdersProps {
   mode?: 'main' | 'initiated';
 }
 
+export function shouldRefreshWorkOrdersOnActivation(
+  detail: { pathname?: string; search?: string } | undefined,
+  pathname: string,
+  search: string,
+): boolean {
+  return detail?.pathname === pathname && (detail.search || '') === search;
+}
+
 const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -167,6 +186,8 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
   const cachedPageState = getCachedListPageState(pageStateKey);
   const [month, setMonth] = useState<Dayjs | null>(() => getCachedMonthOrNull(pageStateKey));
   const [submittedRange, setSubmittedRange] = useState<[Dayjs, Dayjs] | null>(null);
+  const [searchKeyword, setSearchKeyword] = useState('');
+  const [appliedSearchKeyword, setAppliedSearchKeyword] = useState('');
   const currentOrderTypeLabel = currentOrderType === 'resignation' ? '离职' : currentOrderType === 'onboarding' ? '入职' : '';
   const modulePrefix = currentOrderTypeLabel || '';
   const canBusinessUserCreateOrImport = isGroupMember || isGroupLeader;
@@ -188,6 +209,16 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
   useEffect(() => {
     setMonth(getCachedMonthOrNull(pageStateKey));
   }, [pageStateKey]);
+
+  useEffect(() => {
+    const handleKeepAliveRouteActivated = (event: Event) => {
+      const detail = (event as CustomEvent<{ pathname?: string; search?: string; refreshAll?: boolean }>).detail;
+      if (!detail?.refreshAll && !shouldRefreshWorkOrdersOnActivation(detail, location.pathname, location.search)) return;
+      setRefreshKey((value) => value + 1);
+    };
+    window.addEventListener(KEEP_ALIVE_ROUTE_ACTIVATED_EVENT, handleKeepAliveRouteActivated);
+    return () => window.removeEventListener(KEEP_ALIVE_ROUTE_ACTIVATED_EVENT, handleKeepAliveRouteActivated);
+  }, [location.pathname, location.search]);
 
   useEffect(() => {
     if (isBackendOnly) {
@@ -332,6 +363,16 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
       },
     },
     {
+      title: '提交时间',
+      dataIndex: 'submitted_at',
+      key: 'submitted_at',
+      width: 150,
+      valueType: 'dateTime',
+      sorter: true,
+      hideInSearch: true,
+      renderText: (value) => value || '-',
+    },
+    {
       title: '创建时间',
       dataIndex: 'created_at',
       key: 'created_at',
@@ -365,8 +406,21 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
       ),
     },
     ];
+
+    if (currentOrderType === 'resignation') {
+      const employeeIndex = baseColumns.findIndex((column) => column.dataIndex === 'employee_id_card');
+      baseColumns.splice(employeeIndex + 1, 0, {
+        title: '最后工作日',
+        dataIndex: 'last_work_date',
+        key: 'last_work_date',
+        width: 130,
+        hideInSearch: true,
+        renderText: (_, record) => displayDateOnly(record.last_work_date ?? record.extra_data?.last_work_date),
+      });
+    }
+
     return isInitiatedPage ? baseColumns.filter((column) => column.key !== 'actions') : baseColumns;
-  }, [canDelete, handleDelete, isAdmin, isBusinessOwner, isGroupLeader, isInitiatedPage, navigate]);
+  }, [canDelete, currentOrderType, handleDelete, isAdmin, isBusinessOwner, isGroupLeader, isInitiatedPage, navigate]);
 
   const requestFn = async (params: Record<string, unknown>) => {
     const monthRange = getMonthRange(month);
@@ -386,6 +440,7 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
       createdByName: params.createdByName || params.created_by || params.created_by_name,
       orderType: params.orderType || params.order_type || urlFilters.orderType,
       status: params.status || urlFilters.status,
+      keyword: appliedSearchKeyword || undefined,
     };
     Object.keys(query).forEach((key) => {
       if (query[key] === undefined || query[key] === '') delete query[key];
@@ -411,6 +466,19 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
         kanbanColumnKey="status"
         kanbanAllowedValues={KANBAN_STATUS_OPTIONS}
         toolBarRender={() => [
+          <Input.Search
+            key="keyword"
+            allowClear
+            value={searchKeyword}
+            enterButton={<SearchOutlined />}
+            placeholder="搜索工单号、客户、员工或证件号"
+            onChange={(event) => setSearchKeyword(event.target.value)}
+            onSearch={(value) => {
+              setAppliedSearchKeyword(value.trim());
+              setRefreshKey((current) => current + 1);
+            }}
+            style={{ width: 280 }}
+          />,
           <Space key="month">
             <span>工单月份：</span>
             <DatePicker

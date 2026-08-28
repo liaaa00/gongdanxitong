@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   getUnresolvedImportHeaders,
+  filterDeprecatedFields,
   type FieldMappingResult,
   type NewFieldDraft,
 } from './index';
@@ -14,6 +15,12 @@ const mappingResult = {
 } as Pick<FieldMappingResult, 'mapping'>;
 
 describe('ExcelUploader mapping guard', () => {
+  it('keeps onboarding location and fund ratio fields in required precheck results', () => {
+    expect(filterDeprecatedFields(['social_location', 'fund_ratio', 'current_address'])).toEqual([
+      'social_location', 'fund_ratio', 'current_address',
+    ]);
+  });
+
   it('blocks every ordinary header that has not been mapped', () => {
     expect(getUnresolvedImportHeaders(
       mappingResult,

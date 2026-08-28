@@ -7,6 +7,16 @@ import { ContractSubjectsService } from './contract-subjects.service';
 export class ContractSubjectsController {
   constructor(private readonly service: ContractSubjectsService) {}
 
+  @Get('fund-locations')
+  fundLocations() {
+    return this.service.listFundLocations();
+  }
+
+  @Get('fund-rules')
+  fundRules(@Query('location') location?: string) {
+    return this.service.listFundRules(location);
+  }
+
   @Get()
   list(@Query('keyword') keyword?: string) {
     return this.service.list(keyword);

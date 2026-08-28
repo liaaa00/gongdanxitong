@@ -33,7 +33,7 @@ const FIELD_CODES = [
   'work_hour_system', 'work_cycle', 'salary_form', 'base_salary', 'other_salary', 'probation_salary',
   'payroll_cycle', 'payroll_date', 'social_location', 'start_month', 'social_base', 'fund_base',
   'fund_ratio', 'bank_name', 'bank_account', 'remark', 'business_mode', 'employee_type',
-  'need_company_contract', 'need_esign', 'esign_platform', 'contract_subject', 'contract_template', 'paper_contract_template', 'need_contract_urge',
+  'need_company_contract', 'need_esign', 'esign_platform', 'contract_subject', 'contract_template', 'special_contract_template_name', 'need_contract_urge',
   'contract_feedback', 'need_onboarding_contact', 'onboarding_feedback', 'need_company_payroll',
   'payroll_location', 'special_remark', 'data_entry_feedback',
 ] as const;
@@ -87,7 +87,7 @@ function buildComplete54FieldOrder() {
     esign_platform: '速创',
     contract_subject: '端到端测试合同主体有限公司',
     contract_template: '标准模板',
-    paper_contract_template: '',
+    special_contract_template_name: '',
     need_contract_urge: '否',
     contract_feedback: '',
     need_onboarding_contact: '是',

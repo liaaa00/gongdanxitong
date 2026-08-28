@@ -194,6 +194,8 @@ export interface DispatchedOrderDetailItem extends DispatchedOrderListItem {
   readonlyFields?: string[];
   fields: Array<FieldViewItem & { dirty?: boolean; dirtyInfo?: unknown; dirty_info?: unknown }>;
   visibleFields: string[] | null;
+  /** Internal marker consumed by FieldPermissionInterceptor; removed before HTTP response. */
+  _detailTemplateFieldCodes?: string[];
   clearedDirtyCount?: number;
   cleared_dirty_count?: number;
 }

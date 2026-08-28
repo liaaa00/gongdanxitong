@@ -2,7 +2,7 @@ import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nes
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { from, map, mergeMap, Observable } from 'rxjs';
-import { BusinessScope } from 'src/entities';
+import { BusinessScope, FieldPermissionMode } from 'src/entities';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import {
   FIELD_PERMISSION_SCENARIO_KEY,
@@ -115,6 +115,8 @@ export class FieldPermissionInterceptor implements NestInterceptor {
     }
 
     const cloned = { ...(payload as Record<string, unknown>) };
+    const effectivePermissions = this.applyDetailTemplatePermissions(cloned, permissions);
+    delete cloned._detailTemplateFieldCodes;
 
     if (this.isApiResponse(cloned)) {
       cloned.data = this.applyPayload(cloned.data, permissions, depth + 1);
@@ -125,12 +127,12 @@ export class FieldPermissionInterceptor implements NestInterceptor {
     if (extraData && typeof extraData === 'object' && !Array.isArray(extraData)) {
       const result = this.fieldPermissionService.applyExtraData(
         extraData as Record<string, unknown>,
-        permissions,
+        effectivePermissions,
       );
       if (Object.prototype.hasOwnProperty.call(cloned, 'extraData')) cloned.extraData = result.data;
       if (Object.prototype.hasOwnProperty.call(cloned, 'extra_data')) cloned.extra_data = result.data;
       cloned.readonlyFields = result.readonlyFields;
-      cloned._fieldPermissions = this.toPermissionRecord(permissions);
+      cloned._fieldPermissions = this.toPermissionRecord(effectivePermissions);
     }
 
     const pendingModify = cloned.pendingModify ?? cloned.pending_modify;
@@ -139,7 +141,7 @@ export class FieldPermissionInterceptor implements NestInterceptor {
       if (pendingRecord.fields && typeof pendingRecord.fields === 'object' && !Array.isArray(pendingRecord.fields)) {
         const result = this.fieldPermissionService.applyExtraData(
           pendingRecord.fields as Record<string, unknown>,
-          permissions,
+          effectivePermissions,
         );
         const sanitized = { ...pendingRecord, fields: result.data };
         if (Object.prototype.hasOwnProperty.call(cloned, 'pendingModify')) cloned.pendingModify = sanitized;
@@ -150,18 +152,18 @@ export class FieldPermissionInterceptor implements NestInterceptor {
     if (cloned.feedbackData && typeof cloned.feedbackData === 'object' && !Array.isArray(cloned.feedbackData)) {
       const result = this.fieldPermissionService.applyExtraData(
         cloned.feedbackData as Record<string, unknown>,
-        permissions,
+        effectivePermissions,
       );
       cloned.feedbackData = result.data;
-      cloned._fieldPermissions = this.toPermissionRecord(permissions);
+      cloned._fieldPermissions = this.toPermissionRecord(effectivePermissions);
     }
 
     if (Array.isArray(cloned.fields)) {
       cloned.fields = this.fieldPermissionService.applyFieldViews(
         cloned.fields as FieldViewItem[],
-        permissions,
+        effectivePermissions,
       );
-      cloned._fieldPermissions = this.toPermissionRecord(permissions);
+      cloned._fieldPermissions = this.toPermissionRecord(effectivePermissions);
     }
 
     for (const key of ['items', 'list', 'dispatchedOrders', 'children']) {
@@ -171,6 +173,28 @@ export class FieldPermissionInterceptor implements NestInterceptor {
     }
 
     return cloned;
+  }
+
+  private applyDetailTemplatePermissions(
+    payload: Record<string, unknown>,
+    permissions: FieldPermissionMap,
+  ): FieldPermissionMap {
+    const rawCodes = payload._detailTemplateFieldCodes;
+    if (!Array.isArray(rawCodes)) return permissions;
+
+    const templateFieldCodes = rawCodes.filter(
+      (fieldCode): fieldCode is string => typeof fieldCode === 'string' && fieldCode.trim().length > 0,
+    );
+    if (templateFieldCodes.length === 0) return permissions;
+
+    const effectivePermissions = new Map(permissions);
+    for (const fieldCode of templateFieldCodes) {
+      const permission = effectivePermissions.get(fieldCode);
+      if (!permission || permission === FieldPermissionMode.HIDDEN) {
+        effectivePermissions.set(fieldCode, FieldPermissionMode.READONLY);
+      }
+    }
+    return effectivePermissions;
   }
 
   private isApiResponse(record: Record<string, unknown>): boolean {

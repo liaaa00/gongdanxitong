@@ -82,3 +82,5 @@ export class DetailViewTemplatesController {
     return this.service.remove(id, businessScope);
   }
 }
+
+// Detail templates are read by the dispatched-order detail service; this controller remains admin-only.

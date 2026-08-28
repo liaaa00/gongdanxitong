@@ -5,7 +5,7 @@ import path from 'path';
 // Keep frontend API calls relative (/api). In dev server, Vite proxies those
 // relative requests to the backend running on THIS server machine.
 // Do not proxy to a coworker's localhost when they open http://SERVER_IP:5173.
-const apiTarget = 'http://127.0.0.1:3000';
+const apiTarget = process.env.VITE_API_TARGET ?? 'http://127.0.0.1:3000';
 
 export default defineConfig(() => ({
   plugins: [react()],

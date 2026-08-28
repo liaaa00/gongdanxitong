@@ -114,6 +114,24 @@ import {
   renderResignationCertificate,
 } from './resignation-certificate';
 
+export function assertResignationCertificateIssueAfterLastWorkDate(
+  moduleCode: string,
+  parentExtraData: Record<string, unknown> | null | undefined,
+  completedAt: Date,
+): void {
+  if (moduleCode !== DispatchModuleCode.RESIGNATION_CERT) return;
+  const rawLastWorkDate = firstText(parentExtraData?.last_work_date, parentExtraData?.lastWorkDate);
+  if (!rawLastWorkDate) return;
+
+  const dateText = rawLastWorkDate.replace(/\//g, '-').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateText)) return;
+  const lastWorkDateEnd = new Date(`${dateText}T23:59:59.999+08:00`);
+  if (Number.isNaN(lastWorkDateEnd.getTime())) return;
+  if (completedAt.getTime() <= lastWorkDateEnd.getTime()) {
+    throw businessException(4232, HttpStatus.BAD_REQUEST, `离职证明开具时间必须晚于最后工作日（${dateText}）`);
+  }
+}
+
 const DISPATCHED_ORDER_STATUS_ALIASES: Record<string, DispatchedOrderStatus | DispatchedOrderStatus[]> = {
   accepted: DispatchedOrderStatus.PROCESSING,
   handling: DispatchedOrderStatus.PROCESSING,
@@ -212,6 +230,9 @@ export class DispatchedOrderService {
     private readonly roleActionPermissionService?: RoleActionPermissionService,
     @Optional()
     private readonly resignationCertificateAutomationService?: ResignationCertificateAutomationService,
+    @Optional()
+    @InjectRepository(User)
+    private readonly userRepository?: Repository<User>,
   ) {}
 
   async findAll(
@@ -451,6 +472,11 @@ export class DispatchedOrderService {
     const completedAt = new Date();
     const nextCompleted = completionEvaluation.nextStatus === DispatchedOrderStatus.COMPLETED;
     if (nextCompleted && order.moduleCode === DispatchModuleCode.RESIGNATION_CERT) {
+      assertResignationCertificateIssueAfterLastWorkDate(
+        order.moduleCode,
+        order.parentOrder.extraData,
+        completedAt,
+      );
       await this.assertResignationCertificateMaterialsReady(order);
       const certificate = await this.createResignationCertificateDocument(order, extraDataPatch, true);
       extraDataPatch.resignation_reason_code = certificate.replacements.resignationReasonCode;
@@ -2183,19 +2209,27 @@ export class DispatchedOrderService {
     const patch = this.extractHandlingFeedbackFields(order, row);
     const evaluation = this.evaluateOrderCompletion(order, patch);
     const before = this.snapshot(order);
+    const completedAt = new Date();
+    if (evaluation.complete) {
+      assertResignationCertificateIssueAfterLastWorkDate(
+        order.moduleCode,
+        order.parentOrder.extraData,
+        completedAt,
+      );
+    }
     const beforeExtraData = { ...(order.parentOrder.extraData ?? {}) };
     const nextExtraData = { ...beforeExtraData, ...patch };
     const diff = this.fieldChangeHook?.buildDiff(beforeExtraData, nextExtraData)
       ?? Object.entries(patch).map(([field, after]) => ({ field, before: beforeExtraData[field] ?? null, after }));
 
     order.parentOrder.extraData = nextExtraData;
-    order.parentOrder.lastModifiedAt = new Date();
+    order.parentOrder.lastModifiedAt = completedAt;
     order.parentOrder.lastModifiedBy = user.sub;
     order.parentOrder.modificationRound += 1;
     order.status = evaluation.nextStatus;
-    order.acceptedAt = order.acceptedAt ?? new Date();
+    order.acceptedAt = order.acceptedAt ?? completedAt;
     order.handlerId = order.handlerId ?? user.sub;
-    order.completedAt = evaluation.complete ? new Date() : null;
+    order.completedAt = evaluation.complete ? completedAt : null;
     order.completionRemark = this.readImportString(row.remark ?? row.raw?.['办理备注'] ?? row.raw?.['备注']) ?? order.completionRemark;
 
     await this.workOrderRepository.save(order.parentOrder);
@@ -2276,9 +2310,15 @@ export class DispatchedOrderService {
       throw businessException(4201, HttpStatus.CONFLICT, '当前状态不允许导入办理完成');
     }
     const before = this.snapshot(order);
+    const completedAt = new Date();
+    assertResignationCertificateIssueAfterLastWorkDate(
+      order.moduleCode,
+      order.parentOrder.extraData,
+      completedAt,
+    );
     order.status = DispatchedOrderStatus.COMPLETED;
-    order.completedAt = new Date();
-    order.acceptedAt = order.acceptedAt ?? new Date();
+    order.completedAt = completedAt;
+    order.acceptedAt = order.acceptedAt ?? completedAt;
     order.handlerId = order.handlerId ?? user.sub;
     order.completionRemark = remark;
     await this.dispatchedOrderRepository.save(order);
@@ -2633,9 +2673,23 @@ export class DispatchedOrderService {
     if (query.onlyDirty) {
       qb.andWhere('EXISTS (SELECT 1 FROM work_order_field_dirty_marks dm WHERE dm.dispatched_order_id = d.id AND dm.is_active = true)');
     }
-    if (query.keyword) {
-      qb.andWhere('(w.employee_name ILIKE :keyword OR w.employee_id_card ILIKE :keyword OR w.order_no ILIKE :keyword)', {
-        keyword: `%${query.keyword}%`,
+    if (query.keyword?.trim()) {
+      qb.andWhere(`(
+        w.employee_name ILIKE :keyword
+        OR w.employee_id_card ILIKE :keyword
+        OR w.order_no ILIKE :keyword
+        OR w.customer_name ILIKE :keyword
+        OR w.customer_code ILIKE :keyword
+        OR w.extra_data->>'customer_name' ILIKE :keyword
+        OR w.extra_data->>'customer_code' ILIKE :keyword
+        OR creator.real_name ILIKE :keyword
+        OR creator.username ILIKE :keyword
+        OR h.real_name ILIKE :keyword
+        OR h.username ILIKE :keyword
+        OR d.module_code ILIKE :keyword
+        OR w.order_type::text ILIKE :keyword
+      )`, {
+        keyword: `%${query.keyword.trim()}%`,
       });
     }
   }
@@ -2907,6 +2961,14 @@ export class DispatchedOrderService {
     const moduleFieldByCode = new Map(moduleFieldRows.map((row) => [row.fieldCode, row]));
     const moduleConfiguredFieldCodes = moduleFieldRows.map((row) => row.fieldCode);
     const hasAuthoritativeSocialFields = isHandlingFeedbackModule(order.moduleCode) && moduleConfiguredFieldCodes.length > 0;
+    const activeDetailTemplate = this.detailViewTemplatesService
+      ? await this.detailViewTemplatesService.getActiveByModule(order.moduleCode, moduleBusinessScope)
+      : null;
+    const detailTemplateFieldCodes = activeDetailTemplate
+      ? getDetailViewFieldCodes(activeDetailTemplate.fieldList)
+      : [];
+    const hasAuthoritativeDetailTemplate = detailTemplateFieldCodes.length > 0;
+    const detailTemplateFieldOrder = new Map(detailTemplateFieldCodes.map((fieldCode, index) => [fieldCode, index]));
     const pendingModify = order.status === DispatchedOrderStatus.MODIFY_PENDING
       ? await this.readPendingModify(order.id)
       : null;
@@ -2949,13 +3011,15 @@ export class DispatchedOrderService {
         .filter(([, permission]) => permission !== FieldPermissionMode.HIDDEN)
         .map(([fieldCode]) => fieldCode)
       : [];
-    const effectiveVisibleSet = order.moduleCode === DispatchModuleCode.RESIGNATION_CERT
-      ? null
-      : isSocialInsuranceSpecialistDetail
-        ? new Set([...currentSocialPermissionFields, ...moduleConfiguredFieldCodes])
-        : hasAuthoritativeSocialFields
-          ? new Set([...(order.visibleFields ?? []), ...moduleConfiguredFieldCodes])
-          : visibleSet;
+    const effectiveVisibleSet = hasAuthoritativeDetailTemplate
+      ? new Set(detailTemplateFieldCodes)
+      : order.moduleCode === DispatchModuleCode.RESIGNATION_CERT
+        ? null
+        : isSocialInsuranceSpecialistDetail
+          ? new Set([...currentSocialPermissionFields, ...moduleConfiguredFieldCodes])
+          : hasAuthoritativeSocialFields
+            ? new Set([...(order.visibleFields ?? []), ...moduleConfiguredFieldCodes])
+            : visibleSet;
     const configuredHandlerNames = (await this.getConfiguredHandlerNamesByModule([order.moduleCode])).get(order.moduleCode) ?? [];
     const relatedStatuses = (await this.getRelatedModuleStatuses([order.parentOrderId])).get(order.parentOrderId) ?? {};
     const syncSummary = await this.buildFieldSyncSummary(order.id);
@@ -2967,23 +3031,33 @@ export class DispatchedOrderService {
       const isDynamicSupplementField = isBusinessCreator
         && this.isDynamicConfiguredFieldCode(field.fieldCode)
         && field.isIncludedInTemplate !== false;
+      const isTemplateField = hasAuthoritativeDetailTemplate && effectiveVisibleSet?.has(field.fieldCode);
       return sameType
-        && (!effectiveVisibleSet || effectiveVisibleSet.has(field.fieldCode) || isDynamicSupplementField)
-        && (order.moduleCode !== DispatchModuleCode.RESIGNATION_CERT || RESIGNATION_CERTIFICATE_VISIBLE_FIELDS.has(field.fieldCode))
-        && (!hasConfiguredPermissions || permission !== FieldPermissionMode.HIDDEN);
+        && (!effectiveVisibleSet
+          || effectiveVisibleSet.has(field.fieldCode)
+          || (!hasAuthoritativeDetailTemplate && isDynamicSupplementField))
+        && (hasAuthoritativeDetailTemplate
+          || order.moduleCode !== DispatchModuleCode.RESIGNATION_CERT
+          || RESIGNATION_CERTIFICATE_VISIBLE_FIELDS.has(field.fieldCode))
+        && (isTemplateField || !hasConfiguredPermissions || permission !== FieldPermissionMode.HIDDEN);
     });
-    const orderedFilteredFields = hasAuthoritativeSocialFields
-      ? [...filteredFields].sort((left, right) => {
-        const leftModuleOrder = moduleFieldByCode.get(left.fieldCode)?.displayOrder;
-        const rightModuleOrder = moduleFieldByCode.get(right.fieldCode)?.displayOrder;
-        if (leftModuleOrder !== undefined && rightModuleOrder !== undefined) {
-          return leftModuleOrder - rightModuleOrder;
-        }
-        if (leftModuleOrder !== undefined) return -1;
-        if (rightModuleOrder !== undefined) return 1;
-        return left.displayOrder - right.displayOrder;
-      })
-      : filteredFields;
+    const orderedFilteredFields = hasAuthoritativeDetailTemplate
+      ? [...filteredFields].sort((left, right) => (
+        (detailTemplateFieldOrder.get(left.fieldCode) ?? Number.MAX_SAFE_INTEGER)
+        - (detailTemplateFieldOrder.get(right.fieldCode) ?? Number.MAX_SAFE_INTEGER)
+      ))
+      : hasAuthoritativeSocialFields
+        ? [...filteredFields].sort((left, right) => {
+          const leftModuleOrder = moduleFieldByCode.get(left.fieldCode)?.displayOrder;
+          const rightModuleOrder = moduleFieldByCode.get(right.fieldCode)?.displayOrder;
+          if (leftModuleOrder !== undefined && rightModuleOrder !== undefined) {
+            return leftModuleOrder - rightModuleOrder;
+          }
+          if (leftModuleOrder !== undefined) return -1;
+          if (rightModuleOrder !== undefined) return 1;
+          return left.displayOrder - right.displayOrder;
+        })
+        : filteredFields;
     const dynamicSupplementFieldCodes = orderedFilteredFields
       .filter((field) => isBusinessCreator
         && this.isDynamicConfiguredFieldCode(field.fieldCode)
@@ -3034,7 +3108,12 @@ export class DispatchedOrderService {
           regexMsg: field.validationMsg ?? undefined,
         },
       })),
-      visibleFields: detailVisibleFields,
+      visibleFields: hasAuthoritativeDetailTemplate
+        ? orderedFilteredFields.map((field) => field.fieldCode)
+        : detailVisibleFields,
+      _detailTemplateFieldCodes: hasAuthoritativeDetailTemplate && user && !this.isAdmin(user)
+        ? detailTemplateFieldCodes
+        : undefined,
       dirtyCount: dirtyMarks.filter((item) => item.isActive).length,
       dirty_count: dirtyMarks.filter((item) => item.isActive).length,
       clearedDirtyCount,
@@ -4092,15 +4171,28 @@ export class DispatchedOrderService {
   }
 
   private async resolveDispatchedRecipients(order: DispatchedOrder): Promise<string[]> {
+    const businessScope = order.parentOrder?.businessScope ?? BusinessScope.BEILUN;
     const handlers = await this.moduleHandlerRepository.find({
       where: {
         moduleCode: order.moduleCode,
-        businessScope: order.parentOrder.businessScope ?? BusinessScope.BEILUN,
+        businessScope,
         isActive: true,
       },
     });
-    const configuredHandlerIds = handlers.map((handler) => handler.handlerId).filter((id): id is string => Boolean(id));
-    return Array.from(new Set([order.handlerId, ...configuredHandlerIds].filter((id): id is string => Boolean(id))));
+    const candidateIds = Array.from(new Set([
+      order.handlerId,
+      ...handlers.map((handler) => handler.handlerId),
+    ].filter((id): id is string => Boolean(id))));
+    if (candidateIds.length === 0 || !this.userRepository) return candidateIds;
+
+    const activeUsers = await this.userRepository.find({
+      where: {
+        id: In(candidateIds),
+        businessScope,
+        isActive: true,
+      },
+    });
+    return activeUsers.map((user) => user.id);
   }
 
   private async notifyUsers(order: DispatchedOrder, userIds: string[], bizType: string, title: string, content: string): Promise<void> {

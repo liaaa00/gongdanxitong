@@ -1,4 +1,5 @@
 import request from './request';
+import type { DetailTemplateFieldEntry } from '@/utils/detailViewTemplateLayout';
 
 export interface DetailViewTemplateItem {
   id: string;
@@ -6,8 +7,8 @@ export interface DetailViewTemplateItem {
   template_name?: string;
   moduleCode: string;
   module_code?: string;
-  fieldList: Array<{ fieldCode: string; kind?: string; value?: string }>;
-  field_list?: Array<{ fieldCode: string; kind?: string; value?: string }>;
+  fieldList: DetailTemplateFieldEntry[];
+  field_list?: DetailTemplateFieldEntry[];
   isActive: boolean;
   is_active?: boolean;
   businessScope?: 'beilun' | 'out_of_province';
@@ -51,7 +52,7 @@ export async function getActiveDetailViewTemplate(
 export async function createDetailViewTemplate(data: {
   templateName: string;
   moduleCode: string;
-  fieldList: Array<{ fieldCode: string; kind?: string; value?: string }>;
+  fieldList: DetailTemplateFieldEntry[];
   isActive?: boolean;
   businessScope?: 'beilun' | 'out_of_province';
 }) {
@@ -64,7 +65,7 @@ export async function updateDetailViewTemplate(
   data: Partial<{
     templateName: string;
     moduleCode: string;
-    fieldList: Array<{ fieldCode: string; kind?: string; value?: string }>;
+    fieldList: DetailTemplateFieldEntry[];
     isActive: boolean;
     businessScope: 'beilun' | 'out_of_province';
   }>,

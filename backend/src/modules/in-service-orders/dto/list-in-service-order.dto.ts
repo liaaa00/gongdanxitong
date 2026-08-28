@@ -1,5 +1,6 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsDateString,
   IsEnum,
   IsIn,
@@ -32,6 +33,11 @@ export class ListInServiceOrderQueryDto {
   @IsOptional()
   @IsUUID()
   handlerId?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  onlyUnassigned?: boolean;
 
   @IsOptional()
   @IsEnum(InServiceOrderKind)

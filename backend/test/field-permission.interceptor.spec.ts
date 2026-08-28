@@ -52,4 +52,33 @@ describe('FieldPermissionInterceptor pending modify aliases', () => {
     expect(String(result.pendingModify.fields.base_salary)).toContain('*');
     expect(result.pendingModify.fields).not.toHaveProperty('secret_note');
   });
+
+  it('keeps template-configured hidden detail fields readonly while hiding fields outside the template', () => {
+    const interceptor = new FieldPermissionInterceptor({} as never, makeService());
+    const permissions = new Map([
+      ['resignation_cert_format', FieldPermissionMode.HIDDEN],
+      ['secret_note', FieldPermissionMode.HIDDEN],
+    ]);
+
+    const result = (interceptor as unknown as {
+      applyPayload: (payload: unknown, fieldPermissions: Map<string, FieldPermissionMode>, depth: number) => any;
+    }).applyPayload({
+      _detailTemplateFieldCodes: ['resignation_cert_format'],
+      extraData: { resignation_cert_format: '电子证明', secret_note: '不可见' },
+      fields: [
+        { fieldCode: 'resignation_cert_format', fieldName: '离职证明形式', fieldType: 'dropdown', value: '电子证明', permission: FieldPermissionMode.HIDDEN },
+        { fieldCode: 'secret_note', fieldName: '内部备注', fieldType: 'text', value: '不可见', permission: FieldPermissionMode.HIDDEN },
+      ],
+    }, permissions, 0);
+
+    expect(result).not.toHaveProperty('_detailTemplateFieldCodes');
+    expect(result.extraData).toEqual({ resignation_cert_format: '电子证明' });
+    expect(result.readonlyFields).toEqual(['resignation_cert_format']);
+    expect(result._fieldPermissions).toMatchObject({ resignation_cert_format: FieldPermissionMode.READONLY, secret_note: FieldPermissionMode.HIDDEN });
+    expect(result.fields).toEqual([expect.objectContaining({
+      fieldCode: 'resignation_cert_format',
+      permission: FieldPermissionMode.READONLY,
+      value: '电子证明',
+    })]);
+  });
 });

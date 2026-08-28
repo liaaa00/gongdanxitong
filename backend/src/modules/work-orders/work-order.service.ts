@@ -1098,9 +1098,20 @@ export class WorkOrderService {
     if (query.submittedBefore) {
       qb.andWhere('w.submitted_at <= :submittedBefore', { submittedBefore: query.submittedBefore });
     }
-    if (query.keyword) {
-      qb.andWhere('(w.employee_name ILIKE :keyword OR w.employee_id_card ILIKE :keyword OR w.order_no ILIKE :keyword)', {
-        keyword: `%${query.keyword}%`,
+    if (query.keyword?.trim()) {
+      qb.andWhere(`(
+        w.employee_name ILIKE :keyword
+        OR w.employee_id_card ILIKE :keyword
+        OR w.order_no ILIKE :keyword
+        OR w.customer_name ILIKE :keyword
+        OR w.customer_code ILIKE :keyword
+        OR w.extra_data->>'customer_name' ILIKE :keyword
+        OR w.extra_data->>'customer_code' ILIKE :keyword
+        OR creator.real_name ILIKE :keyword
+        OR creator.username ILIKE :keyword
+        OR w.order_type::text ILIKE :keyword
+      )`, {
+        keyword: `%${query.keyword.trim()}%`,
       });
     }
     const orderNo = query.orderNo ?? query.order_no;
@@ -1138,9 +1149,9 @@ export class WorkOrderService {
         qb.addOrderBy('w.id', 'ASC');
       }
     } else {
-      qb.orderBy('status_priority', 'ASC');
+      qb.orderBy('w.submittedAt', 'DESC', 'NULLS LAST');
       if (typeof (qb as typeof qb & { addOrderBy?: unknown }).addOrderBy === 'function') {
-        qb.addOrderBy('w.updatedAt', 'DESC');
+        qb.addOrderBy('w.id', 'DESC');
       }
     }
     const rows = await qb.skip((page - 1) * pageSize).take(pageSize).getMany();
@@ -2185,11 +2196,14 @@ export class WorkOrderService {
     return /^[=+@-]/.test(text) ? `'${text}` : text;
   }
 
-  private resolveWorkOrderListSort(sort?: string): { column: 'w.createdAt'; direction: 'ASC' | 'DESC' } | null {
+  private resolveWorkOrderListSort(
+    sort?: string,
+  ): { column: 'w.createdAt' | 'w.submittedAt'; direction: 'ASC' | 'DESC' } | null {
     const [field, direction] = String(sort || '').split(',')[0].split(':');
-    if (!['created_at', 'createdAt'].includes(field)) return null;
+    if (!['created_at', 'createdAt', 'submitted_at', 'submittedAt'].includes(field)) return null;
     if (direction !== 'asc' && direction !== 'desc') return null;
-    return { column: 'w.createdAt', direction: direction === 'asc' ? 'ASC' : 'DESC' };
+    const column = ['submitted_at', 'submittedAt'].includes(field) ? 'w.submittedAt' : 'w.createdAt';
+    return { column, direction: direction === 'asc' ? 'ASC' : 'DESC' };
   }
 
   private resolveBusinessScope(orderType: OrderType): BusinessScope {

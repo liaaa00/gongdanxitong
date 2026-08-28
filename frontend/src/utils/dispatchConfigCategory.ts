@@ -12,6 +12,7 @@ const CATEGORY_BY_MODULE: Record<string, DispatchCategory> = {
   benefit_apply: 'in_service',
   social_insurance_change: 'in_service',
   in_service_single_business: 'in_service',
+  in_service_certificate: 'in_service',
   resignation_contact: 'resignation',
   data_entry_resign: 'resignation',
   resignation_social_insurance: 'resignation',
@@ -39,6 +40,25 @@ export const DISPATCH_CATEGORY_COLORS: Record<DispatchCategory, string> = {
   resignation: 'red',
   system: 'default',
 };
+
+const ALWAYS_HIDDEN_DEFAULT_DISPATCH_MODULES = new Set([
+  'payroll_bank_card',
+  'resignation_cert',
+]);
+
+export function isDefaultDispatchModuleVisible(moduleCode?: string | null): boolean {
+  const code = String(moduleCode || '').trim();
+  if (!code || ALWAYS_HIDDEN_DEFAULT_DISPATCH_MODULES.has(code)) return false;
+  return !/^isc_l[123]_/.test(code);
+}
+
+export function shouldShowDefaultDispatchRow(
+  moduleCode: string | undefined,
+  hasHandlers: boolean,
+  showUnconfigured: boolean,
+): boolean {
+  return isDefaultDispatchModuleVisible(moduleCode) && (showUnconfigured || hasHandlers);
+}
 
 export function getDispatchCategory(moduleCode?: string | null): DispatchCategory {
   return CATEGORY_BY_MODULE[String(moduleCode || '').trim()] || 'system';

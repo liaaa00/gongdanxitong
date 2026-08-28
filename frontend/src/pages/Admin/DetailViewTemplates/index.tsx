@@ -8,6 +8,13 @@ import { getExportTemplates } from '../../../services/exportTemplates';
 import { getImportTemplateConfig, getAvailableImportTemplateFields } from '../../../services/importTemplates';
 import { getModuleFields as getConfiguredModuleFields } from '../../../services/moduleConfigs';
 import type { BusinessScope } from '@/utils/businessScope';
+import {
+  buildDetailTemplateFieldList,
+  getDefaultDetailFieldGroups,
+  getDetailTemplateFieldCodes,
+  parseDetailTemplateGroups,
+  type DetailTemplateFieldGroup,
+} from '@/utils/detailViewTemplateLayout';
 
 const DEFAULT_MODULE_CODE = 'onboarding';
 const MAIN_ORDER_MODULE_CODES = new Set(['onboarding', 'resignation']);
@@ -127,6 +134,44 @@ async function resolveDetailFieldCodes(moduleCode: string, businessScope: Busine
   return resolveSubOrderFieldCodes(moduleCode, businessScope);
 }
 
+export function createInitialFieldGroups(
+  moduleCode: string,
+  selectedFieldCodes: string[],
+  systemFields: FieldConfigItem[],
+  fieldList: Array<Record<string, unknown>> = [],
+): DetailTemplateFieldGroup[] {
+  const selected = new Set(selectedFieldCodes);
+  const storedGroups = parseDetailTemplateGroups(fieldList);
+  if (storedGroups.length > 0) {
+    return storedGroups.map((group) => ({
+      title: group.title,
+      fieldCodes: group.fieldCodes.filter((code) => selected.has(code)),
+    }));
+  }
+
+  const assigned = new Set<string>();
+  const groups = getDefaultDetailFieldGroups(moduleCode).flatMap((group) => {
+    const fieldCodes = group.fieldCodes.filter((code) => selected.has(code) && !assigned.has(code));
+    fieldCodes.forEach((code) => assigned.add(code));
+    return fieldCodes.length > 0 ? [{ title: group.title, fieldCodes }] : [];
+  });
+
+  const fieldMap = new Map(systemFields.map((field) => [field.field_code, field]));
+  selectedFieldCodes.forEach((code) => {
+    if (assigned.has(code)) return;
+    const title = String(fieldMap.get(code)?.collection_group || '其他字段').trim() || '其他字段';
+    let group = groups.find((item) => item.title === title);
+    if (!group) {
+      group = { title, fieldCodes: [] };
+      groups.push(group);
+    }
+    group.fieldCodes.push(code);
+    assigned.add(code);
+  });
+
+  return groups;
+}
+
 const AdminDetailViewTemplates = () => {
   const { message } = App.useApp();
   const [businessScope, setBusinessScope] = useState<BusinessScope>('beilun');
@@ -142,6 +187,7 @@ const AdminDetailViewTemplates = () => {
   const [editing, setEditing] = useState<DetailViewTemplateItem | null>(null);
   const [form] = Form.useForm();
   const [selectedFieldCodes, setSelectedFieldCodes] = useState<string[]>([]);
+  const [fieldGroups, setFieldGroups] = useState<DetailTemplateFieldGroup[]>([]);
 
   const watchedModuleCode = Form.useWatch('module_code', form);
   const currentModuleCode = watchedModuleCode || editing?.module_code || editing?.moduleCode || DEFAULT_MODULE_CODE;
@@ -219,6 +265,7 @@ const AdminDetailViewTemplates = () => {
   const handleCreate = () => {
     setEditing(null);
     setSelectedFieldCodes([]);
+    setFieldGroups(getDefaultDetailFieldGroups(moduleSelectGroups.flatMap((group) => group.options)[0]?.value || DEFAULT_MODULE_CODE).map((group) => ({ ...group, fieldCodes: [] })));
     setAvailableFieldCodes([]);
     setAvailableFieldSource('');
     form.resetFields();
@@ -231,6 +278,12 @@ const AdminDetailViewTemplates = () => {
     const fieldList = record.field_list ?? record.fieldList ?? [];
     const codes = uniqueCodes(fieldList.map((field: any) => resolveTemplateFieldCode(field)));
     setSelectedFieldCodes(codes);
+    setFieldGroups(createInitialFieldGroups(
+      record.module_code ?? record.moduleCode,
+      codes,
+      systemFields,
+      fieldList as Array<Record<string, unknown>>,
+    ));
     form.setFieldsValue({
       template_name: record.template_name ?? record.templateName,
       module_code: record.module_code ?? record.moduleCode,
@@ -252,10 +305,19 @@ const AdminDetailViewTemplates = () => {
   const handleOk = async () => {
     try {
       const values = await form.validateFields();
+      const normalizedTitles = fieldGroups.map((group) => group.title.trim());
+      if (normalizedTitles.some((title) => !title)) {
+        message.error('分组名称不能为空');
+        return;
+      }
+      if (new Set(normalizedTitles).size !== normalizedTitles.length) {
+        message.error('分组名称不能重复');
+        return;
+      }
       const payload = {
         templateName: values.template_name,
         moduleCode: values.module_code,
-        fieldList: selectedFieldCodes.map((code) => ({ fieldCode: code, kind: 'field' })),
+        fieldList: buildDetailTemplateFieldList(selectedFieldCodes, fieldGroups),
         isActive: values.is_active ?? true,
         businessScope,
       };
@@ -285,8 +347,20 @@ const AdminDetailViewTemplates = () => {
   const handleFieldToggle = (fieldCode: string) => {
     if (selectedFieldCodes.includes(fieldCode)) {
       setSelectedFieldCodes(selectedFieldCodes.filter((c) => c !== fieldCode));
+      setFieldGroups(fieldGroups.map((group) => ({
+        ...group,
+        fieldCodes: group.fieldCodes.filter((code) => code !== fieldCode),
+      })));
     } else {
       setSelectedFieldCodes([...selectedFieldCodes, fieldCode]);
+      const defaultGroup = getDefaultDetailFieldGroups(currentModuleCode)
+        .find((group) => group.fieldCodes.includes(fieldCode));
+      if (defaultGroup) {
+        const targetIndex = fieldGroups.findIndex((group) => group.title === defaultGroup.title);
+        if (targetIndex >= 0) {
+          assignFieldToGroup(fieldCode, targetIndex);
+        }
+      }
     }
   };
 
@@ -301,8 +375,64 @@ const AdminDetailViewTemplates = () => {
   };
 
   const removeSelectedField = (index: number) => {
+    const fieldCode = selectedFieldCodes[index];
     setSelectedFieldCodes(selectedFieldCodes.filter((_, i) => i !== index));
+    setFieldGroups(fieldGroups.map((group) => ({
+      ...group,
+      fieldCodes: group.fieldCodes.filter((code) => code !== fieldCode),
+    })));
   };
+
+  const addFieldGroup = () => {
+    const existing = new Set(fieldGroups.map((group) => group.title));
+    let suffix = fieldGroups.length + 1;
+    let title = `新分组${suffix}`;
+    while (existing.has(title)) {
+      suffix += 1;
+      title = `新分组${suffix}`;
+    }
+    setFieldGroups([...fieldGroups, { title, fieldCodes: [] }]);
+  };
+
+  const renameFieldGroup = (index: number, title: string) => {
+    setFieldGroups(fieldGroups.map((group, groupIndex) => (
+      groupIndex === index ? { ...group, title } : group
+    )));
+  };
+
+  const moveFieldGroup = (index: number, direction: 'up' | 'down') => {
+    const next = [...fieldGroups];
+    const target = direction === 'up' ? index - 1 : index + 1;
+    if (target < 0 || target >= next.length) return;
+    [next[index], next[target]] = [next[target], next[index]];
+    setFieldGroups(next);
+  };
+
+  const removeFieldGroup = (index: number) => {
+    setFieldGroups(fieldGroups.filter((_, groupIndex) => groupIndex !== index));
+  };
+
+  const assignFieldToGroup = (fieldCode: string, targetGroupIndex?: number) => {
+    setFieldGroups(fieldGroups.map((group, groupIndex) => {
+      const fieldCodes = group.fieldCodes.filter((code) => code !== fieldCode);
+      if (groupIndex === targetGroupIndex) fieldCodes.push(fieldCode);
+      return { ...group, fieldCodes };
+    }));
+  };
+
+  const moveFieldInGroup = (groupIndex: number, fieldIndex: number, direction: 'up' | 'down') => {
+    setFieldGroups(fieldGroups.map((group, currentGroupIndex) => {
+      if (currentGroupIndex !== groupIndex) return group;
+      const fieldCodes = [...group.fieldCodes];
+      const target = direction === 'up' ? fieldIndex - 1 : fieldIndex + 1;
+      if (target < 0 || target >= fieldCodes.length) return group;
+      [fieldCodes[fieldIndex], fieldCodes[target]] = [fieldCodes[target], fieldCodes[fieldIndex]];
+      return { ...group, fieldCodes };
+    }));
+  };
+
+  const groupedFieldCodes = new Set(fieldGroups.flatMap((group) => group.fieldCodes));
+  const ungroupedFields = selectedFields.filter((field) => !groupedFieldCodes.has(field.field_code));
 
   const columns = [
     {
@@ -324,7 +454,7 @@ const AdminDetailViewTemplates = () => {
       title: '字段数量',
       dataIndex: 'field_list',
       key: 'field_count',
-      render: (_: any, record: DetailViewTemplateItem) => (record.field_list ?? record.fieldList)?.length || 0,
+      render: (_: any, record: DetailViewTemplateItem) => getDetailTemplateFieldCodes(record.field_list ?? record.fieldList).length,
     },
     {
       title: '是否启用',
@@ -387,6 +517,7 @@ const AdminDetailViewTemplates = () => {
           onValuesChange={(changed) => {
             if (!editing && Object.prototype.hasOwnProperty.call(changed, 'module_code')) {
               setSelectedFieldCodes([]);
+              setFieldGroups(getDefaultDetailFieldGroups(changed.module_code).map((group) => ({ ...group, fieldCodes: [] })));
             }
           }}
         >
@@ -432,56 +563,83 @@ const AdminDetailViewTemplates = () => {
           )}
         </div>
 
-        <Divider>已选字段（{selectedFieldCodes.length}）</Divider>
-        <div style={{ maxHeight: 300, overflow: 'auto', border: '1px solid #f0f0f0', padding: 16 }}>
-          {selectedFieldCodes.length === 0 ? (
-            <div style={{ textAlign: 'center', color: '#999', padding: 20 }}>尚未选择字段</div>
-          ) : (
-            selectedFields.map((field, index) => {
-              const code = field.field_code;
-              const name = field.field_name ?? code;
-              return (
-                <div
-                  key={`${code}-${index}`}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '8px 12px',
-                    marginBottom: 8,
-                    background: '#fafafa',
-                    borderRadius: 4,
-                  }}
-                >
-                  <span>{name}</span>
-                  <Space>
-                    <Button
-                      type="text"
-                      size="small"
-                      icon={<ArrowUpOutlined />}
-                      disabled={index === 0}
-                      onClick={() => moveField(index, 'up')}
-                    />
-                    <Button
-                      type="text"
-                      size="small"
-                      icon={<ArrowDownOutlined />}
-                      disabled={index === selectedFieldCodes.length - 1}
-                      onClick={() => moveField(index, 'down')}
-                    />
-                    <Button
-                      type="text"
-                      size="small"
-                      danger
-                      icon={<DeleteOutlined />}
-                      onClick={() => removeSelectedField(index)}
-                    />
-                  </Space>
-                </div>
-              );
-            })
-          )}
+        <Divider>详情分组（{fieldGroups.length}）</Divider>
+        <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
+          分组顺序和字段归属会同步到详情页；未归组字段将显示在“其他字段”中。
+        </Typography.Text>
+        <div style={{ maxHeight: 420, overflow: 'auto', border: '1px solid #f0f0f0', padding: 16 }}>
+          {fieldGroups.map((group, groupIndex) => (
+            <div
+              key={`group-${groupIndex}`}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => {
+                event.preventDefault();
+                const fieldCode = event.dataTransfer.getData('text/plain');
+                if (fieldCode) assignFieldToGroup(fieldCode, groupIndex);
+              }}
+              style={{ border: '1px solid #d9d9d9', padding: 12, marginBottom: 12, borderRadius: 4 }}
+            >
+              <Space style={{ width: '100%', marginBottom: 8 }} align="start">
+                <Input
+                  value={group.title}
+                  onChange={(event) => renameFieldGroup(groupIndex, event.target.value)}
+                  placeholder="分组名称"
+                  style={{ width: 240 }}
+                />
+                <Button type="text" icon={<ArrowUpOutlined />} disabled={groupIndex === 0} onClick={() => moveFieldGroup(groupIndex, 'up')} />
+                <Button type="text" icon={<ArrowDownOutlined />} disabled={groupIndex === fieldGroups.length - 1} onClick={() => moveFieldGroup(groupIndex, 'down')} />
+                <Button type="text" danger icon={<DeleteOutlined />} onClick={() => removeFieldGroup(groupIndex)} />
+              </Space>
+              {group.fieldCodes.map((code, fieldIndex) => {
+                const field = selectedFields.find((item) => item.field_code === code);
+                if (!field) return null;
+                return (
+                  <div
+                    key={`${code}-${fieldIndex}`}
+                    draggable
+                    onDragStart={(event) => event.dataTransfer.setData('text/plain', code)}
+                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px', background: '#fafafa', marginBottom: 6, cursor: 'grab' }}
+                  >
+                    <span>{field.field_name ?? code}</span>
+                    <Space size="small">
+                      <Button type="text" size="small" icon={<ArrowUpOutlined />} disabled={fieldIndex === 0} onClick={() => moveFieldInGroup(groupIndex, fieldIndex, 'up')} />
+                      <Button type="text" size="small" icon={<ArrowDownOutlined />} disabled={fieldIndex === group.fieldCodes.length - 1} onClick={() => moveFieldInGroup(groupIndex, fieldIndex, 'down')} />
+                      <Select
+                        size="small"
+                        value={groupIndex}
+                        options={fieldGroups.map((item, index) => ({ value: index, label: item.title || `分组${index + 1}` }))}
+                        onChange={(value) => assignFieldToGroup(code, Number(value))}
+                        style={{ width: 150 }}
+                      />
+                      <Button type="text" size="small" danger icon={<DeleteOutlined />} onClick={() => removeSelectedField(selectedFieldCodes.indexOf(code))} />
+                    </Space>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+          {ungroupedFields.map((field) => (
+            <div
+              key={`ungrouped-${field.field_code}`}
+              draggable
+              onDragStart={(event) => event.dataTransfer.setData('text/plain', field.field_code)}
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px', background: '#fffbe6', marginBottom: 6, cursor: 'grab' }}
+            >
+              <span>{field.field_name ?? field.field_code}</span>
+              <Select
+                size="small"
+                value={undefined}
+                placeholder="选择分组"
+                options={fieldGroups.map((item, index) => ({ value: index, label: item.title || `分组${index + 1}` }))}
+                onChange={(value) => assignFieldToGroup(field.field_code, Number(value))}
+                style={{ width: 150 }}
+              />
+            </div>
+          ))}
         </div>
+        <Button type="dashed" icon={<PlusOutlined />} onClick={addFieldGroup} style={{ marginTop: 8 }}>
+          新增分组
+        </Button>
       </Modal>
     </PageContainer>
   );

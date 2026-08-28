@@ -120,10 +120,10 @@ describe('Imports ImportTemplateService round-trip', () => {
       '合同期限形式', '合同期限', '合同开始日期', '合同终止日期', '试用期开始日期', '试用期（月）',
       '试用期结束日期', '工作城市', '工时制', '工资形式', '基本工资', '其他工资', '试用期工资',
       '试用期其他工资', '发薪周期', '发薪日期', '缴纳地', '参保起始月', '社保基数', '公积金基数',
-      '公积金比例', '是否需要工资单', '备注', '户籍性质', '民族', '学历', '婚姻状况', '现住地址', '户籍地址',
+      '公积金比例', '补充公积金比例', '是否需要工资单', '备注', '户籍性质', '民族', '学历', '婚姻状况', '现住地址', '户籍地址',
       '开户地', '开户银行信息', '银行借记卡帐号', '客户代码', '外包类型', '业务模式', '人员类型',
       '是否企服发起劳动合同', '是否电子签', '电子签平台', '劳动合同主体', '劳动合同主体注册地',
-      '项目名称', '安排或调整工作的情况', '劳动合同模板（标准模板/特殊模板）',
+      '项目名称', '安排或调整工作的情况', '劳动合同模板（标准模板/特殊模板）', '特殊合同模板名称',
       '劳动合同签署是否需要催办员工', '入职材料是否需要集约收集', '反馈截止日期',
       '是否为通用模板', '模板名称', '是否企服发薪', '发薪地', '社保公积金未办是否需要催办', '特殊备注',
     ];
@@ -199,7 +199,7 @@ describe('Imports ImportTemplateService round-trip', () => {
     await workbook.xlsx.load(result.buffer as never);
     const sheet = workbook.getWorksheet('当前字段配置')!;
 
-    expect(result.fieldCount).toBe(61);
+    expect(result.fieldCount).toBe(63);
     expect(sheet.rowCount).toBe(5);
     expect((sheet.getRow(2).values as unknown[]).slice(2)).toEqual(referenceHeaders);
     expect(sheet.getCell('A1').value).toBe('填表说明：');
@@ -222,21 +222,21 @@ describe('Imports ImportTemplateService round-trip', () => {
     expect(sheet.getCell('M4').value).toBe('满足条件时必填；格式：YYYY-MM-DD；固定期限时必填。标准格式：年-月-日。');
     expect(sheet.getCell('T4').value).toBe('请填写数字；数字格式：保留小数点后两位。');
     expect(sheet.getCell('V4').value).toBe('满足条件时必填；请填写数字；数字格式：保留小数点后两位。');
-    expect(sheet.getCell('AM4').value).toBe('城市的名字（待确认）');
-    expect(sheet.getCell('BD3').value).toBe('非必填');
-    expect(sheet.getCell('BD4').value).toBe('格式：YYYY-MM-DD；标准格式：年-月-日。');
+    expect(sheet.getCell('AN4').value).toBe('城市的名字（待确认）');
+    expect(sheet.getCell('BF3').value).toBe('非必填');
+    expect(sheet.getCell('BF4').value).toBe('格式：YYYY-MM-DD；标准格式：年-月-日。');
     expect(sheet.getCell('T5').value).toBe(1000);
     expect(sheet.getCell('U5').value).toBe('绩效工资5000+岗位津贴2000');
     expect(sheet.getCell('V5').value).toBe(1000);
 
     const expectedWidths: Record<string, number> = {
       U: 21.7272727272727,
-      AN: 18.5454545454545,
-      AO: 18.4545454545455,
-      AW: 18.3636363636364,
-      AX: 20.6363636363636,
-      AY: 27.7272727272727,
-      AZ: 26.8181818181818,
+      AO: 18.5454545454545,
+      AP: 18.4545454545455,
+      AX: 18.3636363636364,
+      AY: 20.6363636363636,
+      AZ: 27.7272727272727,
+      BA: 26.8181818181818,
     };
     for (const [column, width] of Object.entries(expectedWidths)) {
       expect(sheet.getColumn(column).width).toBeCloseTo(width, 10);
