@@ -2494,7 +2494,7 @@
 - 边界：服务器业务表和用户/通知/附件数据保持只读保护；服务器 `AUTO_SEED=false`，仅按迁移逐条应用，不运行全量 seed。发布前需备份数据库、配置表和 127 条合同子工单字段快照，并逐文件校验提交原始 Git blob。
 - 状态：已创建可复现提交，尚未对服务器执行本次同步写入。
 
-## 2026-08-28 生产同步完成
+## 2026-08-28 生产同步完成（基础验收）
 
 - 来源与发布：从提交 `23dc942` 生成 LF 归档并校验 SHA256 `184d9c4e38009d1e6cd02e3c5586853efa3201770aef97b5fb49edc8ea4c090f`；上传后仅替换 backend/frontend，分别重建镜像，未重启 PostgreSQL/Nginx。
 - 备份：`/data/apps/work-order-system/backups/ai_sync_20260828_170237`，包含完整数据库 dump、配置表、129 条合同子工单 `visible_fields` 快照、源码/Compose、旧镜像标签。
