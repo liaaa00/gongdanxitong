@@ -82,7 +82,6 @@ export function toWorkOrderListItem(workOrder: WorkOrder, subOrders: WorkOrderSu
   const customerName = readText(extraData.customer_name) ?? workOrder.customerName;
   const employeeName = readText(extraData.employee_name) ?? workOrder.employeeName;
   const employeeIdCard = readText(extraData.id_card_no ?? extraData.employee_id_card) ?? workOrder.employeeIdCard;
-  const lastWorkDate = readText(extraData.last_work_date ?? extraData.lastWorkDate ?? extraData.resignation_date);
   const createdByName = readText(workOrder.creator?.realName) ?? readText(workOrder.creator?.username) ?? workOrder.createdBy;
   return {
     id: workOrder.id,
@@ -103,8 +102,6 @@ export function toWorkOrderListItem(workOrder: WorkOrder, subOrders: WorkOrderSu
     employee_name: employeeName,
     employeeIdCard,
     employee_id_card: employeeIdCard,
-    lastWorkDate,
-    last_work_date: lastWorkDate,
     createdBy: workOrder.createdBy,
     created_by: workOrder.createdBy,
     createdByName: createdByName,

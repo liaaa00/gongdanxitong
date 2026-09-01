@@ -362,6 +362,8 @@ export class ImportFieldValidationService {
     fields: FieldConfig[],
     errors: RowValidationError[],
   ): Promise<void> {
+    if (!this.isOnboardingImportFieldSet(fields)) return;
+
     const relationshipFields = new Set([
       'contract_subject', 'company_address', 'social_location', 'social_pay_region',
       'fund_ratio', 'supplementary_fund_ratio',

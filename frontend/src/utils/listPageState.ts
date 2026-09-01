@@ -26,14 +26,29 @@ export interface CachedListPageState {
 }
 
 const STORAGE_PREFIX = 'list_page_state:';
+const STATUS_FILTER_STORAGE_PREFIX = 'onboarding_status_filter:';
 const cache: Record<string, CachedListPageState> = {};
+const statusFilterCache: Record<string, Key[] | null | undefined> = {};
 
 function getSessionStorage(): Storage | null {
   try {
-    if (typeof window === 'undefined' || !window.sessionStorage) return null;
-    return window.sessionStorage;
+    if (typeof window === 'undefined') return null;
+    return window.sessionStorage || null;
   } catch {
     return null;
+  }
+}
+
+function getStatusFilterStorage(): Storage | null {
+  try {
+    if (typeof window === 'undefined') return null;
+    return window.localStorage || window.sessionStorage || null;
+  } catch {
+    try {
+      return typeof window !== 'undefined' ? window.sessionStorage || null : null;
+    } catch {
+      return null;
+    }
   }
 }
 
@@ -114,6 +129,71 @@ function clearPersistentStateWithPrefix() {
   } catch {
     // Ignore storage errors.
   }
+}
+
+function clearStatusFilterWithPrefix() {
+  const storage = getStatusFilterStorage();
+  if (!storage) return;
+  try {
+    const keys: string[] = [];
+    for (let index = 0; index < storage.length; index += 1) {
+      const itemKey = storage.key(index);
+      if (itemKey && itemKey.startsWith(STATUS_FILTER_STORAGE_PREFIX)) keys.push(itemKey);
+    }
+    keys.forEach((itemKey) => storage.removeItem(itemKey));
+  } catch {
+    // Ignore storage errors.
+  }
+}
+
+export function getCachedStatusFilter(key: string): Key[] | null | undefined {
+  if (Object.prototype.hasOwnProperty.call(statusFilterCache, key)) return statusFilterCache[key];
+  const storage = getStatusFilterStorage();
+  if (!storage) return undefined;
+  try {
+    const raw = storage.getItem(STATUS_FILTER_STORAGE_PREFIX + key);
+    if (raw === null) return undefined;
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed === null) {
+      statusFilterCache[key] = null;
+      return null;
+    }
+    if (!Array.isArray(parsed)) return undefined;
+    const values = parsed.map((entry) => String(entry ?? '').trim()).filter(Boolean);
+    statusFilterCache[key] = values;
+    return values;
+  } catch {
+    return undefined;
+  }
+}
+
+export function updateCachedStatusFilter(key: string, status: readonly Key[] | null): void {
+  const normalized = Array.isArray(status)
+    ? status.map((entry) => String(entry ?? '').trim()).filter(Boolean)
+    : null;
+  statusFilterCache[key] = normalized;
+  const storage = getStatusFilterStorage();
+  if (!storage) return;
+  try {
+    storage.setItem(STATUS_FILTER_STORAGE_PREFIX + key, JSON.stringify(normalized));
+  } catch {
+    // Ignore storage errors; in-memory cache still keeps current SPA navigation state.
+  }
+}
+
+export function clearCachedStatusFilter(key?: string): void {
+  if (key) {
+    delete statusFilterCache[key];
+    const storage = getStatusFilterStorage();
+    try {
+      storage?.removeItem(STATUS_FILTER_STORAGE_PREFIX + key);
+    } catch {
+      // Ignore storage errors.
+    }
+    return;
+  }
+  Object.keys(statusFilterCache).forEach((item) => delete statusFilterCache[item]);
+  clearStatusFilterWithPrefix();
 }
 
 export function getCachedListPageState(key: string): CachedListPageState {

@@ -4,6 +4,9 @@ import {
   getCachedListPageState,
   updateCachedListPageState,
   clearCachedListPageState,
+  getCachedStatusFilter,
+  updateCachedStatusFilter,
+  clearCachedStatusFilter,
   getCachedMonth,
   getCachedMonthOrNull,
   toMonthKey,
@@ -44,10 +47,12 @@ describe('listPageState', () => {
   beforeEach(() => {
     clearCachedListPageState();
     ss = mockWindow();
+    clearCachedStatusFilter();
   });
 
   afterEach(() => {
     clearCachedListPageState();
+    clearCachedStatusFilter();
     restoreWindow();
   });
 
@@ -130,6 +135,23 @@ describe('listPageState', () => {
 
       expect(getCachedListPageState('key-a')).toEqual({});
       expect(getCachedListPageState('key-b')).toEqual({});
+    });
+  });
+
+  describe('persistent status filter preference', () => {
+    it('stores only status values under the dedicated preference prefix', () => {
+      updateCachedStatusFilter('user:beilun:module-a', ['pending', 'processing']);
+      expect(getCachedStatusFilter('user:beilun:module-a')).toEqual(['pending', 'processing']);
+      expect(ss.setItem).toHaveBeenCalledWith(
+        'onboarding_status_filter:user:beilun:module-a',
+        JSON.stringify(['pending', 'processing']),
+      );
+      expect(getCachedListPageState('user:beilun:module-a')).toEqual({});
+    });
+
+    it('persists an explicit reset as all statuses', () => {
+      updateCachedStatusFilter('reset-key', null);
+      expect(getCachedStatusFilter('reset-key')).toBeNull();
     });
   });
 

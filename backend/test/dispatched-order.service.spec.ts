@@ -756,6 +756,42 @@ describe('DispatchedOrderService', () => {
     expect(scopeQb.orWhere).toHaveBeenCalledWith('d.module_code IN (:...modules)', { modules: ['contract', 'onboarding_contact', 'resignation_contact'] });
   });
 
+  it('shares all contract child orders with contract team members while keeping other modules scoped', async () => {
+    const { service, queryBuilder } = makeService({
+      find: jest.fn(async () => [
+        { moduleCode: 'contract', handlerId: 'hujiayi', isActive: true } as unknown as ModuleHandler,
+        { moduleCode: 'data_entry', handlerId: 'hujiayi', isActive: true } as unknown as ModuleHandler,
+      ]),
+    });
+    const user: JwtUserPayload = {
+      sub: 'hujiayi',
+      username: 'hujiayi',
+      roles: ['contract_specialist', 'data_entry_team'],
+    } as JwtUserPayload;
+
+    await service.findAll({ page: 1, pageSize: 20, moduleCode: 'contract' } as never, user);
+
+    const scopeCallback = (queryBuilder.andWhere.mock.calls as Array<[unknown, unknown?]>)
+      .map(([condition]) => condition)
+      .find((condition) => typeof condition === 'object' && condition && condition.constructor?.name === 'Brackets');
+    expect(scopeCallback).toBeDefined();
+    const scopeQb = { where: jest.fn(), orWhere: jest.fn() };
+    (scopeCallback as { whereFactory: (qb: typeof scopeQb) => void }).whereFactory(scopeQb);
+
+    expect(scopeQb.where).toHaveBeenCalledWith(
+      'd.handler_id = :userId AND d.module_code IN (:...modules)',
+      { userId: 'hujiayi', modules: ['contract', 'data_entry', 'data_entry_resign'] },
+    );
+    expect(scopeQb.orWhere).toHaveBeenCalledWith(
+      'd.module_code IN (:...teamVisibleModules)',
+      { teamVisibleModules: ['contract'] },
+    );
+    expect(scopeQb.orWhere).toHaveBeenCalledWith(
+      'd.handler_id IS NULL AND d.module_code IN (:...poolModules)',
+      { poolModules: ['data_entry', 'data_entry_resign'] },
+    );
+  });
+
   it('keeps backend assigned scope inside role allow-list even when stale social handler rows point to the user', async () => {
     const socialOrder = {
       ...makeDispatchedOrder(DispatchedOrderStatus.PROCESSING),

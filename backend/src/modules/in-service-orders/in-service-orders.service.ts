@@ -90,6 +90,15 @@ import { OUT_OF_PROVINCE_ACCOUNTS } from './out-of-province-account-data';
 const MATERIAL_CHANGE_REQUEST_KEY = '__materialChangeRequest';
 const MATERIAL_CHANGE_HISTORY_KEY = '__materialChangeHistory';
 
+const CERTIFICATE_EXTRA_DATA_FIELDS = [
+  'certificateType',
+  'purpose',
+  'hireDate',
+  'jobTitle',
+  'referenceBaseSalary',
+  'averageMonthlyIncome',
+] as const;
+
 type MaterialChangeRequestRecord = {
   requestedBy: string;
   requestedAt: string;
@@ -603,6 +612,13 @@ export class InServiceOrdersService {
         order.businessScope ?? BusinessScope.BEILUN,
       );
       const effectivePermissions = new Map(permissions);
+      if (order.orderKind === InServiceOrderKind.CERTIFICATE) {
+        for (const fieldCode of CERTIFICATE_EXTRA_DATA_FIELDS) {
+          if (!effectivePermissions.has(fieldCode)) {
+            effectivePermissions.set(fieldCode, FieldPermissionMode.READONLY);
+          }
+        }
+      }
       for (const fieldCode of templateCodes) {
         if (!effectivePermissions.get(fieldCode) || effectivePermissions.get(fieldCode) === FieldPermissionMode.HIDDEN) {
           effectivePermissions.set(fieldCode, FieldPermissionMode.READONLY);
@@ -616,9 +632,25 @@ export class InServiceOrdersService {
       const selectedFields = allowedCodes
         ? fieldConfigs.filter((field) => allowedCodes.has(field.fieldCode))
         : fieldConfigs;
+      const fieldExtraData = { ...(order.extraData ?? {}) };
+      if (order.orderKind === InServiceOrderKind.CERTIFICATE) {
+        const certificateFieldAliases: Record<string, string> = {
+          certificate_type: 'certificateType',
+          certificate_purpose: 'purpose',
+          hire_date: 'hireDate',
+          job_title: 'jobTitle',
+          reference_base_salary: 'referenceBaseSalary',
+          average_monthly_income: 'averageMonthlyIncome',
+        };
+        for (const [fieldCode, alias] of Object.entries(certificateFieldAliases)) {
+          if (fieldExtraData[fieldCode] == null && fieldExtraData[alias] != null) {
+            fieldExtraData[fieldCode] = fieldExtraData[alias];
+          }
+        }
+      }
       const filtered = this.fieldPermissionService.buildFieldViews(
         selectedFields,
-        order.extraData ?? {},
+        fieldExtraData,
         effectivePermissions,
       );
       response.fields = filtered.map((field) => ({ ...field }));

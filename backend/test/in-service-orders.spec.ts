@@ -177,6 +177,84 @@ const createDto = {
   serviceFee: 100,
 };
 
+describe('certificate detail field permissions', () => {
+  it('keeps fixed certificate fields in detail responses', async () => {
+    const order = Object.assign(makeOrder(), {
+      orderKind: InServiceOrderKind.CERTIFICATE,
+      extraData: {
+        certificateType: 'employment',
+        purpose: 'customer-entry',
+        hireDate: '2026-08-01',
+        jobTitle: 'operator',
+        hiddenExtra: 'should-not-leak',
+      },
+    });
+    const { service } = makeService(order);
+    (service as any).fieldConfigRepository = { find: jest.fn(async () => []) };
+    (service as any).fieldPermissionService = {
+      getPermissionsForUser: jest.fn(async () => new Map()),
+      buildFieldViews: jest.fn(() => []),
+      applyExtraData: jest.fn((data: Record<string, unknown>, permissions: Map<string, unknown>) => ({
+        data: Object.fromEntries(Object.entries(data).filter(([key]) => permissions.has(key))),
+        readonlyFields: [],
+      })),
+    };
+
+    const result = await service.findOne(order.id, creator);
+
+    expect(result.extraData).toMatchObject({
+      certificateType: 'employment',
+      purpose: 'customer-entry',
+      hireDate: '2026-08-01',
+      jobTitle: 'operator',
+    });
+    expect(result.extraData.hiddenExtra).toBeUndefined();
+  });
+
+  it('maps certificate extra data aliases into configured detail fields', async () => {
+    const order = Object.assign(makeOrder(), {
+      orderKind: InServiceOrderKind.CERTIFICATE,
+      extraData: {
+        certificateType: 'income',
+        purpose: '贷款',
+        hireDate: '2026-08-01',
+        jobTitle: 'operator',
+        averageMonthlyIncome: 9600,
+      },
+    });
+    const { service } = makeService(order);
+    (service as any).fieldConfigRepository = {
+      find: jest.fn(async () => [
+        { fieldCode: 'certificate_type', fieldName: '证明类型', fieldType: 'dropdown', isActive: true },
+        { fieldCode: 'certificate_purpose', fieldName: '证明用途', fieldType: 'text', isActive: true },
+        { fieldCode: 'hire_date', fieldName: '入职日期', fieldType: 'date', isActive: true },
+        { fieldCode: 'job_title', fieldName: '职务', fieldType: 'text', isActive: true },
+        { fieldCode: 'average_monthly_income', fieldName: '近一年税前月均收入', fieldType: 'number', isActive: true },
+      ]),
+    };
+    const buildFieldViews = jest.fn((fields: unknown[]) => fields);
+    (service as any).fieldPermissionService = {
+      getPermissionsForUser: jest.fn(async () => new Map()),
+      buildFieldViews,
+      applyExtraData: jest.fn((data: Record<string, unknown>) => ({ data, readonlyFields: [] })),
+    };
+
+    await service.findOne(order.id, creator);
+
+    expect(buildFieldViews).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({
+        certificate_type: 'income',
+        certificate_purpose: '贷款',
+        hire_date: '2026-08-01',
+        job_title: 'operator',
+        average_monthly_income: 9600,
+      }),
+      expect.any(Map),
+    );
+  });
+});
+
 describe('renewal closure actions', () => {
   it.each([
     InServiceCancelAction.WITHDRAW,

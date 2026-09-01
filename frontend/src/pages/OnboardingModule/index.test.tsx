@@ -1,8 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import OnboardingModule, { getOnboardingModulePermissionState } from './index';
+import OnboardingModule, { buildOnboardingModulePageStateKey, getOnboardingModulePermissionState } from './index';
 import { DEFAULT_MATRIX } from '@/services/roleActionPermissions';
-import { KEEP_ALIVE_ROUTE_ACTIVATED_EVENT } from '@/utils/listPageState';
+import { clearCachedStatusFilter, KEEP_ALIVE_ROUTE_ACTIVATED_EVENT } from '@/utils/listPageState';
 
 
 const mocks = vi.hoisted(() => ({
@@ -54,7 +54,7 @@ vi.mock('react-router-dom', async () => {
 vi.mock('@/hooks/useAuth', () => ({
   useAuth: () => ({
     hasRole: () => true,
-    user: { permissions: mocks.userPermissions },
+    user: { id: 'user-1', username: 'tester', business_scope: 'beilun', permissions: mocks.userPermissions },
   }),
 }));
 
@@ -72,8 +72,16 @@ vi.mock('@/services/dispatchedOrders', () => ({
 }));
 
 describe('OnboardingModule header table filters', () => {
+  it('scopes cached state by user, business scope, and module', () => {
+    expect(buildOnboardingModulePageStateKey('social_insurance_resign', 'user/1', 'out_of_province'))
+      .toBe('user%2F1:out_of_province:social_insurance_resign');
+    expect(buildOnboardingModulePageStateKey('social_insurance_resign', 'user/1', 'beilun'))
+      .not.toBe(buildOnboardingModulePageStateKey('social_insurance_resign', 'user/1', 'out_of_province'));
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
+    clearCachedStatusFilter();
     mocks.latestProTableProps = undefined;
     mocks.moduleCode = 'data_entry';
     mocks.getDispatchedOrders.mockResolvedValue({ list: [], total: 0 });
@@ -89,6 +97,13 @@ describe('OnboardingModule header table filters', () => {
     });
 
     expect(mocks.reload).toHaveBeenCalled();
+  });
+
+  it('defaults to the five active statuses when no status preference exists', async () => {
+    render(<OnboardingModule />);
+
+    const statusColumn = (mocks.latestProTableProps.columns as Array<Record<string, any>>).find((column) => column.key === 'status');
+    expect(statusColumn?.filteredValue).toEqual(['pending', 'processing', 'modify_pending', 'withdraw_pending', 'void_pending']);
   });
 
   it('reloads and sends a single selected status when status header filter changes', async () => {
@@ -107,6 +122,35 @@ describe('OnboardingModule header table filters', () => {
       pageSize: 20,
       module_code: 'data_entry',
       statuses: 'pending',
+    })));
+  });
+
+  it('persists an explicit status reset as all statuses for the next mount', async () => {
+    const { unmount } = render(<OnboardingModule />);
+    await act(async () => {
+      mocks.latestProTableProps.onChange({}, { status: [] });
+    });
+    unmount();
+    render(<OnboardingModule />);
+    const statusColumn = (mocks.latestProTableProps.columns as Array<Record<string, any>>).find((column) => column.key === 'status');
+    expect(statusColumn?.filteredValue).toBeNull();
+  });
+
+  it('keeps the selected status when another header filter changes', async () => {
+    render(<OnboardingModule />);
+
+    await act(async () => {
+      mocks.latestProTableProps.onChange({}, { status: ['pending'] });
+    });
+    await act(async () => {
+      mocks.latestProTableProps.onChange({}, { created_by_name: ['张三'] });
+    });
+
+    const statusColumn = (mocks.latestProTableProps.columns as Array<Record<string, any>>).find((column) => column.key === 'status');
+    expect(statusColumn?.filteredValue).toEqual(['pending']);
+    await waitFor(() => expect(mocks.getDispatchedOrders).toHaveBeenLastCalledWith(expect.objectContaining({
+      statuses: 'pending',
+      createdByName: '张三',
     })));
   });
 
@@ -311,6 +355,17 @@ describe('OnboardingModule resignation certificate list', () => {
     mocks.latestProTableProps = undefined;
     mocks.moduleCode = 'resignation_cert';
     mocks.getDispatchedOrders.mockResolvedValue({ list: [], total: 0 });
+  });
+
+  it('shows the last work date on the resignation-certificate child-order list', () => {
+    render(<OnboardingModule />);
+
+    const lastWorkDateColumn = (mocks.latestProTableProps.columns as Array<Record<string, any>>)
+      .find((column) => column.key === 'last_work_date');
+    expect(lastWorkDateColumn).toBeDefined();
+    expect(lastWorkDateColumn.renderText?.(null, {
+      extra_data: { last_work_date: '2026-08-25T00:00:00.000Z' },
+    })).toBe('2026-08-25');
   });
 
   it('offers batch resignation-certificate export without fixed-template wording', () => {

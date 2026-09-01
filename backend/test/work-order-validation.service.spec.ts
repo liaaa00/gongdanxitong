@@ -88,6 +88,34 @@ describe('WorkOrderValidationService submit validation', () => {
     }))).resolves.toBeUndefined();
   });
 
+  it('validates resignation reason against its fixed dropdown options', async () => {
+    const resignationReasonField = field({
+      fieldCode: 'resignation_reason',
+      fieldName: '离职原因',
+      fieldType: FieldType.DROPDOWN,
+      dropdownOptions: ['个人辞职', '公司解聘'],
+      orderType: OrderType.RESIGNATION,
+      businessContext: [OrderType.RESIGNATION],
+      isRequired: true,
+      defaultRequired: true,
+    });
+    (fieldConfigRepository.find as jest.Mock).mockResolvedValueOnce([resignationReasonField]);
+    const valid = makeWorkOrder({ resignation_reason: '个人辞职' });
+    valid.orderType = OrderType.RESIGNATION;
+    await expect(service.validateWorkOrder(valid)).resolves.toBeUndefined();
+
+    (fieldConfigRepository.find as jest.Mock).mockResolvedValueOnce([resignationReasonField]);
+    const invalid = makeWorkOrder({ resignation_reason: '其他原因' });
+    invalid.orderType = OrderType.RESIGNATION;
+    await expect(service.validateWorkOrder(invalid)).rejects.toMatchObject({
+      response: expect.objectContaining({
+        details: expect.objectContaining({
+          invalid: [expect.objectContaining({ fieldCode: 'resignation_reason' })],
+        }),
+      }),
+    });
+  });
+
   it('allows submit without the removed social insurance urge field', async () => {
     await expect(service.validateWorkOrder(makeWorkOrder({
       employee_name: '周九',

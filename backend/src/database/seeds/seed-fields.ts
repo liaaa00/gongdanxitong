@@ -205,7 +205,7 @@ const renewalFields: FieldSeed[] = [
  * ========================================================================= */
 const resignationFields: FieldSeed[] = [
   { code: 'resignation_type',             name: '离职类型',         type: FieldType.DROPDOWN, required: true,  defaultRequired: true,  options: ['协商一致', '主动辞职', '公司辞退', '合同到期', '其他'], orderType: RESIGNATION, businessContext: [RESIGNATION] },
-  { code: 'resignation_reason',           name: '离职原因',         type: FieldType.TEXT,     required: true,  defaultRequired: true,  orderType: RESIGNATION, businessContext: [RESIGNATION] },
+  { code: 'resignation_reason',           name: '离职原因',         type: FieldType.DROPDOWN, required: true,  defaultRequired: true,  options: ['个人辞职', '公司解聘', '协商解除（个人提出）', '协商解除（公司提出）', '合同到期不续签（个人提出）', '合同到期不续签（公司提出）', '试用期不符合录用条件', '社保缴纳地变更', '员工退休或死亡', '客户流失或破产', '法人变更'], orderType: RESIGNATION, businessContext: [RESIGNATION] },
   { code: 'social_pay_region',            name: '缴纳地',           type: FieldType.DROPDOWN, required: true,  defaultRequired: true,  placeholder: '请选择缴纳地', helpText: '选项来自启用劳动合同主体的城市配置。', orderType: RESIGNATION, businessContext: [ONBOARDING, RESIGNATION] },
   { code: 'social_stop_month',            name: '社保停缴月',       type: FieldType.DROPDOWN, required: true,  defaultRequired: true,  options: ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'], helpText: '几月不产生费用填几月。', orderType: RESIGNATION, businessContext: [RESIGNATION] },
   { code: 'fund_stop_month',              name: '公积金停缴月',     type: FieldType.DROPDOWN, required: true,  defaultRequired: true,  options: ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'], helpText: '几月不产生费用填几月。', orderType: RESIGNATION, businessContext: [RESIGNATION] },

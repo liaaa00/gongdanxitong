@@ -106,6 +106,14 @@ export class WorkOrderValidationService {
         continue;
       }
 
+      if (field.fieldType === 'dropdown' && Array.isArray(field.dropdownOptions) && field.dropdownOptions.length > 0) {
+        const options = field.dropdownOptions.map(String);
+        if (!options.includes(String(value)) && !(field.fieldCode === 'household_type' && this.isKnownHouseholdTypeAlias(value))) {
+          invalid.push({ fieldCode: field.fieldCode, reason: `可选值：${options.join('、')}` });
+          continue;
+        }
+      }
+
       if (field.validationRegex) {
         const regex = new RegExp(field.validationRegex);
         if (!regex.test(String(value))) {
@@ -363,6 +371,10 @@ export class WorkOrderValidationService {
       return value.trim();
     }
     return null;
+  }
+
+  private isKnownHouseholdTypeAlias(value: unknown): boolean {
+    return ['城镇户口', '农村户口', '城镇', '农村'].includes(String(value ?? '').trim());
   }
 
   hasValue(value: unknown): boolean {

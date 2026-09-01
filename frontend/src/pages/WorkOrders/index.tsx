@@ -46,10 +46,6 @@ function getMonthRange(value?: Dayjs | null): { submittedAfter: string; submitte
   };
 }
 
-function displayDateOnly(value: unknown): string {
-  const text = String(value ?? '').trim();
-  return text ? text.slice(0, 10) : '-';
-}
 
 const textHeaderFilter = (placeholder: string): Pick<ProColumns<WorkOrderItem>, 'filterDropdown' | 'filterIcon'> => ({
   filterDropdown: ({ setSelectedKeys, selectedKeys, confirm, clearFilters, close }) => (
@@ -406,18 +402,6 @@ const WorkOrders: React.FC<WorkOrdersProps> = ({ mode = 'main' }) => {
       ),
     },
     ];
-
-    if (currentOrderType === 'resignation') {
-      const employeeIndex = baseColumns.findIndex((column) => column.dataIndex === 'employee_id_card');
-      baseColumns.splice(employeeIndex + 1, 0, {
-        title: '最后工作日',
-        dataIndex: 'last_work_date',
-        key: 'last_work_date',
-        width: 130,
-        hideInSearch: true,
-        renderText: (_, record) => displayDateOnly(record.last_work_date ?? record.extra_data?.last_work_date),
-      });
-    }
 
     return isInitiatedPage ? baseColumns.filter((column) => column.key !== 'actions') : baseColumns;
   }, [canDelete, currentOrderType, handleDelete, isAdmin, isBusinessOwner, isGroupLeader, isInitiatedPage, navigate]);

@@ -2570,6 +2570,9 @@ export class DispatchedOrderService {
     }
     const modules = await this.getAccessibleModules(user.sub, user.roles);
     const canSeeModuleAll = hasManagementScopeRole(user.roles) || hasModuleSupervisorRole(user.roles) || (await this.hasSupervisorLevel(user.sub));
+    const teamVisibleModules = modules.filter((moduleCode) => (
+      moduleCode === DispatchModuleCode.CONTRACT && hasAnyRole(user.roles, CONTRACT_MODULE_ROLES)
+    ));
     const includeCreatorScope = this.shouldIncludeCreatorScope(user, modules);
     const restrictAssignedScope = this.shouldRestrictAssignedScope(user, modules);
     const isBusinessManagerUser = hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES);
@@ -2609,6 +2612,13 @@ export class DispatchedOrderService {
           // Module supervisors (for example 江璐 as shared_team_owner) must see every child order in their modules,
           // including orders already assigned to 杨纯/毛雅妮. Non-supervisor executors only see their own orders plus pool.
           scope.orWhere('d.module_code IN (:...modules)', { modules });
+        } else if (!onlyPool && teamVisibleModules.length > 0) {
+          // Contract team members share the contract queue, including historical orders assigned to another member.
+          scope.orWhere('d.module_code IN (:...teamVisibleModules)', { teamVisibleModules });
+          const poolModules = modules.filter((moduleCode) => !teamVisibleModules.includes(moduleCode));
+          if (poolModules.length > 0) {
+            scope.orWhere('d.handler_id IS NULL AND d.module_code IN (:...poolModules)', { poolModules });
+          }
         } else {
           scope.orWhere('d.handler_id IS NULL AND d.module_code IN (:...modules)', { modules });
         }

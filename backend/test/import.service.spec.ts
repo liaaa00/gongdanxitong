@@ -672,3 +672,61 @@ describe('ImportFieldValidationService scenarios', () => {
     expect(result.warnings.some((item) => item.code === 'header_alias' && item.normalizedValue === '回传截止日')).toBe(true);
   });
 });
+
+describe('contract subject relation import scope', () => {
+  const fundRule = {
+    fundRatioOptions: ['5%'],
+    supplementaryFundRatioOptions: [],
+    fundRatioMode: 'same',
+  };
+  const contractSubjectsService = {
+    findByName: jest.fn(async () => null),
+    findFundRuleByLocation: jest.fn(async () => fundRule),
+  };
+  const service = new ImportFieldValidationService(
+    {} as never,
+    new AstEvaluator(),
+    undefined,
+    contractSubjectsService as never,
+  );
+
+  it('does not require fund_ratio for resignation imports that only contain a pay region', async () => {
+    const resignationFields = [
+      field({ fieldCode: 'employee_name', fieldName: 'employee_name', isRequired: true, orderType: OrderType.RESIGNATION }),
+      field({ fieldCode: 'social_pay_region', fieldName: 'social_pay_region', orderType: OrderType.RESIGNATION }),
+    ];
+    const result = await service.validateRow({
+      rowNo: 20,
+      raw: { employee_name: 'Zhu', social_pay_region: 'Shanghai' },
+      mapping: [
+        { header: 'employee_name', fieldCode: 'employee_name' },
+        { header: 'social_pay_region', fieldCode: 'social_pay_region' },
+      ],
+      fields: resignationFields,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.errors).not.toContainEqual(expect.objectContaining({ fieldCode: 'fund_ratio' }));
+  });
+
+  it('still requires fund_ratio for onboarding imports with a matching fund rule', async () => {
+    const onboardingFields = [
+      field({ fieldCode: 'employee_name', fieldName: 'employee_name', isRequired: true, orderType: OrderType.ONBOARDING }),
+      field({ fieldCode: 'social_pay_region', fieldName: 'social_pay_region', orderType: OrderType.ONBOARDING }),
+      field({ fieldCode: 'fund_ratio', fieldName: 'fund_ratio', orderType: OrderType.ONBOARDING }),
+    ];
+    const result = await service.validateRow({
+      rowNo: 21,
+      raw: { employee_name: 'Zhu', social_pay_region: 'Shanghai' },
+      mapping: [
+        { header: 'employee_name', fieldCode: 'employee_name' },
+        { header: 'social_pay_region', fieldCode: 'social_pay_region' },
+        { header: 'fund_ratio', fieldCode: 'fund_ratio' },
+      ],
+      fields: onboardingFields,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContainEqual(expect.objectContaining({ fieldCode: 'fund_ratio', reason: 'required' }));
+  });
+});

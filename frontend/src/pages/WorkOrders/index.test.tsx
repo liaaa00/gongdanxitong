@@ -287,10 +287,6 @@ describe('WorkOrders initiated read-only view', () => {
       orderType: 'resignation',
     }));
     expect(mocks.getWorkOrders).toHaveBeenCalledWith(expect.not.objectContaining({ createdAfter: expect.anything() }));
-
-    const lastWorkDateColumn = getColumn('last_work_date');
-    expect(lastWorkDateColumn).toBeDefined();
-    expect(lastWorkDateColumn.renderText?.(null, { last_work_date: '2026-08-25T00:00:00.000Z' })).toBe('2026-08-25');
   });
 
   it('passes the created-time sort through the main work-order request', async () => {

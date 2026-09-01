@@ -22,15 +22,19 @@ import type { PageParams } from '@/services/mock';
 import { getModuleLabel, getModuleTitle } from '@/constants/modules';
 import { ROLE } from '@/constants/roles';
 import { getStatusColor, getStatusText } from '@/constants/dictionaries';
+import { BUSINESS_SCOPE, readBusinessScope } from '@/utils/businessScope';
 import { useAuth } from '@/hooks/useAuth';
 import { useColumnConfig } from '@/components/MultiViewTable/useColumnConfig';
 import { normalizePayrollSlipDisplay } from '@/utils/payrollBankCard';
 import { DISPATCHED_NINE_STATUS_OPTIONS } from '@/utils/dispatchedStatusFilter';
 import {
+  getCachedListPageState,
+  getCachedStatusFilter,
   getCachedMonthOrNull,
   KEEP_ALIVE_ROUTE_ACTIVATED_EVENT,
   toMonthKey,
   updateCachedListPageState,
+  updateCachedStatusFilter,
 } from '@/utils/listPageState';
 
 const RefButton = forwardRef<HTMLButtonElement, React.ComponentProps<typeof Button>>((props, ref) => (
@@ -50,6 +54,18 @@ const HANDLING_RESULT_OPTIONS = [
   { label: '否', value: '否' },
 ];
 const ACTIVE_DISPATCHED_STATUSES = new Set(['pending', 'processing']);
+const DEFAULT_STATUS_FILTER_VALUES = ['pending', 'processing', 'modify_pending', 'withdraw_pending', 'void_pending'] as const;
+
+export function buildOnboardingModulePageStateKey(
+  moduleCode: string,
+  userId: string,
+  businessScope: string,
+): string {
+  return [userId || 'anonymous', businessScope || 'default', moduleCode || 'unknown']
+    .map((part) => encodeURIComponent(part))
+    .join(':');
+}
+
 const DISPATCHED_PROCESSING_FILTER_STATUSES = ['pending', 'processing'] as const;
 const PAYROLL_BANK_CARD_FIELDS = ['bank_name', 'bank_account', 'bank_location', 'payroll_location'] as const;
 
@@ -332,6 +348,11 @@ export const displaySocialFundValue = (record: DispatchedOrderItem, fieldCode: s
   return '-';
 };
 
+function displayDateOnly(value: unknown): string {
+  const text = String(value ?? '').trim();
+  return text ? text.slice(0, 10) : '-';
+}
+
 const OnboardingModule: React.FC = () => {
   const { moduleCode } = useParams<{ moduleCode: string }>();
   const navigate = useNavigate();
@@ -339,6 +360,7 @@ const OnboardingModule: React.FC = () => {
   const { hasRole, user } = useAuth();
   const actionRef = useRef<ActionType>();
   const didMountFilterReloadRef = useRef(false);
+  const skipNextFilterReloadRef = useRef(false);
   const [selectedRows, setSelectedRows] = useState<DispatchedOrderItem[]>([]);
   const [tableFilters, setTableFilters] = useState<ControlledFilters>({});
   const [batchOpen, setBatchOpen] = useState(false);
@@ -355,7 +377,11 @@ const OnboardingModule: React.FC = () => {
   const [searchVersion, setSearchVersion] = useState(0);
 
   const currentModule = moduleCode || '';
-  const pageStateKey = `onboarding-module-${currentModule || 'unknown'}`;
+  const accountBusinessScope = user?.business_scope ?? user?.businessScope ?? BUSINESS_SCOPE.BEILUN;
+  const canSwitchBusinessScope = hasRole(ROLE.ADMIN)
+    || (user?.permissions || []).some((permission) => permission === 'business_scope.switch' || permission === '*' || permission === 'all');
+  const activeBusinessScope = canSwitchBusinessScope ? readBusinessScope() : accountBusinessScope;
+  const pageStateKey = `onboarding-module:${buildOnboardingModulePageStateKey(currentModule, user?.id || user?.username || 'anonymous', activeBusinessScope)}`;
   const [month, setMonth] = useState<Dayjs | null>(() => getCachedMonthOrNull(pageStateKey));
   const backendModuleCode = currentModule === 'social_insurance_resign' ? 'resignation_social_insurance' : currentModule;
   const moduleLabel = getModuleLabel(currentModule);
@@ -367,11 +393,21 @@ const OnboardingModule: React.FC = () => {
 
   useEffect(() => {
     setMonth(getCachedMonthOrNull(pageStateKey));
+    const cachedStatus = getCachedStatusFilter(pageStateKey);
+    const status = isPayrollBankCardExport
+      ? undefined
+      : cachedStatus === undefined
+        ? [...DEFAULT_STATUS_FILTER_VALUES]
+        : cachedStatus;
+    const restoredFilters: ControlledFilters = status && status.length > 0 ? { status: [...status] } : {};
+    if (!areControlledFiltersEqual(tableFilters, restoredFilters)) {
+      skipNextFilterReloadRef.current = true;
+    }
     setTableFilters((previousFilters) => (
-      areControlledFiltersEqual(previousFilters, {}) ? previousFilters : {}
+      areControlledFiltersEqual(previousFilters, restoredFilters) ? previousFilters : restoredFilters
     ));
     setSelectedRows((previousRows) => (previousRows.length === 0 ? previousRows : []));
-  }, [currentModule, pageStateKey]);
+  }, [currentModule, pageStateKey, isPayrollBankCardExport]);
 
   useEffect(() => {
     const handleKeepAliveRouteActivated = (event: Event) => {
@@ -388,15 +424,28 @@ const OnboardingModule: React.FC = () => {
       didMountFilterReloadRef.current = true;
       return;
     }
+    if (skipNextFilterReloadRef.current) {
+      skipNextFilterReloadRef.current = false;
+      return;
+    }
     actionRef.current?.reload();
   }, [tableFilters]);
 
   const handleTableChange = useCallback((_: unknown, filters: TableFilters) => {
+    skipNextFilterReloadRef.current = false;
     const nextFilters = normalizeTableFilters(filters);
+    const hasStatusPayload = Object.prototype.hasOwnProperty.call(filters, 'status');
+    const nextStatus = hasStatusPayload ? (nextFilters.status ?? null) : tableFilters.status;
+    const mergedFilters = hasStatusPayload || tableFilters.status === undefined
+      ? nextFilters
+      : { ...nextFilters, status: tableFilters.status };
     setTableFilters((previousFilters) => (
-      areControlledFiltersEqual(previousFilters, nextFilters) ? previousFilters : nextFilters
+      areControlledFiltersEqual(previousFilters, mergedFilters) ? previousFilters : mergedFilters
     ));
-  }, []);
+    if (nextStatus !== undefined) {
+      updateCachedStatusFilter(pageStateKey, nextStatus);
+    }
+  }, [pageStateKey, tableFilters]);
 
   const {
     isSocialModule,
@@ -557,6 +606,19 @@ const OnboardingModule: React.FC = () => {
       { title: '客户名称', dataIndex: 'customer_name', key: 'customer_name', width: 190, search: { transform: (value) => ({ customerName: value }) }, filteredValue: tableFilters.customer_name || null, ...textHeaderFilter('输入客户名称') },
       { title: '员工姓名', dataIndex: 'employee_name', key: 'employee_name', width: 120, search: { transform: (value) => ({ employeeName: value }) }, filteredValue: tableFilters.employee_name || null, ...textHeaderFilter('输入员工姓名') },
       { title: '证件号', dataIndex: 'employee_id_card', key: 'employee_id_card', width: 190, search: { transform: (value) => ({ idCardNo: value }) }, filteredValue: tableFilters.employee_id_card || null, ...textHeaderFilter('输入证件号') },
+      ...(currentModule === 'resignation_cert'
+        ? [{
+            title: '最后工作日',
+            key: 'last_work_date',
+            width: 130,
+            hideInSearch: true,
+            renderText: (_: unknown, record: DispatchedOrderItem) => displayDateOnly(
+              record.extra_data?.last_work_date
+                ?? record.extra_data?.lastWorkDate
+                ?? record.extra_data?.resignation_date,
+            ),
+          }]
+        : []),
       { title: '发起人', dataIndex: 'created_by_name', key: 'created_by_name', width: 120, hideInSearch: true, filteredValue: tableFilters.created_by_name || null, ...textHeaderFilter('输入发起人'), renderText: (value: string | undefined, record: DispatchedOrderItem) => value || record.created_by || '-' },
       statusColumn,
       { title: '派发时间', dataIndex: 'dispatched_at', key: 'dispatched_at', width: 160, valueType: 'dateTime', sorter: true, hideInSearch: true },

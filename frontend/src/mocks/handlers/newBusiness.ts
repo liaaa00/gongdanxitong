@@ -15,7 +15,7 @@ const RENEWAL_FIELDS = [
 
 const RESIGNATION_FIELDS = [
   { field_code: 'resignation_type', field_name: '离职类型', field_type: 'DROPDOWN', required: true, order_type: 'resignation', dropdown_options: '协商一致,主动辞职,公司辞退,合同到期,其他' },
-  { field_code: 'resignation_reason', field_name: '离职原因', field_type: 'TEXT', required: true, order_type: 'resignation' },
+  { field_code: 'resignation_reason', field_name: '离职原因', field_type: 'DROPDOWN', required: true, order_type: 'resignation', dropdown_options: '个人辞职,公司解聘,协商解除（个人提出）,协商解除（公司提出）,合同到期不续签（个人提出）,合同到期不续签（公司提出）,试用期不符合录用条件,社保缴纳地变更,员工退休或死亡,客户流失或破产,法人变更' },
   { field_code: 'last_work_date', field_name: '最后工作日', field_type: 'DATE', required: true, order_type: 'resignation' },
   { field_code: 'contract_terminate_date', field_name: '合同解除日', field_type: 'DATE', required: true, order_type: 'resignation' },
   { field_code: 'handover_person', field_name: '工作交接人', field_type: 'TEXT', required: false, order_type: 'resignation' },

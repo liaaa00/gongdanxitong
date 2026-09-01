@@ -18,7 +18,6 @@ export interface WorkOrderItem {
   createdByName?: string | null;
   department_id: string;
   extra_data: Record<string, unknown>;
-  last_work_date?: string | null;
   submitted_at: string | null;
   completed_at: string | null;
   created_at: string;
@@ -851,7 +850,6 @@ function normalizeWorkOrderResponse(raw: unknown): WorkOrderItem {
     createdByName: (source.createdByName ?? source.created_by_name ?? (source.createdBy as any)?.realName ?? (source.createdBy as any)?.username ?? null) as string | null,
     department_id: String(source.department_id ?? source.departmentId ?? (source.department as any)?.id ?? ''),
     extra_data: extra,
-    last_work_date: (source.last_work_date ?? source.lastWorkDate ?? extra.last_work_date ?? extra.lastWorkDate ?? extra.resignation_date ?? null) as string | null,
     submitted_at: (source.submitted_at ?? source.submittedAt ?? null) as string | null,
     completed_at: (source.completed_at ?? source.completedAt ?? null) as string | null,
     created_at: String(source.created_at ?? source.createdAt ?? ''),
