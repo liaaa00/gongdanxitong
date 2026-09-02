@@ -8,6 +8,8 @@ import { clearCachedStatusFilter, KEEP_ALIVE_ROUTE_ACTIVATED_EVENT } from '@/uti
 const mocks = vi.hoisted(() => ({
   latestProTableProps: undefined as any,
   getDispatchedOrders: vi.fn(),
+  batchAcceptDispatchedOrders: vi.fn(),
+  batchCompleteDispatchedOrders: vi.fn(),
   batchExportDispatchedOrders: vi.fn(),
   batchReturnDispatchedOrders: vi.fn(),
   downloadDispatchedExport: vi.fn(),
@@ -64,7 +66,8 @@ vi.mock('@/components/DispatchedBatchImportModal', () => ({
 
 vi.mock('@/services/dispatchedOrders', () => ({
   getDispatchedOrders: (...args: unknown[]) => mocks.getDispatchedOrders(...args),
-  batchCompleteDispatchedOrders: vi.fn(),
+  batchAcceptDispatchedOrders: (...args: unknown[]) => mocks.batchAcceptDispatchedOrders(...args),
+  batchCompleteDispatchedOrders: (...args: unknown[]) => mocks.batchCompleteDispatchedOrders(...args),
   batchExportDispatchedOrders: (...args: unknown[]) => mocks.batchExportDispatchedOrders(...args),
   batchReturnDispatchedOrders: (...args: unknown[]) => mocks.batchReturnDispatchedOrders(...args),
   batchUrgeDispatchedOrders: vi.fn(),
@@ -497,8 +500,118 @@ describe('OnboardingModule contract export grouping by esign platform', () => {
     expect(mocks.batchExportDispatchedOrders.mock.calls[0][0]).toEqual(['c1', 'c2']);
     await waitFor(() => expect(mocks.downloadDispatchedExport).toHaveBeenCalledTimes(1));
   });
+
+  it('exports more than 1000 selected rows in multiple requests and downloads every batch', async () => {
+    mocks.batchExportDispatchedOrders
+      .mockResolvedValueOnce({ fileId: 'batch-1', fileName: 'batch-1.xlsx', downloadUrl: '/api/files/batch-1' })
+      .mockResolvedValueOnce({ fileId: 'batch-2', fileName: 'batch-2.xlsx', downloadUrl: '/api/files/batch-2' });
+    render(<OnboardingModule />);
+    const rows = Array.from({ length: 1001 }, (_item, index) => ({
+      id: `contract-${index + 1}`,
+      module_code: 'contract',
+      status: 'pending',
+      extra_data: { esign_platform: '速创' },
+    }));
+
+    await act(async () => {
+      selectRows(rows);
+    });
+    await clickExport();
+
+    await waitFor(() => expect(mocks.batchExportDispatchedOrders).toHaveBeenCalledTimes(2));
+    expect(mocks.batchExportDispatchedOrders.mock.calls.map(([ids]) => ids.length)).toEqual([1000, 1]);
+    await waitFor(() => expect(mocks.downloadDispatchedExport).toHaveBeenCalledTimes(2));
+  });
 });
 
+
+describe('OnboardingModule filtered select-all and chunked actions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.latestProTableProps = undefined;
+    mocks.moduleCode = 'contract';
+    mocks.batchAcceptDispatchedOrders.mockImplementation(async (ids: string[]) => ({
+      success: true,
+      accepted: ids.length,
+      skipped: [],
+    }));
+  });
+
+  it('selects every filtered page with the exact current filters and clears selection when filters change', async () => {
+    mocks.getDispatchedOrders.mockImplementation(async (params: Record<string, unknown>) => {
+      const page = Number(params.current ?? 1);
+      const pageSize = Number(params.pageSize ?? 20);
+      const count = pageSize === 200 ? (page < 3 ? 200 : 50) : 1;
+      return {
+        list: Array.from({ length: count }, (_item, index) => ({
+          id: `contract-${(page - 1) * 200 + index + 1}`,
+          module_code: 'contract',
+          status: 'pending',
+          data_entry_status: 'completed',
+          extra_data: {},
+        })),
+        total: 450,
+      };
+    });
+    render(<OnboardingModule />);
+
+    await act(async () => {
+      await mocks.latestProTableProps.request(
+        { current: 1, pageSize: 20 },
+        {},
+        { status: ['pending'], data_entry_status: ['completed'] },
+      );
+    });
+    await act(async () => {
+      mocks.latestProTableProps.rowSelection.onChange(
+        ['contract-1'],
+        [{ id: 'contract-1', module_code: 'contract', status: 'pending', data_entry_status: 'completed', extra_data: {} }],
+      );
+    });
+
+    const tableAlert = mocks.latestProTableProps.tableAlertRender as (props: Record<string, unknown>) => React.ReactNode;
+    render(tableAlert({
+      selectedRows: [{ id: 'contract-1', module_code: 'contract', status: 'pending', data_entry_status: 'completed', extra_data: {} }],
+      onCleanSelected: vi.fn(),
+    }));
+    fireEvent.click(screen.getByRole('button', { name: '选择当前筛选结果全部 450 条' }));
+
+    await waitFor(() => expect(mocks.latestProTableProps.rowSelection.selectedRowKeys).toHaveLength(450));
+    const selectAllCalls = mocks.getDispatchedOrders.mock.calls.slice(-3).map(([params]) => params);
+    expect(selectAllCalls).toEqual([
+      expect.objectContaining({ current: 1, pageSize: 200, statuses: 'pending', dataEntryStatuses: 'completed' }),
+      expect.objectContaining({ current: 2, pageSize: 200, statuses: 'pending', dataEntryStatuses: 'completed' }),
+      expect.objectContaining({ current: 3, pageSize: 200, statuses: 'pending', dataEntryStatuses: 'completed' }),
+    ]);
+
+    await act(async () => {
+      mocks.latestProTableProps.onChange({}, { status: ['processing'], data_entry_status: ['completed'] });
+    });
+    await waitFor(() => expect(mocks.latestProTableProps.rowSelection.selectedRowKeys).toEqual([]));
+  });
+
+  it('submits 120 accepted rows as 50, 50, and 20', async () => {
+    mocks.getDispatchedOrders.mockResolvedValue({ list: [], total: 0 });
+    render(<OnboardingModule />);
+    const rows = Array.from({ length: 120 }, (_item, index) => ({
+      id: `contract-${index + 1}`,
+      module_code: 'contract',
+      status: 'pending',
+      extra_data: {},
+    }));
+
+    await act(async () => {
+      mocks.latestProTableProps.rowSelection.onChange(rows.map((row) => row.id), rows);
+    });
+    const actions = mocks.latestProTableProps.toolBarRender() as Array<{ key: string; props: { onClick: () => Promise<void> } }>;
+    const acceptButton = actions.find((action) => action.key === 'batch-accept');
+    await act(async () => {
+      await acceptButton!.props.onClick();
+    });
+
+    expect(mocks.batchAcceptDispatchedOrders.mock.calls.map(([ids]) => ids.length)).toEqual([50, 50, 20]);
+  });
+});
 
 describe('OnboardingModule action permission baseline', () => {
   const hasRoleFactory = (roles: string[]) => (roleCode: string) => roles.includes(roleCode);

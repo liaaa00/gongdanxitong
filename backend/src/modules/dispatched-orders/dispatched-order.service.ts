@@ -2654,6 +2654,29 @@ export class DispatchedOrderService {
     const statuses = this.normalizeStatusList(query.status ?? query.statuses ?? query.statusIn);
     this.applySingleOrMultiFilter(qb, 'd.status', statuses.length === 1 ? 'status' : 'statuses', statuses);
 
+    const dataEntryStatuses = this.normalizeStatusList(query.dataEntryStatuses);
+    if (dataEntryStatuses.length === 1) {
+      qb.andWhere(`EXISTS (
+        SELECT 1 FROM dispatched_orders data_entry_order
+        WHERE data_entry_order.parent_order_id = d.parent_order_id
+          AND data_entry_order.module_code = :dataEntryModuleCode
+          AND data_entry_order.status = :dataEntryStatus
+      )`, {
+        dataEntryModuleCode: DispatchModuleCode.DATA_ENTRY,
+        dataEntryStatus: dataEntryStatuses[0],
+      });
+    } else if (dataEntryStatuses.length > 1) {
+      qb.andWhere(`EXISTS (
+        SELECT 1 FROM dispatched_orders data_entry_order
+        WHERE data_entry_order.parent_order_id = d.parent_order_id
+          AND data_entry_order.module_code = :dataEntryModuleCode
+          AND data_entry_order.status IN (:...dataEntryStatuses)
+      )`, {
+        dataEntryModuleCode: DispatchModuleCode.DATA_ENTRY,
+        dataEntryStatuses,
+      });
+    }
+
     const orderTypes = this.normalizeQueryList(query.orderType ?? query.order_type ?? query.type);
     this.applySingleOrMultiFilter(qb, 'w.order_type', orderTypes.length === 1 ? 'orderType' : 'orderTypes', orderTypes);
 

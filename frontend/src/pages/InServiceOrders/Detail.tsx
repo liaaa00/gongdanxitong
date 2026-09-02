@@ -169,6 +169,17 @@ export function getInServiceClosureActions(
     : ['void'];
 }
 
+export function getInServiceDetailSummaryVisibility(orderKind: string) {
+  const isSingleBusiness = orderKind === IN_SERVICE_ORDER_KINDS.SINGLE_BUSINESS;
+  const isOutOfProvince = orderKind === IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_INCREASE
+    || orderKind === IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_DECREASE;
+  return {
+    showServiceFee: isSingleBusiness,
+    showLocation: isSingleBusiness || isOutOfProvince,
+    showBusinessCategory: isSingleBusiness,
+  };
+}
+
 function getListPath(order: InServiceOrder): string {
   if (order.orderKind === IN_SERVICE_ORDER_KINDS.CONTRACT_RENEWAL) return '/renewal';
   if (order.orderKind === IN_SERVICE_ORDER_KINDS.CERTIFICATE) return '/in-service/certificates';
@@ -597,6 +608,7 @@ export default function InServiceOrderDetail() {
   const isOutOfProvinceOrder = order.orderKind === IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_INCREASE
     || order.orderKind === IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_DECREASE;
   const flowUiPolicy = getInServiceFlowUiPolicy(order.orderKind);
+  const summaryVisibility = getInServiceDetailSummaryVisibility(order.orderKind);
 
   const handleMaterialChangeRequest = async () => {
     try {
@@ -900,15 +912,21 @@ export default function InServiceOrderDetail() {
             <Descriptions.Item label="发起部门">{order.departmentName || order.departmentId}</Descriptions.Item>
             <Descriptions.Item label="发起人">{order.createdByName || order.createdBy}</Descriptions.Item>
             <Descriptions.Item label="办理事由">{order.businessReason}</Descriptions.Item>
-            <Descriptions.Item label="客户支付服务费">
-              {order.serviceFee == null ? '-' : `¥${order.serviceFee.toFixed(2)}`}
-            </Descriptions.Item>
-            <Descriptions.Item label="缴纳地">
-              {[order.province, order.city, order.district].filter(Boolean).join(' / ')}
-            </Descriptions.Item>
-            <Descriptions.Item label="业务分类">
-              {getInServiceCategoryPath(order.businessType, order.processType, order.requirementType)}
-            </Descriptions.Item>
+            {summaryVisibility.showServiceFee ? (
+              <Descriptions.Item label="客户支付服务费">
+                {order.serviceFee == null ? '-' : `¥${order.serviceFee.toFixed(2)}`}
+              </Descriptions.Item>
+            ) : null}
+            {summaryVisibility.showLocation ? (
+              <Descriptions.Item label="缴纳地">
+                {[order.province, order.city, order.district].filter(Boolean).join(' / ') || '-'}
+              </Descriptions.Item>
+            ) : null}
+            {summaryVisibility.showBusinessCategory ? (
+              <Descriptions.Item label="业务分类">
+                {getInServiceCategoryPath(order.businessType, order.processType, order.requirementType)}
+              </Descriptions.Item>
+            ) : null}
             <Descriptions.Item label="配置负责人">{order.handlerName || order.handlerId || '待配置'}</Descriptions.Item>
             {flowUiPolicy.showChannelSelection ? (
               <Descriptions.Item label="办理渠道">

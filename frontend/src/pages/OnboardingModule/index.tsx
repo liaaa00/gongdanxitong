@@ -15,7 +15,7 @@ import {
   downloadDispatchedExport,
   getDispatchedOrders,
 } from '@/services/dispatchedOrders';
-import type { DispatchedOrderItem } from '@/services/dispatchedOrders';
+import type { DispatchedOrderItem, DispatchedOrdersListParams } from '@/services/dispatchedOrders';
 import DispatchedBatchImportModal from '@/components/DispatchedBatchImportModal';
 import type { DispatchedBatchImportMode } from '@/components/DispatchedBatchImportModal';
 import type { PageParams } from '@/services/mock';
@@ -55,6 +55,71 @@ const HANDLING_RESULT_OPTIONS = [
 ];
 const ACTIVE_DISPATCHED_STATUSES = new Set(['pending', 'processing']);
 const DEFAULT_STATUS_FILTER_VALUES = ['pending', 'processing', 'modify_pending', 'withdraw_pending', 'void_pending'] as const;
+const SELECT_ALL_PAGE_SIZE = 200;
+const BATCH_ACCEPT_SIZE = 50;
+const BATCH_COMPLETE_SIZE = 50;
+const BATCH_RETURN_SIZE = 100;
+const BATCH_EXPORT_SIZE = 1000;
+
+export function chunkValues<T>(items: T[], size: number): T[][] {
+  if (size <= 0) throw new Error('Chunk size must be greater than zero');
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) chunks.push(items.slice(index, index + size));
+  return chunks;
+}
+
+export function mergeSelectedDispatchedRows(
+  previousRows: DispatchedOrderItem[],
+  selectedRowKeys: React.Key[],
+  currentRows: DispatchedOrderItem[],
+): DispatchedOrderItem[] {
+  const rowsById = new Map<string, DispatchedOrderItem>();
+  previousRows.forEach((row) => rowsById.set(row.id, row));
+  currentRows.forEach((row) => rowsById.set(row.id, row));
+  return selectedRowKeys
+    .map((key) => rowsById.get(String(key)))
+    .filter((row): row is DispatchedOrderItem => Boolean(row));
+}
+
+export async function fetchAllFilteredDispatchedOrders(
+  params: DispatchedOrdersListParams,
+  fetchPage: typeof getDispatchedOrders = getDispatchedOrders,
+  onProgress?: (loaded: number, total: number) => void,
+): Promise<{ rows: DispatchedOrderItem[]; total: number }> {
+  const rowsById = new Map<string, DispatchedOrderItem>();
+  let page = 1;
+  let total = 0;
+  do {
+    const result = await fetchPage({ ...params, current: page, pageSize: SELECT_ALL_PAGE_SIZE });
+    total = Math.max(0, Number(result.total) || 0);
+    result.list.forEach((row) => rowsById.set(row.id, row));
+    onProgress?.(rowsById.size, total);
+    if (result.list.length === 0 || page >= Math.ceil(total / SELECT_ALL_PAGE_SIZE)) break;
+    page += 1;
+  } while (true);
+  return { rows: Array.from(rowsById.values()), total };
+}
+
+export async function runChunkedRequests<T, R>(
+  items: T[],
+  size: number,
+  requestChunk: (chunk: T[]) => Promise<R>,
+  onProgress?: (processed: number, total: number) => void,
+): Promise<{ results: R[]; failedItems: T[] }> {
+  const results: R[] = [];
+  const failedItems: T[] = [];
+  let processed = 0;
+  for (const chunk of chunkValues(items, size)) {
+    try {
+      results.push(await requestChunk(chunk));
+    } catch {
+      failedItems.push(...chunk);
+    }
+    processed += chunk.length;
+    onProgress?.(processed, items.length);
+  }
+  return { results, failedItems };
+}
 
 export function buildOnboardingModulePageStateKey(
   moduleCode: string,
@@ -247,6 +312,8 @@ export const buildHeaderFilterParams = (filters: TableFilters) => {
   };
   const statuses = serializeFilterValues(filters, 'status');
   if (statuses) params.statuses = statuses;
+  const dataEntryStatuses = serializeFilterValues(filters, 'data_entry_status');
+  if (dataEntryStatuses) params.dataEntryStatuses = dataEntryStatuses;
   return params;
 };
 
@@ -359,6 +426,7 @@ const OnboardingModule: React.FC = () => {
   const { message } = App.useApp();
   const { hasRole, user } = useAuth();
   const actionRef = useRef<ActionType>();
+  const currentListQueryRef = useRef<DispatchedOrdersListParams>({});
   const didMountFilterReloadRef = useRef(false);
   const skipNextFilterReloadRef = useRef(false);
   const [selectedRows, setSelectedRows] = useState<DispatchedOrderItem[]>([]);
@@ -375,6 +443,13 @@ const OnboardingModule: React.FC = () => {
   const [searchKeyword, setSearchKeyword] = useState('');
   const [appliedSearchKeyword, setAppliedSearchKeyword] = useState('');
   const [searchVersion, setSearchVersion] = useState(0);
+  const [filteredTotal, setFilteredTotal] = useState(0);
+  const [batchProgress, setBatchProgress] = useState<{
+    action: 'select' | 'accept' | 'complete' | 'return' | 'export';
+    label: string;
+    processed: number;
+    total: number;
+  } | null>(null);
 
   const currentModule = moduleCode || '';
   const accountBusinessScope = user?.business_scope ?? user?.businessScope ?? BUSINESS_SCOPE.BEILUN;
@@ -439,6 +514,7 @@ const OnboardingModule: React.FC = () => {
     const mergedFilters = hasStatusPayload || tableFilters.status === undefined
       ? nextFilters
       : { ...nextFilters, status: tableFilters.status };
+    if (!areControlledFiltersEqual(tableFilters, mergedFilters)) setSelectedRows([]);
     setTableFilters((previousFilters) => (
       areControlledFiltersEqual(previousFilters, mergedFilters) ? previousFilters : mergedFilters
     ));
@@ -462,6 +538,14 @@ const OnboardingModule: React.FC = () => {
     userPermissions: user?.permissions || [],
     hasRole,
   });
+
+  const isRowSelectable = useCallback((record: DispatchedOrderItem) => (
+    (canBatchExport && (!isPayrollBankCardExport || getMissingPayrollBankCardFields(record).length === 0))
+    || canBatchAccept
+    || canBatchComplete
+    || (canBatchReturn && ACTIVE_DISPATCHED_STATUSES.has(record.status))
+    || (canBatchUrge && ACTIVE_DISPATCHED_STATUSES.has(record.status))
+  ), [canBatchAccept, canBatchComplete, canBatchExport, canBatchReturn, canBatchUrge, isPayrollBankCardExport]);
 
   const columns: ProColumns<DispatchedOrderItem>[] = useMemo(() => {
     const actionColumn: ProColumns<DispatchedOrderItem> = {
@@ -558,9 +642,13 @@ const OnboardingModule: React.FC = () => {
       ...(currentModule === 'contract'
         ? [{
             title: '增员报岗状态',
+            dataIndex: 'data_entry_status',
             key: 'data_entry_status',
             width: 130,
-            hideInSearch: true,
+            valueType: 'select' as const,
+            filteredValue: tableFilters.data_entry_status || null,
+            fieldProps: { options: DISPATCHED_STATUS_FILTER_OPTIONS },
+            ...selectHeaderFilter('选择增员报岗状态', DISPATCHED_STATUS_FILTER_OPTIONS),
             render: (_: unknown, record: DispatchedOrderItem) => record.data_entry_status
               ? <Tag color={getStatusColor(record.data_entry_status)}>{getStatusText(record.data_entry_status)}</Tag>
               : '-',
@@ -590,7 +678,7 @@ const OnboardingModule: React.FC = () => {
         search: { transform: (value) => ({ orderNo: value }) },
         filteredValue: tableFilters.order_no || null,
         ...textHeaderFilter('输入子工单号'),
-        render: (_, record) => (
+        render: (_: unknown, record: DispatchedOrderItem) => (
           <Space size={4}>
             {record.has_unread_dirty && (
               <Tooltip title="业务员更新了字段，请打开详情核对">
@@ -636,15 +724,42 @@ const OnboardingModule: React.FC = () => {
 
   const requestFn = useCallback(async (params: PageParams, _sort: Record<string, unknown>, filters: TableFilters = {}) => {
     const headerFilters = buildEffectiveHeaderFilterParams(filters, tableFilters);
-    const result = await getDispatchedOrders({
+    const queryParams: DispatchedOrdersListParams = {
       ...params,
       ...headerFilters,
       module_code: backendModuleCode,
       orderMonth: month ? month.format('YYYY-MM') : undefined,
       keyword: appliedSearchKeyword || undefined,
-    });
+    };
+    currentListQueryRef.current = queryParams;
+    const result = await getDispatchedOrders(queryParams);
+    setFilteredTotal(result.total);
     return { data: result.list, success: true, total: result.total };
   }, [appliedSearchKeyword, backendModuleCode, month, tableFilters]);
+
+  const handleSelectAllFiltered = async () => {
+    setBatchProgress({ action: 'select', label: '正在选择', processed: 0, total: filteredTotal });
+    try {
+      const result = await fetchAllFilteredDispatchedOrders(
+        currentListQueryRef.current,
+        getDispatchedOrders,
+        (processed, total) => setBatchProgress({ action: 'select', label: '正在选择', processed, total }),
+      );
+      const selectableRows = result.rows.filter(isRowSelectable);
+      setSelectedRows((previousRows) => mergeSelectedDispatchedRows(
+        previousRows,
+        Array.from(new Set([...previousRows.map((row) => row.id), ...selectableRows.map((row) => row.id)])),
+        selectableRows,
+      ));
+      const unavailable = result.total - selectableRows.length;
+      if (unavailable > 0) message.warning(`已选择 ${selectableRows.length} 条，${unavailable} 条不符合当前操作条件`);
+      else message.success(`已选择当前筛选结果全部 ${selectableRows.length} 条`);
+    } catch {
+      message.error('选择全部筛选结果失败');
+    } finally {
+      setBatchProgress(null);
+    }
+  };
 
   const handleBatchAccept = async (rows: DispatchedOrderItem[] = selectedRows) => {
     const ids = rows
@@ -654,15 +769,25 @@ const OnboardingModule: React.FC = () => {
       message.warning('请选择当前模块子工单');
       return;
     }
+    setBatchProgress({ action: 'accept', label: '正在批量接单', processed: 0, total: ids.length });
     try {
-      const result = await batchAcceptDispatchedOrders(ids);
-      const skipped = result.skipped?.length ?? 0;
-      if (skipped > 0) message.warning(`已接单 ${result.accepted} 条，${skipped} 条跳过`);
-      else message.success(`已接单 ${result.accepted} 条子工单`);
-      setSelectedRows([]);
+      const summary = await runChunkedRequests(
+        ids,
+        BATCH_ACCEPT_SIZE,
+        batchAcceptDispatchedOrders,
+        (processed, total) => setBatchProgress({ action: 'accept', label: '正在批量接单', processed, total }),
+      );
+      const accepted = summary.results.reduce((total, result) => total + result.accepted, 0);
+      const skippedIds = summary.results.flatMap((result) => result.skipped ?? []).map((item) => item.id);
+      const failedIds = new Set([...summary.failedItems, ...skippedIds]);
+      const failed = failedIds.size;
+      if (accepted === 0 && failed > 0) message.error(`批量接单未成功，${failed} 条失败或跳过`);
+      else if (failed > 0) message.warning(`已接单 ${accepted} 条，${failed} 条失败或跳过`);
+      else message.success(`已接单 ${accepted} 条子工单`);
+      setSelectedRows(rows.filter((row) => failedIds.has(row.id)));
       actionRef.current?.reload();
-    } catch {
-      message.error('批量接单失败');
+    } finally {
+      setBatchProgress(null);
     }
   };
 
@@ -697,20 +822,29 @@ const OnboardingModule: React.FC = () => {
       return;
     }
     setBatchReturnLoading(true);
+    setBatchProgress({ action: 'return', label: '正在批量退回', processed: 0, total: batchReturnIds.length });
     try {
-      const result = await batchReturnDispatchedOrders(batchReturnIds, reason);
-      const skipped = result.skipped?.length ?? 0;
-      if (skipped > 0) message.warning(`已退回 ${result.returned} 条，${skipped} 条跳过或失败`);
-      else message.success(`已批量退回 ${result.returned} 条子工单`);
+      const summary = await runChunkedRequests(
+        batchReturnIds,
+        BATCH_RETURN_SIZE,
+        (ids) => batchReturnDispatchedOrders(ids, reason),
+        (processed, total) => setBatchProgress({ action: 'return', label: '正在批量退回', processed, total }),
+      );
+      const returned = summary.results.reduce((total, result) => total + result.returned, 0);
+      const skippedIds = summary.results.flatMap((result) => result.skipped ?? []).map((item) => item.id);
+      const failedIds = new Set([...summary.failedItems, ...skippedIds]);
+      const failed = failedIds.size;
+      if (returned === 0 && failed > 0) message.error(`批量退回未成功，${failed} 条失败或跳过`);
+      else if (failed > 0) message.warning(`已退回 ${returned} 条，${failed} 条失败或跳过`);
+      else message.success(`已批量退回 ${returned} 条子工单`);
       setBatchReturnOpen(false);
       setBatchReturnReason('');
       setBatchReturnIds([]);
-      setSelectedRows([]);
+      setSelectedRows((previousRows) => previousRows.filter((row) => failedIds.has(row.id)));
       actionRef.current?.reload();
-    } catch {
-      message.error('批量退回失败');
     } finally {
       setBatchReturnLoading(false);
+      setBatchProgress(null);
     }
   };
 
@@ -727,19 +861,29 @@ const OnboardingModule: React.FC = () => {
       }
       return;
     }
-    // 后端按 模块::电子签平台 分组，每组生成一个独立文件并在 result.files 返回；
-    // 前端只发一次请求，拿到 files 后逐个下载（速创、E签宝各自成独立文件）。
+    const ids = exportRows.map((row) => row.id);
     setExporting(true);
+    setBatchProgress({ action: 'export', label: '正在生成导出文件', processed: 0, total: ids.length });
     try {
-      const result = await batchExportDispatchedOrders(exportRows.map((row) => row.id));
-      const files = result.files && result.files.length > 0 ? result.files : null;
-      if (files) {
-        let failed = 0;
+      const summary = await runChunkedRequests(
+        ids,
+        BATCH_EXPORT_SIZE,
+        batchExportDispatchedOrders,
+        (processed, total) => setBatchProgress({ action: 'export', label: '正在生成导出文件', processed, total }),
+      );
+      let downloaded = 0;
+      let downloadFailed = 0;
+      let skippedPaperContracts = 0;
+      for (const result of summary.results) {
+        skippedPaperContracts += result.skippedPaperContracts ?? 0;
+        const files = result.files && result.files.length > 0 ? result.files : [result];
         for (const file of files) {
-          const platform = file.signPlatform ? `-${file.signPlatform}` : '';
-          const extension = file.fileType === 'attachments_zip' || file.fileType === 'word_zip'
+          const signPlatform = 'signPlatform' in file ? file.signPlatform : null;
+          const fileType = 'fileType' in file ? file.fileType : undefined;
+          const platform = signPlatform ? `-${signPlatform}` : '';
+          const extension = fileType === 'attachments_zip' || fileType === 'word_zip'
             ? '.zip'
-            : file.fileType === 'word'
+            : fileType === 'word'
               ? '.docx'
               : '.xlsx';
           const fallbackName = isResignationCertificateModule
@@ -747,29 +891,25 @@ const OnboardingModule: React.FC = () => {
             : `${exportFileBaseName}${platform}${extension}`;
           try {
             await downloadDispatchedExport(file, fallbackName);
+            downloaded += 1;
           } catch {
-            failed += 1;
+            downloadFailed += 1;
           }
         }
-        if (failed === 0) {
-          const skipped = result.skippedPaperContracts ?? 0;
-          if (skipped > 0) message.warning(`电子签合同导出成功，已跳过 ${skipped} 条纸质合同`);
-          else message.success(files.length > 1 ? `导出成功，共 ${files.length} 个文件` : '导出成功');
-        } else if (failed < files.length) {
-          message.warning(`部分导出失败，${files.length - failed} 个文件已下载，${failed} 个失败`);
-        } else {
-          message.error('导出失败');
-        }
-      } else {
-        await downloadDispatchedExport(result, isResignationCertificateModule ? '离职证明.docx' : `${exportFileBaseName}.xlsx`);
-        const skipped = result.skippedPaperContracts ?? 0;
-        if (skipped > 0) message.warning(`电子签合同导出成功，已跳过 ${skipped} 条纸质合同`);
-        else message.success('导出成功');
       }
-    } catch (error) {
-      message.error(error instanceof Error && error.message ? error.message : '导出失败');
+      const failedRecords = summary.failedItems.length;
+      if (downloaded === 0 && (failedRecords > 0 || downloadFailed > 0)) {
+        message.error(`导出失败，共 ${failedRecords || ids.length} 条记录未成功生成`);
+      } else if (failedRecords > 0 || downloadFailed > 0 || skippedPaperContracts > 0) {
+        message.warning(`已下载 ${downloaded} 个文件，${failedRecords} 条记录生成失败，${downloadFailed} 个文件下载失败，跳过 ${skippedPaperContracts} 条纸质合同`);
+      } else {
+        message.success(downloaded > 1 ? `导出成功，共 ${downloaded} 个文件` : '导出成功');
+      }
+      const failedIds = new Set(summary.failedItems);
+      setSelectedRows(rows.filter((row) => failedIds.has(row.id)));
     } finally {
       setExporting(false);
+      setBatchProgress(null);
     }
   };
 
@@ -781,7 +921,9 @@ const OnboardingModule: React.FC = () => {
       return;
     }
     setBatchLoading(true);
+    setBatchProgress({ action: 'complete', label: isSocialModule ? '正在批量反馈' : '正在批量完成', processed: 0, total: ids.length });
     try {
+      let failedIds = new Set<string>();
       if (isSocialModule) {
         const extraData = HANDLING_FEEDBACK_FIELDS.reduce<Record<string, unknown>>((acc, item) => {
           acc[item.result] = values[item.result];
@@ -789,32 +931,41 @@ const OnboardingModule: React.FC = () => {
         }, {} as Record<string, unknown>);
         const remark = String(values[HANDLING_SHARED_REMARK] || '').trim();
         if (remark) extraData[HANDLING_SHARED_REMARK] = remark;
-        const result = await batchCompleteSocialInsurance(ids, '', extraData);
-        const skipped = result.skipped?.length ?? result.failed?.length ?? 0;
-        const processed = result.processed ?? result.completed;
-        if (skipped > 0) {
-          message.warning(`已反馈 ${processed} 条，自动完成 ${result.completed} 条，${skipped} 条跳过或失败`);
-        } else {
-          message.success(`已反馈 ${processed} 条，自动完成 ${result.completed} 条`);
-        }
+        const summary = await runChunkedRequests(
+          ids,
+          BATCH_COMPLETE_SIZE,
+          (chunk) => batchCompleteSocialInsurance(chunk, '', extraData),
+          (processed, total) => setBatchProgress({ action: 'complete', label: '正在批量反馈', processed, total }),
+        );
+        const processed = summary.results.reduce((total, result) => total + (result.processed ?? result.completed), 0);
+        const completed = summary.results.reduce((total, result) => total + result.completed, 0);
+        const skippedIds = summary.results.flatMap((result) => [...(result.skipped ?? []), ...(result.failed ?? [])]).map((item) => item.id);
+        failedIds = new Set([...summary.failedItems, ...skippedIds]);
+        if (processed === 0 && failedIds.size > 0) message.error(`批量反馈未成功，${failedIds.size} 条失败或跳过`);
+        else if (failedIds.size > 0) message.warning(`已反馈 ${processed} 条，自动完成 ${completed} 条，${failedIds.size} 条失败或跳过`);
+        else message.success(`已反馈 ${processed} 条，自动完成 ${completed} 条`);
       } else {
         const remark = String(values.remark || '').trim();
-        const result = await batchCompleteDispatchedOrders(ids, remark);
-        const skipped = result.skipped?.length ?? 0;
-        if (skipped > 0) {
-          message.warning(`已完成 ${result.completed} 条，${skipped} 条跳过或失败，请检查状态和权限`);
-        } else {
-          message.success(`已完成 ${result.completed} 条子工单`);
-        }
+        const summary = await runChunkedRequests(
+          ids,
+          BATCH_COMPLETE_SIZE,
+          (chunk) => batchCompleteDispatchedOrders(chunk, remark),
+          (processed, total) => setBatchProgress({ action: 'complete', label: '正在批量完成', processed, total }),
+        );
+        const completed = summary.results.reduce((total, result) => total + result.completed, 0);
+        const skippedIds = summary.results.flatMap((result) => result.skipped ?? []).map((item) => item.id);
+        failedIds = new Set([...summary.failedItems, ...skippedIds]);
+        if (completed === 0 && failedIds.size > 0) message.error(`批量完成未成功，${failedIds.size} 条失败或跳过`);
+        else if (failedIds.size > 0) message.warning(`已完成 ${completed} 条，${failedIds.size} 条失败或跳过，请检查状态和权限`);
+        else message.success(`已完成 ${completed} 条子工单`);
       }
       setBatchOpen(false);
       batchForm.resetFields();
-      setSelectedRows([]);
+      setSelectedRows((previousRows) => previousRows.filter((row) => failedIds.has(row.id)));
       actionRef.current?.reload();
-    } catch {
-      message.error(isSocialModule ? '批量反馈办理结果失败' : '批量完成子工单失败');
     } finally {
       setBatchLoading(false);
+      setBatchProgress(null);
     }
   };
 
@@ -831,6 +982,7 @@ const OnboardingModule: React.FC = () => {
             value={month}
             onChange={(value) => {
               setMonth(value);
+              setSelectedRows([]);
               updateCachedListPageState(pageStateKey, { month: value ? toMonthKey(value) : '', current: 1 });
               actionRef.current?.reload();
             }}
@@ -863,6 +1015,7 @@ const OnboardingModule: React.FC = () => {
             onChange={(event) => setSearchKeyword(event.target.value)}
             onSearch={(value) => {
               setAppliedSearchKeyword(value.trim());
+              setSelectedRows([]);
               setSearchVersion((current) => current + 1);
             }}
             style={{ width: 280 }}
@@ -882,6 +1035,7 @@ const OnboardingModule: React.FC = () => {
           canBatchAccept && <Button
             key="batch-accept"
             icon={<CheckCircleOutlined />}
+            loading={batchProgress?.action === 'accept'}
             disabled={selectedRows.filter((row) => row.module_code === backendModuleCode).length === 0}
             onClick={() => handleBatchAccept()}
           >
@@ -914,20 +1068,12 @@ const OnboardingModule: React.FC = () => {
         ].filter(Boolean) as React.ReactNode[]}
         rowSelection={canSelectRows ? {
           selectedRowKeys: selectedRows.map((row) => row.id),
-          onChange: (_keys, rows) => setSelectedRows(rows),
+          onChange: (keys, rows) => setSelectedRows((previousRows) => mergeSelectedDispatchedRows(previousRows, keys, rows)),
           preserveSelectedRowKeys: true,
-          getCheckboxProps: (record) => ({
-            disabled: !(
-              (canBatchExport && (!isPayrollBankCardExport || getMissingPayrollBankCardFields(record).length === 0))
-              || canBatchAccept
-              || canBatchComplete
-              || (canBatchReturn && ACTIVE_DISPATCHED_STATUSES.has(record.status))
-              || (canBatchUrge && ACTIVE_DISPATCHED_STATUSES.has(record.status))
-            ),
-          }),
+          getCheckboxProps: (record) => ({ disabled: !isRowSelectable(record) }),
         } : undefined}
-        tableAlertRender={canSelectRows ? ({ selectedRowKeys, selectedRows: alertSelectedRows, onCleanSelected }) => {
-          const selected = alertSelectedRows as DispatchedOrderItem[];
+        tableAlertRender={canSelectRows ? ({ selectedRows: alertSelectedRows, onCleanSelected }) => {
+          const selected = selectedRows.length > 0 ? selectedRows : alertSelectedRows as DispatchedOrderItem[];
           const activeRows = selected.filter((row) => ACTIVE_DISPATCHED_STATUSES.has(row.status));
           const acceptable = canBatchAccept ? selected.filter((row) => row.module_code === backendModuleCode) : [];
           const completable = canBatchComplete ? activeRows : [];
@@ -935,7 +1081,18 @@ const OnboardingModule: React.FC = () => {
           const urgeable = canBatchUrge ? activeRows : [];
           return (
             <Space wrap>
-              <span>已选 {selectedRowKeys.length} 项</span>
+              <span>已选 {selected.length} 项</span>
+              {filteredTotal > selected.length && (
+                <Button
+                  size="small"
+                  loading={batchProgress?.action === 'select'}
+                  disabled={Boolean(batchProgress && batchProgress.action !== 'select')}
+                  onClick={handleSelectAllFiltered}
+                >
+                  选择当前筛选结果全部 {filteredTotal} 条
+                </Button>
+              )}
+              {batchProgress && <span>{batchProgress.label} {batchProgress.processed}/{batchProgress.total}</span>}
               <Button size="small" onClick={() => { onCleanSelected(); setSelectedRows([]); }}>取消</Button>
               {canBatchExport && (
                 <Button size="small" icon={<ExportOutlined />} loading={exporting} disabled={selected.length === 0} onClick={() => handleBatchExport(selected)}>
@@ -946,6 +1103,7 @@ const OnboardingModule: React.FC = () => {
                 <Button
                   size="small"
                   icon={<CheckCircleOutlined />}
+                  loading={batchProgress?.action === 'accept'}
                   disabled={acceptable.length === 0}
                   onClick={() => {
                     setSelectedRows(acceptable);

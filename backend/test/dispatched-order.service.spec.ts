@@ -170,6 +170,34 @@ describe('DispatchedOrderService', () => {
     expect(result.items[0].handlerId).toBe('handler-1');
   });
 
+  it('filters contract rows by sibling data-entry status before pagination and combines own status', async () => {
+    const { service, queryBuilder } = makeService();
+    const user: JwtUserPayload = { sub: 'admin-1', username: 'admin', roles: ['admin'] } as JwtUserPayload;
+
+    await service.findAll({
+      page: 2,
+      pageSize: 20,
+      moduleCode: 'contract',
+      statuses: ['pending'],
+      dataEntryStatuses: ['processing', 'completed'],
+    } as never, user);
+
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith('d.status = :status', { status: DispatchedOrderStatus.PENDING });
+    const relatedFilterCallIndex = queryBuilder.andWhere.mock.calls.findIndex(([statement, params]) => (
+      String(statement).includes('FROM dispatched_orders data_entry_order')
+      && String(statement).includes('data_entry_order.parent_order_id = d.parent_order_id')
+      && String(statement).includes('data_entry_order.status IN (:...dataEntryStatuses)')
+      && (params as Record<string, unknown>)?.dataEntryModuleCode === DispatchModuleCode.DATA_ENTRY
+    ));
+    expect(relatedFilterCallIndex).toBeGreaterThanOrEqual(0);
+    expect(queryBuilder.andWhere.mock.calls[relatedFilterCallIndex][1]).toMatchObject({
+      dataEntryStatuses: [DispatchedOrderStatus.PROCESSING, DispatchedOrderStatus.COMPLETED],
+    });
+    expect(queryBuilder.andWhere.mock.invocationCallOrder[relatedFilterCallIndex])
+      .toBeLessThan(queryBuilder.offset.mock.invocationCallOrder[0]);
+    expect(queryBuilder.offset).toHaveBeenCalledWith(20);
+  });
+
   it('keeps payroll bank cards in a complete export list and scopes business users to their own orders', async () => {
     const payrollOrder = {
       ...makeDispatchedOrder(),
@@ -893,6 +921,8 @@ describe('DispatchedOrderService', () => {
       .resolves.toEqual(expect.objectContaining({ statusIn: ['processing', 'completed'] }));
     await expect(pipe.transform({ statuses: 'processing,completed' }, { type: 'query', metatype: ListDispatchedOrderQueryDto, data: '' }))
       .resolves.toEqual(expect.objectContaining({ statuses: ['processing', 'completed'] }));
+    await expect(pipe.transform({ dataEntryStatuses: 'processing,completed' }, { type: 'query', metatype: ListDispatchedOrderQueryDto, data: '' }))
+      .resolves.toEqual(expect.objectContaining({ dataEntryStatuses: ['processing', 'completed'] }));
   });
 
   it('accepts dashboard fallback scope query through the global validation pipe contract', async () => {

@@ -480,6 +480,7 @@ const DISPATCHED_ORDER_QUERY_KEYS = new Set([
   'status',
   'statuses',
   'statusIn',
+  'dataEntryStatuses',
   'orderNo',
   'order_no',
   'customerCode',
@@ -535,6 +536,7 @@ export type DispatchedOrdersListParams = PageParams & {
   status?: string;
   statuses?: string;
   statusIn?: string;
+  dataEntryStatuses?: string;
   orderNo?: string;
   order_no?: string;
   customerCode?: string;
@@ -565,6 +567,13 @@ export async function getDispatchedOrders(params: DispatchedOrdersListParams): P
         .map((status) => status.trim())
         .filter(Boolean);
       if (statuses.length > 0) list = list.filter((d) => statuses.includes(d.status));
+    }
+    const dataEntryStatuses = String(params.dataEntryStatuses ?? '')
+      .split(',')
+      .map((status) => status.trim())
+      .filter(Boolean);
+    if (dataEntryStatuses.length > 0) {
+      list = list.filter((d) => Boolean(d.data_entry_status) && dataEntryStatuses.includes(String(d.data_entry_status)));
     }
     const moduleCode = String(params.moduleCode ?? params.module_code ?? '');
     if (moduleCode) list = list.filter((d) => d.module_code === moduleCode);

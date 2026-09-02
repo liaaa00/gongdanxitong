@@ -93,6 +93,12 @@ export class ListDispatchedOrderQueryDto extends PaginationQueryDto {
   @IsString({ each: true })
   statusIn?: MultiQueryValue;
 
+  /** Statuses of the sibling data-entry child order for the same parent order. */
+  @IsOptional()
+  @Transform(({ value }) => normalizeMultiQueryValue(value))
+  @IsString({ each: true })
+  dataEntryStatuses?: MultiQueryValue;
+
   @IsOptional()
   orderType?: MultiQueryValue;
 

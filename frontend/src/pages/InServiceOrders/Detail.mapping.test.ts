@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { IN_SERVICE_ORDER_KINDS, getInServiceStatusMeta } from '@/constants/inService';
 import {
   getInServiceClosureActions,
+  getInServiceDetailSummaryVisibility,
   getInServiceFlowUiPolicy,
   isCertificateTemplateOrder,
 } from './Detail';
@@ -66,6 +67,24 @@ describe('independent in-service flow presentation', () => {
       allowFailure: false,
       allowTransfer: false,
       allowPendingReturn: true,
+    });
+  });
+
+  it('shows generic fee/category fields only where the order kind collects them', () => {
+    expect(getInServiceDetailSummaryVisibility(IN_SERVICE_ORDER_KINDS.CERTIFICATE)).toEqual({
+      showServiceFee: false,
+      showLocation: false,
+      showBusinessCategory: false,
+    });
+    expect(getInServiceDetailSummaryVisibility(IN_SERVICE_ORDER_KINDS.SINGLE_BUSINESS)).toEqual({
+      showServiceFee: true,
+      showLocation: true,
+      showBusinessCategory: true,
+    });
+    expect(getInServiceDetailSummaryVisibility(IN_SERVICE_ORDER_KINDS.OUT_OF_PROVINCE_INCREASE)).toEqual({
+      showServiceFee: false,
+      showLocation: true,
+      showBusinessCategory: false,
     });
   });
 
