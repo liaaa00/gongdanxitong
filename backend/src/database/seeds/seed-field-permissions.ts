@@ -157,11 +157,11 @@ const RESIGNATION_CORE_VISIBLE = [
 const RESIGNATION_CONTACT_VISIBLE = new Set([
   'customer_name', 'customer_code', 'mobile', 'email',
   ...RESIGNATION_CORE_VISIBLE, 'feedback_deadline', 'is_common_template', 'template_name',
-  'resignation_cert_format',
+  'resignation_cert_format', 'resignation_cert_tracking_number',
 ]);
 const RESIGNATION_CERT_VISIBLE = RESIGNATION_CONTACT_VISIBLE;
-const RESIGNATION_CONTACT_EDITABLE = new Set<string>([]);
-const RESIGNATION_CERT_EDITABLE = new Set<string>([]);
+const RESIGNATION_CONTACT_EDITABLE = new Set<string>(['resignation_cert_tracking_number']);
+const RESIGNATION_CERT_EDITABLE = new Set<string>(['resignation_cert_tracking_number']);
 const DATA_ENTRY_RESIGN_VISIBLE = new Set([
   'customer_name', 'customer_code', 'mobile', 'email', ...RESIGNATION_CORE_VISIBLE,
 ]);

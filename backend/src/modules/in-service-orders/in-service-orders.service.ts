@@ -90,11 +90,15 @@ import { OUT_OF_PROVINCE_ACCOUNTS } from './out-of-province-account-data';
 const MATERIAL_CHANGE_REQUEST_KEY = '__materialChangeRequest';
 const MATERIAL_CHANGE_HISTORY_KEY = '__materialChangeHistory';
 
-const CERTIFICATE_EXTRA_DATA_FIELDS = [
+export const CERTIFICATE_EXTRA_DATA_FIELDS = [
   'certificateType',
   'purpose',
   'hireDate',
   'jobTitle',
+  'certificateFormat',
+  'mailingAddress',
+  'contactName',
+  'contactPhone',
   'referenceBaseSalary',
   'averageMonthlyIncome',
 ] as const;
@@ -1476,6 +1480,19 @@ export class InServiceOrdersService {
       }
       if (!extraData.hireDate || !extraData.jobTitle || !extraData.purpose) {
         throw businessException(4811, HttpStatus.BAD_REQUEST, '入职日期、职务和证明用途不能为空');
+      }
+      const certificateFormat = String(extraData.certificateFormat ?? '').trim();
+      // 历史证明单可能没有证明形式；新单由前端必填，有值时后端强校验。
+      if (certificateFormat) {
+        if (!['电子证明', '纸质证明'].includes(certificateFormat)) {
+          throw businessException(4812, HttpStatus.BAD_REQUEST, '请选择有效的证明形式');
+        }
+        if (certificateFormat === '纸质证明') {
+          const hasTextValue = (value: unknown) => String(value ?? '').trim().length > 0;
+          if (!hasTextValue(extraData.mailingAddress) || !hasTextValue(extraData.contactName) || !hasTextValue(extraData.contactPhone)) {
+            throw businessException(4811, HttpStatus.BAD_REQUEST, '纸质证明需填写邮寄地址、联系人和联系方式');
+          }
+        }
       }
       return;
     }

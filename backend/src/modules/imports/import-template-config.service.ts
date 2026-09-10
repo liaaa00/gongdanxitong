@@ -75,6 +75,7 @@ const RESIGNATION_IMPORT_TEMPLATE_FIELDS = [
   'need_resignation_cert',
   'resignation_cert_format',
   'cert_delivery_address',
+  'resignation_cert_tracking_number',
   'feedback_deadline',
   'is_common_template',
   'template_name',

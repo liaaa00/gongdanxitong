@@ -19,6 +19,7 @@ import {
   type OrderTypeMatrixRow,
 } from '@/services/dashboard';
 import { getModuleConfigs } from '@/services/moduleConfigs';
+import DataSyncMonitor from '@/components/DataSyncMonitor';
 import type { ModuleConfigItem } from '@/services/moduleConfigs';
 import { getCachedMonth, toMonthKey, updateCachedListPageState } from '@/utils/listPageState';
 import {
@@ -427,6 +428,7 @@ const Dashboard: React.FC = () => {
   const selectedMonthLabel = selectedMonth.format('YYYY年M月');
   const roles = useMemo(() => canonicalRoleCodes(user?.roles), [user?.roles]);
   const canViewLeaderTrend = roles.includes(ROLE.ADMIN) || roles.includes(ROLE.BUSINESS_OWNER);
+  const canViewDataSyncMonitor = [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.DATA_ENTRY_LEADER, ROLE.SHARED_TEAM_OWNER].some((role) => roles.includes(role));
   const canViewNotifications = roles.some((role) => NOTIFICATION_ROLES.includes(role as typeof NOTIFICATION_ROLES[number]));
   const hasBackendRole = useMemo(() => roles.some((role) => BACKEND_ROLES.includes(role as typeof BACKEND_ROLES[number])), [roles]);
   const roleView = useMemo<DashboardRoleView>(() => {
@@ -705,6 +707,7 @@ const Dashboard: React.FC = () => {
         )}
 
         <LeaderTrendChart visible={canViewLeaderTrend} moduleOptions={moduleOptions} scope={effectiveScope} month={selectedMonthValue} />
+        <DataSyncMonitor visible={canViewDataSyncMonitor} />
       </Space>
     </PageContainer>
   );

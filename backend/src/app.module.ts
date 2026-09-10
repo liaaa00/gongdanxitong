@@ -15,6 +15,10 @@ import {
   ContractSubject,
   Customer,
   CustomerAssignee,
+  CustomerPortalAccount,
+  CustomerPortalSubmission,
+  CustomerPortalRule,
+  WorkOrderCompletionEmail,
   Department,
   DetailViewTemplate,
   DispatchRule,
@@ -54,6 +58,10 @@ import { PermissionChangeLogEntity } from './modules/permission-center/entities/
 import { AdminModule } from './modules/admin/admin.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { CustomerRulesModule } from './modules/customer-rules/customer-rules.module';
+import { CustomerPortalModule } from './modules/customer-portal/customer-portal.module';
+import { CustomerPortalAccountsModule } from './modules/customer-portal-accounts/customer-portal-accounts.module';
+import { CompletionEmailModule } from './modules/completion-email.module';
 import { DetailViewTemplatesModule } from './modules/admin/detail-view-templates/detail-view-templates.module';
 import { DispatchedOrderModule } from './modules/dispatched-orders/dispatched-order.module';
 import { FieldPermissionInterceptor } from './modules/field-permissions/field-permission.interceptor';
@@ -103,6 +111,10 @@ import { OperationLogCleanupService } from './modules/operation-logs/operation-l
           ContractSubject,
           Customer,
           CustomerAssignee,
+          CustomerPortalAccount,
+  CustomerPortalSubmission,
+          CustomerPortalRule,
+          WorkOrderCompletionEmail,
           Department,
           DetailViewTemplate,
           DispatchRule,
@@ -150,6 +162,10 @@ import { OperationLogCleanupService } from './modules/operation-logs/operation-l
     WorkflowModule,
     DispatchedOrderModule,
     DashboardModule,
+    CustomerPortalAccountsModule,
+    CustomerPortalModule,
+    CustomerRulesModule,
+    CompletionEmailModule,
     AiModule,
     ImportsModule,
     InServiceOrdersModule,

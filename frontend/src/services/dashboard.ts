@@ -45,6 +45,41 @@ export interface LeaderTrendBucket {
   rate: number;
 }
 
+
+
+export interface DataSyncMonitorSummary {
+  totalBatches: number;
+  directSyncedBatches: number;
+  approvalPendingBatches: number;
+  approvedBatches: number;
+  rejectedBatches: number;
+  partialBatches: number;
+  pendingItems: number;
+  rejectedItems: number;
+  activeDirtyMarks: number;
+  alertCount: number;
+}
+
+export interface DataSyncMonitorRecord {
+  id: string;
+  workOrderId: string;
+  orderNo: string;
+  customerName: string | null;
+  sourceModuleCode: string;
+  status: string;
+  changedFields: string[];
+  itemCount: number;
+  pendingItemCount: number;
+  rejectedItemCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DataSyncMonitorResult {
+  windowDays: number;
+  summary: DataSyncMonitorSummary;
+  records: DataSyncMonitorRecord[];
+}
 export interface LeaderTrendResult {
   orderType: DashboardOrderType;
   moduleCode?: string;
@@ -404,6 +439,75 @@ export async function getDashboardCards(audience: DashboardAudience = 'business'
   }
 }
 
+
+
+const EMPTY_DATA_SYNC_MONITOR: DataSyncMonitorResult = {
+  windowDays: 30,
+  summary: {
+    totalBatches: 0,
+    directSyncedBatches: 0,
+    approvalPendingBatches: 0,
+    approvedBatches: 0,
+    rejectedBatches: 0,
+    partialBatches: 0,
+    pendingItems: 0,
+    rejectedItems: 0,
+    activeDirtyMarks: 0,
+    alertCount: 0,
+  },
+  records: [],
+};
+
+function normalizeDataSyncMonitor(raw: any, days: number): DataSyncMonitorResult {
+  const data = unwrapPayload(raw) || {};
+  const source = data.summary || {};
+  const numValue = (value: unknown): number => Math.max(0, Number(value ?? 0) || 0);
+  const summary: DataSyncMonitorSummary = {
+    totalBatches: numValue(source.totalBatches ?? source.total_batches),
+    directSyncedBatches: numValue(source.directSyncedBatches ?? source.direct_synced_batches),
+    approvalPendingBatches: numValue(source.approvalPendingBatches ?? source.approval_pending_batches),
+    approvedBatches: numValue(source.approvedBatches ?? source.approved_batches),
+    rejectedBatches: numValue(source.rejectedBatches ?? source.rejected_batches),
+    partialBatches: numValue(source.partialBatches ?? source.partial_batches),
+    pendingItems: numValue(source.pendingItems ?? source.pending_items),
+    rejectedItems: numValue(source.rejectedItems ?? source.rejected_items),
+    activeDirtyMarks: numValue(source.activeDirtyMarks ?? source.active_dirty_marks),
+    alertCount: numValue(source.alertCount ?? source.alert_count),
+  };
+  const records = Array.isArray(data.records) ? data.records.map((item: any): DataSyncMonitorRecord => ({
+    id: String(item.id ?? ''),
+    workOrderId: String(item.workOrderId ?? item.work_order_id ?? ''),
+    orderNo: String(item.orderNo ?? item.order_no ?? ''),
+    customerName: item.customerName == null && item.customer_name == null
+      ? null
+      : String(item.customerName ?? item.customer_name),
+    sourceModuleCode: String(item.sourceModuleCode ?? item.source_module_code ?? ''),
+    status: String(item.status ?? ''),
+    changedFields: Array.isArray(item.changedFields ?? item.changed_fields)
+      ? (item.changedFields ?? item.changed_fields).map((field: unknown) => String(field))
+      : [],
+    itemCount: numValue(item.itemCount ?? item.item_count),
+    pendingItemCount: numValue(item.pendingItemCount ?? item.pending_item_count),
+    rejectedItemCount: numValue(item.rejectedItemCount ?? item.rejected_item_count),
+    createdAt: String(item.createdAt ?? item.created_at ?? ''),
+    updatedAt: String(item.updatedAt ?? item.updated_at ?? ''),
+  })) : [];
+  return { windowDays: numValue(data.windowDays ?? data.window_days) || days, summary, records };
+}
+
+export async function getDataSyncMonitor(days = 30): Promise<DataSyncMonitorResult> {
+  const normalizedDays = Math.min(90, Math.max(1, Math.floor(Number(days) || 30)));
+  if (isMockMode) return mockDelay({ ...EMPTY_DATA_SYNC_MONITOR, windowDays: normalizedDays });
+  try {
+    const result = await request.get('/dashboard/data-sync', {
+      params: { days: normalizedDays },
+      silentError: true,
+    } as any);
+    return normalizeDataSyncMonitor(result, normalizedDays);
+  } catch {
+    return { ...EMPTY_DATA_SYNC_MONITOR, windowDays: normalizedDays };
+  }
+}
 export async function getOrderTypeMatrix(params: { dimension?: DashboardMatrixDimension; audience?: DashboardAudience; scope?: DashboardScopeMode; month?: string } = {}): Promise<OrderTypeMatrixResult> {
   const dimension = params.dimension || 'node';
   const selectedMonth = normalizeDashboardMonth(params.month);

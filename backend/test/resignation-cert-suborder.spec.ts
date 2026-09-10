@@ -458,4 +458,57 @@ describe('离职证明子工单', () => {
       where: expect.objectContaining({ businessScope: BusinessScope.BEILUN, isActive: true }),
     }));
   });
+
+  it('lets the business creator read their own certificate sub-order but not handle it', async () => {
+    const parentOrder = Object.assign(new WorkOrder(), {
+      id: 'wo-cert-read',
+      orderNo: 'RS20260908001',
+      orderType: OrderType.RESIGNATION,
+      status: WorkOrderStatus.PROCESSING,
+      createdBy: 'biz-member-1',
+      businessScope: BusinessScope.BEILUN,
+      extraData: {},
+    });
+    const order = Object.assign(new DispatchedOrder(), {
+      id: 'do-cert-read',
+      parentOrderId: parentOrder.id,
+      parentOrder,
+      moduleCode: DispatchModuleCode.RESIGNATION_CERT,
+      status: DispatchedOrderStatus.PROCESSING,
+      handlerId: 'handler-1',
+    });
+    const { DispatchedOrderService } = await import('src/modules/dispatched-orders/dispatched-order.service');
+    const service = new DispatchedOrderService(
+      {} as never,
+      {} as never,
+      {} as never,
+      { find: jest.fn(async () => []) } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    const creatorMember = { sub: 'biz-member-1', username: 'member1', roles: ['business_group_member'] };
+    const creatorLeader = { sub: 'biz-member-1', username: 'member1', roles: ['business_group_leader'] };
+    const otherMember = { sub: 'biz-member-2', username: 'member2', roles: ['business_group_member'] };
+    const certHandler = { sub: 'handler-1', username: 'yangchun', roles: ['labor_contract_member'] };
+
+    // 任务1：业务侧父单创建人（业务员/组长）可查看自己相关的离职证明子工单（只读）。
+    await expect((service as unknown as { assertCanRead: (o: unknown, u: unknown) => Promise<void> }).assertCanRead(order, creatorMember)).resolves.toBeUndefined();
+    await expect((service as unknown as { assertCanRead: (o: unknown, u: unknown) => Promise<void> }).assertCanRead(order, creatorLeader)).resolves.toBeUndefined();
+    // 原有负责人不受影响。
+    await expect((service as unknown as { assertCanRead: (o: unknown, u: unknown) => Promise<void> }).assertCanRead(order, certHandler)).resolves.toBeUndefined();
+    // 非创建人的业务员仍然无权访问。
+    await expect((service as unknown as { assertCanRead: (o: unknown, u: unknown) => Promise<void> }).assertCanRead(order, otherMember)).rejects.toThrow('无权访问该离职证明子工单');
+
+    // 业务员不获得接单/办结等办理权限。
+    await expect((service as unknown as { assertCanHandle: (o: unknown, u: unknown) => Promise<void> }).assertCanHandle(order, creatorMember)).rejects.toThrow('无权操作该子工单');
+    await expect((service as unknown as { assertCanHandle: (o: unknown, u: unknown) => Promise<void> }).assertCanHandle(order, creatorLeader)).rejects.toThrow('无权操作该子工单');
+    // 原有负责人可继续办理。
+    await expect((service as unknown as { assertCanHandle: (o: unknown, u: unknown) => Promise<void> }).assertCanHandle(order, certHandler)).resolves.toBeUndefined();
+  });
 });

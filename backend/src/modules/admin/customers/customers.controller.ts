@@ -82,7 +82,14 @@ class ToggleCustomerDto {
   isActive!: boolean;
 }
 
-@Roles('admin')
+const CUSTOMER_CONFIG_ROLES = [
+  'admin',
+  'biz_manager', 'business_owner', 'manager',
+  'biz_leader', 'business_group_leader',
+  'biz_member', 'business_group_member', 'salesperson',
+] as const;
+
+@Roles(...CUSTOMER_CONFIG_ROLES)
 @Controller('admin/customers')
 @UseInterceptors(AuditInterceptor)
 export class CustomersController {
@@ -96,6 +103,7 @@ export class CustomersController {
   }
 
   @Post()
+  @Roles('admin')
   @Audit('customers', 'create')
   create(@Body() payload: SaveCustomerDto, @Query('businessScope') requestedScope: BusinessScope | undefined, @CurrentUser() user: JwtUserPayload) {
     return this.service.create({ ...payload, businessScope: payload.businessScope ?? requestedScope ?? user.businessScope ?? BusinessScope.BEILUN });
@@ -107,18 +115,21 @@ export class CustomersController {
   }
 
   @Put(':id')
+  @Roles('admin')
   @Audit('customers', 'update')
   update(@Param('id') id: string, @Body() payload: Partial<SaveCustomerDto>, @Query('businessScope') requestedScope: BusinessScope | undefined, @CurrentUser() user: JwtUserPayload) {
     return this.service.update(id, { ...payload, businessScope: payload.businessScope ?? requestedScope ?? user.businessScope ?? BusinessScope.BEILUN });
   }
 
   @Delete(':id')
+  @Roles('admin')
   @Audit('customers', 'delete')
   remove(@Param('id') id: string, @Query('businessScope') requestedScope: BusinessScope | undefined, @CurrentUser() user: JwtUserPayload) {
     return this.service.remove(id, requestedScope ?? user.businessScope ?? BusinessScope.BEILUN);
   }
 
   @Post(':id/toggle')
+  @Roles('admin')
   @Audit('customers', 'toggle')
   toggle(@Param('id') id: string, @Body() payload: ToggleCustomerDto, @Query('businessScope') requestedScope: BusinessScope | undefined, @CurrentUser() user: JwtUserPayload) {
     return this.service.toggle(id, payload.isActive, requestedScope ?? user.businessScope ?? BusinessScope.BEILUN);

@@ -41,7 +41,7 @@ describe('onboarding module_fields baseline', () => {
       'base_salary', 'other_salary', 'probation_salary',
       'payroll_cycle', 'payroll_date',
       'business_mode', 'employee_type',
-      'need_company_contract', 'contract_subject', 'contract_template', 'need_contract_urge',
+      'need_company_contract', 'need_esign', 'esign_platform', 'contract_subject', 'contract_template', 'special_contract_template_name', 'need_contract_urge',
       'contract_feedback',
     ]);
 

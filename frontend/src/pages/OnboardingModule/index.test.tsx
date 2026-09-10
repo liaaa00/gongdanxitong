@@ -272,6 +272,32 @@ describe('OnboardingModule header table filters', () => {
     expect(specialTemplate?.renderText(undefined, { extra_data: {} })).toBe('-');
   });
 
+  it('shows esign platform and social location columns on the contract list only', () => {
+    mocks.moduleCode = 'contract';
+    const { unmount } = render(<OnboardingModule />);
+
+    let columns = mocks.latestProTableProps.columns as Array<Record<string, any>>;
+    const esignPlatform = columns.find((column) => column.key === 'esign_platform');
+    expect(esignPlatform?.title).toBe('电子签平台');
+    expect(esignPlatform?.renderText(undefined, { extra_data: { esign_platform: 'e签宝' } })).toBe('e签宝');
+    expect(esignPlatform?.renderText(undefined, { extra_data: { esignPlatform: '法大大' } })).toBe('法大大');
+    expect(esignPlatform?.renderText(undefined, { extra_data: {} })).toBe('-');
+
+    // 任务2：劳动合同新签列表的社保缴纳地列，优先读 social_location，兼容历史 camelCase，空值显示未填写。
+    const socialLocation = columns.find((column) => column.key === 'social_location');
+    expect(socialLocation?.title).toBe('缴纳地');
+    expect(socialLocation?.renderText(undefined, { extra_data: { social_location: '宁波' } })).toBe('宁波');
+    expect(socialLocation?.renderText(undefined, { extra_data: { socialLocation: '杭州' } })).toBe('杭州');
+    expect(socialLocation?.renderText(undefined, { extra_data: {} })).toBe('未填写');
+
+    unmount();
+    mocks.moduleCode = 'data_entry';
+    render(<OnboardingModule />);
+    columns = mocks.latestProTableProps.columns as Array<Record<string, any>>;
+    expect(columns.find((column) => column.key === 'social_location')).toBeUndefined();
+    expect(columns.find((column) => column.key === 'esign_platform')).toBeUndefined();
+  });
+
   it('maps social_insurance_resign route to backend resignation_social_insurance module code', async () => {
     mocks.moduleCode = 'social_insurance_resign';
 

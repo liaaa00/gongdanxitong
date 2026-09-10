@@ -1,3 +1,4 @@
+import { NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { normalizeUploadedFileName, UploadService } from 'src/modules/upload/upload.service';
 
@@ -58,6 +59,11 @@ describe('UploadService signed download token', () => {
     expect(service.verifyDownloadToken('', 123, 'sig')).toBe(false);
     expect(service.verifyDownloadToken('file', Number.NaN, 'sig')).toBe(false);
     expect(service.verifyDownloadToken('file', 123, '')).toBe(false);
+  });
+
+  it('raises a 404 exception when the file is missing', async () => {
+    const service = makeService();
+    await expect(service.resolveFile('missing-file-for-test')).rejects.toBeInstanceOf(NotFoundException);
   });
 });
 

@@ -50,4 +50,24 @@ describe('detail view template layout', () => {
     expect(groups.find((group) => group.title === '办理反馈')?.fieldCodes)
       .toContain('data_entry_feedback');
   });
+
+  it('keeps onboarding contact groups intact for the onboarding module', () => {
+    const groups = getDefaultDetailFieldGroups('onboarding_contact');
+
+    expect(groups.find((group) => group.title === '入职材料收集')).toBeDefined();
+    expect(groups.find((group) => group.title === '离职材料收集')).toBeUndefined();
+  });
+
+  it('relables material feedback groups for resignation contact without onboarding wording', () => {
+    // 任务6：离职材料收集不得再复用「入职材料收集」分组文案。
+    const groups = getDefaultDetailFieldGroups('resignation_contact');
+
+    expect(groups.find((group) => group.title === '入职材料收集')).toBeUndefined();
+    const feedbackGroup = groups.find((group) => group.title === '离职材料收集');
+    expect(feedbackGroup?.fieldCodes).toContain('resignation_contact_feedback');
+    // 任务3：快递单号归入离职信息分组并跟在共享收集字段之后。
+    const resignationGroup = groups.find((group) => group.title === '离职信息');
+    expect(resignationGroup?.fieldCodes).toEqual(expect.arrayContaining(['need_resignation_share', 'resignation_cert_tracking_number']));
+    expect(resignationGroup?.fieldCodes?.[0]).toBe('need_resignation_share');
+  });
 });

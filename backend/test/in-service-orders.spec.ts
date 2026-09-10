@@ -1180,6 +1180,32 @@ describe('InServiceOrdersService', () => {
     expect(current().status).toBe(InServiceOrderStatus.COMPLETED);
   });
 
+  it('requires paper mailing details only when the certificate format is paper', () => {
+    const { service } = makeService();
+    const validate = (extraData: Record<string, unknown>) => (service as unknown as {
+      validateKindPayload: (kind: InServiceOrderKind, payload: unknown) => void;
+    }).validateKindPayload(InServiceOrderKind.CERTIFICATE, {
+      employeeName: '张三',
+      idCardNo: '330206199001011234',
+      extraData: {
+        certificateType: 'employment',
+        hireDate: '2026-08-01',
+        jobTitle: 'operator',
+        purpose: '客户入职',
+        ...extraData,
+      },
+    });
+
+    // 任务5：电子证明不要求邮寄信息；纸质证明邮寄地址/联系人/联系方式缺一不可。
+    expect(() => validate({ certificateFormat: '电子证明' })).not.toThrow();
+    expect(() => validate({ certificateFormat: '纸质证明' })).toThrow('纸质证明需填写邮寄地址、联系人和联系方式');
+    expect(() => validate({ certificateFormat: '纸质证明', mailingAddress: '宁波市鄞州区xx路1号' })).toThrow('纸质证明需填写邮寄地址、联系人和联系方式');
+    expect(() => validate({ certificateFormat: '纸质证明', mailingAddress: '宁波市鄞州区xx路1号', contactName: '李四', contactPhone: '13800000000' })).not.toThrow();
+    // 历史证明单没有证明形式时容忍，不拦截存量数据。
+    expect(() => validate({})).not.toThrow();
+    expect(() => validate({ certificateFormat: '传真证明' })).toThrow('请选择有效的证明形式');
+  });
+
   it('requires level 3 only when the selected level 2 has children', async () => {
     const { service } = makeService();
     await expect(service.create({

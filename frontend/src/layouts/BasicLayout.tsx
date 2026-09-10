@@ -214,6 +214,7 @@ const RAW_MENU: MenuItem[] = [
   },
   // 我的工单聚合入口已废除，子工单从各业务模块或消息通知进入。
   { path: '/notifications', name: '消息通知', icon: <BellOutlined /> },
+  { path: '/customer-config', name: '客户门户配置', icon: <IdcardOutlined /> },
   { path: '/admin', name: '管理后台', icon: <SettingOutlined />,
     children: [
       {
@@ -225,7 +226,6 @@ const RAW_MENU: MenuItem[] = [
           { path: '/admin/users', name: '用户管理', icon: <TeamOutlined /> },
           { path: '/admin/roles', name: '角色管理', icon: <SafetyOutlined /> },
           { path: '/admin/departments', name: '部门管理', icon: <ApartmentOutlined /> },
-          { path: '/admin/customers', name: '客户管理', icon: <IdcardOutlined /> },
           { path: '/admin/system-settings', name: '门户配置', icon: <SettingOutlined />, key: 'admin-portal-config' },
           { path: '/admin/certificate-types', name: '证明类型管理', icon: <FileTextOutlined /> },
         ],

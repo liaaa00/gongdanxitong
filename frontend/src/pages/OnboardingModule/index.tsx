@@ -662,6 +662,24 @@ const OnboardingModule: React.FC = () => {
             hideInSearch: true,
             renderText: (_: unknown, record: DispatchedOrderItem) => record.extra_data?.need_esign ?? '-',
           }, {
+            title: '电子签平台',
+            key: 'esign_platform',
+            width: 110,
+            hideInSearch: true,
+            renderText: (_: unknown, record: DispatchedOrderItem) => {
+              const value = record.extra_data?.esign_platform ?? record.extra_data?.esignPlatform;
+              return value !== undefined && value !== null && value !== '' ? String(value) : '-';
+            },
+          }, {
+            title: '缴纳地',
+            key: 'social_location',
+            width: 130,
+            hideInSearch: true,
+            renderText: (_: unknown, record: DispatchedOrderItem) => {
+              const value = record.extra_data?.social_location ?? record.extra_data?.socialLocation;
+              return value !== undefined && value !== null && value !== '' ? String(value) : '未填写';
+            },
+          }, {
             title: '特殊合同模板名称',
             key: 'special_contract_template_name',
             width: 200,

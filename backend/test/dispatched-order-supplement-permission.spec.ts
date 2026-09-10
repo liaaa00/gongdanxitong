@@ -35,7 +35,7 @@ function makeOrder(moduleCode: string, handlerId: string, status: DispatchedOrde
   const parentOrder = {
     id: 'wo-1',
     orderNo: 'ON20260608001',
-    orderType: OrderType.ONBOARDING,
+    orderType: moduleCode === 'resignation_contact' ? OrderType.RESIGNATION : OrderType.ONBOARDING,
     status: WorkOrderStatus.PROCESSING,
     createdBy: 'creator-1',
     departmentId: 'd1',
@@ -113,14 +113,39 @@ describe('DispatchedOrderService supplement permission fallback', () => {
     });
   });
 
-  it('rejects allowed users when the child module is contract', async () => {
+  it('allows maoyani to supplement a processing resignation_contact order assigned to her', async () => {
+    const currentUser = user('maoyani-id', 'maoyani', ['onboarding_specialist']);
+    const { service, fieldSupplementService } = makeService(makeOrder('resignation_contact', currentUser.sub));
+
+    await expect(service.supplement(
+      'do-resignation_contact',
+      { fieldCode: 'email', newValue: 'maoyani@example.com' },
+      currentUser,
+    )).resolves.toEqual({ success: true, workOrderId: 'wo-1', fieldCode: 'email' });
+
+    expect(fieldSupplementService.supplement).toHaveBeenCalledWith({
+      dispatchedOrderId: 'do-resignation_contact',
+      fieldCode: 'email',
+      newValue: 'maoyani@example.com',
+      userId: currentUser.sub,
+      workOrderUpdatedAt: undefined,
+    });
+  });
+
+  it('allows contract specialists to supplement contract fields', async () => {
     const currentUser = user('jianglu-id', 'jianglu', ['shared_leader', 'contract_specialist', 'onboarding_specialist']);
     const { service, fieldSupplementService } = makeService(makeOrder('contract', currentUser.sub));
 
     await expect(service.supplement('do-contract', { fieldCode: 'bank_account', newValue: '6222' }, currentUser))
-      .rejects.toMatchObject({ status: HttpStatus.FORBIDDEN });
+      .resolves.toEqual({ success: true, workOrderId: 'wo-1', fieldCode: 'bank_account' });
 
-    expect(fieldSupplementService.supplement).not.toHaveBeenCalled();
+    expect(fieldSupplementService.supplement).toHaveBeenCalledWith({
+      dispatchedOrderId: 'do-contract',
+      fieldCode: 'bank_account',
+      newValue: '6222',
+      userId: currentUser.sub,
+      workOrderUpdatedAt: undefined,
+    });
   });
 
   it('rejects other onboarding backend users even on onboarding_contact', async () => {

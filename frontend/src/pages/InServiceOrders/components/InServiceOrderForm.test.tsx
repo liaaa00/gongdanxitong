@@ -3,6 +3,7 @@ import { IN_SERVICE_ORDER_KINDS } from '@/constants/inService';
 import type { ImportTemplateFieldItem } from '@/services/importTemplates';
 import {
   RENEWAL_SIGNING_METHOD,
+  getResignationReasonOptions,
   buildInServiceMutableFields,
   buildRenewalConfiguredFields,
   getInServiceDepartmentNotice,
@@ -35,6 +36,18 @@ const field = (
 });
 
 describe('InServiceOrderForm renewal rules', () => {
+  it('keeps fixed resignation reasons and preserves an unknown historical value', () => {
+    expect(getResignationReasonOptions()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ value: '个人辞职' }),
+      expect.objectContaining({ value: '法人变更' }),
+    ]));
+    expect(getResignationReasonOptions('历史自定义原因')[0]).toEqual({
+      label: '历史自定义原因（历史值）',
+      value: '历史自定义原因',
+    });
+    expect(getResignationReasonOptions('个人辞职')).toEqual(getResignationReasonOptions());
+  });
+
   it('shows the department inheritance notice only for renewal', () => {
     expect(getInServiceDepartmentNotice(IN_SERVICE_ORDER_KINDS.CONTRACT_RENEWAL)).toMatchObject({
       message: '续签发起部门',

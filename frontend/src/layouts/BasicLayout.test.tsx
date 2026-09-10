@@ -51,7 +51,7 @@ const { notification, mockUserState, mockNavigate, mockRouterState } = vi.hoiste
     phone: '',
     avatar_url: null,
     is_active: true,
-    permissions: [],
+    permissions: [] as string[],
     roles: roleCodes.map((code, index) => ({ id: `r-${index}`, code, name: code, level: 'member' })),
   });
 
@@ -286,6 +286,28 @@ describe('BasicLayout menu visibility', () => {
     expect(menuText()).not.toContain('管理后台');
   });
 
+  it('shows customer portal configuration to business roles as a standalone menu', () => {
+    for (const role of ['admin', 'business_owner', 'business_group_leader', 'business_group_member']) {
+      mockUserState.user = mockUserState.makeUser([role]);
+      const view = renderLayout(['/dashboard']);
+      expect(menuText()).toContain('客户门户配置');
+      expect(menuPaths()).toContain('/customer-config');
+      expect(menuText()).not.toContain('客户规则配置');
+      expect(menuText()).not.toContain('客户管理');
+      view.unmount();
+    }
+  });
+
+  it('hides customer portal configuration from backend processing roles', () => {
+    for (const role of ['data_entry_leader', 'shared_team_owner', 'labor_contract_member', 'onboarding_resignation_member', 'social_insurance_specialist']) {
+      mockUserState.user = mockUserState.makeUser([role]);
+      const view = renderLayout(['/dashboard']);
+      expect(menuText()).not.toContain('客户门户配置');
+      expect(menuPaths()).not.toContain('/customer-config');
+      view.unmount();
+    }
+  });
+
   it('selects onboarding and offboarding main work-order menu entries by orderType query', () => {
     mockUserState.user = mockUserState.makeUser(['business_group_member']);
 
@@ -431,6 +453,8 @@ describe('BasicLayout menu visibility', () => {
     expect(text).toContain('离职管理');
     expect(text).toContain('离职主工单列表');
     expect(text).toContain('离职材料收集子工单');
+    // 任务1：业务员可查看自己相关的离职证明子工单。
+    expect(text).toContain('离职证明子工单');
     expect(text).toContain('减员报岗录入子工单');
     expect(text).toContain('社保公积金减员子工单');
     expect(text).not.toContain('离职证明列表');

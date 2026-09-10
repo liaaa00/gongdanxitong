@@ -729,4 +729,59 @@ describe('contract subject relation import scope', () => {
     expect(result.ok).toBe(false);
     expect(result.errors).toContainEqual(expect.objectContaining({ fieldCode: 'fund_ratio', reason: 'required' }));
   });
+
+  it('uses explicit resignation order type when shared fields keep onboarding metadata', async () => {
+    const resignationFields = [
+      field({ fieldCode: 'customer_name', fieldName: 'customer_name', isRequired: true, orderType: OrderType.ONBOARDING }),
+      field({ fieldCode: 'employee_name', fieldName: 'employee_name', isRequired: true, orderType: OrderType.ONBOARDING }),
+      field({ fieldCode: 'social_pay_region', fieldName: 'social_pay_region', orderType: OrderType.RESIGNATION }),
+    ];
+    const result = await service.validateRow({
+      rowNo: 22,
+      raw: { customer_name: 'Customer', employee_name: 'Zhu', social_pay_region: 'Shanghai' },
+      mapping: [
+        { header: 'customer_name', fieldCode: 'customer_name' },
+        { header: 'employee_name', fieldCode: 'employee_name' },
+        { header: 'social_pay_region', fieldCode: 'social_pay_region' },
+      ],
+      orderType: OrderType.RESIGNATION,
+      fields: resignationFields,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.errors).not.toContainEqual(expect.objectContaining({ fieldCode: 'fund_ratio' }));
+  });
+
+  it('keeps resignation certificate delivery address conditional with shared field metadata', async () => {
+    const resignationFields = [
+      field({ fieldCode: 'customer_name', fieldName: 'customer_name', isRequired: true, orderType: OrderType.ONBOARDING }),
+      field({ fieldCode: 'employee_name', fieldName: 'employee_name', isRequired: true, orderType: OrderType.ONBOARDING }),
+      field({ fieldCode: 'need_resignation_cert', fieldName: 'need_resignation_cert', isRequired: true, orderType: OrderType.RESIGNATION, fieldType: FieldType.DROPDOWN, dropdownOptions: ['yes', 'no'] }),
+      field({
+        fieldCode: 'cert_delivery_address',
+        fieldName: 'cert_delivery_address',
+        orderType: OrderType.RESIGNATION,
+        conditionalRequired: { field: 'need_resignation_cert', op: 'EQ', value: 'yes' },
+      }),
+    ];
+    const result = await service.validateRow({
+      rowNo: 23,
+      raw: { customer_name: 'Customer', employee_name: 'Zhu', need_resignation_cert: 'yes', cert_delivery_address: '' },
+      mapping: [
+        { header: 'customer_name', fieldCode: 'customer_name' },
+        { header: 'employee_name', fieldCode: 'employee_name' },
+        { header: 'need_resignation_cert', fieldCode: 'need_resignation_cert' },
+        { header: 'cert_delivery_address', fieldCode: 'cert_delivery_address' },
+      ],
+      orderType: OrderType.RESIGNATION,
+      fields: resignationFields,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContainEqual(expect.objectContaining({
+      fieldCode: 'cert_delivery_address',
+      reason: 'required',
+    }));
+    expect(result.errors).not.toContainEqual(expect.objectContaining({ fieldCode: 'fund_ratio' }));
+  });
 });

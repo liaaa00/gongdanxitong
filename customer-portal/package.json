@@ -1,0 +1,16 @@
+{
+  "name": "customer-portal",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test",
+    "start:gateway": "node gateway/server.mjs",
+    "start:connector": "node connector/client.mjs",
+    "start:web": "node web/server.mjs",
+    "create:portal-link": "node scripts/create-portal-link.mjs"
+  }
+}

@@ -2,8 +2,9 @@ import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nes
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { from, map, mergeMap, Observable } from 'rxjs';
-import { BusinessScope, FieldPermissionMode } from 'src/entities';
+import { BusinessScope, FieldPermissionMode, InServiceOrderKind } from 'src/entities';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
+import { CERTIFICATE_EXTRA_DATA_FIELDS } from 'src/modules/in-service-orders/in-service-orders.service';
 import {
   FIELD_PERMISSION_SCENARIO_KEY,
   FieldPermissionContext,
@@ -115,9 +116,11 @@ export class FieldPermissionInterceptor implements NestInterceptor {
     }
 
     const cloned = { ...(payload as Record<string, unknown>) };
-    const effectivePermissions = this.applyDetailTemplatePermissions(cloned, permissions);
+    const effectivePermissions = this.applyCertificateExtraDataPermissions(
+      cloned,
+      this.applyDetailTemplatePermissions(cloned, permissions),
+    );
     delete cloned._detailTemplateFieldCodes;
-
     if (this.isApiResponse(cloned)) {
       cloned.data = this.applyPayload(cloned.data, permissions, depth + 1);
       return cloned;
@@ -191,6 +194,24 @@ export class FieldPermissionInterceptor implements NestInterceptor {
     for (const fieldCode of templateFieldCodes) {
       const permission = effectivePermissions.get(fieldCode);
       if (!permission || permission === FieldPermissionMode.HIDDEN) {
+        effectivePermissions.set(fieldCode, FieldPermissionMode.READONLY);
+      }
+    }
+    return effectivePermissions;
+  }
+
+  // 证明工单的 extraData 证书字段（camelCase）不在 field_configs 体系内，权限表查不到；
+  // 与 InServiceOrdersService.findOne 的口径保持一致：缺失时按只读放行，避免拦截器二次过滤清空。
+  private applyCertificateExtraDataPermissions(
+    payload: Record<string, unknown>,
+    permissions: FieldPermissionMap,
+  ): FieldPermissionMap {
+    const orderKind = payload.orderKind ?? payload.order_kind;
+    if (orderKind !== InServiceOrderKind.CERTIFICATE) return permissions;
+
+    const effectivePermissions = new Map(permissions);
+    for (const fieldCode of CERTIFICATE_EXTRA_DATA_FIELDS) {
+      if (!effectivePermissions.has(fieldCode)) {
         effectivePermissions.set(fieldCode, FieldPermissionMode.READONLY);
       }
     }

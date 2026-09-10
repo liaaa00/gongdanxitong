@@ -257,7 +257,10 @@ export class ImportFieldValidationService {
       });
   }
 
-  private isOnboardingImportFieldSet(fields: FieldConfig[]): boolean {
+  private isOnboardingImportFieldSet(fields: FieldConfig[], orderType?: OrderType): boolean {
+    if (orderType !== undefined) {
+      return orderType === OrderType.ONBOARDING;
+    }
     return fields.some((field) => field.fieldCode === 'need_onboarding_contact')
       || fields.some((field) => field.orderType === OrderType.ONBOARDING);
   }
@@ -285,13 +288,15 @@ export class ImportFieldValidationService {
     raw: Record<string, unknown>;
     mapping: MappingItemInput[];
     defaults?: Record<string, unknown>;
+    orderType?: OrderType;
     fields: FieldConfig[];
   }): Promise<RowValidationResult> {
     const fields = this.hasTemplateConfigMetadata(input.fields) ? input.fields : this.applyInferredImportRules(input.fields);
+    const isOnboardingImport = this.isOnboardingImportFieldSet(fields, input.orderType);
     const mapped = this.mapRow(input.raw, input.mapping, fields, input.defaults ?? {});
     const normalized = mapped.normalized;
     const warnings = mapped.warnings;
-    if (this.isOnboardingImportFieldSet(fields)) {
+    if (isOnboardingImport) {
       applyOnboardingDerivedFields(normalized);
     }
     if (this.isOutOfProvinceFieldSet(fields)) {
@@ -340,9 +345,9 @@ export class ImportFieldValidationService {
       }
     }
 
-    await this.validateContractSubjectRelations(normalized, fields, errors);
+    await this.validateContractSubjectRelations(normalized, fields, errors, isOnboardingImport);
 
-    if (this.isOnboardingImportFieldSet(fields)) {
+    if (isOnboardingImport) {
       for (const fieldCode of getCreatorRequiredMissingPayrollBankCardFields(normalized)) {
         if (!errors.some((error) => error.fieldCode === fieldCode)) {
           errors.push({
@@ -361,8 +366,9 @@ export class ImportFieldValidationService {
     normalized: Record<string, unknown>,
     fields: FieldConfig[],
     errors: RowValidationError[],
+    isOnboardingImport: boolean,
   ): Promise<void> {
-    if (!this.isOnboardingImportFieldSet(fields)) return;
+    if (!isOnboardingImport) return;
 
     const relationshipFields = new Set([
       'contract_subject', 'company_address', 'social_location', 'social_pay_region',

@@ -105,6 +105,9 @@ export class WorkOrder {
   @Column({ name: 'completed_at', type: 'timestamptz', nullable: true })
   completedAt!: Date | null;
 
+  @Column({ name: 'completion_version', type: 'int', default: 0 })
+  completionVersion!: number;
+
   @Column({ name: 'last_modified_at', type: 'timestamptz', nullable: true })
   lastModifiedAt!: Date | null;
 

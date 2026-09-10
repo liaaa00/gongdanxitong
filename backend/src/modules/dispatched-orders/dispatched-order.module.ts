@@ -25,6 +25,7 @@ import { FieldSupplementModule } from 'src/modules/field-supplement/field-supple
 import { NotificationModule } from 'src/modules/notifications/notification.module';
 import { UploadsModule } from 'src/modules/uploads/uploads.module';
 import { WorkOrderModule } from 'src/modules/work-orders/work-order.module';
+import { CompletionEmailModule } from 'src/modules/completion-email.module';
 import { DispatchedOrderController, WorkOrderSubOrderController } from './dispatched-order.controller';
 import { DispatchedOrderService } from './dispatched-order.service';
 import { SlaNotificationService } from './sla-notification.service';
@@ -56,6 +57,7 @@ import { SlaNotificationService } from './sla-notification.service';
     NotificationModule,
     UploadsModule,
     WorkOrderModule,
+    CompletionEmailModule,
   ],
   controllers: [DispatchedOrderController, WorkOrderSubOrderController],
   providers: [DispatchedOrderService, SlaNotificationService],

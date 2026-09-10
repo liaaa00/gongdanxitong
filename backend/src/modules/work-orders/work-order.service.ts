@@ -5,6 +5,7 @@ import { In, MoreThan, Not, QueryFailedError, Repository } from 'typeorm';
 import {
   BUSINESS_LEADER_ROLES,
   BUSINESS_MANAGER_ROLES,
+  BUSINESS_MEMBER_ROLES,
   CONTRACT_MODULE_ROLES,
   DATA_ENTRY_MODULE_ROLES,
   SOCIAL_INSURANCE_MODULE_ROLES,
@@ -2178,7 +2179,10 @@ export class WorkOrderService {
     subOrders: WorkOrderSubOrderItem[],
     user: JwtUserPayload,
   ): Promise<WorkOrderSubOrderItem[]> {
-    const canReadResignationCert = isAdminRole(user.roles) || isResignationCertHandler(user);
+    // 任务1：业务侧父单创建人可查看自己主工单下的离职证明子工单（只读，不放开办理；后道账号即使碰巧是创建人也不放行）。
+    const isBusinessCreator = parentCreatedBy === user.sub
+      && (hasAnyRole(user.roles, BUSINESS_MEMBER_ROLES) || hasAnyRole(user.roles, BUSINESS_LEADER_ROLES) || hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES));
+    const canReadResignationCert = isAdminRole(user.roles) || isResignationCertHandler(user) || isBusinessCreator;
     const candidates = subOrders.filter((sub) => sub.moduleCode !== 'resignation_cert' || canReadResignationCert);
     if (isAdminRole(user.roles) || parentCreatedBy === user.sub) return candidates;
     const accessibleModules = await this.resolveReadableBackendModules(user);

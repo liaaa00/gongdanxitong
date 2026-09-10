@@ -127,6 +127,9 @@ export class ImportJobService {
       ? { headers: session.headers, rowCount: session.rowCount }
       : await this.excelParserService.parseFile(meta.filePath, sheetName ? { sheetName } : {})
         .then((sheet) => ({ headers: sheet.headers, rowCount: sheet.rows.length }));
+    if (parsed.rowCount <= 0) {
+      throw businessException(4400, HttpStatus.BAD_REQUEST, '导入文件没有可导入的数据行');
+    }
     const availableFields = session && session.fileId === meta.fileId && session.orderType === input.orderType
       ? session.availableFields
       : await this.fieldValidationService.buildCandidateFields(input.orderType);
@@ -281,6 +284,7 @@ export class ImportJobService {
         raw,
         mapping,
         defaults,
+        orderType,
         fields,
       });
       warnings.push(...validation.warnings.map((item) => ({

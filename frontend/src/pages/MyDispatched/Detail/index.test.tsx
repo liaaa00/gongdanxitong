@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   getSupplementLogs: vi.fn(),
   getActiveDetailViewTemplate: vi.fn(),
   supplementField: vi.fn(),
+  completeDispatchedOrder: vi.fn(),
   returnDispatchedOrder: vi.fn(),
   creatorUpdateDispatchedOrderFields: vi.fn(),
   resubmitDispatchedOrder: vi.fn(),
@@ -55,7 +56,14 @@ vi.mock('@/components/DynamicForm', () => ({
       data-fields={(fields || []).map((field) => field.field_code).join(',')}
     >
       {onFinish ? (
-        <button type="button" onClick={() => void onFinish({ bank_name: 'New Bank', employee_name: 'Test User' })}>
+        <button type="button" onClick={() => void onFinish(Object.fromEntries((fields || []).map((field) => [
+          field.field_code,
+          field.field_code === 'bank_name' ? 'New Bank'
+            : field.field_code === 'email' ? 'new@example.com'
+              : field.field_code === 'cert_delivery_address' ? '新送达地址'
+                : field.field_code === 'employee_name' ? 'Test User'
+                  : 'New Value',
+        ])))}>
           Save social fields
         </button>
       ) : null}
@@ -83,7 +91,7 @@ vi.mock('@/services/dispatchedOrders', () => ({
   confirmDispatchedDirtyRead: (...args: unknown[]) => mocks.confirmDispatchedDirtyRead(...args),
   returnCompletedDispatchedOrder: vi.fn(),
   acceptDispatchedOrder: vi.fn(),
-  completeDispatchedOrder: vi.fn(),
+  completeDispatchedOrder: (...args: unknown[]) => mocks.completeDispatchedOrder(...args),
   returnDispatchedOrder: (...args: unknown[]) => mocks.returnDispatchedOrder(...args),
   supplementField: (...args: unknown[]) => mocks.supplementField(...args),
   exportDispatchedOrder: vi.fn(),
@@ -1221,6 +1229,201 @@ describe('MyDispatchedDetail readonly and creator repair actions', () => {
     await waitFor(() => expect(mocks.supplementField).toHaveBeenCalledWith('d-1', expect.objectContaining({ bank_name: '' })));
     await waitFor(() => expect(mocks.getDispatchedOrder).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(mocks.getSupplementLogs).toHaveBeenCalledTimes(2));
+  });
+
+  it('uses visible resignation_contact permissions as the editable field list for maoyani', async () => {
+    mocks.currentUser = {
+      id: 'handler-maoyani',
+      username: 'maoyani',
+      real_name: '毛雅妮',
+      roles: [{ code: 'onboarding_resignation_member' }],
+    };
+    mocks.fieldPermissions = {
+      employee_name: 'readonly',
+      email: 'visible',
+      cert_delivery_address: 'visible',
+    };
+    mocks.getFields.mockResolvedValue([
+      { field_code: 'employee_name', field_name: '姓名', field_type: 'text', is_required: true, is_active: true, display_order: 1 },
+      { field_code: 'email', field_name: '电子邮件', field_type: 'email', is_required: false, is_active: true, display_order: 2 },
+      { field_code: 'cert_delivery_address', field_name: '离职证明送达地址', field_type: 'text', is_required: false, is_active: true, display_order: 3 },
+    ]);
+    mocks.supplementField.mockResolvedValue(undefined);
+    mocks.getDispatchedOrder
+      .mockResolvedValueOnce({
+        ...baseOrder,
+        order_type: 'resignation',
+        module_code: 'resignation_contact',
+        module_name: '离职材料收集',
+        status: 'processing',
+        handler_id: 'handler-maoyani',
+        visible_fields: ['employee_name', 'email', 'cert_delivery_address'],
+        extra_data: { employee_name: '张三', email: '', cert_delivery_address: '' },
+        _fieldPermissions: mocks.fieldPermissions,
+      })
+      .mockResolvedValue({
+        ...baseOrder,
+        order_type: 'resignation',
+        module_code: 'resignation_contact',
+        module_name: '离职材料收集',
+        status: 'processing',
+        handler_id: 'handler-maoyani',
+        visible_fields: ['employee_name', 'email', 'cert_delivery_address'],
+        extra_data: { employee_name: '张三', email: 'new@example.com', cert_delivery_address: '新送达地址' },
+        _fieldPermissions: mocks.fieldPermissions,
+      });
+
+    renderDetail('/my-dispatched/d-1');
+
+    const editButton = await screen.findByRole('button', { name: /编辑字段/ });
+    expect(editButton).toBeEnabled();
+    expect(screen.queryByTestId('dynamic-form')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /补充\/修改暂存字段/ })).not.toBeInTheDocument();
+
+    fireEvent.click(editButton);
+    fireEvent.change(await screen.findByRole('textbox', { name: /电子邮件/ }), { target: { value: 'new@example.com' } });
+    fireEvent.change(screen.getByRole('textbox', { name: /离职证明送达地址/ }), { target: { value: '新送达地址' } });
+    fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+
+    await waitFor(() => expect(mocks.supplementField).toHaveBeenCalledWith('d-1', {
+      email: 'new@example.com',
+      cert_delivery_address: '新送达地址',
+    }));
+  });
+
+  it('collects delivery address and email in the resignation contact completion modal', async () => {
+    mocks.currentUser = {
+      id: 'handler-maoyani',
+      username: 'maoyani',
+      real_name: '毛雅妮',
+      roles: [{ code: 'onboarding_resignation_member' }],
+    };
+    mocks.completeDispatchedOrder.mockResolvedValue({
+      ...baseOrder,
+      module_code: 'resignation_contact',
+      status: 'completed',
+    });
+    mocks.getDispatchedOrder.mockResolvedValue({
+      ...baseOrder,
+      order_type: 'resignation',
+      module_code: 'resignation_contact',
+      module_name: '离职材料收集',
+      status: 'processing',
+      handler_id: 'handler-maoyani',
+      extra_data: {
+        employee_name: '张三',
+        need_resignation_cert: '是',
+        cert_delivery_address: '旧地址',
+        email: 'old@example.com',
+      },
+    });
+
+    renderDetail('/my-dispatched/d-1');
+
+    fireEvent.click(await screen.findByRole('button', { name: /完成/ }));
+
+    // 任务7：办结弹窗与反馈状态一次提交，地址/邮箱预填当前主工单值。
+    const address = await screen.findByRole('textbox', { name: /离职证明送达地址/ });
+    expect(address).toHaveValue('旧地址');
+    expect(screen.getByRole('textbox', { name: /电子邮箱/ })).toHaveValue('old@example.com');
+
+    // 需要开具离职证明时送达地址必填。
+    fireEvent.change(address, { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+    expect(await screen.findByText('需要开具离职证明时请填写送达地址')).toBeInTheDocument();
+    expect(mocks.completeDispatchedOrder).not.toHaveBeenCalled();
+
+    fireEvent.change(address, { target: { value: '宁波市鄞州区xx路1号' } });
+    fireEvent.change(screen.getByRole('textbox', { name: /电子邮箱/ }), { target: { value: 'new@example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+
+    await waitFor(() => expect(mocks.completeDispatchedOrder).toHaveBeenCalledWith('d-1', expect.objectContaining({
+      resignation_contact_feedback: '已办结',
+      cert_delivery_address: '宁波市鄞州区xx路1号',
+      email: 'new@example.com',
+    })));
+  });
+
+  it('locks the esign platform editor unless the contract opted into e-signing', async () => {
+    mocks.currentUser = {
+      id: 'handler-yang',
+      username: 'yangchun',
+      real_name: '杨纯',
+      roles: [{ code: 'labor_contract_member' }],
+    };
+    mocks.getFields.mockResolvedValue([
+      {
+        field_code: 'esign_platform',
+        field_name: '电子签平台',
+        field_type: 'dropdown',
+        is_required: false,
+        is_active: true,
+        display_order: 1,
+        dropdown_options: [{ label: 'e签宝', value: 'e签宝' }],
+      },
+    ]);
+    mocks.getDispatchedOrder.mockResolvedValue({
+      ...baseOrder,
+      module_code: 'contract',
+      module_name: '劳动合同新签',
+      status: 'processing',
+      handler_id: 'handler-yang',
+      visible_fields: ['esign_platform'],
+      supplementable_fields: ['esign_platform'],
+      extra_data: { need_esign: '2.否', esign_platform: 'e签宝' },
+    });
+
+    const { unmount } = renderDetail('/my-dispatched/d-1');
+    fireEvent.click(await screen.findByRole('button', { name: /补充\/修改字段/ }));
+
+    // 任务8：是否电子签为「2.否」时平台不可编辑，历史值保留展示。
+    expect(await screen.findByRole('combobox', { name: /电子签平台/ })).toBeDisabled();
+
+    unmount();
+
+    mocks.getDispatchedOrder.mockResolvedValue({
+      ...baseOrder,
+      module_code: 'contract',
+      module_name: '劳动合同新签',
+      status: 'processing',
+      handler_id: 'handler-yang',
+      visible_fields: ['esign_platform'],
+      supplementable_fields: ['esign_platform'],
+      extra_data: { need_esign: '1.是', esign_platform: '' },
+    });
+    renderDetail('/my-dispatched/d-1');
+    fireEvent.click(await screen.findByRole('button', { name: /补充\/修改字段/ }));
+
+    expect(await screen.findByRole('combobox', { name: /电子签平台/ })).toBeEnabled();
+  });
+
+  it.each(['pending', 'completed'])('shows a disabled top edit button for %s resignation_contact orders', async (status) => {
+    mocks.currentUser = {
+      id: 'handler-maoyani',
+      username: 'maoyani',
+      real_name: '毛雅妮',
+      roles: [{ code: 'onboarding_resignation_member' }],
+    };
+    mocks.fieldPermissions = { email: 'visible' };
+    mocks.getFields.mockResolvedValue([
+      { field_code: 'email', field_name: '电子邮件', field_type: 'text', is_required: false, is_active: true, display_order: 1 },
+    ]);
+    mocks.getDispatchedOrder.mockResolvedValue({
+      ...baseOrder,
+      order_type: 'resignation',
+      module_code: 'resignation_contact',
+      module_name: '离职材料收集',
+      status,
+      handler_id: 'handler-maoyani',
+      visible_fields: ['email'],
+      extra_data: { email: '' },
+      _fieldPermissions: mocks.fieldPermissions,
+    });
+
+    renderDetail('/my-dispatched/d-1');
+
+    expect(await screen.findByRole('button', { name: /编辑字段/ })).toBeDisabled();
+    expect(screen.queryByTestId('dynamic-form')).not.toBeInTheDocument();
   });
 
   it('uses backend social-insurance permissions and submits only changed visible fields', async () => {

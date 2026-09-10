@@ -23,6 +23,8 @@ const TeamDispatched = lazy(() => import('@/pages/TeamDispatched'));
 const HistoryWorkOrders = lazy(() => import('@/pages/HistoryWorkOrders'));
 const ExportTemplates = lazy(() => import('@/pages/ExportTemplates'));
 const NotificationsPage = lazy(() => import('@/pages/Notifications'));
+const CustomerConfig = lazy(() => import('@/pages/CustomerConfig'));
+const CustomerRules = lazy(() => import('@/pages/CustomerRules'));
 const InServiceOrderList = lazy(() => import('@/pages/InServiceOrders'));
 const InServiceOrderNew = lazy(() => import('@/pages/InServiceOrders/New'));
 const InServiceOrderDetail = lazy(() => import('@/pages/InServiceOrders/Detail'));
@@ -190,6 +192,8 @@ const AppRoutes: React.FC = () => (
 
         <Route path="export-templates" element={<RoleRoute><RouteGuard moduleName="导出模板"><ExportTemplates /></RouteGuard></RoleRoute>} />
         <Route path="notifications" element={<RoleRoute><RouteGuard moduleName="消息通知"><NotificationsPage /></RouteGuard></RoleRoute>} />
+        <Route path="customer-config" element={<RoleRoute><RouteGuard moduleName="客户门户配置"><CustomerConfig /></RouteGuard></RoleRoute>} />
+        <Route path="customer-rules" element={<RoleRoute><RouteGuard moduleName="客户规则配置"><CustomerRules /></RouteGuard></RoleRoute>} />
 
         <Route path="in-service" element={<RoleRoute><RouteGuard moduleName="单项业务办理"><InServiceOrderList /></RouteGuard></RoleRoute>} />
         <Route path="in-service/new" element={<RoleRoute><RouteGuard moduleName="新建单项业务"><InServiceOrderNew /></RouteGuard></RoleRoute>} />

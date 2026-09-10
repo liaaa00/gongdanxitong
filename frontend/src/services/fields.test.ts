@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getFallbackFields } from './fields';
+import { getFallbackFields, RESIGNATION_REASON_OPTIONS } from './fields';
 
 describe('field fallback configuration', () => {
   it('restores all supported work hour system options', () => {
@@ -72,5 +72,12 @@ describe('field fallback configuration', () => {
     expect(byCode.get('medical_insurance_result')).toMatchObject({ field_name: '医保是否办结', field_type: 'dropdown' });
     expect(byCode.get('housing_fund_result')).toMatchObject({ field_name: '公积金是否办结', field_type: 'dropdown' });
     expect(byCode.get('social_insurance_remark')).toMatchObject({ field_name: '社保公积金办理备注', field_type: 'text' });
+  });
+
+  it('configures resignation reason as a fixed dropdown in the fallback', () => {
+    const field = getFallbackFields('resignation').find((item) => item.field_code === 'resignation_reason');
+
+    expect(field).toMatchObject({ field_type: 'dropdown', placeholder: '请选择离职原因' });
+    expect(field?.dropdown_options).toEqual(RESIGNATION_REASON_OPTIONS);
   });
 });

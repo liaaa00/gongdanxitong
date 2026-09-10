@@ -65,8 +65,8 @@ export class FieldSupplementService {
       });
     }
 
-    const isSocialInsuranceEdit = dispatchedOrder.moduleCode === 'social_insurance';
-    const rule = isSocialInsuranceEdit
+    const isPermissionControlledEdit = ['social_insurance', 'resignation_contact', 'resignation_cert'].includes(dispatchedOrder.moduleCode);
+    const rule = isPermissionControlledEdit
       ? null
       : await this.fieldSupplementRuleRepository.findOne({
         where: {
@@ -75,7 +75,7 @@ export class FieldSupplementService {
           isActive: true,
         },
       });
-    if (!isSocialInsuranceEdit && !rule) {
+    if (!isPermissionControlledEdit && !rule) {
       throw businessException(5001, 403, '字段无可补充权限', {
         fieldCode: input.fieldCode,
         moduleCode: dispatchedOrder.moduleCode,
@@ -89,7 +89,7 @@ export class FieldSupplementService {
     const permission = permissions.get(input.fieldCode) ?? FieldPermissionMode.HIDDEN;
     if (
       permission === FieldPermissionMode.HIDDEN
-      || (isSocialInsuranceEdit && permission !== FieldPermissionMode.VISIBLE)
+      || (isPermissionControlledEdit && permission !== FieldPermissionMode.VISIBLE)
     ) {
       throw businessException(5001, 403, '字段无可补充权限', {
         fieldCode: input.fieldCode,
@@ -118,6 +118,16 @@ export class FieldSupplementService {
       [input.fieldCode]: input.newValue,
     };
     await this.workOrderRepository.save(workOrder);
+
+    if (!rule) {
+      // 权限控制补录模块：字段写回主工单后同步进当前子单快照，保证详情立即可见。
+      const nextVisibleFields = new Set(dispatchedOrder.visibleFields ?? []);
+      if (!nextVisibleFields.has(input.fieldCode)) {
+        nextVisibleFields.add(input.fieldCode);
+        dispatchedOrder.visibleFields = Array.from(nextVisibleFields);
+        await this.dispatchedOrderRepository.save(dispatchedOrder);
+      }
+    }
 
     if (rule && Array.isArray(rule.syncToModules) && rule.syncToModules.length > 0) {
       const children = await this.dispatchedOrderRepository.find({

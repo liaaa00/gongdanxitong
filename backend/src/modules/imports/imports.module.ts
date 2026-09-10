@@ -40,6 +40,6 @@ import { WorkOrderImportService } from './work-order-import.service';
     ImportJobService,
     WorkOrderImportService,
   ],
-  exports: [ImportTemplateConfigService, ImportTemplateService, ImportJobService, WorkOrderImportService],
+  exports: [ImportTemplateConfigService, ImportTemplateService, ImportJobService, WorkOrderImportService, ImportFieldValidationService, ExcelParserService],
 })
 export class ImportsModule {}

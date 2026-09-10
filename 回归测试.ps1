@@ -1,4 +1,4 @@
-param(
+﻿param(
   [switch]$FrontendOnly,
   [switch]$BackendOnly,
   [switch]$SkipBuild
@@ -36,6 +36,11 @@ function Invoke-InDir {
 
 $FrontTests = @(
   'src/config/routeVisibility.test.ts',
+  'src/layouts/BasicLayout.test.tsx',
+  'src/pages/CustomerRules/index.test.tsx',
+  'src/pages/CustomerRules/RuleBatchActions.test.tsx',
+  'src/pages/CustomerRules/ruleExcel.test.ts',
+  'src/pages/CustomerConfig/CustomerPortalAccounts.test.tsx',
   'src/pages/MyDispatched/index.test.tsx',
   'src/pages/MyDispatched/Detail/index.test.tsx',
   'src/pages/TeamDispatched/index.test.tsx',
@@ -53,7 +58,9 @@ Write-Host "FrontendOnly: $FrontendOnly, BackendOnly: $BackendOnly, SkipBuild: $
 
 if (-not $BackendOnly) {
   Write-Step 'Frontend key business tests'
-  Invoke-InDir $Frontend 'npm' (@('test', '--', '--run') + $FrontTests)
+  foreach ($FrontTest in $FrontTests) {
+    Invoke-InDir $Frontend 'npm' @('test', '--', '--run', $FrontTest, '--pool=threads', '--maxWorkers=1', '--no-file-parallelism')
+  }
 
   if (-not $SkipBuild) {
     Write-Step 'Frontend build'
@@ -62,6 +69,9 @@ if (-not $BackendOnly) {
 }
 
 if (-not $FrontendOnly) {
+  Write-Step 'Customer portal backend regression'
+  Invoke-InDir $Backend 'npm' @('test', '--', '--runTestsByPath', 'test/customer-rules.service.spec.ts', 'test/customer-rules.controller.spec.ts', 'test/customer-portal-accounts.service.spec.ts', 'test/customer-portal-accounts.controller.spec.ts', 'test/customer-portal.service.spec.ts', 'test/customer-portal-upload-compensation.spec.ts', 'test/admin-field-permission-conflict.spec.ts', 'test/completion-email.service.spec.ts', 'test/completion-email-delivery.service.spec.ts', 'test/dispatched-order.service.spec.ts', 'test/audit.interceptor.spec.ts')
+  Invoke-InDir (Join-Path $Root 'customer-portal') 'npm' @('test')
   if (-not $SkipBuild) {
     Write-Step 'Backend build'
     Invoke-InDir $Backend 'npm' @('run', 'build')

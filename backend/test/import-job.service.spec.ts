@@ -139,6 +139,28 @@ describe('ImportJobService', () => {
     expect(importJobRepository.save).not.toHaveBeenCalled();
   });
 
+  it('rejects an import file with no data rows before creating a job', async () => {
+    jest.clearAllMocks();
+    (uploadsService.resolveForUser as jest.Mock).mockResolvedValue({
+      fileId: 'file-empty',
+      filePath: '/tmp/empty.xlsx',
+    });
+    (excelParserService.parseFile as jest.Mock).mockResolvedValue({
+      headers: ['name'],
+      rows: [],
+    });
+
+    await expect(service.createJob({
+      user: makeUser({ roles: ['business_group_member'] }),
+      fileId: 'file-empty',
+      orderType: OrderType.RESIGNATION,
+      mapping: { name: 'employee_name' },
+      autoSubmit: false,
+    })).rejects.toThrow('导入文件没有可导入的数据行');
+
+    expect(importJobRepository.save).not.toHaveBeenCalled();
+  });
+
   it('returns failed row stats and validation errors from job metadata', async () => {
     importJobRepository.findOne.mockResolvedValueOnce({
       id: 'job-1',
@@ -374,6 +396,10 @@ describe('ImportJobService', () => {
       { url: 'https://example.com/proof.pdf', originalName: 'proof.pdf' },
       'user-1',
     );
+    expect(fieldValidationService.validateRow).toHaveBeenCalledWith(expect.objectContaining({
+      orderType: OrderType.RESIGNATION,
+      fields: [],
+    }));
     expect(workOrderImportService.submit).toHaveBeenCalledWith('wo-link', expect.objectContaining({ sub: 'user-1' }));
     expect((attachmentsService.createFromExternalLink as jest.Mock).mock.invocationCallOrder[0])
       .toBeLessThan((workOrderImportService.submit as jest.Mock).mock.invocationCallOrder[0]);

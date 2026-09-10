@@ -126,7 +126,7 @@ const DEFAULT_DETAIL_FIELD_GROUPS: DetailTemplateFieldGroup[] = [
   },
   {
     title: '离职信息',
-    fieldCodes: ['resignation_type', 'resignation_reason', 'last_work_date', 'contract_terminate_date', 'handover_person', 'need_resignation_cert', 'resignation_cert_format', 'cert_delivery_address'],
+    fieldCodes: ['resignation_type', 'resignation_reason', 'last_work_date', 'contract_terminate_date', 'handover_person', 'need_resignation_cert', 'resignation_cert_format', 'cert_delivery_address', 'resignation_cert_tracking_number'],
   },
   {
     title: '办理反馈',
@@ -155,6 +155,21 @@ const SOCIAL_DECREASE_FIELD_GROUPS: DetailTemplateFieldGroup[] = [
   },
 ];
 
+const RESIGNATION_CONTACT_FIELD_GROUPS: DetailTemplateFieldGroup[] = DEFAULT_DETAIL_FIELD_GROUPS
+  .filter((group) => group.title !== '入职材料收集')
+  .map((group) => {
+    if (group.title === '离职信息') {
+      return {
+        title: group.title,
+        fieldCodes: ['need_resignation_share', ...group.fieldCodes],
+      };
+    }
+    if (group.title === '办理反馈') {
+      return { title: '离职材料收集', fieldCodes: ['resignation_contact_feedback'] };
+    }
+    return group;
+  });
+
 export function getDefaultDetailFieldGroups(moduleCode?: string): DetailTemplateFieldGroup[] {
   const groups = moduleCode === 'payroll_bank_card'
     ? PAYROLL_BANK_CARD_FIELD_GROUPS
@@ -162,6 +177,8 @@ export function getDefaultDetailFieldGroups(moduleCode?: string): DetailTemplate
       ? SOCIAL_INCREASE_FIELD_GROUPS
       : moduleCode === 'resignation_social_insurance' || moduleCode === 'social_insurance_resign'
         ? SOCIAL_DECREASE_FIELD_GROUPS
-        : DEFAULT_DETAIL_FIELD_GROUPS;
+        : moduleCode === 'resignation_contact'
+          ? RESIGNATION_CONTACT_FIELD_GROUPS
+          : DEFAULT_DETAIL_FIELD_GROUPS;
   return groups.map((group) => ({ title: group.title, fieldCodes: [...group.fieldCodes] }));
 }

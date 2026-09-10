@@ -81,4 +81,53 @@ describe('FieldPermissionInterceptor pending modify aliases', () => {
       value: '电子证明',
     })]);
   });
+
+  it('keeps certificate order extraData camelCase fields visible as readonly instead of wiping them', () => {
+    const interceptor = new FieldPermissionInterceptor({} as never, makeService());
+    const permissions = new Map([
+      ['certificate_type', FieldPermissionMode.VISIBLE],
+      ['secret_note', FieldPermissionMode.HIDDEN],
+    ]);
+
+    const result = (interceptor as unknown as {
+      applyPayload: (payload: unknown, fieldPermissions: Map<string, FieldPermissionMode>, depth: number) => any;
+    }).applyPayload({
+      orderKind: 'certificate',
+      extraData: {
+        certificateType: 'employment',
+        certificateFormat: '纸质证明',
+        mailingAddress: '上海市黄浦区南京东路100号',
+        contactName: '张三',
+        contactPhone: '13800138000',
+        purpose: 'E2E测试',
+        secret_note: '不可见',
+      },
+    }, permissions, 0);
+
+    expect(result.extraData.certificateType).toBe('employment');
+    expect(result.extraData.certificateFormat).toBe('纸质证明');
+    expect(result.extraData.mailingAddress).toBe('上海市黄浦区南京东路100号');
+    expect(result.extraData.contactName).toBe('张三');
+    expect(result.extraData.contactPhone).toBe('13800138000');
+    expect(result.extraData.purpose).toBe('E2E测试');
+    expect(result.extraData).not.toHaveProperty('secret_note');
+    expect(result.readonlyFields).toContain('certificateFormat');
+    expect(result._fieldPermissions.certificateFormat).toBe(FieldPermissionMode.READONLY);
+  });
+
+  it('still hides certificate extraData fields when the permission row explicitly hides them', () => {
+    const interceptor = new FieldPermissionInterceptor({} as never, makeService());
+    const permissions = new Map([
+      ['certificateFormat', FieldPermissionMode.HIDDEN],
+    ]);
+
+    const result = (interceptor as unknown as {
+      applyPayload: (payload: unknown, fieldPermissions: Map<string, FieldPermissionMode>, depth: number) => any;
+    }).applyPayload({
+      orderKind: 'certificate',
+      extraData: { certificateFormat: '纸质证明' },
+    }, permissions, 0);
+
+    expect(result.extraData).toEqual({});
+  });
 });

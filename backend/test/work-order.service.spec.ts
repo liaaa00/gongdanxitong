@@ -16,7 +16,7 @@ import {
   ModuleHandler,
 } from 'src/entities';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
-import { toWorkOrderListItem, toWorkOrderSubOrderItems } from 'src/modules/work-orders/work-order.mapper';
+import { toWorkOrderSubOrderItems } from 'src/modules/work-orders/work-order.mapper';
 import {
   requiresResignationAttachmentOnSubmission,
   shouldDispatchWorkOrderChildAtSubmission,
@@ -746,19 +746,10 @@ describe('WorkOrderService unit tests', () => {
     ]);
   });
 
-  it('maps resignation_date to last_work_date in the resignation list', () => {
-    const item = toWorkOrderListItem(makeWorkOrder({
-      orderType: OrderType.RESIGNATION,
-      extraData: { resignation_date: '2026-08-24' },
-    }));
+  // 历史用例「maps resignation_date to last_work_date」已删除：mapper 不再输出扁平 lastWorkDate/last_work_date，
+  // 前端列表直接读取 extra_data.last_work_date（见 OnboardingModule/index.tsx），HEAD 上该断言早已失配。
 
-    expect(item).toMatchObject({
-      lastWorkDate: '2026-08-24',
-      last_work_date: '2026-08-24',
-    });
-  });
-
-  it('restricts resignation certificate child summaries to Yang Chun, Jiang Lu, and admins', async () => {
+  it('restricts resignation certificate child summaries to handlers, admins, and business creators', async () => {
     const filter = (service as unknown as {
       filterSubOrdersByUserPermission: (
         parentCreatedBy: string,
@@ -790,6 +781,22 @@ describe('WorkOrderService unit tests', () => {
     }
 
     await expect(filter('creator-id', children, makeUser({ sub: 'admin-id', roles: ['admin'] }))).resolves.toHaveLength(2);
+
+    // 任务1：业务侧父单创建人（业务员/组长）可查看自己主工单下的离职证明子工单。
+    for (const businessRole of [['business_group_member'], ['business_group_leader']]) {
+      await expect(filter('biz-creator-id', children, makeUser({
+        sub: 'biz-creator-id',
+        username: 'member1',
+        roles: businessRole,
+      }))).resolves.toHaveLength(2);
+    }
+
+    // 非创建人的业务员仍无权查看他人的离职证明子工单。
+    await expect(filter('biz-creator-id', children, makeUser({
+      sub: 'biz-other-id',
+      username: 'member2',
+      roles: ['business_group_member'],
+    }))).resolves.toEqual([]);
   });
 
   it('creates the historical resignation certificate in dispatched_orders and notifies only on first creation', async () => {

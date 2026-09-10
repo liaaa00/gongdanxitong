@@ -4,6 +4,7 @@ import { Roles } from 'src/common/decorators/roles.decorator';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { DashboardService } from './dashboard.service';
 import { DashboardScopeQueryDto, LeaderTrendQueryDto, OrderTypeMatrixQueryDto } from './dto/dashboard-query.dto';
+import { DataSyncMonitorQueryDto } from './dto/data-sync-monitor.dto';
 
 const TEAM_DASHBOARD_ROLES = [
   'contract_specialist',
@@ -38,6 +39,14 @@ const LEADER_TREND_ROLES = [
   'data_entry_leader',
   'shared_team_owner',
   'shared_leader',
+];
+
+const DATA_SYNC_MONITOR_ROLES = [
+  'admin',
+  'business_owner',
+  'business_group_leader',
+  'data_entry_leader',
+  'shared_team_owner',
 ];
 
 @Controller('dashboard')
@@ -90,5 +99,11 @@ export class DashboardController {
   @Roles(...LEADER_TREND_ROLES)
   leaderTrend(@Query() query: LeaderTrendQueryDto, @CurrentUser() user: JwtUserPayload) {
     return this.dashboardService.getLeaderTrend(query.orderType ?? 'onboarding', user, query.moduleCode, query.scope, query.month, query.businessScope);
+  }
+
+  @Get('data-sync')
+  @Roles(...DATA_SYNC_MONITOR_ROLES)
+  dataSync(@Query() query: DataSyncMonitorQueryDto) {
+    return this.dashboardService.getDataSyncMonitor(query.days ?? 30);
   }
 }

@@ -946,6 +946,34 @@ export default function InServiceOrderDetail() {
           </Descriptions>
         </Card>
 
+        {order.orderKind === IN_SERVICE_ORDER_KINDS.CERTIFICATE ? (
+          <Card size="small" title="证明信息">
+            <Descriptions bordered size="small" column={{ xs: 1, sm: 2, lg: 3 }}>
+              <Descriptions.Item label="证明类型">
+                {order.extraData?.certificateType === 'income' ? '收入证明' : order.extraData?.certificateType === 'employment' ? '在职证明' : '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label="证明形式">{order.extraData?.certificateFormat || '-'}</Descriptions.Item>
+              <Descriptions.Item label="入职日期">{formatDate(order.extraData?.hireDate)}</Descriptions.Item>
+              <Descriptions.Item label="职务">{order.extraData?.jobTitle || '-'}</Descriptions.Item>
+              <Descriptions.Item label="证明用途">{order.extraData?.purpose || '-'}</Descriptions.Item>
+              {order.extraData?.certificateType === 'income' ? (
+                <Descriptions.Item label="近一年税前月均收入">
+                  {order.extraData?.averageMonthlyIncome == null
+                    ? '-'
+                    : `¥${Number(order.extraData.averageMonthlyIncome).toFixed(2)}`}
+                </Descriptions.Item>
+              ) : null}
+              {order.extraData?.certificateFormat === '纸质证明' ? (
+                <>
+                  <Descriptions.Item label="邮寄地址">{order.extraData?.mailingAddress || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="联系人">{order.extraData?.contactName || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="联系方式">{order.extraData?.contactPhone || '-'}</Descriptions.Item>
+                </>
+              ) : null}
+            </Descriptions>
+          </Card>
+        ) : null}
+
         {order.fields && order.fields.length > 0 ? (
           <Card size="small" title="配置字段">
             <Descriptions bordered size="small" column={{ xs: 1, sm: 2, lg: 3 }}>

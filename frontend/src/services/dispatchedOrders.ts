@@ -165,7 +165,7 @@ const MODULE_META: Record<string, { name: string; visible_fields: string[]; supp
       'need_company_contract', 'need_esign', 'esign_platform', 'contract_subject', 'contract_template', 'special_contract_template_name',
       'contract_urge', 'contract_feedback',
     ],
-    supplementable_fields: ['contract_subject', 'contract_template', 'special_contract_template_name'],
+    supplementable_fields: ['contract_subject', 'contract_template', 'special_contract_template_name', 'esign_platform'],
   },
   onboarding_contact: {
     name: '入职联系',

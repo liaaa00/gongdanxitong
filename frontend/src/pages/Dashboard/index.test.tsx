@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import Dashboard from './index';
 import { useUserStore } from '@/stores/userStore';
 import { ROLE } from '@/constants/roles';
-import { getDashboardCards, getLeaderTrend, getOrderTypeMatrix } from '@/services/dashboard';
+import { getDashboardCards, getDataSyncMonitor, getLeaderTrend, getOrderTypeMatrix } from '@/services/dashboard';
 import { getModuleConfigs } from '@/services/moduleConfigs';
 import { clearCachedListPageState, updateCachedListPageState } from '@/utils/listPageState';
 
@@ -34,6 +34,7 @@ vi.mock('@ant-design/pro-components', () => ({
 
 vi.mock('@/services/dashboard', () => ({
   getDashboardCards: vi.fn(),
+  getDataSyncMonitor: vi.fn(),
   getOrderTypeMatrix: vi.fn(),
   getLeaderTrend: vi.fn(),
 }));
@@ -43,6 +44,7 @@ vi.mock('@/services/moduleConfigs', () => ({
 }));
 
 const mockedGetDashboardCards = vi.mocked(getDashboardCards);
+const mockedGetDataSyncMonitor = vi.mocked(getDataSyncMonitor);
 const mockedGetOrderTypeMatrix = vi.mocked(getOrderTypeMatrix);
 const mockedGetLeaderTrend = vi.mocked(getLeaderTrend);
 const mockedGetModuleConfigs = vi.mocked(getModuleConfigs);
@@ -68,6 +70,22 @@ describe('Dashboard display behavior', () => {
       refreshToken: null,
     });
     mockedGetDashboardCards.mockResolvedValue({ totalPending: 0, monthPending: 0, totalThisMonth: 0, processing: 0, completed: 0, voided: 0, myMessages: 0 });
+    mockedGetDataSyncMonitor.mockResolvedValue({
+      windowDays: 30,
+      summary: {
+        totalBatches: 0,
+        directSyncedBatches: 0,
+        approvalPendingBatches: 0,
+        approvedBatches: 0,
+        rejectedBatches: 0,
+        partialBatches: 0,
+        pendingItems: 0,
+        rejectedItems: 0,
+        activeDirtyMarks: 0,
+        alertCount: 0,
+      },
+      records: [],
+    });
     mockedGetOrderTypeMatrix.mockRejectedValue(new Error('matrix unavailable'));
     mockedGetModuleConfigs.mockResolvedValue([]);
     mockedGetLeaderTrend.mockResolvedValue({

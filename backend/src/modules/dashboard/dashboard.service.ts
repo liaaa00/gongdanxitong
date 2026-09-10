@@ -1311,4 +1311,150 @@ export class DashboardService {
     }
     return { departmentIds: null, ownerId: user.sub, empty: false };
   }
+
+  async getDataSyncMonitor(days = 30): Promise<{
+    windowDays: number;
+    summary: {
+      totalBatches: number;
+      directSyncedBatches: number;
+      approvalPendingBatches: number;
+      approvedBatches: number;
+      rejectedBatches: number;
+      partialBatches: number;
+      pendingItems: number;
+      rejectedItems: number;
+      activeDirtyMarks: number;
+      alertCount: number;
+    };
+    records: Array<{
+      id: string;
+      workOrderId: string;
+      orderNo: string;
+      customerName: string | null;
+      sourceModuleCode: string;
+      status: string;
+      changedFields: string[];
+      itemCount: number;
+      pendingItemCount: number;
+      rejectedItemCount: number;
+      createdAt: string;
+      updatedAt: string;
+    }>;
+  }> {
+    const windowDays = Math.min(90, Math.max(1, Number(days) || 30));
+    const empty = {
+      windowDays,
+      summary: {
+        totalBatches: 0,
+        directSyncedBatches: 0,
+        approvalPendingBatches: 0,
+        approvedBatches: 0,
+        rejectedBatches: 0,
+        partialBatches: 0,
+        pendingItems: 0,
+        rejectedItems: 0,
+        activeDirtyMarks: 0,
+        alertCount: 0,
+      },
+      records: [],
+    };
+
+    try {
+      const [summaryRows, recordsRows] = await Promise.all([
+        this.dataSource.query(
+          `
+          SELECT
+            COUNT(DISTINCT b.id)::int AS total_batches,
+            COUNT(DISTINCT b.id) FILTER (WHERE b.status = 'direct_synced')::int AS direct_synced_batches,
+            COUNT(DISTINCT b.id) FILTER (WHERE b.status = 'approval_pending')::int AS approval_pending_batches,
+            COUNT(DISTINCT b.id) FILTER (WHERE b.status = 'approved')::int AS approved_batches,
+            COUNT(DISTINCT b.id) FILTER (WHERE b.status = 'rejected')::int AS rejected_batches,
+            COUNT(DISTINCT b.id) FILTER (WHERE b.status = 'partial')::int AS partial_batches,
+            COUNT(i.id) FILTER (WHERE i.status IN ('approval_pending', 'pending'))::int AS pending_items,
+            COUNT(i.id) FILTER (WHERE i.status = 'rejected')::int AS rejected_items,
+            (
+              SELECT COUNT(*)::int
+              FROM work_order_field_dirty_marks dm
+              WHERE dm.is_active = true
+                AND dm.changed_at >= now() - ($1::int * interval '1 day')
+            ) AS active_dirty_marks
+          FROM work_order_field_sync_batches b
+          LEFT JOIN work_order_field_sync_items i ON i.batch_id = b.id
+          WHERE b.created_at >= now() - ($1::int * interval '1 day')
+          `,
+          [windowDays],
+        ),
+        this.dataSource.query(
+          `
+          SELECT
+            b.id,
+            b.work_order_id,
+            wo.order_no,
+            COALESCE(NULLIF(wo.customer_name, ''), c.customer_name) AS customer_name,
+            b.source_module_code,
+            b.status,
+            b.changed_fields,
+            b.created_at,
+            b.updated_at,
+            COUNT(i.id)::int AS item_count,
+            COUNT(i.id) FILTER (WHERE i.status IN ('approval_pending', 'pending'))::int AS pending_item_count,
+            COUNT(i.id) FILTER (WHERE i.status = 'rejected')::int AS rejected_item_count
+          FROM work_order_field_sync_batches b
+          JOIN work_orders wo ON wo.id = b.work_order_id
+          LEFT JOIN customers c ON c.id = wo.customer_id
+          LEFT JOIN work_order_field_sync_items i ON i.batch_id = b.id
+          WHERE b.created_at >= now() - ($1::int * interval '1 day')
+          GROUP BY b.id, b.work_order_id, wo.order_no, wo.customer_name, c.customer_name,
+                   b.source_module_code, b.status, b.changed_fields, b.created_at, b.updated_at
+          ORDER BY b.created_at DESC
+          LIMIT 100
+          `,
+          [windowDays],
+        ),
+      ]);
+
+      const summaryRow = summaryRows[0] ?? {};
+      const numberValue = (value: unknown): number => Math.max(0, Number(value ?? 0) || 0);
+      const summary = {
+        totalBatches: numberValue(summaryRow.total_batches),
+        directSyncedBatches: numberValue(summaryRow.direct_synced_batches),
+        approvalPendingBatches: numberValue(summaryRow.approval_pending_batches),
+        approvedBatches: numberValue(summaryRow.approved_batches),
+        rejectedBatches: numberValue(summaryRow.rejected_batches),
+        partialBatches: numberValue(summaryRow.partial_batches),
+        pendingItems: numberValue(summaryRow.pending_items),
+        rejectedItems: numberValue(summaryRow.rejected_items),
+        activeDirtyMarks: numberValue(summaryRow.active_dirty_marks),
+        alertCount: numberValue(summaryRow.approval_pending_batches)
+          + numberValue(summaryRow.partial_batches)
+          + numberValue(summaryRow.rejected_batches)
+          + numberValue(summaryRow.pending_items)
+          + numberValue(summaryRow.rejected_items)
+          + numberValue(summaryRow.active_dirty_marks),
+      };
+
+      return {
+        windowDays,
+        summary,
+        records: recordsRows.map((row: Record<string, unknown>) => ({
+          id: String(row.id),
+          workOrderId: String(row.work_order_id),
+          orderNo: String(row.order_no ?? ''),
+          customerName: row.customer_name == null ? null : String(row.customer_name),
+          sourceModuleCode: String(row.source_module_code ?? ''),
+          status: String(row.status ?? ''),
+          changedFields: Array.isArray(row.changed_fields) ? (row.changed_fields as unknown[]).map((field) => String(field)) : [],
+          itemCount: numberValue(row.item_count),
+          pendingItemCount: numberValue(row.pending_item_count),
+          rejectedItemCount: numberValue(row.rejected_item_count),
+          createdAt: new Date(String(row.created_at)).toISOString(),
+          updatedAt: new Date(String(row.updated_at)).toISOString(),
+        })),
+      };
+    } catch (error) {
+      this.logger.warn(`data-sync monitor fallback: ${error instanceof Error ? error.message : String(error)}`);
+      return empty;
+    }
+  }
+
 }

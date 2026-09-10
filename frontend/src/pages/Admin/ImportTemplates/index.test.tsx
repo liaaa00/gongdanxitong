@@ -48,6 +48,11 @@ vi.mock('antd', async () => {
   );
   const Button = ({ children, onClick, disabled }: any) => <button disabled={disabled} onClick={onClick}>{children}</button>;
   const Input = ({ value, onChange, placeholder }: any) => <input aria-label={placeholder} value={value ?? ''} placeholder={placeholder} onChange={onChange} />;
+  const Segmented = ({ value, options = [], onChange }: any) => (
+    <select aria-label="segmented" value={value ?? ''} onChange={(event) => onChange?.(event.currentTarget.value)}>
+      {options.map((option: any) => <option key={typeof option === 'string' ? option : option.value} value={typeof option === 'string' ? option : option.value}>{typeof option === 'string' ? option : option.label}</option>)}
+    </select>
+  );
   const Table = ({ dataSource = [], columns = [] }: any) => (
     <table>
       <thead>
@@ -75,6 +80,7 @@ vi.mock('antd', async () => {
     Input,
     Popconfirm: ({ children, onConfirm }: any) => ReactActual.cloneElement(children, { onClick: onConfirm }),
     Select,
+    Segmented,
     Space: passthrough,
     Table,
     Tag: ({ children }: { children?: React.ReactNode }) => <span>{children}</span>,
@@ -132,7 +138,7 @@ describe('AdminImportTemplates', () => {
   it('loads configured import template fields', async () => {
     render(<AdminImportTemplates />);
 
-    await waitFor(() => expect(getImportTemplateConfig).toHaveBeenCalledWith('onboarding'));
+    await waitFor(() => expect(getImportTemplateConfig).toHaveBeenCalledWith('onboarding', 'beilun'));
     expect(screen.getByText('导入模板配置')).toBeInTheDocument();
     expect(screen.getByText('employee_name')).toBeInTheDocument();
     expect(screen.getByDisplayValue('员工姓名')).toBeInTheDocument();
@@ -147,8 +153,8 @@ describe('AdminImportTemplates', () => {
 
     await waitFor(() => expect(replaceImportTemplateConfig).toHaveBeenCalled());
     expect(replaceImportTemplateConfig).toHaveBeenCalledWith('onboarding', [
-      expect.objectContaining({ fieldCode: 'employee_name', displayOrder: 1, headerAlias: '姓名表头', isRequiredOverride: null }),
-    ]);
+      expect.objectContaining({ fieldCode: 'employee_name', displayOrder: 1, headerAlias: '姓名表头', isRequiredOverride: null, isActive: true }),
+    ], 'beilun');
   });
 
   it('downloads current server import template', async () => {
@@ -157,7 +163,7 @@ describe('AdminImportTemplates', () => {
     await waitFor(() => expect(getImportTemplateConfig).toHaveBeenCalled());
     fireEvent.click(screen.getByRole('button', { name: '下载当前模板' }));
 
-    await waitFor(() => expect(downloadServerImportTemplate).toHaveBeenCalledWith('onboarding'));
+    await waitFor(() => expect(downloadServerImportTemplate).toHaveBeenCalledWith('onboarding', 'beilun'));
     expect(messageSuccess).toHaveBeenCalled();
   });
 });

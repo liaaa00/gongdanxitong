@@ -1,4 +1,4 @@
-import { ForbiddenException, HttpStatus, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { ForbiddenException, HttpStatus, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { readFile } from 'fs/promises';
 import { join } from 'path';
 import * as JSZip from 'jszip';
@@ -73,6 +73,7 @@ import { ResignationCertificateAutomationService } from 'src/modules/work-orders
 import { WorkOrderValidationService } from 'src/modules/work-orders/work-order-validation.service';
 import { normalizeNeedPayrollSlip } from './payroll-bank-card';
 import { RoleActionPermissionService } from 'src/modules/role-action-permissions/role-action-permission.service';
+import { CompletionEmailService } from 'src/modules/completion-email.service';
 import { AcceptDispatchedOrderDto } from './dto/accept.dto';
 import { BatchAcceptDispatchedOrderDto } from './dto/batch-accept.dto';
 import { BatchApproveModifyDispatchedOrderDto } from './dto/batch-approve-modify.dto';
@@ -142,12 +143,13 @@ const DISPATCHED_ORDER_STATUS_ALIASES: Record<string, DispatchedOrderStatus | Di
   '處理中': [DispatchedOrderStatus.PENDING, DispatchedOrderStatus.PROCESSING],
 };
 
-const SUPPLEMENT_ALLOWED_MODULE_CODE = 'onboarding_contact';
-const SUPPLEMENT_ALLOWED_USERNAMES = new Set(['maoyani', 'jianglu', '毛雅妮', '江璐']);
+const SUPPLEMENT_ALLOWED_MODULE_CODES = new Set(['onboarding_contact', 'resignation_contact', 'resignation_cert']);
+const SUPPLEMENT_ALLOWED_USERNAMES = new Set(['maoyani', 'jianglu', 'yangchun', '毛雅妮', '江璐', '杨纯']);
 const RESIGNATION_CERTIFICATE_VISIBLE_FIELDS = new Set([
   'customer_name', 'customer_code', 'mobile', 'email', 'position',
   'employee_name', 'id_card_no', 'resignation_reason', 'resignation_date',
   'need_resignation_cert', 'resignation_cert_format', 'cert_delivery_address', 'resignation_cert_status',
+  'resignation_cert_tracking_number',
   'is_common_template', 'template_name',
 ]);
 
@@ -181,6 +183,7 @@ export function buildResignationCertificateResultPatch(
 
 @Injectable()
 export class DispatchedOrderService {
+  private readonly logger = new Logger(DispatchedOrderService.name);
   constructor(
     @InjectRepository(DispatchedOrder)
     private readonly dispatchedOrderRepository: Repository<DispatchedOrder>,
@@ -233,6 +236,8 @@ export class DispatchedOrderService {
     @Optional()
     @InjectRepository(User)
     private readonly userRepository?: Repository<User>,
+    @Optional()
+    private readonly completionEmailService?: CompletionEmailService,
   ) {}
 
   async findAll(
@@ -2615,6 +2620,9 @@ export class DispatchedOrderService {
         } else if (!onlyPool && teamVisibleModules.length > 0) {
           // Contract team members share the contract queue, including historical orders assigned to another member.
           scope.orWhere('d.module_code IN (:...teamVisibleModules)', { teamVisibleModules });
+          // Contract orders are already covered by the shared team predicate above. Keep the
+          // unassigned queue on its historical module set so callers and query stubs retain the
+          // established `poolModules` contract.
           const poolModules = modules.filter((moduleCode) => !teamVisibleModules.includes(moduleCode));
           if (poolModules.length > 0) {
             scope.orWhere('d.handler_id IS NULL AND d.module_code IN (:...poolModules)', { poolModules });
@@ -3335,6 +3343,8 @@ export class DispatchedOrderService {
     ) return;
     if (order.moduleCode === 'resignation_cert') {
       if (isResignationCertHandler(user)) return;
+      // 任务1：业务侧父单创建人可查看自己相关的离职证明子工单（只读；接单/办结等办理动作由独立守卫校验）。
+      if (order.parentOrder.createdBy === user.sub && this.isBusinessSideUser(user)) return;
       throw new ForbiddenException('无权访问该离职证明子工单');
     }
     if (order.parentOrder.createdBy === user.sub) return;
@@ -3441,7 +3451,7 @@ export class DispatchedOrderService {
     const operatorKeys = [user.username, user.realName, user.real_name]
       .map((value) => String(value || '').trim())
       .filter(Boolean);
-    if (order.moduleCode !== SUPPLEMENT_ALLOWED_MODULE_CODE || !operatorKeys.some((key) => SUPPLEMENT_ALLOWED_USERNAMES.has(key))) {
+    if (!SUPPLEMENT_ALLOWED_MODULE_CODES.has(order.moduleCode) || !operatorKeys.some((key) => SUPPLEMENT_ALLOWED_USERNAMES.has(key))) {
       throw businessException(5001, HttpStatus.FORBIDDEN, '当前用户无权补充该子工单字段');
     }
   }
@@ -3647,6 +3657,7 @@ export class DispatchedOrderService {
     };
     workOrder.status = WorkOrderStatus.COMPLETED;
     workOrder.completedAt = new Date();
+    workOrder.completionVersion = (workOrder.completionVersion ?? 0) + 1;
     await this.workOrderRepository.save(workOrder);
     await this.writeLog('work_order', workOrder.id, null, 'close', before, {
       id: workOrder.id,
@@ -3661,6 +3672,18 @@ export class DispatchedOrderService {
         completedAt: workOrder.completedAt,
       },
     });
+
+    if (this.completionEmailService) {
+      try {
+        await this.completionEmailService.enqueueForCompletedWorkOrder(workOrder);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.error(
+          `Completion email task enqueue failed for completed work order ${workOrder.orderNo}: ${message}`,
+          error instanceof Error ? error.stack : undefined,
+        );
+      }
+    }
 
     if ([OrderType.RESIGNATION, OrderType.OUT_OF_PROVINCE_DECREASE].includes(workOrder.orderType)) {
       await this.notificationRepository.save(this.notificationRepository.create({

@@ -78,7 +78,10 @@ export class AuditInterceptor implements NestInterceptor {
   }
 
   private truncatePayload(payload: unknown): Record<string, unknown> {
-    const serialized = JSON.stringify(payload ?? null);
+    const serialized = JSON.stringify(payload ?? null, (key, value: unknown) => (
+      /^(password|oldPassword|newPassword|passwordHash|password_hash|token|accessToken|refreshToken|linkToken|authorization)$/i.test(key)
+        ? '[REDACTED]' : value
+    ));
     const limited = serialized.length > 32000 ? `${serialized.slice(0, 32000)}...[truncated]` : serialized;
 
     return {

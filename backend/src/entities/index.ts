@@ -2,6 +2,8 @@ export * from './action-config.entity';
 export * from './branch.entity';
 export * from './certificate-type.entity';
 export * from './customer-assignee.entity';
+export * from './customer-portal-account.entity';
+export * from './customer-portal-rule.entity';
 export * from './customer.entity';
 export * from './contract-subject.entity';
 export * from './department.entity';
@@ -37,4 +39,7 @@ export * from './work-order-field-sync-batch.entity';
 export * from './work-order-field-sync-item.entity';
 export * from './work-order-module.entity';
 export * from '../modules/workflows/workflow.entity';
+export * from './work-order-completion-email.entity';
 export * from './work-order.entity';
+
+export { CustomerPortalSubmission } from './customer-portal-submission.entity';

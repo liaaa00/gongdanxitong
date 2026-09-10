@@ -68,3 +68,9 @@ backend/uploads/
 # Debug screenshots & temp scripts (root)
 /*.png
 /tmp_*
+
+# Local portal verification backup, tokens and artifacts
+/.tmp_local_e2e/portal-merge-20260909/
+/.tmp_local_e2e/portal-reviewed-20260910/
+/customer-portal/.codex-*
+/customer-portal/_codex_tmp*

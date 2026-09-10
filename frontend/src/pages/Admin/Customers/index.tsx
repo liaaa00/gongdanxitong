@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { PageContainer } from '@ant-design/pro-components';
 import { Alert, App, Button, Form, Input, Modal, Popconfirm, Space, Switch, Table, Tag, Typography } from 'antd';
 import { DeleteOutlined, EditOutlined, PlusOutlined, ApartmentOutlined } from '@ant-design/icons';
@@ -20,8 +21,11 @@ function normalizeCustomer(raw: Record<string, any>): CustomerItem {
   } as CustomerItem;
 }
 
-const AdminCustomers: React.FC = () => {
+interface AdminCustomersProps { embedded?: boolean }
+
+const AdminCustomers: React.FC<AdminCustomersProps> = ({ embedded = false }) => {
   const { message, modal } = App.useApp();
+  const navigate = useNavigate();
   const { hasRole } = useAuth();
   const isAdmin = hasRole('admin');
   const [rawData, setRawData] = useState<any[]>([]);
@@ -49,8 +53,8 @@ const AdminCustomers: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      // 客户管理展示所有启用客户，包含手动新增客户和工单中使用过的真实客户。
-      const res = await getCustomers({ page: 1, pageSize: 100, isActive: true });
+      // 客户门户配置需要同时展示启用和停用客户，便于恢复或维护历史账号。
+      const res = await getCustomers({ page: 1, pageSize: 100 });
       if (res?.success === false) {
         setError(res.error || '客户接口返回异常，请稍后重试');
         setRawData([]);
@@ -239,20 +243,31 @@ const AdminCustomers: React.FC = () => {
     setOpen(true);
   };
 
-  return (
-    <PageContainer
-      header={{ title: '客户管理' }}
-      extra={[
-        isAdmin && <Button key="batchDelete" danger icon={<DeleteOutlined />} disabled={selectedRowKeys.length === 0} onClick={handleBatchDelete}>批量删除</Button>,
-        <Button key="add" type="primary" icon={<PlusOutlined />} onClick={() => {
-          setEditing(null);
-          form.resetFields();
-          form.setFieldsValue({ is_active: true });
-          setOpen(true);
-        }}>新建客户</Button>,
-      ]}
-    >
+  const actions = [
+    isAdmin && <Button key="batchDelete" danger icon={<DeleteOutlined />} disabled={selectedRowKeys.length === 0} onClick={handleBatchDelete}>批量删除</Button>,
+    <Button key="add" type="primary" icon={<PlusOutlined />} onClick={() => {
+      setEditing(null);
+      form.resetFields();
+      form.setFieldsValue({ is_active: true });
+      setOpen(true);
+    }}>新建客户</Button>,
+  ];
+
+  const content = (
+    <>
+      {embedded && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+          <Space>{actions}</Space>
+        </div>
+      )}
       {error && <Alert type="error" message={error} closable style={{ marginBottom: 16 }} onClose={() => setError(null)} />}
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginBottom: 16 }}
+        message="这里是客户主数据入口"
+        description="先维护客户基本信息，再配置该客户的门户登录账号和办理规则。客户账号、通知邮箱和业务数据都按客户 ID 绑定。"
+      />
 
       <Table
         rowKey="id"
@@ -263,11 +278,11 @@ const AdminCustomers: React.FC = () => {
           onChange: (keys) => setSelectedRowKeys(keys.map(String)),
         } : undefined}
         locale={{ emptyText: '暂无客户数据' }}
-        expandable={{
+        expandable={isAdmin ? {
           expandedRowRender,
           expandedRowKeys: expandedKeys,
           onExpand: handleExpand,
-        }}
+        } : undefined}
         columns={[
           {
             title: '客户编号',
@@ -294,9 +309,15 @@ const AdminCustomers: React.FC = () => {
           },
           {
             title: '操作',
-            width: 180,
+            width: 360,
             render: (_, record) => (
               <Space>
+                <Button size="small" type="link" onClick={() => navigate(`/customer-config?tab=accounts&customerId=${encodeURIComponent(record.id)}`)}>
+                  门户账号
+                </Button>
+                <Button size="small" type="link" onClick={() => navigate(`/customer-config?tab=rules&customerId=${encodeURIComponent(record.id)}`)}>
+                  规则与通知
+                </Button>
                 <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>编辑</Button>
                 {isAdmin && (
                   <Popconfirm title="确定删除？" onConfirm={() => onDel(record.id || (record as any).ID)}>
@@ -345,6 +366,16 @@ const AdminCustomers: React.FC = () => {
           <Form.Item name="is_active" label="启用" valuePropName="checked"><Switch /></Form.Item>
         </Form>
       </Modal>
+    </>
+  );
+
+  if (embedded) return content;
+  return (
+    <PageContainer
+      header={{ title: '客户管理', subTitle: '维护客户资料、门户账号和办理规则' }}
+      extra={actions}
+    >
+      {content}
     </PageContainer>
   );
 };

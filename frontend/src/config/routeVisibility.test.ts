@@ -139,6 +139,22 @@ describe('routeVisibility admin-only configuration routes', () => {
     expect(canAccessPath('/my-field-permissions', businessRoles)).toBe(false);
   });
 
+  it('opens customer portal configuration to business roles and blocks backend processing roles', () => {
+    for (const role of [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER]) {
+      expect(canAccessPath('/customer-config', roles([role]))).toBe(true);
+    }
+
+    for (const role of [
+      ROLE.DATA_ENTRY_LEADER,
+      ROLE.SHARED_TEAM_OWNER,
+      ROLE.LABOR_CONTRACT_MEMBER,
+      ROLE.ONBOARDING_RESIGNATION_MEMBER,
+      ROLE.SOCIAL_INSURANCE_SPECIALIST,
+    ]) {
+      expect(canAccessPath('/customer-config', roles([role]))).toBe(false);
+    }
+  });
+
   it('keeps business owner away from my-work pages', () => {
     const ownerRoles = roles([ROLE.BUSINESS_OWNER]);
     expect(canAccessPath('/dashboard', ownerRoles)).toBe(true);
@@ -176,7 +192,8 @@ describe('routeVisibility admin-only configuration routes', () => {
     expect(canAccessPath('/onboarding/data_entry_resign', memberRoles)).toBe(true);
     expect(canAccessPath('/onboarding/social_insurance_resign', memberRoles)).toBe(true);
     expect(canAccessPath('/onboarding/payroll_bank_card', memberRoles)).toBe(true);
-    expect(canAccessPath('/onboarding/resignation_cert', memberRoles)).toBe(false);
+    // 任务1：业务员可查看自己相关的离职证明子工单（列表页对业务员开放，后端按父单创建人限只读）。
+    expect(canAccessPath('/onboarding/resignation_cert', memberRoles)).toBe(true);
     expect(canAccessPath('/onboarding/renewal_contract', memberRoles)).toBe(false);
     expect(canAccessPath('/onboarding/benefit_apply', memberRoles)).toBe(false);
     expect(canAccessPath('/my-work/initiated', memberRoles)).toBe(false);
@@ -282,6 +299,8 @@ describe('routeVisibility admin-only configuration routes', () => {
     expect(canAccessPath('/onboarding/resignation_cert', adminRoles)).toBe(true);
     expect(canAccessPath('/onboarding/resignation_cert', contractRoles)).toBe(true);
     expect(canAccessPath('/onboarding/resignation_cert', sharedOwnerRoles)).toBe(true);
+    expect(canAccessPath('/onboarding/resignation_cert', leaderRoles)).toBe(true);
+    expect(canAccessPath('/onboarding/resignation_cert', memberRoles)).toBe(true);
     expect(canAccessPath('/onboarding/resignation_cert', socialRoles)).toBe(false);
 
     expect(canAccessPath('/benefit', adminRoles)).toBe(false);
@@ -370,6 +389,14 @@ describe('routeVisibility admin-only configuration routes', () => {
     expect(canAccessPath('/work-orders?orderType=onboarding&page=2', memberRoles)).toBe(true);
     expect(canAccessPath('/my-dispatched/child-1?tab=logs', memberRoles)).toBe(true);
     expect(canAccessPath('/work-orders/wo-1?tab=detail', ownerRoles)).toBe(true);
+  });
+
+  it('exposes internal customer rules to business roles but not backend processors', () => {
+    expect(canAccessPath('/customer-rules', roles([ROLE.ADMIN]))).toBe(true);
+    expect(canAccessPath('/customer-rules', roles([ROLE.BUSINESS_OWNER]))).toBe(true);
+    expect(canAccessPath('/customer-rules', roles([ROLE.BUSINESS_GROUP_LEADER]))).toBe(true);
+    expect(canAccessPath('/customer-rules', roles([ROLE.BUSINESS_GROUP_MEMBER]))).toBe(true);
+    expect(canAccessPath('/customer-rules', roles([ROLE.ONBOARDING_RESIGNATION_MEMBER]))).toBe(false);
   });
 
   it('does not expose notification route to business owner only role', () => {

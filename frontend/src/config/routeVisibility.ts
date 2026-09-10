@@ -83,8 +83,11 @@ const IN_SERVICE_ROLES = [
   ROLE.SOCIAL_INSURANCE_SPECIALIST,
 ] as const satisfies readonly CanonicalRole[];
 
+// 任务1：业务员/组长可查看自己相关的离职证明子工单（后端按父单创建人限只读，办理权限不放开）。
 const RESIGNATION_CERT_SUBORDER_ROLES = [
   ROLE.ADMIN,
+  ROLE.BUSINESS_GROUP_LEADER,
+  ROLE.BUSINESS_GROUP_MEMBER,
   ROLE.SHARED_TEAM_OWNER,
   ROLE.LABOR_CONTRACT_MEMBER,
 ] as const satisfies readonly CanonicalRole[];
@@ -134,6 +137,8 @@ export const ROUTE_VISIBILITY = {
   '/dashboard': ALL_ROLES,
   '/notifications': NOTIFICATION_ROLES,
   '/profile': ALL_ROLES,
+  '/customer-config': [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER],
+  '/customer-rules': [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER],
 
   // 主工单列表/创建入口：菜单中只保留 /work-orders，创建页由列表 toolBar 进入。
   '/work-orders': BUSINESS_ORDER_ROLES,

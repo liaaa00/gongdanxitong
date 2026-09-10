@@ -42,6 +42,20 @@ function options(values: string[]) {
   return values.map((value) => ({ label: value, value }));
 }
 
+export const RESIGNATION_REASON_OPTIONS = options([
+  '个人辞职',
+  '公司解聘',
+  '协商解除（个人提出）',
+  '协商解除（公司提出）',
+  '合同到期不续签（个人提出）',
+  '合同到期不续签（公司提出）',
+  '试用期不符合录用条件',
+  '社保缴纳地变更',
+  '员工退休或死亡',
+  '客户流失或破产',
+  '法人变更',
+]);
+
 // ======================== Mock 种子：入职信息采集表字段 ========================
 const mockFields: FieldConfigItem[] = [
   // ── 入职字段（按会议表格列序 / docs 基线对齐）──
@@ -125,7 +139,7 @@ const mockFields: FieldConfigItem[] = [
   { id: 'r2', field_code: 'prev_contract_no', field_name: '上一份合同编号', field_type: 'text', is_required: true, default_required: true, validation_regex: null, validation_msg: null, dropdown_options: null, placeholder: null, help_text: null, order_type: 'renewal', source_category: null, sub_ticket_scope: null, collection_group: null, display_order: 2, is_active: true },
   { id: 'rs1', field_code: 'social_pay_region', field_name: '缴纳地区', field_type: 'dropdown', is_required: true, default_required: true, validation_regex: null, validation_msg: null, dropdown_options: null, placeholder: '请选择缴纳地区', help_text: '选项来自启用劳动合同主体的城市配置。', order_type: 'resignation', source_category: null, sub_ticket_scope: null, collection_group: null, business_context: ['resignation'], display_order: 1, is_active: true },
   { id: 'rs2', field_code: 'social_stop_month', field_name: '社保公积金停保月', field_type: 'dropdown', is_required: true, default_required: true, validation_regex: null, validation_msg: null, dropdown_options: options(['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月']), placeholder: '请选择社保公积金停保月', help_text: null, order_type: 'resignation', source_category: null, sub_ticket_scope: null, collection_group: null, business_context: ['resignation'], display_order: 2, is_active: true },
-  { id: 'rs3', field_code: 'resignation_reason', field_name: '离职原因', field_type: 'text', is_required: true, default_required: true, validation_regex: null, validation_msg: null, dropdown_options: null, placeholder: '请输入离职原因', help_text: null, order_type: 'resignation', source_category: null, sub_ticket_scope: null, collection_group: null, business_context: ['resignation'], display_order: 3, is_active: true },
+  { id: 'rs3', field_code: 'resignation_reason', field_name: '离职原因', field_type: 'dropdown', is_required: true, default_required: true, validation_regex: null, validation_msg: null, dropdown_options: RESIGNATION_REASON_OPTIONS, placeholder: '请选择离职原因', help_text: '请选择固定离职原因。历史工单中的自由文本仅保留展示。', order_type: 'resignation', source_category: null, sub_ticket_scope: null, collection_group: null, business_context: ['resignation'], display_order: 3, is_active: true },
   { id: 'rs4', field_code: 'resignation_date', field_name: '离职日期', field_type: 'date', is_required: true, default_required: true, validation_regex: null, validation_msg: null, dropdown_options: null, placeholder: '请选择离职日期', help_text: null, order_type: 'resignation', source_category: null, sub_ticket_scope: null, collection_group: null, business_context: ['resignation'], display_order: 4, is_active: true },
   { id: 'rs5', field_code: 'need_resignation_share', field_name: '离职材料是否需要共享收集', field_type: 'dropdown', is_required: true, default_required: true, validation_regex: null, validation_msg: null, dropdown_options: YES_NO_OPTIONS, placeholder: '请选择离职材料是否需要共享收集', help_text: null, order_type: 'resignation', source_category: null, sub_ticket_scope: null, collection_group: null, business_context: ['resignation'], display_order: 5, is_active: true },
 ];

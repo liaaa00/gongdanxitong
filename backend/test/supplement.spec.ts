@@ -133,6 +133,69 @@ describe('FieldSupplementService', () => {
     );
   });
 
+  it('uses visible field permission for resignation_contact without requiring a supplement rule', async () => {
+    const workOrder = makeWorkOrder();
+    const ruleRepo = repoMock<FieldSupplementRule>();
+    const dispatchedRepo = repoMock<DispatchedOrder>({
+      findOne: jest.fn(async () => ({
+        id: 'do-resignation',
+        moduleCode: 'resignation_contact',
+        parentOrder: workOrder,
+      } as unknown as DispatchedOrder)),
+    });
+    const fieldPermissionService = {
+      getPermissionsForUser: jest.fn(async () => new Map([['email', FieldPermissionMode.VISIBLE]])),
+    } as unknown as FieldPermissionService;
+    const service = new FieldSupplementService(
+      ruleRepo,
+      repoMock<FieldSupplementLog>(),
+      repoMock<WorkOrder>(),
+      dispatchedRepo,
+      repoMock<Notification>(),
+      fieldPermissionService,
+    );
+
+    await expect(service.supplement({
+      dispatchedOrderId: 'do-resignation',
+      fieldCode: 'email',
+      newValue: 'new@example.com',
+      userId: 'maoyani-id',
+    })).resolves.toMatchObject({ success: true, fieldCode: 'email' });
+
+    expect(ruleRepo.findOne).not.toHaveBeenCalled();
+  });
+
+  it('rejects a readonly resignation_contact field without requiring a supplement rule', async () => {
+    const ruleRepo = repoMock<FieldSupplementRule>();
+    const dispatchedRepo = repoMock<DispatchedOrder>({
+      findOne: jest.fn(async () => ({
+        id: 'do-resignation',
+        moduleCode: 'resignation_contact',
+        parentOrder: makeWorkOrder(),
+      } as unknown as DispatchedOrder)),
+    });
+    const fieldPermissionService = {
+      getPermissionsForUser: jest.fn(async () => new Map([['email', FieldPermissionMode.READONLY]])),
+    } as unknown as FieldPermissionService;
+    const service = new FieldSupplementService(
+      ruleRepo,
+      repoMock<FieldSupplementLog>(),
+      repoMock<WorkOrder>(),
+      dispatchedRepo,
+      repoMock<Notification>(),
+      fieldPermissionService,
+    );
+
+    await expect(service.supplement({
+      dispatchedOrderId: 'do-resignation',
+      fieldCode: 'email',
+      newValue: 'new@example.com',
+      userId: 'maoyani-id',
+    })).rejects.toMatchObject({ status: 403 });
+
+    expect(ruleRepo.findOne).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['readonly permission', FieldPermissionMode.READONLY],
     ['masked permission', FieldPermissionMode.MASKED],

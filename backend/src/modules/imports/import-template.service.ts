@@ -53,6 +53,10 @@ export class ImportTemplateService {
 
   async generate(orderType: OrderType, businessScope: BusinessScope = BusinessScope.BEILUN): Promise<ImportTemplateResult> {
     const configuredFields = await this.templateConfigService.list(orderType, businessScope);
+    return this.generateForFields(orderType, configuredFields);
+  }
+
+  async generateForFields(orderType: OrderType, configuredFields: ImportTemplateFieldView[]): Promise<ImportTemplateResult> {
     const fields = configuredFields.map((item) => this.toTemplateField(item));
     const [subjects, fundRules] = orderType === OrderType.ONBOARDING && this.contractSubjectsService
       ? await Promise.all([

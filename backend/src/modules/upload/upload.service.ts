@@ -1,8 +1,8 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createReadStream, mkdirSync } from 'fs';
-import { access, mkdir, readdir, stat, writeFile } from 'fs/promises';
-import { dirname, extname, join, resolve } from 'path';
+import { access, mkdir, readdir, stat, unlink, writeFile } from 'fs/promises';
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'path';
 import { Readable } from 'stream';
 import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
 
@@ -107,7 +107,24 @@ export class UploadService implements OnModuleInit {
       }
     }
 
-    throw new Error(`File ${fileId} not found`);
+    throw new NotFoundException('file not found');
+  }
+
+  async deleteFile(fileId: string): Promise<void> {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(fileId)) {
+      throw new NotFoundException('file not found');
+    }
+    let meta: StoredFileMeta;
+    try { meta = await this.resolveFile(fileId); }
+    catch (error) { if (error instanceof NotFoundException) return; throw error; }
+    const withinRoot = relative(this.getRootDir(), resolve(meta.filePath));
+    if (!withinRoot || withinRoot.startsWith('..') || isAbsolute(withinRoot)
+      || basename(meta.filePath) !== `${fileId}${extname(meta.filePath)}`) {
+      throw new NotFoundException('file not found');
+    }
+    try { await unlink(meta.filePath); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    this.files.delete(fileId);
   }
 
   createReadStream(fileId: string): Promise<{ stream: Readable; meta: StoredFileMeta }> {

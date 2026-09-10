@@ -75,9 +75,12 @@ export function inferResignationReasonCode(extraData: Record<string, unknown>): 
   return '4';
 }
 
-const SUPPLEMENT_ALLOWED_MODULE_CODE = 'onboarding_contact';
-const SUPPLEMENT_ALLOWED_USERNAMES = new Set(['maoyani', 'jianglu']);
-const SUPPLEMENT_ALLOWED_REAL_NAMES = new Set(['毛雅妮', '江璐']);
+// 任务3/7/8：各子工单的补充白名单按模块隔离，避免跨模块放行（yangchun 仅可办理离职证明子单）。
+const SUPPLEMENT_ALLOWED_OPERATORS: Record<string, ReadonlySet<string>> = {
+  onboarding_contact: new Set(['maoyani', 'jianglu', '毛雅妮', '江璐']),
+  resignation_contact: new Set(['maoyani', 'jianglu', '毛雅妮', '江璐']),
+  resignation_cert: new Set(['yangchun', 'jianglu', '杨纯', '江璐']),
+};
 const SOCIAL_INSURANCE_NON_INPUT_FIELDS = new Set([
   'social_insurance_result',
   'social_insurance_remark',
@@ -89,10 +92,12 @@ const SOCIAL_INSURANCE_NON_INPUT_FIELDS = new Set([
 
 const normalizeUsername = (value: unknown) => String(value || '').trim().toLowerCase();
 const normalizeRealName = (value: unknown) => String(value || '').trim();
-const isAllowedSupplementOperator = (currentUser?: { username?: string; real_name?: string; realName?: string } | null) => {
+const isAllowedSupplementOperator = (moduleCode: string | undefined, currentUser?: { username?: string; real_name?: string; realName?: string } | null) => {
+  const allowed = moduleCode ? SUPPLEMENT_ALLOWED_OPERATORS[moduleCode] : undefined;
+  if (!allowed) return false;
   const username = normalizeUsername(currentUser?.username);
   const realName = normalizeRealName(currentUser?.real_name ?? currentUser?.realName);
-  return SUPPLEMENT_ALLOWED_USERNAMES.has(username) || SUPPLEMENT_ALLOWED_REAL_NAMES.has(realName);
+  return allowed.has(username) || allowed.has(realName);
 };
 
 const hasText = (value: unknown) => String(value || '').trim().length > 0;
@@ -410,6 +415,12 @@ const MyDispatchedDetail: React.FC = () => {
   const supplementableFields = useMemo(() => {
     if (!order || !fields) return [];
     const visibleSet = new Set(visibleFields);
+    if (order.module_code === 'resignation_contact' || order.module_code === 'resignation_cert') {
+      return fields.filter((field) => (
+        (visibleSet.size === 0 || visibleSet.has(field.field_code))
+        && visibleFieldPermissions[field.field_code] === 'visible'
+      ));
+    }
     if (order.module_code === 'social_insurance') {
       return fields.filter((field) => (
         (visibleSet.size === 0 || visibleSet.has(field.field_code))
@@ -471,20 +482,33 @@ const MyDispatchedDetail: React.FC = () => {
     ?? order?.relatedModuleStatuses?.data_entry
     ?? null;
   const isResignationCertificateOrder = order?.module_code === 'resignation_cert';
+  const isResignationContactOrder = order?.module_code === 'resignation_contact';
+  const needResignationCert = String(order?.extra_data?.need_resignation_cert ?? '').trim() === '是';
   const isAcceptedByBackend = Boolean(order?.accepted_at) || order?.status === 'accepted' || order?.status === 'processing';
   const canAccept = canBackendOperate && !isVoided && order?.status === 'pending';
   const canComplete = canBackendOperate && !isVoided && order?.status === 'processing';
   const canDownloadResignationCertificate = canBackendOperate && isResignationCertificateOrder;
   const canReturn = canBackendOperate && !isVoided && (order?.status === 'processing' || order?.status === 'pending');
-  const canSupplementOnboarding = order?.module_code === SUPPLEMENT_ALLOWED_MODULE_CODE && isAllowedSupplementOperator(user);
+  const canSupplementOnboarding = isAllowedSupplementOperator(order?.module_code, user);
   const canSupplementSocialInsurance = isSocialInsuranceOrder && hasRole('social_insurance_specialist');
   const canSupplementContract = order?.module_code === 'contract'
     && (hasRole('labor_contract_member') || hasRole('contract_specialist') || hasRole('contract_team') || hasRole('shared_team_owner') || hasRole('shared_leader'));
+  const canSupplementResignation = canSupplementOnboarding && order?.module_code === 'resignation_contact';
+  const usesDirectSupplementForm = canSupplementSocialInsurance || canSupplementContract || canSupplementResignation;
   const canSupplement = canBackendOperate
     && (canSupplementOnboarding || canSupplementSocialInsurance || canSupplementContract)
     && !isVoided
     && order?.status === 'processing'
     && supplementableFields.length > 0;
+  const canShowResignationEdit = canBackendOperate
+    && canSupplementResignation
+    && !isVoided
+    && supplementableFields.length > 0;
+  const resignationEditDisabledReason = order?.status === 'pending'
+    ? '请先接单，进入处理中后即可编辑'
+    : order?.status !== 'processing'
+      ? '仅处理中子工单可编辑字段'
+      : undefined;
   const isRepairableStatus = isResubmittableStatus;
   const isApprovalStatus = Boolean(order && ['modify_pending', 'withdraw_pending', 'void_pending'].includes(order.status));
   const isTerminalStatus = Boolean(order && ['completed', 'modify_pending', 'withdraw_pending', 'void_pending', 'void'].includes(order.status));
@@ -757,7 +781,12 @@ const MyDispatchedDetail: React.FC = () => {
 
 
   const handleCompleteOk = async () => {
-    const values = await completeForm.validateFields();
+    let values: Record<string, unknown>;
+    try {
+      values = await completeForm.validateFields();
+    } catch {
+      return;
+    }
     const payload: Record<string, unknown> = { ...values };
     if (isSocialInsuranceOrder) {
       if (payload[HANDLING_SHARED_REMARK] !== undefined && payload[HANDLING_SHARED_REMARK] !== null) {
@@ -790,6 +819,13 @@ const MyDispatchedDetail: React.FC = () => {
         ),
       });
     }
+    if (isResignationContactOrder) {
+      const extraData = (order?.extra_data ?? {}) as Record<string, unknown>;
+      completeForm.setFieldsValue({
+        cert_delivery_address: String(extraData.cert_delivery_address ?? ''),
+        email: String(extraData.email ?? ''),
+      });
+    }
     setCompleteModalOpen(true);
   };
 
@@ -813,11 +849,35 @@ const MyDispatchedDetail: React.FC = () => {
       return;
     }
     const values = supplementForm.getFieldsValue();
+    if (canSupplementResignation) {
+      const updated = await handleDirectSupplement(values);
+      if (updated) setSupplementModalOpen(false);
+      return;
+    }
     await handleSupplement(values);
     setSupplementModalOpen(false);
     refreshLogs();
   };
 
+  const handleDirectSupplement = async (values: Record<string, unknown>) => {
+    const original = order.extra_data || {};
+    const changed = Object.fromEntries(Object.entries(values).filter(([fieldCode, value]) => (
+      String(original[fieldCode] ?? '') !== String(value ?? '')
+    )));
+    if (Object.keys(changed).length === 0) {
+      message.info('没有检测到字段变化');
+      return false;
+    }
+    const updated = await handleSupplement(changed);
+    if (updated) refreshLogs();
+    return Boolean(updated);
+  };
+
+  const openResignationEdit = () => {
+    if (!order) return;
+    supplementForm.setFieldsValue(order.extra_data || {});
+    setSupplementModalOpen(true);
+  };
 
   const openReassignModal = async () => {
     if (!order) return;
@@ -849,7 +909,23 @@ const MyDispatchedDetail: React.FC = () => {
   return (
     <PageContainer header={{
       title: '子工单详情',
-      extra: [<Button key="back" onClick={() => navigate(isReadOnlyView ? readOnlyBackPath : getDispatchedListPath(order, user?.roles, user?.permissions))}>返回列表</Button>],
+      extra: [
+        canShowResignationEdit ? (
+          <Tooltip key="edit-fields" title={resignationEditDisabledReason}>
+            <span>
+              <Button
+                type="primary"
+                icon={<EditOutlined />}
+                disabled={!canSupplement}
+                onClick={openResignationEdit}
+              >
+                编辑字段
+              </Button>
+            </span>
+          </Tooltip>
+        ) : null,
+        <Button key="back" onClick={() => navigate(isReadOnlyView ? readOnlyBackPath : getDispatchedListPath(order, user?.roles, user?.permissions))}>返回列表</Button>,
+      ],
       ghost: false,
     }}>
       <Space direction="vertical" size="large" style={{ width: '100%' }}>
@@ -991,7 +1067,7 @@ const MyDispatchedDetail: React.FC = () => {
               <Button danger icon={<RollbackOutlined />}
                 onClick={() => { returnCompletedForm.resetFields(); setReturnCompletedOpen(true); }}>退回已完成节点</Button>
             )}
-            {!isTerminal && (canSupplementOnboarding || canSupplementContract) && (
+            {!isTerminal && (canSupplementOnboarding || canSupplementContract) && !canSupplementResignation && (
               <Button icon={<PlusCircleOutlined />}
                 onClick={() => {
                   supplementForm.setFieldsValue(order.extra_data || {});
@@ -1120,29 +1196,18 @@ const MyDispatchedDetail: React.FC = () => {
                 </Card>
               );
             })}
-            {canSupplement && (
+            {canSupplement && !canSupplementResignation && (
               <Card title={canSupplementSocialInsurance ? '可编辑字段' : canSupplementContract ? '合同字段（可编辑）' : '补充字段（可编辑）'} size="small" type="inner">
                 <DynamicForm
                   key={`${order.id}:${order.work_order_updated_at || order.workOrderUpdatedAt || ''}`}
-                  fields={(canSupplementSocialInsurance || canSupplementContract) ? supplementableFields.map(withRequiredLabel) : dynamicVisibleFields}
+                  fields={usesDirectSupplementForm ? supplementableFields.map(withRequiredLabel) : dynamicVisibleFields}
                   fieldPermissions={visibleFieldPermissions}
                   orderType={order.order_type || 'onboarding'}
                   initialValues={order.extra_data || {}}
                   readOnly={false}
-                  onFinish={(canSupplementSocialInsurance || canSupplementContract) ? async (values) => {
-                    const original = order.extra_data || {};
-                    const changed = Object.fromEntries(Object.entries(values).filter(([fieldCode, value]) => (
-                      String(original[fieldCode] ?? '') !== String(value ?? '')
-                    )));
-                    if (Object.keys(changed).length === 0) {
-                      message.info('没有检测到字段变化');
-                      return;
-                    }
-                    const updated = await handleSupplement(changed);
-                    if (updated) refreshLogs();
-                  } : undefined}
+                  onFinish={usesDirectSupplementForm ? async (values) => { await handleDirectSupplement(values); } : undefined}
                   submitText="保存字段"
-                  validateChangedFieldsOnly={canSupplementSocialInsurance || canSupplementContract}
+                  validateChangedFieldsOnly={usesDirectSupplementForm}
                   loading={actionLoading}
                 />
               </Card>
@@ -1465,6 +1530,26 @@ const MyDispatchedDetail: React.FC = () => {
                   <Input.TextArea rows={2} maxLength={500} showCount />
                 </Form.Item>
               </>
+            ) : isResignationContactOrder ? (
+              <>
+                <Form.Item name={FEEDBACK_FIELD_MAP[order.module_code] || 'feedback'}
+                  label="反馈状态"
+                  rules={[{ required: true, message: '请选择反馈状态' }]}
+                  initialValue="已办结">
+                  <Select getPopupContainer={(triggerNode) => triggerNode.parentElement || document.body} options={[
+                    { label: '已办结', value: '已办结' },
+                  ]} />
+                </Form.Item>
+                <Form.Item
+                  name="cert_delivery_address"
+                  label="离职证明送达地址"
+                  rules={needResignationCert ? [{ required: true, message: '需要开具离职证明时请填写送达地址' }] : []}>
+                  <Input.TextArea rows={2} maxLength={200} showCount placeholder="纸质证明寄送地址" />
+                </Form.Item>
+                <Form.Item name="email" label="电子邮箱">
+                  <Input maxLength={100} placeholder="用于接收电子证明" />
+                </Form.Item>
+              </>
             ) : (
               <Form.Item name={FEEDBACK_FIELD_MAP[order.module_code] || 'feedback'}
                 label="反馈状态"
@@ -1478,19 +1563,36 @@ const MyDispatchedDetail: React.FC = () => {
           </Form>
         </Modal>
 
-        <Modal title="补充/修改暂存字段" open={supplementModalOpen} onOk={handleSupplementOk}
+        <Modal title={canSupplementResignation ? '编辑离职材料字段' : '补充/修改暂存字段'} open={supplementModalOpen} onOk={handleSupplementOk}
           onCancel={() => setSupplementModalOpen(false)} confirmLoading={actionLoading} destroyOnHidden>
           <Form form={supplementForm} layout="vertical">
             {supplementableFields.map((field) => {
               const isEmpty = !order?.extra_data?.[field.field_code] ||
                 order.extra_data[field.field_code] === '';
+              // 「是否电子签」口径为 1.是/2.否：非 1.是 时电子签平台不可编辑，历史值保留展示。
+              const esignLocked = field.field_code === 'esign_platform'
+                && String(order?.extra_data?.need_esign ?? '').trim() !== '1.是';
               return (
                 <Form.Item key={field.field_code} name={field.field_code}
                   label={<Space>{field.field_name}
                     {isEmpty && <Badge color="purple" text="待补充" />}
                   </Space>}>
-                  <Input placeholder={'请输入' + field.field_name}
-                    status={isEmpty ? 'warning' : undefined} />
+                  {field.field_type === 'dropdown' ? (
+                    <Select
+                      placeholder={'请选择' + field.field_name}
+                      options={field.dropdown_options || []}
+                      status={isEmpty ? 'warning' : undefined}
+                      disabled={esignLocked}
+                      getPopupContainer={(triggerNode) => triggerNode.parentElement || document.body}
+                    />
+                  ) : (
+                    <Input
+                      type={field.field_code === 'email' ? 'email' : undefined}
+                      placeholder={'请输入' + field.field_name}
+                      status={isEmpty ? 'warning' : undefined}
+                      disabled={esignLocked}
+                    />
+                  )}
                 </Form.Item>
               );
             })}

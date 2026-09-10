@@ -198,6 +198,30 @@ describe('DispatchedOrderService', () => {
     expect(queryBuilder.offset).toHaveBeenCalledWith(20);
   });
 
+  it('filters contract rows by a single sibling data-entry status with an equality EXISTS', async () => {
+    const { service, queryBuilder } = makeService();
+    const user: JwtUserPayload = { sub: 'admin-1', username: 'admin', roles: ['admin'] } as JwtUserPayload;
+
+    await service.findAll({
+      page: 1,
+      pageSize: 20,
+      moduleCode: 'contract',
+      dataEntryStatuses: ['pending'],
+    } as never, user);
+
+    const relatedFilterCall = queryBuilder.andWhere.mock.calls.find(([statement, params]) => (
+      String(statement).includes('data_entry_order.status = :dataEntryStatus')
+      && (params as Record<string, unknown>)?.dataEntryStatus === DispatchedOrderStatus.PENDING
+    ));
+    expect(relatedFilterCall).toBeTruthy();
+    expect(queryBuilder.andWhere.mock.calls.some(([statement]) => (
+      String(statement).includes('data_entry_order.status IN (:...dataEntryStatuses)')
+    ))).toBe(false);
+    expect(queryBuilder.andWhere.mock.invocationCallOrder[
+      queryBuilder.andWhere.mock.calls.findIndex(([statement]) => String(statement).includes('data_entry_order.status = :dataEntryStatus'))
+    ]).toBeLessThan(queryBuilder.offset.mock.invocationCallOrder[0]);
+  });
+
   it('keeps payroll bank cards in a complete export list and scopes business users to their own orders', async () => {
     const payrollOrder = {
       ...makeDispatchedOrder(),
@@ -1684,6 +1708,111 @@ describe('DispatchedOrderService', () => {
     });
     expect(transactionNotificationRepository.save).toHaveBeenCalledTimes(2);
     expect(transaction).toHaveBeenCalledTimes(1);
+  });
+  function makeCompletionTriggerService(workOrder: WorkOrder, enqueue: jest.Mock) {
+    const completedChild = {
+      id: 'do-completed',
+      parentOrderId: workOrder.id,
+      status: DispatchedOrderStatus.COMPLETED,
+    } as DispatchedOrder;
+    const dispatchedOrderRepo = repoMock<DispatchedOrder>({
+      find: jest.fn(async () => [completedChild]),
+    });
+    const workOrderRepo = repoMock<WorkOrder>({
+      findOne: jest.fn(async () => workOrder),
+    });
+    const operationLogRepo = repoMock<OperationLog>();
+    const service = new DispatchedOrderService(
+      dispatchedOrderRepo,
+      workOrderRepo,
+      repoMock<ModuleHandler>(),
+      repoMock<UserRole>(),
+      repoMock<FieldConfig>(),
+      repoMock<Notification>(),
+      operationLogRepo,
+      {} as FieldPermissionService,
+      { getLogs: jest.fn() } as unknown as FieldSupplementService,
+      { exportSingleDispatchedOrder: jest.fn() } as never,
+      validationServiceMock as never,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { enqueueForCompletedWorkOrder: enqueue } as never,
+    );
+    return { service, workOrderRepo, operationLogRepo };
+  }
+
+  it('enqueues completion email once per completed version and supports re-completion', async () => {
+    const workOrder = {
+      id: 'wo-email-1',
+      orderNo: 'ON20260903001',
+      orderType: OrderType.ONBOARDING,
+      status: WorkOrderStatus.PROCESSING,
+      createdBy: 'u1',
+      customerId: 'c1',
+      employeeName: 'employee',
+      extraData: {},
+      completedAt: null,
+      completionVersion: 0,
+    } as WorkOrder;
+    const enqueue = jest.fn(async () => null);
+    const { service, workOrderRepo } = makeCompletionTriggerService(workOrder, enqueue);
+    const complete = () => (service as unknown as { checkMainOrderComplete(parentOrderId: string): Promise<void> })
+      .checkMainOrderComplete(workOrder.id);
+
+    await complete();
+    expect(workOrder.status).toBe(WorkOrderStatus.COMPLETED);
+    expect(workOrder.completionVersion).toBe(1);
+    expect(enqueue).toHaveBeenCalledTimes(1);
+    expect(enqueue).toHaveBeenLastCalledWith(workOrder);
+
+    await complete();
+    expect(workOrder.completionVersion).toBe(1);
+    expect(enqueue).toHaveBeenCalledTimes(1);
+
+    workOrder.status = WorkOrderStatus.PROCESSING;
+    workOrder.completedAt = null;
+    await complete();
+    expect(workOrder.completionVersion).toBe(2);
+    expect(enqueue).toHaveBeenCalledTimes(2);
+    expect(workOrderRepo.save).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not fail work-order completion when completion email enqueue fails', async () => {
+    const workOrder = {
+      id: 'wo-email-2',
+      orderNo: 'ON20260903002',
+      orderType: OrderType.ONBOARDING,
+      status: WorkOrderStatus.PROCESSING,
+      createdBy: 'u1',
+      customerId: 'c1',
+      employeeName: 'employee',
+      extraData: {},
+      completedAt: null,
+      completionVersion: 0,
+    } as WorkOrder;
+    const enqueue = jest.fn(async () => { throw new Error('mail queue unavailable'); });
+    const { service, workOrderRepo, operationLogRepo } = makeCompletionTriggerService(workOrder, enqueue);
+    const loggerError = jest.spyOn((service as unknown as { logger: { error: (...args: unknown[]) => void } }).logger, 'error').mockImplementation(() => undefined);
+
+    await expect((service as unknown as { checkMainOrderComplete(parentOrderId: string): Promise<void> })
+      .checkMainOrderComplete(workOrder.id)).resolves.toBeUndefined();
+
+    expect(workOrder.status).toBe(WorkOrderStatus.COMPLETED);
+    expect(workOrder.completionVersion).toBe(1);
+    expect(workOrderRepo.save).toHaveBeenCalledWith(workOrder);
+    expect(operationLogRepo.save).toHaveBeenCalled();
+    expect(loggerError).toHaveBeenCalledWith(expect.stringContaining('mail queue unavailable'), expect.any(String));
   });
 });
 

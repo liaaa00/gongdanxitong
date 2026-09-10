@@ -32,6 +32,16 @@ export interface AppConfig {
   operationLog: {
     retentionDays: number;
   };
+  mail: {
+    enabled: boolean;
+    host: string;
+    port: number;
+    secure: boolean;
+    user: string;
+    pass: string;
+    from: string;
+    maxAttempts: number;
+  };
 }
 
 const pickFirst = (...values: Array<string | undefined>): string | undefined => (
@@ -109,6 +119,16 @@ const configuration = (): AppConfig => {
   },
   operationLog: {
     retentionDays: Number(process.env.OPERATION_LOG_RETENTION_DAYS ?? 365),
+  },
+  mail: {
+    enabled: (process.env.MAIL_ENABLED ?? 'false').toLowerCase() === 'true',
+    host: process.env.MAIL_HOST ?? '',
+    port: Number(process.env.MAIL_PORT ?? 465),
+    secure: (process.env.MAIL_SECURE ?? 'true').toLowerCase() === 'true',
+    user: process.env.MAIL_USER ?? '',
+    pass: process.env.MAIL_PASS ?? '',
+    from: process.env.MAIL_FROM ?? '',
+    maxAttempts: Number(process.env.MAIL_MAX_ATTEMPTS ?? 3),
   },
   });
 };

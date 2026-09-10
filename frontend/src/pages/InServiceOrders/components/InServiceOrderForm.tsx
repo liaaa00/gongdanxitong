@@ -43,6 +43,7 @@ import {
   type ContractSubjectItem,
 } from '@/services/contractSubjects';
 import { getOutOfProvinceAccounts, type OutOfProvinceAccount } from '@/services/outOfProvinceAccounts';
+import { RESIGNATION_REASON_OPTIONS } from '@/services/fields';
 
 export type InServiceOrderFormValues = InServiceOrderPayload;
 
@@ -126,6 +127,14 @@ export function getInServiceDepartmentNotice(orderKind: InServiceOrderKind): {
     message: '续签发起部门',
     description: '系统有历史记录时自动继承部门；系统无历史记录时请选择存量员工所属部门。',
   };
+}
+
+export function getResignationReasonOptions(currentValue?: unknown) {
+  const value = String(currentValue ?? '').trim();
+  if (!value || RESIGNATION_REASON_OPTIONS.some((option) => option.value === value)) {
+    return RESIGNATION_REASON_OPTIONS;
+  }
+  return [{ label: `${value}（历史值）`, value }, ...RESIGNATION_REASON_OPTIONS];
 }
 
 export function isRenewalFieldRequired(
@@ -391,7 +400,13 @@ export default function InServiceOrderForm({
   const businessType = Form.useWatch('businessType', form) as InServiceBusinessType | undefined;
   const processType = Form.useWatch('processType', form) as InServiceProcessType | undefined;
   const certificateType = Form.useWatch(['extraData', 'certificateType'], form) as string | undefined;
+  const certificateFormat = Form.useWatch(['extraData', 'certificateFormat'], form) as string | undefined;
   const watchedExtraData = Form.useWatch('extraData', form) as Record<string, unknown> | undefined;
+  const resignationReasonValue = String(readExtraAlias(watchedExtraData || {}, 'resignationReason', 'resignation_reason') ?? '').trim();
+  const resignationReasonOptions = useMemo(
+    () => getResignationReasonOptions(resignationReasonValue),
+    [resignationReasonValue],
+  );
   const socialLocation = String(readExtraAlias(watchedExtraData || {}, 'social_location', 'socialLocation', 'social_pay_region', 'socialPayRegion') ?? '').trim();
   const previousSocialLocationRef = useRef(socialLocation);
   const customerId = Form.useWatch('customerId', form) as string | undefined;
@@ -981,6 +996,33 @@ export default function InServiceOrderForm({
                 <Input maxLength={256} />
               </Form.Item>
             </Col>
+            <Col {...formCol}>
+              <Form.Item name={['extraData', 'certificateFormat']} label="证明形式" rules={[{ required: true, message: '请选择证明形式' }]}>
+                <Select options={[
+                  { label: '电子证明', value: '电子证明' },
+                  { label: '纸质证明', value: '纸质证明' },
+                ]} />
+              </Form.Item>
+            </Col>
+            {certificateFormat === '纸质证明' ? (
+              <>
+                <Col {...formCol}>
+                  <Form.Item name={['extraData', 'mailingAddress']} label="邮寄地址" rules={[{ required: true, message: '纸质证明请填写邮寄地址' }]}>
+                    <Input maxLength={512} placeholder="纸质证明寄送地址" />
+                  </Form.Item>
+                </Col>
+                <Col {...formCol}>
+                  <Form.Item name={['extraData', 'contactName']} label="联系人" rules={[{ required: true, message: '纸质证明请填写联系人' }]}>
+                    <Input maxLength={64} />
+                  </Form.Item>
+                </Col>
+                <Col {...formCol}>
+                  <Form.Item name={['extraData', 'contactPhone']} label="联系方式" rules={[{ required: true, message: '纸质证明请填写联系方式' }]}>
+                    <Input maxLength={32} />
+                  </Form.Item>
+                </Col>
+              </>
+            ) : null}
             {certificateType === 'income' ? (
               <>
                 <Col {...formCol}>
@@ -1010,7 +1052,12 @@ export default function InServiceOrderForm({
             </Col>
             <Col {...formCol}>
               <Form.Item name={['extraData', 'resignationReason']} label="离职原因">
-                <Input maxLength={512} />
+                <Select
+                  showSearch
+                  optionFilterProp="label"
+                  placeholder="请选择离职原因"
+                  options={resignationReasonOptions}
+                />
               </Form.Item>
             </Col>
             <Col {...formCol}>

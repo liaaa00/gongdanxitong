@@ -34,6 +34,14 @@ class EnvironmentVariables {
 
   @IsOptional()
   @IsString()
+  PORTAL_LINK_SECRET?: string;
+
+  @IsOptional()
+  @IsNumberString()
+  PORTAL_SESSION_EXPIRES_SECONDS?: string;
+
+  @IsOptional()
+  @IsString()
   DB_HOST?: string;
 
   @IsOptional()
