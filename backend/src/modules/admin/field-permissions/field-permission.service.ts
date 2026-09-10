@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { BusinessScope, FieldConfig, FieldPermission, FieldPermissionMode, Role } from 'src/entities';
@@ -64,6 +64,14 @@ export class FieldPermissionService {
   }
 
   async batchUpsert(items: BatchPermissionItem[], businessScope: BusinessScope = BusinessScope.BEILUN): Promise<{ affected: number }> {
+    const permissions = new Map<string, FieldPermissionMode>();
+    for (const item of items) {
+      const key = JSON.stringify([item.roleId, item.scenario, item.fieldCode]);
+      if (permissions.has(key) && permissions.get(key) !== item.permission) {
+        throw new BadRequestException('同一角色、场景和字段存在冲突权限，请修改后重新提交');
+      }
+      permissions.set(key, item.permission);
+    }
     return this.dataSource.transaction(async (manager) => {
       let affected = 0;
       for (const item of items) {
