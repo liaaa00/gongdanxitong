@@ -65,8 +65,17 @@ function makeService(customerRows = [makeCustomer('customer-1'), makeCustomer('c
   const ruleRepository = {
     findOne: jest.fn(async (): Promise<Record<string, unknown> | null> => portalRule ? { isActive: true, ...portalRule } : null),
   };
+  const notifications = { enqueueAccountActivation: jest.fn(async (..._args: unknown[]) => undefined) };
+  accountRepository.manager = {
+    transaction: jest.fn(async (callback) => {
+      const before = accounts.map((account) => ({ ...account }));
+      try { return await callback({ getRepository: () => accountRepository }); }
+      catch (error) { accounts.splice(0, accounts.length, ...before); throw error; }
+    }),
+  };
   return {
-    service: new CustomerPortalAccountsService(accountRepository, customerRepository, configService, ruleRepository as any),
+    service: new CustomerPortalAccountsService(accountRepository, customerRepository, configService, ruleRepository as any, notifications as any),
+    notifications,
     accounts,
     accountRepository,
     ruleRepository,
@@ -78,6 +87,33 @@ function decodeToken(token: string) {
 }
 
 describe('CustomerPortalAccountsService', () => {
+  it('atomically queues activation without any password, and only queues again upon reactivation', async () => {
+    const { service, notifications, accountRepository } = makeService();
+    const created = await service.create('customer-1', ACCOUNT_INPUT);
+    expect(accountRepository.manager.transaction).toHaveBeenCalledTimes(1);
+    expect(notifications.enqueueAccountActivation).toHaveBeenCalledTimes(1);
+    expect(notifications.enqueueAccountActivation.mock.calls[0][1]).not.toHaveProperty('passwordHash');
+    expect(JSON.stringify(notifications.enqueueAccountActivation.mock.calls)).not.toContain(ACCOUNT_INPUT.password);
+    await service.update('customer-1', created.id, { contactName: '新联系人' });
+    await service.update('customer-1', created.id, { isActive: false });
+    expect(notifications.enqueueAccountActivation).toHaveBeenCalledTimes(1);
+    await service.update('customer-1', created.id, { isActive: true });
+    expect(notifications.enqueueAccountActivation).toHaveBeenCalledTimes(2);
+    expect(notifications.enqueueAccountActivation.mock.calls[1][1]).toMatchObject({ id: created.id, sessionVersion: 4 });
+  });
+
+  it('does not leave an active account committed when durable activation enqueue fails', async () => {
+    const { service, notifications, accounts } = makeService();
+    notifications.enqueueAccountActivation.mockRejectedValueOnce(new Error('queue unavailable') as never);
+    await expect(service.create('customer-1', ACCOUNT_INPUT)).rejects.toThrow('queue unavailable');
+    expect(accounts).toHaveLength(0);
+    const created = await service.create('customer-1', { ...ACCOUNT_INPUT, isActive: false });
+    expect(notifications.enqueueAccountActivation).toHaveBeenCalledTimes(1);
+    notifications.enqueueAccountActivation.mockRejectedValueOnce(new Error('queue unavailable') as never);
+    await expect(service.update('customer-1', created.id, { isActive: true })).rejects.toThrow('queue unavailable');
+    expect(accounts[0].isActive).toBe(false);
+    expect(accounts[0].sessionVersion).toBe(1);
+  });
   it('creates a normalized account and stores only a password hash', async () => {
     const { service, accounts } = makeService();
     const result = await service.create('customer-1', {

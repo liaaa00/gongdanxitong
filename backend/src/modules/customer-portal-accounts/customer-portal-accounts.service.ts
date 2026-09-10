@@ -13,6 +13,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { Repository } from 'typeorm';
 import { AppConfig } from 'src/config/configuration';
 import { Customer, CustomerPortalAccount, CustomerPortalRule } from 'src/entities';
+import { PortalNotificationsService } from 'src/modules/portal-notifications/portal-notifications.service';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PASSWORD_PATTERN = /^(?=.*[A-Za-z])(?=.*\d).{8,72}$/;
@@ -75,6 +76,7 @@ export class CustomerPortalAccountsService {
     private readonly configService: ConfigService<AppConfig, true>,
     @InjectRepository(CustomerPortalRule)
     private readonly ruleRepository: Repository<CustomerPortalRule>,
+    private readonly notifications: PortalNotificationsService,
   ) {}
 
   async list(customerId: string) {
@@ -87,7 +89,7 @@ export class CustomerPortalAccountsService {
   }
 
   async create(customerId: string, input: SavePortalAccountInput) {
-    await this.getCustomer(customerId);
+    const customer = await this.getCustomer(customerId);
     this.validateBooleans(input);
     const businessPermissions = this.validatePermissions(input.businessPermissions);
     await this.ensureRuleReady(customerId, businessPermissions);
@@ -106,7 +108,11 @@ export class CustomerPortalAccountsService {
       sessionVersion: 1,
       lastLoginAt: null,
     });
-    return this.toView(await this.accountRepository.save(row));
+    return this.accountRepository.manager.transaction(async (manager) => {
+      const saved = await manager.getRepository(CustomerPortalAccount).save(row);
+      if (saved.isActive) await this.notifications.enqueueAccountActivation(manager, this.activationNoticeAccount(saved), customer);
+      return this.toView(saved);
+    });
   }
 
   async update(customerId: string, accountId: string, input: SavePortalAccountInput) {
@@ -130,7 +136,13 @@ export class CustomerPortalAccountsService {
     if (input.isActive !== undefined) changes.isActive = input.isActive;
     if (input.mustChangePassword !== undefined) changes.mustChangePassword = input.mustChangePassword;
     if (input.businessPermissions !== undefined) changes.businessPermissions = nextPermissions;
-    await this.updateSecuritySettings(row, changes);
+    if (!row.isActive && changes.isActive) {
+      const customer = await this.getCustomer(customerId);
+      await this.accountRepository.manager.transaction(async (manager) => {
+        await this.updateSecuritySettings(row, changes, manager.getRepository(CustomerPortalAccount));
+        await this.notifications.enqueueAccountActivation(manager, this.activationNoticeAccount({ ...row, ...changes, sessionVersion: row.sessionVersion + 1 }), customer);
+      });
+    } else await this.updateSecuritySettings(row, changes);
     return this.toView(await this.getAccount(customerId, accountId));
   }
 
@@ -186,8 +198,12 @@ export class CustomerPortalAccountsService {
     return this.sessionView(updated);
   }
 
-  private async updateSecuritySettings(row: CustomerPortalAccount, changes: AccountSecurityChanges) {
-    const result = await this.accountRepository.update(
+  private activationNoticeAccount(row: CustomerPortalAccount) {
+    return { id: row.id, customerId: row.customerId, sessionVersion: row.sessionVersion, loginEmail: row.loginEmail, contactName: row.contactName, businessPermissions: row.businessPermissions, isActive: row.isActive };
+  }
+
+  private async updateSecuritySettings(row: CustomerPortalAccount, changes: AccountSecurityChanges, repository = this.accountRepository) {
+    const result = await repository.update(
       { id: row.id, customerId: row.customerId, sessionVersion: row.sessionVersion },
       { ...changes, sessionVersion: row.sessionVersion + 1 },
     );

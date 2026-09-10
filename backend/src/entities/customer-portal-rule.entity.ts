@@ -11,6 +11,13 @@ import {
 import { Customer } from './customer.entity';
 import { User } from './user.entity';
 
+export interface CustomerPaymentLocationRule {
+  socialLocation: string;
+  branchId: string;
+  onboardingDefaults: Record<string, string | number | boolean>;
+  resignationDefaults: Record<string, string | number | boolean>;
+}
+
 @Entity({ name: 'customer_portal_rules' })
 export class CustomerPortalRule {
   @PrimaryGeneratedColumn('uuid')
@@ -28,6 +35,9 @@ export class CustomerPortalRule {
   @Column({ name: 'resignation_defaults', type: 'jsonb', default: () => "'{}'::jsonb" })
   resignationDefaults!: Record<string, string | number | boolean>;
 
+  @Column({ name: 'payment_location_rules', type: 'jsonb', default: () => "'[]'::jsonb" })
+  paymentLocationRules!: CustomerPaymentLocationRule[];
+
   @Column({
     name: 'salary_rules',
     type: 'jsonb',
@@ -37,6 +47,8 @@ export class CustomerPortalRule {
     billingDay: number | null;
     reminderEnabled: boolean;
     reminderWorkdayOffsets: [3, 2, 1];
+    // Legacy rows omit this key and are read as current month.
+    payrollMonthMode?: 'current' | 'previous';
   };
 
   @Column({

@@ -90,4 +90,43 @@ describe('客户办理规则Excel', () => {
   it('rejects unrecognized headers so a misspelled configuration column cannot silently disappear', () => {
     expect(() => parseRulesWorkbook(workbook([{ 客户UUID: id1, '薪资·可变提醒': '7' }]))).toThrow(/无法识别模板列/);
   });
+
+  it('round-trips payroll choices and optional reminders without clearing city-specific rules', () => {
+    const configured: CustomerRuleItem = {
+      ...customer,
+      onboardingDefaults: {
+        employee_type: '普通员工', payroll_cycle: '次月', payroll_date: '31', need_payroll_slip: '否',
+        purchased_products: '人事服务', service_fee: '按合同收取', deposit: '无需押金',
+      },
+      salaryRules: { ...customer.salaryRules, payrollMonthMode: 'previous' },
+      paymentLocationRules: [{ socialLocation: '上海', branchId: id2, onboardingDefaults: { contract_subject: '上海主体' }, resignationDefaults: {} }],
+    };
+    const book = createRulesWorkbook([configured]);
+    const restored = XLSX.read(XLSX.write(book, { type: 'array', bookType: 'xlsx' }), { type: 'array' });
+    const [row] = parseRulesWorkbook(restored);
+    expect(row.error).toBeUndefined();
+    expect(row.rule.onboardingDefaults).toEqual(configured.onboardingDefaults);
+    expect(row.rule.salaryRules?.payrollMonthMode).toBe('previous');
+    expect(row.rule).not.toHaveProperty('paymentLocationRules');
+    expect(JSON.stringify(XLSX.utils.sheet_to_json(book.Sheets['填写说明']))).toContain('不修改或清除这些城市规则');
+  });
+
+  it.each([
+    ['入职·发薪月份', '上月', '当月'],
+    ['入职·发薪日', 32, '1至31'],
+    ['入职·发薪日', 0, '1至31'],
+    ['入职·发薪日', 1.5, '1至31'],
+    ['入职·是否需要工资单', '随便', '是'],
+    ['薪资·发薪周期', '隔月', '当月发上月'],
+  ])('reports invalid %s values at their Excel row', (header, value, expected) => {
+    const [row] = parseRulesWorkbook(workbook([{ 客户UUID: id1, [header]: value }]));
+    expect(row.rowNumber).toBe(2);
+    expect(row.error).toContain(expected);
+  });
+
+  it('keeps salary-only changes free of onboarding and location patches', () => {
+    const [row] = parseRulesWorkbook(workbook([{ 客户UUID: id1, '薪资·发薪周期': '当月发当月', '入职·员工类型': '', '入职·发薪日': '' }]));
+    expect(row.error).toBeUndefined();
+    expect(row.rule).toEqual({ salaryRules: { payrollMonthMode: 'current', reminderWorkdayOffsets: [3, 2, 1] } });
+  });
 });

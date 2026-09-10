@@ -1,6 +1,7 @@
 import http from 'node:http';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { MonitorJournal, MONITORED_ACTIONS } from './monitor-journal.mjs';
 
 const DEFAULT_PORT = 18080;
 const DEFAULT_TOKEN = 'test-connector-token';
@@ -47,6 +48,10 @@ function isPlainObject(value) {
 
 function isValidRequestId(value) {
   return typeof value === 'string' && /^[A-Za-z0-9._:-]{1,100}$/.test(value);
+}
+
+function isValidAttemptId(value) {
+  return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 function validateTestRequest(body) {
@@ -150,6 +155,17 @@ export function createGatewayServer(options = {}) {
   const requestTimeoutMs = options.requestTimeoutMs || DEFAULT_TIMEOUT_MS;
   const pending = new Map();
   const completed = new Map();
+  const monitorDirectory = options.monitorStateDir || process.env.PORTAL_MONITOR_STATE_DIR;
+  const monitor = monitorDirectory ? new MonitorJournal(monitorDirectory) : null;
+  let monitorFault = false;
+  const recordMonitor = (event) => {
+    try { return monitor.record(event); }
+    catch (error) { monitorFault = true; throw error; }
+  };
+  const observe = (event) => {
+    try { recordMonitor(event); }
+    catch { monitorFault = true; console.error('portal monitor journal write failed'); }
+  };
   let connectorResponse = null;
 
   const state = {
@@ -158,9 +174,10 @@ export function createGatewayServer(options = {}) {
     },
     pending,
     completed,
+    monitor,
   };
 
-  async function relayRequest(body, action) {
+  async function relayRequest(body, action, publicResponse) {
     const fingerprint = createHash('sha256').update(JSON.stringify({ action, body })).digest('hex');
     // Business requests must reach the authoritative session check on every call.
     const cached = action === 'test.echo' || action === 'portal_account.login' ? completed.get(body.requestId) : null;
@@ -176,7 +193,23 @@ export function createGatewayServer(options = {}) {
         body: { code: 'DUPLICATE_REQUEST', message: 'requestId is already being processed' },
       };
     }
+    // Public requestId remains the business idempotency key. Each transport
+    // attempt gets an independent, gateway-generated correlation identifier.
+    const attemptId = randomUUID();
+    const tracking = monitor && MONITORED_ACTIONS.has(action) ? {
+      traceId: attemptId, action,
+      requestKey: createHash('sha256').update(body.requestId).digest('hex'),
+      businessType: ['onboarding', 'resignation', 'salary'].find((type) => action.startsWith(type + '.')) || null,
+    } : null;
+    if (tracking) {
+      recordMonitor({ ...tracking, stage: 'gateway_received' });
+      publicResponse.once('finish', () => observe({ ...tracking, stage: 'portal_responded' }));
+      publicResponse.once('close', () => {
+        if (!publicResponse.writableFinished) observe({ ...tracking, stage: 'failed', failureCode: 'CLIENT_DISCONNECTED' });
+      });
+    }
     if (!connectorResponse) {
+      if (tracking) recordMonitor({ ...tracking, stage: 'failed', failureCode: 'CONNECTOR_OFFLINE' });
       return {
         statusCode: 503,
         body: { code: 'CONNECTOR_OFFLINE', message: 'local connector is not connected' },
@@ -187,15 +220,18 @@ export function createGatewayServer(options = {}) {
       const result = await new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
           pending.delete(body.requestId);
+          if (tracking) observe({ ...tracking, stage: 'timeout', failureCode: 'CONNECTOR_TIMEOUT' });
           reject(new Error('connector response timeout'));
         }, requestTimeoutMs);
 
         pending.set(body.requestId, {
+          attemptId,
+          tracking,
           resolve: (value) => {
             clearTimeout(timer);
             pending.delete(body.requestId);
             const cachedResponse = { data: value };
-            if(action === 'test.echo' || action === 'portal_account.login') completed.set(body.requestId, { fingerprint, response: action === 'portal_account.login' ? null : cachedResponse });
+            if(action === 'test.echo' || action === 'portal_account.login') completed.set(body.requestId, { attemptId, fingerprint, response: action === 'portal_account.login' ? null : cachedResponse });
             if (completed.size > 1000) {
               completed.delete(completed.keys().next().value);
             }
@@ -205,10 +241,11 @@ export function createGatewayServer(options = {}) {
         });
 
         try {
-          connectorResponse.write(createEvent('relay', { ...body, action }));
+          connectorResponse.write(createEvent('relay', { ...body, action, attemptId, _monitor: tracking ? { traceId: tracking.traceId } : undefined }));
         } catch (error) {
           clearTimeout(timer);
           pending.delete(body.requestId);
+          if (tracking) observe({ ...tracking, stage: 'failed', failureCode: 'RELAY_FAILED' });
           reject(error);
         }
       });
@@ -271,6 +308,35 @@ export function createGatewayServer(options = {}) {
       return;
     }
 
+    if (['/agent/monitor/events', '/agent/monitor/ack', '/agent/received'].includes(url.pathname)) {
+      if (!isAuthorized(request, connectorToken)) { writeJson(response, 401, { code: 'UNAUTHORIZED' }); return; }
+      if (!monitor || monitorFault) { writeJson(response, 503, { code: 'MONITOR_UNAVAILABLE' }); return; }
+      try {
+        if (request.method === 'GET' && url.pathname === '/agent/monitor/events') {
+          writeJson(response, 200, { ...monitor.batch(), connectorConnected: state.connectorConnected }); return;
+        }
+        if (request.method === 'POST') {
+          const body = await readJson(request);
+          if (url.pathname === '/agent/monitor/ack') {
+            monitor.acknowledge(body.journalId, body.through);
+            writeJson(response, 200, { acknowledged: true }); return;
+          }
+          if (url.pathname === '/agent/received') {
+            if (!isValidAttemptId(body.attemptId)) { writeJson(response, 400, { code: 'INVALID_REQUEST' }); return; }
+            const current = pending.get(body.requestId);
+            if (!current) { writeJson(response, 404, { code: 'REQUEST_NOT_FOUND' }); return; }
+            if (current.attemptId !== body.attemptId || !current.tracking || current.tracking.traceId !== body.traceId) {
+              writeJson(response, 409, { code: 'REQUEST_ATTEMPT_MISMATCH' }); return;
+            }
+            const tracking = current.tracking;
+            recordMonitor({ ...tracking, stage: 'connector_received' });
+            writeJson(response, 202, { accepted: true }); return;
+          }
+        }
+      } catch { writeJson(response, 400, { code: 'INVALID_MONITOR_REQUEST' }); return; }
+      writeJson(response, 405, { code: 'METHOD_NOT_ALLOWED' }); return;
+    }
+
     if (request.method === 'POST' && url.pathname === '/agent/respond') {
       if (!isAuthorized(request, connectorToken)) {
         writeJson(response, 401, { code: 'UNAUTHORIZED', message: 'invalid connector token' });
@@ -279,20 +345,31 @@ export function createGatewayServer(options = {}) {
 
       try {
         const body = await readJson(request);
-        if (!isValidRequestId(body.requestId) || !isConnectorResult(body.result)) {
-          writeJson(response, 400, { code: 'INVALID_REQUEST', message: 'requestId and result are required' });
+        if (!isValidRequestId(body.requestId) || !isValidAttemptId(body.attemptId) || !isConnectorResult(body.result)) {
+          writeJson(response, 400, { code: 'INVALID_REQUEST', message: 'requestId, attemptId, and result are required' });
           return;
         }
 
         const resolver = pending.get(body.requestId);
         if (!resolver) {
           const cached = completed.get(body.requestId);
-          writeJson(response, cached ? 200 : 404, cached || {
+          writeJson(response, cached?.attemptId === body.attemptId ? 200 : 404, cached?.attemptId === body.attemptId
+            ? { accepted: true, requestId: body.requestId } : {
             code: 'REQUEST_NOT_FOUND',
             message: 'request is no longer pending',
           });
           return;
         }
+
+        if (resolver.attemptId !== body.attemptId) {
+          writeJson(response, 409, { code: 'REQUEST_ATTEMPT_MISMATCH', message: 'response belongs to an earlier request attempt' });
+          return;
+        }
+
+        if (resolver.tracking) recordMonitor({ ...resolver.tracking,
+          stage: body.result?.ok === false ? 'failed' : 'backend_responded',
+          failureCode: body.result?.ok === false ? 'BACKEND_REJECTED' : null,
+        });
 
         resolver.resolve({ requestId: body.requestId, result: body.result });
         writeJson(response, 202, { accepted: true, requestId: body.requestId });
@@ -333,7 +410,7 @@ export function createGatewayServer(options = {}) {
           return;
         }
         const relayBody = route === '/portal/onboarding/attachments' ? { ...body, businessType: 'onboarding' } : body;
-        const relayed = await relayRequest(relayBody, action);
+        const relayed = await relayRequest(relayBody, action, response);
         writeJson(response, relayed.statusCode, relayed.body);
       } catch (error) {
         if (error instanceof SyntaxError || error.message === 'request body too large') {
@@ -353,7 +430,7 @@ export function createGatewayServer(options = {}) {
 export async function startGateway(options = {}) {
   const port = Number(options.port || process.env.PORTAL_PORT || DEFAULT_PORT);
   const host = options.host || process.env.PORTAL_HOST || '0.0.0.0';
-  const { server, state } = createGatewayServer(options);
+  const { server, state } = createGatewayServer({ ...options, monitorStateDir: options.monitorStateDir || process.env.PORTAL_MONITOR_STATE_DIR || fileURLToPath(new URL('../.codex-monitor', import.meta.url)) });
   await new Promise((resolve) => server.listen(port, host, resolve));
   console.log('customer portal gateway listening on ' + host + ':' + server.address().port);
   return { server, state };

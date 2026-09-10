@@ -91,15 +91,15 @@ function normalizeSubject(raw: any): ContractSubjectItem {
   };
 }
 
-export async function getContractSubjects(keyword?: string): Promise<ContractSubjectItem[]> {
-  if (isMockMode) return mockDelay([]);
+export async function getContractSubjects(keyword?: string, forceReal = false): Promise<ContractSubjectItem[]> {
+  if (isMockMode && !forceReal) return mockDelay([]);
   const result = await request.get('/contract-subjects', { params: keyword ? { keyword } : undefined }) as any;
   const list = Array.isArray(result) ? result : (result?.items ?? result?.list ?? result?.data ?? []);
   return (Array.isArray(list) ? list : []).map(normalizeSubject).filter((item) => item.id && item.subjectName);
 }
 
-export async function getFundLocations(): Promise<string[]> {
-  if (isMockMode) {
+export async function getFundLocations(forceReal = false): Promise<string[]> {
+  if (isMockMode && !forceReal) {
     return mockDelay(Array.from(new Set(MOCK_FUND_RULES.map((rule) => rule.city))).sort((left, right) => left.localeCompare(right, 'zh-CN')));
   }
   const result = await request.get('/contract-subjects/fund-locations') as any;

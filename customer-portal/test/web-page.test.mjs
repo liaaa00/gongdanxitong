@@ -41,7 +41,7 @@ test('phase-one customer portal exposes the agreed entry points', async () => {
 test('onboarding keeps the four-step layered intake and backend field mapping', async () => {
   const page = (await readFile(pagePath, 'utf8')) + '\n' + (await readFile(new URL('../web/portal-business.js', import.meta.url), 'utf8'));
 
-  for (const step of ['基本信息', '合同与岗位', '薪资与社保', '银行卡与确认']) {
+  for (const step of ['基本信息', '合同相关信息', '社保公积金', '银行卡与确认']) {
     assert.match(page, new RegExp(step));
   }
 
@@ -69,6 +69,19 @@ test('onboarding keeps the four-step layered intake and backend field mapping', 
   }
   assert.match(page, /合同终止日期/);
   assert.match(page, /自动计算/);
+
+  const contractPanel = page.match(/data-step-panel="2"[\s\S]*?<\/section>/)?.[0];
+  const socialPanel = page.match(/data-step-panel="3"[\s\S]*?<\/section>/)?.[0];
+  for (const field of ['base_salary', 'other_salary', 'probation_salary', 'probation_other_salary']) {
+    assert.match(contractPanel, new RegExp('name="' + field + '"'));
+    assert.doesNotMatch(socialPanel, new RegExp('name="' + field + '"'));
+  }
+  assert.match(contractPanel, /id="other_salary"[^>]*type="text"/);
+  assert.doesNotMatch(contractPanel, /id="other_salary"[^>]*placeholder="0\.00"/);
+  assert.match(socialPanel, /textarea id="remark" name="remark"/);
+  assert.match(socialPanel, /select id="fund_ratio" name="fund_ratio"/);
+  assert.match(page, /如不由外服联系员工收集该信息，则需在本次收集页面填写。/);
+  assert.doesNotMatch(page, /合同与岗位|薪资与社保|按合同主体自动带出/);
 });
 
 test('onboarding submits through the portal gateway instead of the internal backend', async () => {

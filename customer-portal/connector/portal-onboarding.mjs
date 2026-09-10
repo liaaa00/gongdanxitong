@@ -714,7 +714,11 @@ export async function handlePortalAction(payload, options = {}) {
     if (intake) {
       const body = {linkToken:payload.linkToken, ...(intake[1] ? {businessType:intake[1]} : {})};
       for(const key of ['requestId','fields','files','fileName','contentBase64']) if(payload[key]!==undefined)body[key]=payload[key];
-      const result = await requestBackend('/api/customer-portal/' + intake[0], {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)},options);
+      const traceId = payload._monitor?.traceId;
+      const connectorToken = options.token || process.env.CONNECTOR_TOKEN;
+      const monitorHeaders = /^[0-9a-f-]{36}$/i.test(traceId || '') && connectorToken
+        ? { 'X-Portal-Trace-Id': traceId, 'X-Connector-Token': connectorToken } : {};
+      const result = await requestBackend('/api/customer-portal/' + intake[0], {method:'POST',headers:{'Content-Type':'application/json',...monitorHeaders},body:JSON.stringify(body)},options);
       return {ok:true,...result};
     }
     return { ok: false, code: 'UNSUPPORTED_ACTION', message: 'unsupported portal action' };

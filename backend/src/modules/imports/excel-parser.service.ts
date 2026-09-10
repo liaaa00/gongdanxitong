@@ -5,6 +5,8 @@ import { ParsedAttachmentLink, ParsedSheet } from './types';
 
 export interface ParseOptions {
   headerRows?: 1 | 2;
+  /** Known header position for a verified system template; other callers retain detection. */
+  headerStartRow?: number;
   sheetName?: string;
 }
 
@@ -66,7 +68,7 @@ export class ExcelParserService {
     }
 
     const detected = options.headerRows
-      ? { startRow: 1, headerRows: options.headerRows }
+      ? { startRow: options.headerStartRow ?? 1, headerRows: options.headerRows }
       : this.detectHeaders(worksheet);
     const headerRows = detected.headerRows;
     const headers = this.buildHeaders(worksheet, detected);

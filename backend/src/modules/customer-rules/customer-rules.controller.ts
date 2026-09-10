@@ -19,6 +19,7 @@ import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 import { AuditInterceptor } from 'src/common/interceptors/audit.interceptor';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { BatchSaveCustomerPortalRuleInput, CustomerRulesService } from './customer-rules.service';
+import { PortalRuleApplicationService } from './portal-rule-application.service';
 
 const CUSTOMER_RULE_ROLES = [
   'admin',
@@ -34,6 +35,16 @@ export class SaveCustomerRuleDto {
   @IsOptional()
   @IsObject()
   resignationDefaults?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(500)
+  paymentLocationRules?: Array<{
+    socialLocation: string;
+    branchId: string;
+    onboardingDefaults: Record<string, unknown>;
+    resignationDefaults: Record<string, unknown>;
+  }>;
 
   @IsOptional()
   @IsObject()
@@ -102,7 +113,13 @@ class ImportRulesFromOrdersDto {
 @Controller('customer-rules')
 @UseInterceptors(AuditInterceptor)
 export class CustomerRulesController {
-  constructor(private readonly service: CustomerRulesService) {}
+  constructor(private readonly service: CustomerRulesService, private readonly application: PortalRuleApplicationService) {}
+
+  @Post(':customerId/sync-pending')
+  @Audit('customer_portal_rules', 'sync_pending')
+  syncPending(@Param('customerId') customerId: string, @CurrentUser() user: JwtUserPayload) {
+    return this.application.syncPending(customerId, user);
+  }
 
   @Get()
   list(@Query() query: PaginationQueryDto, @CurrentUser() user: JwtUserPayload) {
@@ -117,6 +134,11 @@ export class CustomerRulesController {
   @Get(':customerId/portal-defaults')
   portalDefaults(@Param('customerId') customerId: string, @CurrentUser() user: JwtUserPayload) {
     return this.service.getPortalDefaults(customerId, user);
+  }
+
+  @Get(':customerId/location-options')
+  locationOptions(@Param('customerId') customerId: string, @CurrentUser() user: JwtUserPayload) {
+    return this.service.getLocationOptions(customerId, user);
   }
 
   @Post('batch')

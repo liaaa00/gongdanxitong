@@ -1,5 +1,6 @@
 import { CustomerPortalRule, OrderType, WorkOrder, WorkOrderCompletionEmail } from 'src/entities';
 import { CompletionEmailService } from 'src/modules/completion-email.service';
+import { DEFAULT_PORTAL_NOTIFICATION_CONFIG, PortalNotificationKind, renderNotification } from 'src/modules/portal-notifications/portal-notification.config';
 
 function workOrder(overrides: Partial<WorkOrder> = {}): WorkOrder {
   return {
@@ -59,7 +60,9 @@ function makeService(options: {
     })),
   };
   return {
-    service: new CompletionEmailService(emailRepository, ruleRepository, uploadService),
+    service: new CompletionEmailService(emailRepository, ruleRepository, uploadService, {
+      render: jest.fn(async (kind: PortalNotificationKind, variables: Record<string, string>) => renderNotification(DEFAULT_PORTAL_NOTIFICATION_CONFIG, kind, variables)),
+    } as any),
     emailRepository,
     ruleRepository,
     uploadService,

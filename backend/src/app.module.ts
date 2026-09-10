@@ -17,8 +17,12 @@ import {
   CustomerAssignee,
   CustomerPortalAccount,
   CustomerPortalSubmission,
+  CustomerPortalMonitorRequest,
+  CustomerPortalMonitorEvent,
+  CustomerPortalMonitorConnection,
   CustomerPortalRule,
   WorkOrderCompletionEmail,
+  PortalNotificationSetting,
   Department,
   DetailViewTemplate,
   DispatchRule,
@@ -60,6 +64,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { CustomerRulesModule } from './modules/customer-rules/customer-rules.module';
 import { CustomerPortalModule } from './modules/customer-portal/customer-portal.module';
+import { CustomerPortalMonitorModule } from './modules/customer-portal-monitor/customer-portal-monitor.module';
 import { CustomerPortalAccountsModule } from './modules/customer-portal-accounts/customer-portal-accounts.module';
 import { CompletionEmailModule } from './modules/completion-email.module';
 import { DetailViewTemplatesModule } from './modules/admin/detail-view-templates/detail-view-templates.module';
@@ -113,8 +118,12 @@ import { OperationLogCleanupService } from './modules/operation-logs/operation-l
           CustomerAssignee,
           CustomerPortalAccount,
   CustomerPortalSubmission,
+          CustomerPortalMonitorRequest,
+          CustomerPortalMonitorEvent,
+          CustomerPortalMonitorConnection,
           CustomerPortalRule,
           WorkOrderCompletionEmail,
+          PortalNotificationSetting,
           Department,
           DetailViewTemplate,
           DispatchRule,
@@ -164,6 +173,7 @@ import { OperationLogCleanupService } from './modules/operation-logs/operation-l
     DashboardModule,
     CustomerPortalAccountsModule,
     CustomerPortalModule,
+    CustomerPortalMonitorModule,
     CustomerRulesModule,
     CompletionEmailModule,
     AiModule,

@@ -11,7 +11,7 @@ const session={customer:{id:customerId,customerName:'客户',customerCode:'SAME'
 const token='test-session-token';
 function fixture(){
   const fieldDefinitions=[['employee_name','员工姓名'],['id_card_no','证件号码'],['mobile','移动电话'],['email','电子邮件'],['resignation_date','离职日期'],['social_stop_month','社保公积金停保月'],['resignation_reason','离职原因']];
-  const fields=fieldDefinitions.map(([fieldCode,fieldName])=>Object.assign(new FieldConfig(),{id:fieldCode,fieldCode,fieldName,fieldType:fieldCode==='resignation_reason'?FieldType.DROPDOWN:FieldType.TEXT,isActive:true,isRequired:false,defaultRequired:false,conditionalRequired:null,dropdownOptions:fieldCode==='resignation_reason'?['个人辞职','公司解聘']:null,orderType:OrderType.RESIGNATION,displayOrder:1}));
+  const fields: FieldConfig[]=fieldDefinitions.map(([fieldCode,fieldName])=>Object.assign(new FieldConfig(),{id:fieldCode,fieldCode,fieldName,fieldType:fieldCode==='resignation_reason'?FieldType.DROPDOWN:FieldType.TEXT,isActive:true,isRequired:false,defaultRequired:false,conditionalRequired:null,dropdownOptions:fieldCode==='resignation_reason'?['个人辞职','公司解聘']:null,orderType:OrderType.RESIGNATION,displayOrder:1}));
   const auth={session:jest.fn().mockResolvedValue(session)};
   const templateConfig={list:jest.fn().mockResolvedValue([])};
   const submissions={find:jest.fn().mockResolvedValue([])};
@@ -20,11 +20,76 @@ function fixture(){
   const transaction=jest.fn();
   const query=jest.fn();
   const rules={findOne:jest.fn().mockResolvedValue(null)};
-  const service=new CustomerPortalService(auth as never,{transaction,query} as never,submissions as never,rules as never,customers as never,{find:jest.fn().mockResolvedValue(fields)} as never,{} as never,{} as never,{} as never,new ImportTemplateService(templateConfig as never),templateConfig as never,validation as never,new ExcelParserService(),{} as never);
-  return {service,auth,submissions,transaction,query,fields,customers};
+  const contractSubjects={listFundLocations:jest.fn().mockResolvedValue([]),findFundRuleByLocation:jest.fn().mockResolvedValue(null)};
+  const ruleApplication={resolve:jest.fn().mockResolvedValue({defaults:{},branch:null,missing:['缴纳地对应商社']})};
+  const orders={createQueryBuilder:jest.fn(),find:jest.fn().mockResolvedValue([])};
+  const mails={find:jest.fn().mockResolvedValue([])};
+  const workOrders={createDraft:jest.fn().mockResolvedValue({id:'draft-id',orderNo:'WO-PORTAL'})};
+  const service=new CustomerPortalService(auth as never,{transaction,query} as never,submissions as never,rules as never,customers as never,{find:jest.fn().mockResolvedValue(fields)} as never,orders as never,mails as never,workOrders as never,new ImportTemplateService(templateConfig as never),templateConfig as never,validation as never,new ExcelParserService(),{} as never,contractSubjects as never,ruleApplication as never);
+  return {service,auth,submissions,transaction,query,fields,customers,rules,contractSubjects,ruleApplication,orders,workOrders,validation};
 }
 
 describe('Customer portal authoritative business boundary',()=>{
+  it('returns actual child completion results without internal handler data or export-only children',async()=>{
+    const {service,submissions,orders}=fixture();
+    submissions.find.mockResolvedValue([{id:'submission',workOrderId:'work',businessType:'onboarding',fields:{},status:'received'}]);
+    orders.find.mockResolvedValue([{id:'work',orderType:OrderType.ONBOARDING,employeeName:'示例员工',status:'completed',completedAt:new Date(),dispatchedOrders:[
+      {moduleCode:'contract',status:'completed',handlerId:'internal-user',completionRemark:'内部备注'},
+      {moduleCode:'payroll_bank_card',status:'pending'},
+    ]}]);
+    const result=await service.progress({linkToken:token});
+    expect(result.list[0].status).toBe('completed');
+    expect(result.list[0].result).toContain('已办结');expect(result.list[0].steps).toHaveLength(1);
+    expect(JSON.stringify(result)).not.toContain('internal-user');expect(JSON.stringify(result)).not.toContain('内部备注');
+  });
+  it('derives the configured prior salary month across a year boundary', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2027-01-15T00:00:00Z'));
+    try {
+      const { service, rules } = fixture();
+      rules.findOne.mockResolvedValue({ salaryRules: { payrollMonthMode: 'previous' } });
+      expect(await service.schema({linkToken:token,businessType:'salary'})).toMatchObject({defaultMonth:'2026-12',reminderWorkdayOffsets:[3,2,1]});
+    } finally { jest.useRealTimers(); }
+  });
+
+  it('keeps unknown payment locations as pending intake and rejects invented fund ratios', async () => {
+    const { service, fields, validation } = fixture();
+    for (const code of ['social_location','fund_ratio','remark']) fields.push(Object.assign(new FieldConfig(),{fieldCode:code,fieldName:code,isActive:true,fieldType:FieldType.TEXT}));
+    const raw = { social_location:'待配置城市',remark:'请核实该城市要求' };
+    expect(await (service as any).validateFields('onboarding',raw)).toEqual(raw);
+    expect(validation.validateRow).toHaveBeenLastCalledWith(expect.objectContaining({context:'portal_intake'}));
+    await expect((service as any).validateFields('onboarding',{...raw,fund_ratio:'8%+8%'})).rejects.toThrow('不属于该缴纳地');
+  });
+
+  it('requires a choice from the official payment-location ratios and retains the chosen value', async () => {
+    const { service, fields, contractSubjects } = fixture();
+    for (const code of ['social_location','fund_ratio']) fields.push(Object.assign(new FieldConfig(),{fieldCode:code,fieldName:code,isActive:true,fieldType:FieldType.TEXT}));
+    contractSubjects.findFundRuleByLocation.mockResolvedValue({fundRatioOptions:['5%+5%','8%+8%'],fundRatioMode:'same'});
+    await expect((service as any).validateFields('onboarding',{social_location:'宁波'})).rejects.toThrow('请选择');
+    await expect((service as any).validateFields('onboarding',{social_location:'宁波',fund_ratio:'6%+6%'})).rejects.toThrow('不属于');
+    expect(await (service as any).validateFields('onboarding',{social_location:'宁波',fund_ratio:'8%+8%'})).toMatchObject({fund_ratio:'8%+8%'});
+  });
+
+  it('does not infer probation from a contract date, but validates explicitly entered probation', async () => {
+    const { service, fields } = fixture();
+    for (const code of ['contract_start_date','probation_start_date','probation_months','probation_salary']) fields.push(Object.assign(new FieldConfig(),{fieldCode:code,fieldName:code,isActive:true,fieldType:FieldType.TEXT,isRequired:true,defaultRequired:true}));
+    const schema = await service.schema({linkToken:token,businessType:'onboarding'});
+    expect(schema.fields.find((field)=>field.code==='probation_months')?.required).toBe(false);
+    expect(await (service as any).validateFields('onboarding',{contract_start_date:'2026-09-01'})).not.toHaveProperty('probation_start_date');
+    await expect((service as any).validateFields('onboarding',{probation_salary:'5000'})).rejects.toThrow('请补齐');
+    await expect((service as any).validateFields('onboarding',{probation_start_date:'2026-09-01',probation_months:7,probation_salary:'5000'})).rejects.toThrow('1 至 6');
+  });
+
+  it('preserves original stop year/month while creating a pending draft using the existing month field', async () => {
+    const {service,transaction,query,orders,workOrders}=fixture();
+    query.mockResolvedValue([{id:'99999999-9999-4999-8999-999999999999',business_scope:BusinessScope.BEILUN}]);
+    const qb={where:jest.fn().mockReturnThis(),andWhere:jest.fn().mockReturnThis(),getOne:jest.fn().mockResolvedValue(null)};
+    orders.createQueryBuilder.mockReturnValue(qb);
+    const repo={findOne:jest.fn().mockResolvedValue(null),create:jest.fn((value)=>value),save:jest.fn(async(value)=>({id:'submission-id',...value}))};
+    transaction.mockImplementation(async(operation)=>operation({query:jest.fn(),getRepository:()=>repo}));
+    await service.submit({linkToken:token,businessType:'resignation',requestId:'cross-year',fields:{employee_name:'测试员工',id_card_no:'synthetic-test-only',social_stop_month:'2027-01'}});
+    expect(workOrders.createDraft).toHaveBeenCalledWith(expect.objectContaining({customerId,extraData:expect.objectContaining({social_stop_month:'1月',portal_configuration_pending:true})}),expect.any(Object),null);
+    expect(repo.save).toHaveBeenCalledWith(expect.objectContaining({fields:expect.objectContaining({social_stop_month:'2027-01'})}));
+  });
   it('checks current account permission before accessing business fields',async()=>{
     const {service,auth}=fixture();auth.session.mockRejectedValue(new ForbiddenException('未授权'));
     await expect(service.template({linkToken:token,businessType:'onboarding'})).rejects.toBeInstanceOf(ForbiddenException);
@@ -48,6 +113,24 @@ describe('Customer portal authoritative business boundary',()=>{
     expect(workbook.getWorksheet('__portal')?.getCell('B1').text).toBe(customerId);
     expect(workbook.getWorksheet('__portal')?.state).toBe('veryHidden');
     expect(workbook.worksheets[0].getRow(1).values).toContain('离职原因');
+  });
+  it('imports its own onboarding workbook with the second-row header and forwards batch materials', async () => {
+    const { service } = fixture();
+    const template = await service.template({linkToken:token,businessType:'onboarding'});
+    const workbook = new Workbook(); await workbook.xlsx.load(Buffer.from(template.contentBase64,'base64') as never);
+    const sheet=workbook.worksheets[0];
+    expect(sheet.getCell('A2').text).toBe('字段名');
+    expect(sheet.getCell('A1').text).not.toContain('AQ-BJ');
+    sheet.getCell('B6').value='演示员工';
+    sheet.getCell('C6').value='synthetic-id';
+    const files=[{name:'batch.pdf',mimeType:'application/pdf',contentBase64:Buffer.from('%PDF-1.7 test').toString('base64')}];
+    const submit=jest.spyOn(service,'submit').mockResolvedValue({ok:true,submissionId:'row',workOrderId:'order',workOrderNo:'WO-BATCH',requestNo:'WO-BATCH',status:'received',message:'已受理'});
+    const result=await service.importRows({linkToken:token,businessType:'onboarding',fileName:template.fileName,contentBase64:Buffer.from(await workbook.xlsx.writeBuffer()).toString('base64'),files},undefined,true);
+    expect(result).toMatchObject({successCount:1,failureCount:0,details:[{rowNumber:6,success:true,workOrderNo:'WO-BATCH'}]});
+    expect(submit.mock.calls[0][0].fields).toMatchObject({employee_name:'演示员工'});
+    expect(submit.mock.calls[0][0].files).toEqual(files);
+    sheet.getCell(2,8).value='任意新增列';
+    await expect(service.importRows({linkToken:token,businessType:'onboarding',fileName:template.fileName,contentBase64:Buffer.from(await workbook.xlsx.writeBuffer()).toString('base64')},undefined,false)).rejects.toThrow('表头被修改');
   });
   it('rejects a workbook from another customer even when customer names and codes match',async()=>{
     const {service}=fixture();const generated=await service.template({linkToken:token,businessType:'resignation'});

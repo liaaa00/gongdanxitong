@@ -23,6 +23,7 @@ import {
 } from 'src/common/constants/dispatch-modules';
 import { businessException } from 'src/common/exceptions/business-exception';
 import {
+  Branch,
   BusinessScope,
   DispatchedOrder,
   DispatchedOrderStatus,
@@ -166,15 +167,35 @@ export class WorkOrderService {
     private readonly resignationCertificateAutomationService?: ResignationCertificateAutomationService,
   ) {}
 
-  async createDraft(payload: CreateWorkOrderDto, user: JwtUserPayload): Promise<WorkOrderDetailItem> {
+  async createDraft(payload: CreateWorkOrderDto, user: JwtUserPayload, portalBranchId?: string | null): Promise<WorkOrderDetailItem> {
     this.assertBusinessOwnerReadOnly(user);
     const extraData = this.sanitizeExtraData(payload.extraData);
     const businessScope = this.resolveBusinessScope(payload.orderType);
     const customerId = await this.validationService.resolveCustomerId(payload.customerId, extraData, businessScope);
     const departmentId = await this.validationService.resolveDepartmentId(payload.departmentId, user.sub);
-    const branchId = typeof this.validationService.resolveBranchId === 'function'
-      ? await this.validationService.resolveBranchId(payload.extraData?.branchId as string | undefined, customerId, extraData, businessScope)
-      : null;
+    let branchId: string | null;
+    let branchCode: string | null;
+    if (portalBranchId === undefined) {
+      branchId = typeof this.validationService.resolveBranchId === 'function'
+        ? await this.validationService.resolveBranchId(payload.extraData?.branchId as string | undefined, customerId, extraData, businessScope)
+        : null;
+      branchCode = this.readText(extraData.branch_code) ?? this.readText(extraData.customer_code);
+    } else if (portalBranchId === null) {
+      // A missing portal location mapping must never select the customer's first branch.
+      branchId = null;
+      branchCode = null;
+      delete extraData.branchId;
+      delete extraData.branch_code;
+    } else {
+      const branch = await this.workOrderRepository.manager.getRepository(Branch).findOne({
+        where: { id: portalBranchId, customerId, businessScope, isActive: true },
+      });
+      if (!branch) throw businessException(4112, HttpStatus.BAD_REQUEST, '门户办理商社与客户或业务范围不匹配，或商社已停用');
+      branchId = branch.id;
+      branchCode = branch.branchCode;
+      extraData.branchId = branch.id;
+      extraData.branch_code = branch.branchCode;
+    }
     const employeeIdCard = this.validationService.requireText(extraData.id_card_no, 'id_card_no');
     const duplicate = await findDuplicateIdCardInMonth(this.workOrderRepository, {
       orderType: payload.orderType,
@@ -198,7 +219,7 @@ export class WorkOrderService {
           customerId,
           branchId,
           customerCode: this.readText(extraData.customer_code),
-          branchCode: this.readText(extraData.branch_code) ?? this.readText(extraData.customer_code),
+          branchCode,
           customerName: this.readText(extraData.customer_name),
           employeeName: this.validationService.requireText(extraData.employee_name, 'employee_name'),
           employeeIdCard,
@@ -224,6 +245,13 @@ export class WorkOrderService {
     this.assertBusinessOwnerReadOnly(user);
     const workOrder = await this.loadWorkOrder(id);
     this.assertOwner(workOrder, user.sub);
+    await this.assertPortalReviewWrite(workOrder, user, payload.extraData);
+    if (workOrder.extraData?.portal_intake_key && (
+      (payload.customerId !== undefined && payload.customerId !== workOrder.customerId)
+      || (payload.departmentId !== undefined && payload.departmentId !== workOrder.departmentId)
+    )) {
+      throw new ForbiddenException('门户工单的客户和审核部门不可通过资料修改变更');
+    }
     await this.assertMainOperationMovedToChildren(workOrder, user, '修改');
     const editableStatuses = [WorkOrderStatus.DRAFT, WorkOrderStatus.PROCESSING, WorkOrderStatus.RETURNED, WorkOrderStatus.WITHDRAWN];
     if (!editableStatuses.includes(workOrder.status)) {
@@ -446,6 +474,12 @@ export class WorkOrderService {
         throw businessException(4100, HttpStatus.NOT_FOUND, '工单不存在');
       }
 
+      if (workOrder.extraData?.portal_configuration_pending === true) {
+        throw businessException(4110, HttpStatus.BAD_REQUEST, '门户办理配置尚未补齐，请先同步客户办理配置后再提交');
+      }
+
+      await this.assertPortalReviewWrite(workOrder, user, payload.extraData);
+
       if (payload.extraData) {
         const extraDataPatch = this.sanitizeExtraData(payload.extraData);
         workOrder.extraData = { ...workOrder.extraData, ...extraDataPatch };
@@ -471,6 +505,7 @@ export class WorkOrderService {
       }
 
       this.normalizeOnboardingSubmitFlags(workOrder.extraData);
+      if (workOrder.extraData.portal_intake_key) await this.normalizePortalDecisionFields(workOrder.extraData);
 
       if (workOrder.status === WorkOrderStatus.PROCESSING || workOrder.status === WorkOrderStatus.COMPLETED || workOrder.status === WorkOrderStatus.WITHDRAWN) {
         throw businessException(4113, HttpStatus.CONFLICT, '重复提交');
@@ -1759,6 +1794,9 @@ export class WorkOrderService {
   }
 
   private assertSalesEditableFields(extraData: Record<string, unknown>): void {
+    if (Object.keys(extraData).some(key => key.startsWith('portal_'))) {
+      throw businessException(4115, HttpStatus.FORBIDDEN, '门户配置待补齐标记只能通过客户办理配置同步更新');
+    }
     const handlerOwnedFields = new Set([
       'bank_account_no',
       'bank_card_no',
@@ -2198,6 +2236,35 @@ export class WorkOrderService {
         ? JSON.stringify(value)
         : String(value);
     return /^[=+@-]/.test(text) ? `'${text}` : text;
+  }
+
+  private async normalizePortalDecisionFields(extraData: Record<string, unknown>): Promise<void> {
+    const codes = ['need_company_contract', 'need_esign', 'need_contract_urge', 'need_onboarding_contact', 'need_company_payroll'];
+    const fields = await this.fieldConfigRepository.find({ where: { fieldCode: In(codes), isActive: true } });
+    for (const field of fields) {
+      const value = extraData[field.fieldCode];
+      if (value !== true && value !== false && value !== 'true' && value !== 'false') continue;
+      const yes = value === true || value === 'true';
+      const option = (field.dropdownOptions ?? []).find(item => /^(?:[12][.、\s]*)?(是|否)$/.test(item.trim()) && item.trim().endsWith(yes ? '是' : '否'));
+      if (option) extraData[field.fieldCode] = option;
+    }
+  }
+
+  private async assertPortalReviewWrite(workOrder: WorkOrder, user: JwtUserPayload, patch?: Record<string, unknown>): Promise<void> {
+    if (!workOrder.extraData?.portal_intake_key) return;
+    if (workOrder.extraData.portal_reviewed_by !== user.sub || workOrder.createdBy !== user.sub) {
+      throw new ForbiddenException('请先在客户门户配置中认领该增减员资料，再审核提交');
+    }
+    if (!patch) return;
+    const permissions = await this.fieldPermissionService.getPermissionsForUser(user.sub, 'main', workOrder.businessScope);
+    for (const [key, value] of Object.entries(patch)) {
+      if (key.startsWith('portal_') || ['customer_code', 'customer_name', 'branch_code', 'branchId'].includes(key)) {
+        throw new ForbiddenException('门户来源和客户商社标识由系统配置维护');
+      }
+      if (JSON.stringify(value) !== JSON.stringify(workOrder.extraData[key]) && permissions.get(key) !== 'visible') {
+        throw new ForbiddenException('包含无权修改的字段');
+      }
+    }
   }
 
   private resolveWorkOrderListSort(

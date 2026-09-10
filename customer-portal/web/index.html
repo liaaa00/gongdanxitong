@@ -782,8 +782,8 @@
           </div>
           <div id="onboarding-stepper" class="stepper hidden" aria-label="入职填写步骤">
             <div class="step active" data-step-indicator="1"><span class="step-number">1</span><span class="step-label">基本信息</span></div>
-            <div class="step" data-step-indicator="2"><span class="step-number">2</span><span class="step-label">合同与岗位</span></div>
-            <div class="step" data-step-indicator="3"><span class="step-number">3</span><span class="step-label">薪资与社保</span></div>
+            <div class="step" data-step-indicator="2"><span class="step-number">2</span><span class="step-label">合同相关信息</span></div>
+            <div class="step" data-step-indicator="3"><span class="step-number">3</span><span class="step-label">社保公积金</span></div>
             <div class="step" data-step-indicator="4"><span class="step-number">4</span><span class="step-label">银行卡与确认</span></div>
           </div>
           <form id="onboarding-form" class="form-shell hidden" novalidate>
@@ -807,7 +807,7 @@
             </section>
 
             <section class="form-section" data-step-panel="2" aria-labelledby="onboarding-step-2">
-              <div class="section-heading"><div><h2 id="onboarding-step-2">合同与岗位</h2><p>部分日期将根据合同期限自动推算。</p></div></div>
+              <div class="section-heading"><div><h2 id="onboarding-step-2">合同相关信息</h2><p>请填写岗位、合同期限和合同工资；没有试用期时可留空。</p></div></div>
               <div class="form-grid">
                 <div class="field"><label for="position"><span class="required">*</span>岗位</label><input id="position" name="position" required placeholder="请输入岗位名称"></div>
                 <div class="field"><label for="position_type"><span class="required">*</span>岗位类型</label><select id="position_type" name="position_type" required><option value="">请选择</option><option>管理</option><option>非管理</option></select></div>
@@ -816,30 +816,32 @@
                 <div class="field"><label for="contract_start_date"><span class="required">*</span>合同开始日期</label><input id="contract_start_date" name="contract_start_date" type="date" required></div>
                 <div class="field condition-row visible" id="contract-duration-row"><label for="contract_duration"><span class="required">*</span>合同期限（月）</label><input id="contract_duration" name="contract_duration" type="number" min="1" placeholder="例如：36"></div>
                 <div class="field condition-row visible" id="contract-end-row"><label>合同终止日期</label><output id="contract_end_date" class="derived">填写开始日期和期限后自动计算</output></div>
-                <div class="field"><label for="probation_start_date">试用期开始日期</label><input id="probation_start_date" name="probation_start_date" type="date"></div>
+                <div class="field"><label for="probation_start_date">试用期开始日期</label><input id="probation_start_date" name="probation_start_date" type="date"><small class="field-help">没有试用期时无需填写；填写后请补充试用期月数和工资。</small></div>
                 <div class="field condition-row" id="probation-month-row"><label for="probation_months"><span class="required">*</span>试用期（月）</label><input id="probation_months" name="probation_months" type="number" min="1" max="6" placeholder="例如：3"></div>
                 <div class="field condition-row" id="probation-end-row"><label>试用期结束日期</label><output id="probation_end_date" class="derived">填写试用期后自动计算</output></div>
                 <div class="field"><label for="working_hours"><span class="required">*</span>工时制</label><select id="working_hours" name="working_hours" required><option value="">请选择</option><option>标准工时</option><option>综合工时</option><option>不定时工时</option></select></div>
                 <div class="field"><label for="salary_type"><span class="required">*</span>工资形式</label><select id="salary_type" name="salary_type" required><option value="按月">按月</option><option value="按日">按日</option><option value="按小时">按小时</option></select></div>
+                <div class="field"><label for="base_salary"><span class="required">*</span>基本工资</label><div class="input-prefix"><span>￥</span><input id="base_salary" name="base_salary" type="number" min="0.01" step="0.01" required placeholder="0.00"></div></div>
+                <div class="field"><label for="other_salary">其他工资项目（如有）</label><input id="other_salary" name="other_salary" type="text" maxlength="1000" placeholder="例如：绩效工资按考核结果发放"></div>
+                <div class="field condition-row" id="probation-salary-row"><label for="probation_salary"><span class="required">*</span>试用期基本工资</label><div class="input-prefix"><span>￥</span><input id="probation_salary" name="probation_salary" type="number" min="0" step="0.01" placeholder="填写试用期时必填"></div></div>
+                <div class="field condition-row" id="probation-other-salary-row"><label for="probation_other_salary">试用期其他工资项目（如有）</label><input id="probation_other_salary" name="probation_other_salary" type="text" maxlength="1000" placeholder="可填写金额或文字说明"></div>
               </div>
             </section>
 
             <section class="form-section" data-step-panel="3" aria-labelledby="onboarding-step-3">
-              <div class="section-heading"><div><h2 id="onboarding-step-3">薪资与社保</h2><p>请填写基本工资和社保公积金信息。</p></div><span class="inline-note">基本工资、发薪周期和缴纳地为必要信息。</span></div>
+              <div class="section-heading"><div><h2 id="onboarding-step-3">社保公积金</h2><p>请填写缴纳地、起缴月和缴费工资。</p></div></div>
               <div class="form-grid three">
-                <div class="field"><label for="base_salary"><span class="required">*</span>基本工资</label><div class="input-prefix"><span>￥</span><input id="base_salary" name="base_salary" type="number" min="0.01" step="0.01" required placeholder="0.00"></div></div>
-                <div class="field"><label for="other_salary">其他工资项目（如有）</label><div class="input-prefix"><span>￥</span><input id="other_salary" name="other_salary" type="text" placeholder="0.00"></div></div>
-                <div class="field"><label for="probation_salary">试用期工资</label><div class="input-prefix"><span>￥</span><input id="probation_salary" name="probation_salary" type="number" min="0" step="0.01" placeholder="填写试用期时必填"></div></div>
-                <div class="field"><label for="social_location"><span class="required">*</span>缴纳地</label><input id="social_location" name="social_location" required placeholder="例如：宁波北仑"></div>
+                <div class="field"><label for="social_location"><span class="required">*</span>缴纳地</label><input id="social_location" name="social_location" list="social-location-options" required placeholder="请选择或输入实际缴纳地"><datalist id="social-location-options"></datalist><small id="social-location-help" class="field-help">找不到缴纳地时可填写实际地点，并在备注中补充说明。</small></div>
                 <div class="field"><label for="social_start_month"><span class="required">*</span>社保起缴月</label><select id="social_start_month" name="social_start_month" required><option value="">请选择</option><option>1月</option><option>2月</option><option>3月</option><option>4月</option><option>5月</option><option>6月</option><option>7月</option><option>8月</option><option>9月</option><option>10月</option><option>11月</option><option>12月</option></select></div>
                 <div class="field"><label for="social_base"><span class="required">*</span>社保缴费工资</label><div class="input-prefix"><span>￥</span><input id="social_base" name="social_base" type="number" min="0.01" step="0.01" required placeholder="0.00"></div></div>
                 <div class="field"><label for="fund_base"><span class="required">*</span>公积金缴费工资</label><div class="input-prefix"><span>￥</span><input id="fund_base" name="fund_base" type="number" min="0.01" step="0.01" required placeholder="0.00"></div></div>
-                <div class="field"><label>公积金比例</label><output class="derived">按合同主体自动带出</output></div>
+                <div class="field"><label for="fund_ratio"><span id="fund-ratio-required" class="required hidden">*</span>公积金比例</label><select id="fund_ratio" name="fund_ratio" disabled><option value="">请先选择缴纳地</option></select><small id="fund-ratio-help" class="field-help">按缴纳地提供可选比例。</small></div>
+                <div class="field full"><label for="remark">社保公积金备注</label><textarea id="remark" name="remark" rows="3" maxlength="1000" placeholder="如有特殊城市要求或其他补充信息，请在此说明。"></textarea></div>
               </div>
             </section>
 
             <section class="form-section" data-step-panel="4" aria-labelledby="onboarding-step-4">
-              <div class="section-heading"><div><h2 id="onboarding-step-4">银行卡与确认</h2><p>提交前请再次核对员工证件、合同和银行卡信息。</p></div><span class="inline-note">银行卡信息仅用于薪酬发放登记。</span></div>
+              <div class="section-heading"><div><h2 id="onboarding-step-4">银行卡与确认</h2><p>如不由外服联系员工收集该信息，则需在本次收集页面填写。</p></div><span class="inline-note">银行卡信息仅用于薪酬发放登记。</span></div>
               <div class="form-grid">
                 <div class="field"><label for="bank_name">开户银行</label><input id="bank_name" name="bank_name" placeholder="请输入开户银行"></div>
                 <div class="field full"><label for="bank_account">银行借记卡帐号</label><input id="bank_account" name="bank_account" inputmode="numeric" pattern="[0-9]{8,30}" minlength="8" maxlength="30" title="请输入8-30位数字，不能包含空格或括号" placeholder="请输入8-30位银行卡号"></div>
@@ -879,7 +881,8 @@
                 <div class="field"><label for="resignation_mobile"><span class="required">*</span>移动电话</label><input id="resignation_mobile" name="mobile" required pattern="^1[3-9]\d{9}$" placeholder="请输入11位手机号码"></div>
                 <div class="field"><label for="resignation_email">电子邮件</label><input id="resignation_email" name="email" type="email" placeholder="选填"></div>
                 <div class="field"><label for="resignation_date"><span class="required">*</span>离职日期</label><input id="resignation_date" name="resignation_date" type="date" required></div>
-                <div class="field"><label for="stop_month"><span class="required">*</span>社保公积金停缴年月</label><input id="stop_month" name="social_stop_month" type="month" required><small class="field-help">填写该年月表示该月起不再产生社保、公积金费用。</small></div>
+                <div class="field"><label for="resignation_social_location"><span class="required">*</span>缴纳地</label><input id="resignation_social_location" name="social_location" list="resignation-social-location-options" required placeholder="请选择或输入实际缴纳地"><datalist id="resignation-social-location-options"></datalist></div>
+                <div class="field"><label for="stop_month"><span class="required">*</span>社保公积金停保月（几月不产生费用填几月）</label><input id="stop_month" name="social_stop_month" type="month" required><small class="field-help">填写该年月表示该月起不再产生社保、公积金费用。</small></div>
                 <div class="field"><label for="resignation_reason"><span class="required">*</span>离职原因</label><select id="resignation_reason" name="resignation_reason" required><option value="">加载离职原因后选择</option></select></div>
               </div>
             </section>
@@ -1053,7 +1056,7 @@
 
     function currentStepValid() {
       const panel = document.querySelector('[data-step-panel="' + portalState.onboardingStep + '"]');
-      for (const field of panel.querySelectorAll('input, select')) {
+      for (const field of panel.querySelectorAll('input, select, textarea')) {
         if (field.offsetParent !== null && !field.checkValidity()) { field.reportValidity(); return false; }
       }
       return true;
@@ -1216,8 +1219,6 @@ excelInput.addEventListener('change', () => updateFileDropzone(excelInput, excel
       document.getElementById('contract_end_date').textContent = isOpen ? '无固定期限，不需要填写终止日期' : (addMonths(contractStart, duration.value) || '填写开始日期和期限后自动计算');
       const socialStartMonth = document.getElementById('social_start_month');
       if (contractStart && !socialStartMonth.value) socialStartMonth.value = Number(contractStart.slice(5, 7)) + '月';
-      const probationStart = document.getElementById('probation_start_date');
-      if (contractStart && !probationStart.value) probationStart.value = contractStart;
       updateProbationDates();
     }
     function updateProbationDates() {
@@ -1226,6 +1227,13 @@ excelInput.addEventListener('change', () => updateFileDropzone(excelInput, excel
       document.getElementById('probation-month-row').classList.toggle('visible', hasStart);
       document.getElementById('probation-end-row').classList.toggle('visible', hasStart);
       months.required = hasStart;
+      months.disabled = !hasStart;
+      const salary = document.getElementById('probation_salary');
+      salary.required = hasStart;
+      salary.disabled = !hasStart;
+      document.getElementById('probation_other_salary').disabled = !hasStart;
+      document.getElementById('probation-salary-row').classList.toggle('visible', hasStart);
+      document.getElementById('probation-other-salary-row').classList.toggle('visible', hasStart);
       document.getElementById('probation_end_date').textContent = hasStart ? (addMonths(document.getElementById('probation_start_date').value, months.value) || '填写试用期月数后自动计算') : '填写试用期后自动计算';
     }
     ['contract_type', 'contract_start_date', 'contract_duration'].forEach((id) => document.getElementById(id).addEventListener('input', updateContractDates));

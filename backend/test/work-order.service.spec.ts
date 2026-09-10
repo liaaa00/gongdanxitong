@@ -2,6 +2,7 @@ import { HttpException } from '@nestjs/common';
 import { Workbook } from 'exceljs';
 import { Repository } from 'typeorm';
 import {
+  Branch,
   BusinessScope,
   DispatchedOrder,
   DispatchedOrderStatus,
@@ -39,6 +40,7 @@ type RepositoryMock<T> = {
   createQueryBuilder: jest.Mock;
   manager: {
     transaction: jest.Mock;
+    getRepository: jest.Mock;
   };
 };
 
@@ -66,6 +68,7 @@ function createRepositoryMock<T>(): RepositoryMock<T> {
     createQueryBuilder: jest.fn(),
     manager: {
       transaction: jest.fn(),
+      getRepository: jest.fn(),
     },
   };
 }
@@ -158,6 +161,7 @@ describe('WorkOrderService unit tests', () => {
   let validationService: {
     resolveCustomerId: jest.Mock;
     resolveDepartmentId: jest.Mock;
+    resolveBranchId: jest.Mock;
     generateOrderNo: jest.Mock;
     requireText: jest.Mock;
     validateWorkOrder: jest.Mock;
@@ -177,6 +181,7 @@ describe('WorkOrderService unit tests', () => {
     validationService = {
       resolveCustomerId: jest.fn(async () => 'customer-1'),
       resolveDepartmentId: jest.fn(async () => 'dep-sales'),
+      resolveBranchId: jest.fn(async () => 'legacy-branch'),
       generateOrderNo: jest.fn(async () => 'ON20260511001'),
       requireText: jest.fn((value: unknown) => String(value)),
       validateWorkOrder: jest.fn(async () => undefined),
@@ -192,7 +197,7 @@ describe('WorkOrderService unit tests', () => {
       notificationRepository as unknown as Repository<Notification>,
       operationLogRepository as unknown as Repository<OperationLog>,
       validationService as unknown as WorkOrderValidationService,
-      { getVisibleFieldsForScenario: jest.fn(async () => []) } as never,
+      { getVisibleFieldsForScenario: jest.fn(async () => []), getPermissionsForUser: jest.fn(async () => new Map([['employee_name', 'visible'], ['mobile', 'readonly']])) } as never,
     );
   });
 
@@ -248,6 +253,58 @@ describe('WorkOrderService unit tests', () => {
     expect(operationLogRepository.save).toHaveBeenCalledTimes(1);
     expect(result.id).toBe('wo-1');
     expect(result.extraData.need_company_contract).toBe('是');
+  });
+
+  it('keeps the existing branch resolver for callers that do not specify a portal branch', async () => {
+    workOrderRepository.save.mockResolvedValue(makeWorkOrder());
+    workOrderRepository.findOne.mockResolvedValue(makeWorkOrder());
+    await service.createDraft({ orderType: OrderType.ONBOARDING, extraData: { employee_name: 'Alice', id_card_no: '110101199001011234', customer_code: 'C001' } }, makeUser());
+    expect(validationService.resolveBranchId).toHaveBeenCalledWith(undefined, 'customer-1', expect.any(Object), BusinessScope.BEILUN);
+    expect(workOrderRepository.create).toHaveBeenCalledWith(expect.objectContaining({ branchId: 'legacy-branch', branchCode: 'C001' }));
+    expect(workOrderRepository.manager.getRepository).not.toHaveBeenCalled();
+  });
+
+  it('does not guess a branch or retain client branch codes when a portal location is not mapped', async () => {
+    workOrderRepository.save.mockResolvedValue(makeWorkOrder());
+    workOrderRepository.findOne.mockResolvedValue(makeWorkOrder());
+    await service.createDraft({
+      orderType: OrderType.ONBOARDING,
+      extraData: { employee_name: 'Alice', id_card_no: '110101199001011234', customer_code: 'C001', branchId: 'wrong-branch', branch_code: 'WRONG' },
+    }, makeUser(), null);
+    expect(validationService.resolveBranchId).not.toHaveBeenCalled();
+    expect(workOrderRepository.manager.getRepository).not.toHaveBeenCalled();
+    expect(workOrderRepository.create).toHaveBeenCalledWith(expect.objectContaining({
+      branchId: null, branchCode: null,
+      extraData: expect.not.objectContaining({ branchId: expect.anything(), branch_code: expect.anything() }),
+    }));
+  });
+
+  it('uses an explicitly matched active customer branch and its authoritative code', async () => {
+    const branchRepo = createRepositoryMock<Branch>();
+    branchRepo.findOne.mockResolvedValue({ id: 'matched-branch', customerId: 'customer-1', businessScope: BusinessScope.BEILUN, isActive: true, branchCode: 'SH-002' });
+    workOrderRepository.manager.getRepository.mockReturnValue(branchRepo);
+    workOrderRepository.save.mockResolvedValue(makeWorkOrder());
+    workOrderRepository.findOne.mockResolvedValue(makeWorkOrder());
+    await service.createDraft({
+      orderType: OrderType.ONBOARDING,
+      extraData: { employee_name: 'Alice', id_card_no: '110101199001011234', customer_code: 'C001', branch_code: 'WRONG' },
+    }, makeUser(), 'matched-branch');
+    expect(branchRepo.findOne).toHaveBeenCalledWith({ where: { id: 'matched-branch', customerId: 'customer-1', businessScope: BusinessScope.BEILUN, isActive: true } });
+    expect(validationService.resolveBranchId).not.toHaveBeenCalled();
+    expect(workOrderRepository.create).toHaveBeenCalledWith(expect.objectContaining({ branchId: 'matched-branch', branchCode: 'SH-002', extraData: expect.objectContaining({ branchId: 'matched-branch', branch_code: 'SH-002' }) }));
+  });
+
+  it.each([
+    { customerId: 'other-customer', businessScope: BusinessScope.BEILUN, isActive: true },
+    { customerId: 'customer-1', businessScope: BusinessScope.OUT_OF_PROVINCE, isActive: true },
+    { customerId: 'customer-1', businessScope: BusinessScope.BEILUN, isActive: false },
+  ])('rejects a portal branch outside the matched customer scope: %p', async (record) => {
+    const branchRepo = createRepositoryMock<Branch>();
+    branchRepo.findOne.mockImplementation(async ({ where }) => Object.entries(record).every(([key, value]) => where[key] === value) ? { ...record, id: 'branch-1' } : null);
+    workOrderRepository.manager.getRepository.mockReturnValue(branchRepo);
+    await expect(service.createDraft({ orderType: OrderType.ONBOARDING, extraData: { employee_name: 'Alice', id_card_no: '110101199001011234' } }, makeUser(), 'branch-1')).rejects.toThrow('门户办理商社');
+    expect(workOrderRepository.save).not.toHaveBeenCalled();
+    expect(validationService.resolveBranchId).not.toHaveBeenCalled();
   });
 
   it('inherits the latest valid onboarding contract subject when creating a resignation draft', async () => {
@@ -421,6 +478,28 @@ describe('WorkOrderService unit tests', () => {
     }));
     expect(operationLogRepository.save).toHaveBeenCalledTimes(1);
     expect(result.employeeName).toBe('Bob');
+  });
+
+  it('blocks dispatch of persisted pending portal configuration before a payload can clear it', async () => {
+    const draft = makeWorkOrder({ extraData: { employee_name: 'Alice', portal_configuration_pending: true } });
+    const txWorkOrderRepo = createRepositoryMock<WorkOrder>();
+    txWorkOrderRepo.findOne.mockResolvedValue(draft);
+    const manager: TransactionManagerMock = { query: jest.fn(async () => []), getRepository: jest.fn((entity) => entity === WorkOrder ? txWorkOrderRepo : createRepositoryMock<unknown>()) };
+    workOrderRepository.manager.transaction.mockImplementation(async (callback) => callback(manager));
+    await expect(service.submit('wo-1', { extraData: { portal_configuration_pending: false, employee_name: 'Changed' } }, makeUser())).rejects.toThrow('门户办理配置尚未补齐');
+    expect(manager.query).toHaveBeenCalledWith('SELECT pg_advisory_xact_lock(hashtext($1))', ['work_order:submit:wo-1']);
+    expect(draft.extraData.portal_configuration_pending).toBe(true);
+    expect(draft.extraData.employee_name).toBe('Alice');
+    expect(validationService.validateWorkOrder).not.toHaveBeenCalled();
+    expect(txWorkOrderRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('does not allow ordinary draft updates to clear the pending portal configuration flag before submission', async () => {
+    const draft = makeWorkOrder({ extraData: { employee_name: 'Alice', portal_configuration_pending: true } });
+    workOrderRepository.findOne.mockResolvedValue(draft);
+    await expect(service.update('wo-1', { extraData: { portal_configuration_pending: false } }, makeUser())).rejects.toThrow('只能通过客户办理配置同步更新');
+    expect(draft.extraData.portal_configuration_pending).toBe(true);
+    expect(workOrderRepository.save).not.toHaveBeenCalled();
   });
 
   it('submits a draft, builds onboarding children via helper, and notifies handlers', async () => {
@@ -939,6 +1018,41 @@ describe('WorkOrderService unit tests', () => {
   it('does not expose the legacy confirmImport bypass on WorkOrderService', () => {
     expect('confirmImport' in service).toBe(false);
     expect((service as unknown as { confirmImport?: unknown }).confirmImport).toBeUndefined();
+  });
+
+  it('requires a claimed portal reviewer and protects source fields before submit',async()=>{
+    const guard=(service as unknown as {assertPortalReviewWrite(order:WorkOrder,user:JwtUserPayload,patch?:Record<string,unknown>):Promise<void>}).assertPortalReviewWrite.bind(service);
+    const portal=makeWorkOrder({extraData:{portal_intake_key:'intake',portal_reviewed_by:'other'}});
+    await expect(guard(portal,makeUser())).rejects.toThrow('认领');
+    portal.extraData.portal_reviewed_by='user-sales-1';
+    await expect(guard(portal,makeUser())).resolves.toBeUndefined();
+    await expect(guard(portal,makeUser(),{employee_name:'Changed'})).resolves.toBeUndefined();
+    await expect(guard(portal,makeUser(),{mobile:'Changed'})).rejects.toThrow('无权修改');
+    await expect(guard(portal,makeUser(),{portal_intake_key:'Changed'})).rejects.toThrow('系统配置维护');
+  });
+
+  it.each([{ customerId: 'other-customer' }, { departmentId: 'other-department' }])('protects portal identity during update: %p', async (patch) => {
+    const portal = makeWorkOrder({extraData:{portal_intake_key:'intake',portal_reviewed_by:'user-sales-1'}});
+    workOrderRepository.findOne.mockResolvedValue(portal);
+    await expect(service.update(portal.id,patch,makeUser())).rejects.toThrow('客户和审核部门不可');
+    expect(portal.customerId).toBe('customer-1');
+    expect(portal.departmentId).toBe('dep-sales');
+    expect(workOrderRepository.save).not.toHaveBeenCalled();
+  });
+
+  it.each([false, 'false'])('normalizes explicit portal false (%p) to the active dropdown before business validation', async (value) => {
+    const portal = makeWorkOrder({extraData:{portal_intake_key:'intake',portal_reviewed_by:'user-sales-1',need_esign:value,need_company_contract:true}});
+    fieldConfigRepository.find.mockResolvedValue([
+      {fieldCode:'need_esign',dropdownOptions:['1.是','2.否']},
+      {fieldCode:'need_company_contract',dropdownOptions:['是','否']},
+    ]);
+    const manager: TransactionManagerMock = {query:jest.fn(async()=>[]),getRepository:jest.fn(()=>workOrderRepository)};
+    workOrderRepository.manager.transaction.mockImplementation(async callback=>callback(manager));
+    workOrderRepository.findOne.mockResolvedValue(portal);
+    validationService.validateWorkOrder.mockRejectedValue(new Error('validation checkpoint'));
+    await expect(service.submit(portal.id,{},makeUser())).rejects.toThrow('validation checkpoint');
+    expect(validationService.validateWorkOrder).toHaveBeenCalledWith(expect.objectContaining({extraData:expect.objectContaining({need_esign:'2.否',need_company_contract:'是'})}));
+    expect(workOrderRepository.save).not.toHaveBeenCalled();
   });
 
 });

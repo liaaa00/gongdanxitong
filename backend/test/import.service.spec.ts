@@ -785,3 +785,80 @@ describe('contract subject relation import scope', () => {
     expect(result.errors).not.toContainEqual(expect.objectContaining({ fieldCode: 'fund_ratio' }));
   });
 });
+
+describe('portal intake validation boundary', () => {
+  const portalFields = [
+    field({ fieldCode: 'employee_name', fieldName: '姓名', isRequired: true }),
+    field({ fieldCode: 'id_card_no', fieldName: '身份证号', isRequired: true, validationRegex: '^[0-9Xx]{18}$' }),
+    field({ fieldCode: 'mobile', fieldName: '手机号', validationRegex: '^1[3-9][0-9]{9}$' }),
+    field({ fieldCode: 'social_location', fieldName: '缴纳地' }),
+    field({ fieldCode: 'contract_subject', fieldName: '劳动合同主体' }),
+    field({ fieldCode: 'need_onboarding_contact', fieldName: '是否集约收集' }),
+    field({ fieldCode: 'bank_account', fieldName: '银行卡号', validationRegex: '^[0-9]{8,30}$' }),
+    field({ fieldCode: 'probation_start_date', fieldName: '试用期开始日期', fieldType: FieldType.DATE }),
+    field({ fieldCode: 'probation_months', fieldName: '试用期月数', fieldType: FieldType.NUMBER, conditionalRequired: { field: 'probation_start_date', op: 'EXISTS' } }),
+    field({ fieldCode: 'probation_end_date', fieldName: '试用期结束日期', fieldType: FieldType.DATE, conditionalRequired: { field: 'probation_start_date', op: 'EXISTS' } }),
+    field({ fieldCode: 'probation_salary', fieldName: '试用期工资', fieldType: FieldType.NUMBER, conditionalRequired: { field: 'probation_start_date', op: 'EXISTS' } }),
+  ];
+  const portalMapping = portalFields.map((item) => ({ header: item.fieldCode, fieldCode: item.fieldCode }));
+
+  function fixture() {
+    const subjects = { findByName: jest.fn().mockResolvedValue(null), findFundRuleByLocation: jest.fn().mockResolvedValue(null) };
+    return { subjects, service: new ImportFieldValidationService({} as never, new AstEvaluator(), undefined, subjects as never) };
+  }
+
+  it('keeps internal relation and bank requirements strict while portal intake defers those internal decisions', async () => {
+    const { subjects, service } = fixture();
+    const input = {
+      rowNo: 2, orderType: OrderType.ONBOARDING, fields: portalFields, mapping: portalMapping,
+      raw: { employee_name: '测试员工', id_card_no: '330102199001010011', social_location: '待配置城市', contract_subject: '待内部确认主体', need_onboarding_contact: '否' },
+    };
+    const internal = await service.validateRow(input);
+    expect(internal.ok).toBe(false);
+    expect(internal.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ fieldCode: 'contract_subject', reason: 'enum' }),
+      expect.objectContaining({ fieldCode: 'social_location', reason: 'relation' }),
+      expect.objectContaining({ fieldCode: 'bank_account', reason: 'required' }),
+      expect.objectContaining({ fieldCode: 'payroll_location', reason: 'required' }),
+    ]));
+    subjects.findByName.mockClear();
+    subjects.findFundRuleByLocation.mockClear();
+
+    const portal = await service.validateRow({ ...input, context: 'portal_intake' });
+    expect(portal.ok).toBe(true);
+    expect(portal.normalized.social_location).toBe('待配置城市');
+    expect(portal.normalized.birth_date).toBe('1990-01-01');
+    expect(subjects.findByName).not.toHaveBeenCalled();
+    expect(subjects.findFundRuleByLocation).not.toHaveBeenCalled();
+  });
+
+  it('still rejects missing customer fields and invalid mobile or bank formats during portal intake', async () => {
+    const { service } = fixture();
+    const result = await service.validateRow({
+      rowNo: 3, orderType: OrderType.ONBOARDING, fields: portalFields, mapping: portalMapping, context: 'portal_intake',
+      raw: { employee_name: '', id_card_no: 'bad-id', mobile: '123', bank_account: 'abc' },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ fieldCode: 'employee_name', reason: 'required' }),
+      expect.objectContaining({ fieldCode: 'id_card_no', reason: 'regex' }),
+      expect.objectContaining({ fieldCode: 'mobile', reason: 'regex' }),
+      expect.objectContaining({ fieldCode: 'bank_account', reason: 'regex' }),
+    ]));
+  });
+
+  it('continues deriving probation dates and enforces probation salary in portal intake', async () => {
+    const { service } = fixture();
+    const input = {
+      rowNo: 4, orderType: OrderType.ONBOARDING, fields: portalFields, mapping: portalMapping, context: 'portal_intake' as const,
+      raw: { employee_name: '测试员工', id_card_no: '330102199001010011', probation_start_date: '2026-06-01', probation_months: '3' },
+    };
+    const missing = await service.validateRow(input);
+    expect(missing.ok).toBe(false);
+    expect(missing.normalized.probation_end_date).toBe('2026-08-31');
+    expect(missing.errors).toContainEqual(expect.objectContaining({ fieldCode: 'probation_salary', reason: 'required' }));
+    const valid = await service.validateRow({ ...input, raw: { ...input.raw, probation_salary: '8000' } });
+    expect(valid.ok).toBe(true);
+    expect(valid.normalized.probation_salary).toBe(8000);
+  });
+});

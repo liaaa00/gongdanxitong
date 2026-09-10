@@ -3,17 +3,20 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { PageContainer } from '@ant-design/pro-components';
 import {
   Alert, App, Button, Card, Col, Descriptions, Drawer, Form, Input, InputNumber,
-  Row, Select, Space, Switch, Table, Tabs, Tag, Typography,
+  Modal, Popconfirm, Row, Select, Space, Switch, Table, Tabs, Tag, Typography,
 } from 'antd';
 import { ArrowRightOutlined, EditOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import RuleBatchActions from './RuleBatchActions';
-import { COMPLETE_BUSINESS_TYPES, DEFAULT_RESULT_FIELDS } from './ruleExcel';
+import LocationRulesEditor from './LocationRulesEditor';
+import { COMPLETE_BUSINESS_TYPES, CUSTOMER_RULE_FIELD_LABELS, DEFAULT_RESULT_FIELDS } from './ruleExcel';
 import {
-  getCustomerRule, getCustomerRules, updateCustomerRule,
-  type CustomerRuleItem, type SaveCustomerRuleInput,
+  fillPendingCustomerRules, getCustomerRule, getCustomerRules, updateCustomerRule,
+  type CustomerRuleItem, type FillPendingRulesResult, type RuleValue, type SaveCustomerRuleInput,
 } from '@/services/customerRules';
 
 const YES_NO_OPTIONS = [{ label: '是', value: true }, { label: '否', value: false }];
+const hasRuleValue = (value: unknown) => value !== undefined && value !== null && (typeof value !== 'string' || value.trim() !== '');
+const definedDefaults = (values: Record<string, RuleValue> = {}) => Object.fromEntries(Object.entries(values).filter(([, value]) => hasRuleValue(value)));
 interface CustomerRulesProps { embedded?: boolean }
 
 const CustomerRules: React.FC<CustomerRulesProps> = ({ embedded = false }) => {
@@ -26,6 +29,9 @@ const CustomerRules: React.FC<CustomerRulesProps> = ({ embedded = false }) => {
   const [saving, setSaving] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [current, setCurrent] = useState<CustomerRuleItem | null>(null);
+  const [activeTab, setActiveTab] = useState('onboarding');
+  const [filling, setFilling] = useState(false);
+  const [fillResult, setFillResult] = useState<FillPendingRulesResult | null>(null);
   const [keyword, setKeyword] = useState('');
   const [appliedKeyword, setAppliedKeyword] = useState('');
   const [page, setPage] = useState(1);
@@ -37,6 +43,7 @@ const CustomerRules: React.FC<CustomerRulesProps> = ({ embedded = false }) => {
     form.setFieldsValue({
       onboardingDefaults: detail.onboardingDefaults || {},
       resignationDefaults: detail.resignationDefaults || {},
+      paymentLocationRules: detail.paymentLocationRules || [],
       salaryRules: detail.salaryRules || { billingDay: null, reminderEnabled: true, reminderWorkdayOffsets: [3, 2, 1] },
       sharedEmailRules: detail.sharedEmailRules || { mailbox: '', routeKey: '' },
       completionEmailEnabled: detail.completionEmailEnabled,
@@ -68,6 +75,8 @@ const CustomerRules: React.FC<CustomerRulesProps> = ({ embedded = false }) => {
   const openRule = async (record: Pick<CustomerRuleItem, 'customerId'>) => {
     setDrawerOpen(true);
     setCurrent(null);
+    setActiveTab('onboarding');
+    setFillResult(null);
     form.resetFields();
     try {
       const detail = await getCustomerRule(record.customerId);
@@ -90,10 +99,20 @@ const CustomerRules: React.FC<CustomerRulesProps> = ({ embedded = false }) => {
     if (!current) return;
     let values: SaveCustomerRuleInput;
     try { await form.validateFields(); values = form.getFieldsValue(true); } catch { return; }
+    const onboarding = values.onboardingDefaults || {};
+    if (Object.values(onboarding).some(hasRuleValue) && !String(onboarding.employee_type ?? '').trim()) {
+      setActiveTab('onboarding');
+      form.setFields([{ name: ['onboardingDefaults', 'employee_type'], errors: ['填写入职规则时必须配置员工类型'] }]);
+      return;
+    }
     const payload: SaveCustomerRuleInput = {
       ...values,
       onboardingDefaults: Object.fromEntries(Object.entries(values.onboardingDefaults || {}).map(([key, value]) => [key, value === undefined || value === '' ? null : value])),
       resignationDefaults: Object.fromEntries(Object.entries(values.resignationDefaults || {}).map(([key, value]) => [key, value === undefined || value === '' ? null : value])),
+      paymentLocationRules: (values.paymentLocationRules || []).map((rule) => ({
+        ...rule, socialLocation: rule.socialLocation?.trim(), branchId: rule.branchId?.trim(),
+        onboardingDefaults: definedDefaults(rule.onboardingDefaults), resignationDefaults: definedDefaults(rule.resignationDefaults),
+      })),
       completionEmailReplyTo: values.completionEmailReplyTo || null,
       salaryRules: { ...values.salaryRules, reminderWorkdayOffsets: [3, 2, 1] },
       completionEmailBusinessTypes: [...COMPLETE_BUSINESS_TYPES],
@@ -111,6 +130,19 @@ const CustomerRules: React.FC<CustomerRulesProps> = ({ embedded = false }) => {
       message.error(error?.message || '客户规则保存失败');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const fillPending = async () => {
+    if (!current) return;
+    setFilling(true);
+    try {
+      const result = await fillPendingCustomerRules(current.customerId);
+      setFillResult(result);
+    } catch (error: unknown) {
+      message.error(error instanceof Error ? error.message : '填充待提交草稿失败');
+    } finally {
+      setFilling(false);
     }
   };
 
@@ -152,7 +184,9 @@ const CustomerRules: React.FC<CustomerRulesProps> = ({ embedded = false }) => {
       <Drawer
         open={drawerOpen} width="min(880px, 100vw)" title={current ? `客户规则 · ${current.customerName}` : '客户规则'}
         onClose={() => setDrawerOpen(false)}
-        extra={<Space><Button onClick={() => setDrawerOpen(false)}>关闭</Button><Button type="primary" loading={saving} onClick={() => void save()}>保存并校验</Button></Space>}
+        extra={<Space wrap><Popconfirm title="使用已保存规则填充待提交草稿？" description="只填空白字段，保留已填写内容。页面修改请先保存。" okText="开始填充" cancelText="取消" onConfirm={fillPending}>
+          <Button loading={filling} disabled={!current?.configured || saving}>填充待提交草稿</Button>
+        </Popconfirm><Button onClick={() => setDrawerOpen(false)}>关闭</Button><Button type="primary" loading={saving} onClick={() => void save()}>保存并校验</Button></Space>}
       >
         {current && <Descriptions size="small" column={{ xs: 1, sm: 2 }} bordered style={{ marginBottom: 16 }} items={[
           { key: 'code', label: '客户编码', children: current.customerCode },
@@ -161,17 +195,17 @@ const CustomerRules: React.FC<CustomerRulesProps> = ({ embedded = false }) => {
           { key: 'updated', label: '最后更新', children: current.updatedAt ? new Date(current.updatedAt).toLocaleString('zh-CN', { hour12: false }) : '-' },
         ]} />}
         <Form form={form} layout="vertical" initialValues={{
-          onboardingDefaults: {}, resignationDefaults: {},
+          onboardingDefaults: {}, resignationDefaults: {}, paymentLocationRules: [],
           salaryRules: { billingDay: null, reminderEnabled: true, reminderWorkdayOffsets: [3, 2, 1] },
           sharedEmailRules: { mailbox: '', routeKey: '' }, completionEmailEnabled: false,
           completionEmailTo: [], completionEmailCc: [], completionEmailBusinessTypes: [...COMPLETE_BUSINESS_TYPES],
           completionEmailFields: DEFAULT_RESULT_FIELDS, isActive: true,
         }}>
-          <Tabs items={[
+          <Tabs activeKey={activeTab} onChange={setActiveTab} items={[
             { key: 'onboarding', label: '入职规则', children: <Row gutter={16}>
               <Col xs={24} md={12}><Form.Item name={['onboardingDefaults', 'business_mode']} label="业务模式"><Input /></Form.Item></Col>
               <Col xs={24} md={12}><Form.Item name={['onboardingDefaults', 'outsource_type']} label="外包类型"><Input /></Form.Item></Col>
-              <Col xs={24} md={12}><Form.Item name={['onboardingDefaults', 'employee_type']} label="员工类型"><Input /></Form.Item></Col>
+              <Col xs={24} md={12}><Form.Item name={['onboardingDefaults', 'employee_type']} label="员工类型" extra="填写任一入职规则时必填；仅配置薪资可保持整组入职规则为空。"><Input /></Form.Item></Col>
               <Col xs={24} md={12}><Form.Item name={['onboardingDefaults', 'fund_ratio']} label="公积金比例"><Input placeholder="例如：5%+5%" /></Form.Item></Col>
               <Col xs={24} md={12}><Form.Item name={['onboardingDefaults', 'contract_subject']} label="合同主体"><Input /></Form.Item></Col>
               <Col xs={24} md={12}><Form.Item name={['onboardingDefaults', 'company_address']} label="企业地址"><Input /></Form.Item></Col>
@@ -184,6 +218,13 @@ const CustomerRules: React.FC<CustomerRulesProps> = ({ embedded = false }) => {
               <Col xs={24} md={12}><Form.Item name={['onboardingDefaults', 'need_onboarding_contact']} label="需要入职联系"><Select allowClear options={YES_NO_OPTIONS} /></Form.Item></Col>
               <Col xs={24} md={12}><Form.Item name={['onboardingDefaults', 'need_company_payroll']} label="企业发薪"><Select allowClear options={YES_NO_OPTIONS} /></Form.Item></Col>
               <Col xs={24} md={12}><Form.Item name={['onboardingDefaults', 'payroll_location']} label="发薪地"><Input /></Form.Item></Col>
+              <Col xs={24} md={12}><Form.Item name={['onboardingDefaults', 'payroll_cycle']} label="发薪月份"><Select allowClear options={['当月', '次月'].map((value) => ({ label: value, value }))} /></Form.Item></Col>
+              <Col xs={24} md={12}><Form.Item name={['onboardingDefaults', 'payroll_date']} label="发薪日" rules={[{ pattern: /^(?:[1-9]|[12]\d|3[01])$/, message: '请输入1至31的整数' }]}><Input placeholder="1至31" addonAfter="日" maxLength={2} /></Form.Item></Col>
+              <Col xs={24} md={12}><Form.Item name={['onboardingDefaults', 'need_payroll_slip']} label="是否需要工资单"><Select allowClear options={['是', '否'].map((value) => ({ label: value, value }))} /></Form.Item></Col>
+              <Col span={24}><Alert type="info" showIcon style={{ marginBottom: 16 }} message="已购产品、服务费和押金为选填办理提醒" /></Col>
+              <Col xs={24} md={12}><Form.Item name={['onboardingDefaults', 'purchased_products']} label="已购产品"><Input /></Form.Item></Col>
+              <Col xs={24} md={12}><Form.Item name={['onboardingDefaults', 'service_fee']} label="服务费提醒"><Input /></Form.Item></Col>
+              <Col xs={24} md={12}><Form.Item name={['onboardingDefaults', 'deposit']} label="押金提醒"><Input /></Form.Item></Col>
               <Col xs={24} md={12}><Form.Item name={['onboardingDefaults', 'need_contract_urge']} label="催签合同"><Select allowClear options={YES_NO_OPTIONS} /></Form.Item></Col>
               <Col span={24}><Form.Item name={['onboardingDefaults', 'social_urge']} label="社保/公积金催办规则"><Input.TextArea rows={2} /></Form.Item></Col>
               <Col span={24}><Form.Item name={['onboardingDefaults', 'special_remark']} label="特殊说明"><Input.TextArea rows={3} /></Form.Item></Col>
@@ -197,11 +238,13 @@ const CustomerRules: React.FC<CustomerRulesProps> = ({ embedded = false }) => {
                 <Col xs={24} md={12}><Form.Item name={['resignationDefaults', 'cert_delivery_address']} label="送达地址" dependencies={[['resignationDefaults', 'need_resignation_cert']]} rules={[({ getFieldValue }) => ({ required: getFieldValue(['resignationDefaults', 'need_resignation_cert']) === '是', message: '需要开具离职证明时请填写送达地址' })]}><Input placeholder="邮箱或邮寄地址" /></Form.Item></Col>
               </Row>
             </> },
+            { key: 'locations', label: '缴纳地与商社', children: current ? <LocationRulesEditor customerId={current.customerId} form={form} /> : null },
             { key: 'salary', label: '薪资规则', children: <>
               <Alert type="info" showIcon style={{ marginBottom: 16 }} message="提醒节奏为会议最终口径，不允许修改" description="账单日前 3 个工作日提醒客户，前 2 个工作日再次提醒客户，前 1 个工作日升级提醒业务员。" />
               <Row gutter={16}>
                 <Col xs={24} md={12}><Form.Item name={['salaryRules', 'billingDay']} label="每月账单日"><InputNumber min={1} max={28} precision={0} addonAfter="日" style={{ width: '100%' }} /></Form.Item></Col>
                 <Col xs={24} md={12}><Form.Item name={['salaryRules', 'reminderEnabled']} label="启用薪资提醒" valuePropName="checked"><Switch checkedChildren="启用" unCheckedChildren="停用" /></Form.Item></Col>
+                <Col xs={24} md={12}><Form.Item name={['salaryRules', 'payrollMonthMode']} label="薪资发薪周期"><Select allowClear placeholder="选择薪资所属月份" options={[{ label: '当月发当月', value: 'current' }, { label: '当月发上月', value: 'previous' }]} /></Form.Item></Col>
               </Row>
               <Space wrap><Tag color="blue">前 3 个工作日 · 首次提醒客户</Tag><Tag color="geekblue">前 2 个工作日 · 再次提醒客户</Tag><Tag color="orange">前 1 个工作日 · 升级提醒业务员</Tag></Space>
             </> },
@@ -232,6 +275,17 @@ const CustomerRules: React.FC<CustomerRulesProps> = ({ embedded = false }) => {
           <Form.Item name="isActive" label="整套客户规则启用" valuePropName="checked"><Switch checkedChildren="启用" unCheckedChildren="停用" /></Form.Item>
         </Form>
       </Drawer>
+      <Modal open={fillResult !== null} title="待提交草稿填充明细" width={900} zIndex={1500} footer={<Button onClick={() => setFillResult(null)}>关闭明细</Button>} onCancel={() => setFillResult(null)}>
+        {fillResult && <>
+          <Alert type={fillResult.failedCount ? 'warning' : 'info'} showIcon message={`共 ${fillResult.total} 张草稿，已填充 ${fillResult.updatedCount} 张，跳过 ${fillResult.skippedCount} 张，失败 ${fillResult.failedCount || 0} 张`} style={{ marginBottom: 16 }} />
+          <Table rowKey="workOrderId" dataSource={fillResult.results} pagination={{ pageSize: 10 }} columns={[
+            { title: '工单编号', dataIndex: 'requestNo' },
+            { title: '结果', dataIndex: 'status', render: (status) => <Tag color={status === 'updated' ? 'success' : status === 'failed' ? 'error' : 'default'}>{status === 'updated' ? '已填充' : status === 'failed' ? '失败' : '已跳过'}</Tag> },
+            { title: '填充字段', dataIndex: 'fields', render: (fields?: string[]) => (fields || []).map((field) => CUSTOMER_RULE_FIELD_LABELS[field] || field).join('、') || '—' },
+            { title: '说明', dataIndex: 'message' },
+          ]} />
+        </>}
+      </Modal>
     </>
   );
 

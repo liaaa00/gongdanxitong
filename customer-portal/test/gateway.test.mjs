@@ -40,7 +40,9 @@ async function readRelayEvent(response) {
       continue;
     }
     const dataLine = block.split('\n').find((line) => line.startsWith('data:'));
-    return JSON.parse(dataLine.slice(5).trim());
+    const relay = JSON.parse(dataLine.slice(5).trim());
+    assert.match(relay.attemptId, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+    return relay;
   }
 }
 
@@ -52,14 +54,14 @@ async function connectConnector() {
   return response;
 }
 
-async function respond(requestId, result) {
+async function respond(relay, result) {
   const response = await fetch(baseUrl + '/agent/respond', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'X-Connector-Token': 'unit-test-token',
     },
-    body: JSON.stringify({ requestId, result }),
+    body: JSON.stringify({ requestId: relay.requestId, attemptId: relay.attemptId, result }),
   });
   assert.equal(response.status, 202);
 }
@@ -84,8 +86,8 @@ test('test request is relayed and completed exactly once', async () => {
   });
 
   const relay = await readRelayEvent(streamResponse);
-  assert.deepEqual(relay, { requestId: 'req-001', message: 'hello', action: 'test.echo' });
-  await respond(relay.requestId, 'connector-ok:hello');
+  assert.deepEqual(relay, { requestId: 'req-001', message: 'hello', action: 'test.echo', attemptId: relay.attemptId });
+  await respond(relay, 'connector-ok:hello');
 
   const completed = await requestPromise;
   assert.equal(completed.status, 200);
@@ -124,9 +126,9 @@ test('portal account login is relayed as a dedicated action', async () => {
   });
 
   const relay = await readRelayEvent(streamResponse);
-  assert.deepEqual(relay, { ...requestBody, action: 'portal_account.login' });
+  assert.deepEqual(relay, { ...requestBody, action: 'portal_account.login', attemptId: relay.attemptId });
   const result = { ok: true, linkToken: 'signed-token', customer: { id: 'customer-1' } };
-  await respond(relay.requestId, result);
+  await respond(relay, result);
   const completed = await requestPromise;
   assert.equal(completed.status, 200);
   assert.deepEqual(await completed.json(), { data: { requestId: 'login-001', result } });
@@ -164,9 +166,9 @@ test('onboarding intake is relayed as a controlled draft action', async () => {
   });
 
   const relay = await readRelayEvent(streamResponse);
-  assert.deepEqual(relay, { ...requestBody, action: 'onboarding.create_draft' });
+  assert.deepEqual(relay, { ...requestBody, action: 'onboarding.create_draft', attemptId: relay.attemptId });
   const result = { ok: true, status: 'DRAFT_CREATED', workOrderNo: 'ON20260901001' };
-  await respond(relay.requestId, result);
+  await respond(relay, result);
 
   const completed = await requestPromise;
   assert.equal(completed.status, 200);
@@ -195,9 +197,9 @@ test('onboarding attachments and Excel import routes relay dedicated actions', a
     body: JSON.stringify(attachmentRequest),
   });
   const attachmentRelay = await readRelayEvent(streamResponse);
-  assert.deepEqual(attachmentRelay, { ...attachmentRequest, action: 'shared_email.send_attachments' });
+  assert.deepEqual(attachmentRelay, { ...attachmentRequest, action: 'shared_email.send_attachments', attemptId: attachmentRelay.attemptId });
   const attachmentResult = { ok: true, attachmentIds: ['att-001'] };
-  await respond(attachmentRelay.requestId, attachmentResult);
+  await respond(attachmentRelay, attachmentResult);
   const attachmentCompleted = await attachmentPromise;
   assert.equal(attachmentCompleted.status, 200);
   assert.deepEqual(await attachmentCompleted.json(), {
@@ -216,9 +218,9 @@ test('onboarding attachments and Excel import routes relay dedicated actions', a
     body: JSON.stringify(previewRequest),
   });
   const previewRelay = await readRelayEvent(streamResponse);
-  assert.deepEqual(previewRelay, { ...previewRequest, action: 'onboarding.import_preview' });
+  assert.deepEqual(previewRelay, { ...previewRequest, action: 'onboarding.import_preview', attemptId: previewRelay.attemptId });
   const previewResult = { ok: true, fileId: 'import-001', headers: ['name'] };
-  await respond(previewRelay.requestId, previewResult);
+  await respond(previewRelay, previewResult);
   const previewCompleted = await previewPromise;
   assert.equal(previewCompleted.status, 200);
   assert.deepEqual(await previewCompleted.json(), {
@@ -237,9 +239,9 @@ test('onboarding attachments and Excel import routes relay dedicated actions', a
     body: JSON.stringify(confirmRequest),
   });
   const confirmRelay = await readRelayEvent(streamResponse);
-  assert.deepEqual(confirmRelay, { ...confirmRequest, action: 'onboarding.import_confirm' });
+  assert.deepEqual(confirmRelay, { ...confirmRequest, action: 'onboarding.import_confirm', attemptId: confirmRelay.attemptId });
   const confirmResult = { ok: true, jobId: 'job-001' };
-  await respond(confirmRelay.requestId, confirmResult);
+  await respond(confirmRelay, confirmResult);
   const confirmCompleted = await confirmPromise;
   assert.equal(confirmCompleted.status, 200);
   assert.deepEqual(await confirmCompleted.json(), {

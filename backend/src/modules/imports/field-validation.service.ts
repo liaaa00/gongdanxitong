@@ -290,6 +290,7 @@ export class ImportFieldValidationService {
     defaults?: Record<string, unknown>;
     orderType?: OrderType;
     fields: FieldConfig[];
+    context?: 'portal_intake';
   }): Promise<RowValidationResult> {
     const fields = this.hasTemplateConfigMetadata(input.fields) ? input.fields : this.applyInferredImportRules(input.fields);
     const isOnboardingImport = this.isOnboardingImportFieldSet(fields, input.orderType);
@@ -345,9 +346,11 @@ export class ImportFieldValidationService {
       }
     }
 
-    await this.validateContractSubjectRelations(normalized, fields, errors, isOnboardingImport);
+    if (input.context !== 'portal_intake') {
+      await this.validateContractSubjectRelations(normalized, fields, errors, isOnboardingImport);
+    }
 
-    if (isOnboardingImport) {
+    if (isOnboardingImport && input.context !== 'portal_intake') {
       for (const fieldCode of getCreatorRequiredMissingPayrollBankCardFields(normalized)) {
         if (!errors.some((error) => error.fieldCode === fieldCode)) {
           errors.push({

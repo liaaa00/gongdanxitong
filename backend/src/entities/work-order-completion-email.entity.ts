@@ -6,12 +6,31 @@
   UpdateDateColumn,
 } from 'typeorm';
 
-export type CompletionEmailStatus = 'pending' | 'sending' | 'sent' | 'failed';
+export type CompletionEmailStatus = 'pending' | 'sending' | 'sent' | 'failed' | 'cancelled';
+export interface PortalNotificationContext {
+  kind: 'account_opened' | 'salary_monthly' | 'salary_reminder' | 'salary_escalation';
+  accountId?: string;
+  accountVersion?: number;
+  loginEmail?: string;
+  salaryMonth?: string;
+  billingDate?: string;
+  scheduledDate: string;
+  offset?: 1 | 2 | 3;
+}
 
 @Entity({ name: 'work_order_completion_emails' })
 export class WorkOrderCompletionEmail {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
+
+  @Column({ name: 'deduplication_key', type: 'varchar', length: 255, nullable: true })
+  deduplicationKey!: string | null;
+
+  @Column({ name: 'notification_context', type: 'jsonb', nullable: true })
+  notificationContext!: PortalNotificationContext | null;
+
+  @Column({ name: 'claim_token', type: 'uuid', nullable: true })
+  claimToken!: string | null;
 
   @Column({ name: 'work_order_id', type: 'uuid', nullable: true })
   workOrderId!: string | null;

@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { handlePortalAction } from './portal-onboarding.mjs';
+import { runMonitorCollector } from './monitor-collector.mjs';
 
 const DEFAULT_GATEWAY_URL = 'http://127.0.0.1:18080';
 const DEFAULT_TOKEN = 'test-connector-token';
@@ -59,8 +60,17 @@ async function postResult(gatewayUrl, token, payload, fetchImpl) {
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
+    if (await isExpiredAttempt(response)) return;
     throw new Error('gateway rejected connector response with ' + response.status);
   }
+}
+
+async function isExpiredAttempt(response) {
+  if (![404, 409].includes(response.status)) return false;
+  try {
+    const body = await response.json();
+    return ['REQUEST_NOT_FOUND', 'REQUEST_ATTEMPT_MISMATCH'].includes(body.code);
+  } catch { return false; }
 }
 
 export async function runConnector(options = {}) {
@@ -69,7 +79,13 @@ export async function runConnector(options = {}) {
   const fetchImpl = options.fetchImpl || fetch;
   const signal = options.signal || new AbortController().signal;
   const actionHandler = options.actionHandler || ((payload) => handlePortalAction(payload, options));
+  const backendUrl = (options.backendUrl || process.env.LOCAL_BACKEND_URL || '').replace(/\/$/, '');
+  const monitorAbort = new AbortController();
+  const monitorSignal = AbortSignal.any([signal, monitorAbort.signal]);
+  const monitorJob = backendUrl && options.monitorEnabled !== false
+    ? runMonitorCollector({ gatewayUrl, backendUrl, token, fetchImpl, signal: monitorSignal, intervalMs: options.monitorIntervalMs }) : null;
 
+  try {
   while (!signal.aborted) {
     try {
       const response = await fetchImpl(gatewayUrl + '/agent/stream', {
@@ -84,9 +100,20 @@ export async function runConnector(options = {}) {
           return;
         }
         const payload = JSON.parse(event.data);
+        if (payload._monitor?.traceId) {
+          const received = await fetchImpl(gatewayUrl + '/agent/received', {
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Connector-Token': token }, signal,
+            body: JSON.stringify({ requestId: payload.requestId, attemptId: payload.attemptId, traceId: payload._monitor.traceId }),
+          });
+          if (!received.ok) {
+            if (await isExpiredAttempt(received)) return;
+            throw new Error('gateway no longer accepts this request');
+          }
+        }
         const result = await actionHandler(payload);
         await postResult(gatewayUrl, token, {
           requestId: payload.requestId,
+          attemptId: payload.attemptId,
           result,
         }, fetchImpl);
       }, signal);
@@ -98,6 +125,7 @@ export async function runConnector(options = {}) {
       await new Promise((resolve) => setTimeout(resolve, RECONNECT_DELAY_MS));
     }
   }
+  } finally { monitorAbort.abort(); if (monitorJob) await monitorJob; }
 }
 
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];

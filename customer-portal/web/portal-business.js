@@ -25,6 +25,9 @@ function assertPortalSession(generation, accountId, token) {
 function clearPortalClientState() {
   portalSchemas.onboarding = undefined;
   portalSchemas.resignation = undefined;
+  portalSchemas.salary = undefined;
+  portalState.locations = { onboarding: [], resignation: [] };
+  portalState.fundRatioLocation = '';
   pendingPortalRequests.clear();
   portalState.onboardingFiles = [];
   portalState.resignationFiles = [];
@@ -44,6 +47,9 @@ function clearPortalClientState() {
   document.querySelectorAll('input[type="file"]').forEach((input) => { input.value = ''; });
   document.querySelectorAll('form').forEach((form) => form.reset());
   if (typeof initializeSalaryPeriod === 'function') initializeSalaryPeriod();
+  if (typeof updateProbationDates === 'function') updateProbationDates();
+  ['social-location-options', 'resignation-social-location-options'].forEach((id) => document.getElementById(id)?.replaceChildren());
+  if (document.getElementById('fund_ratio')) updatePortalFundRatios();
   ['onboarding-import-results', 'resignation-import-results'].forEach((id) => document.getElementById(id)?.remove());
   ['progress-rows', 'dashboard-recent'].forEach((id) => document.getElementById(id)?.replaceChildren());
   if (typeof renderOnboardingAttachments === 'function') renderOnboardingAttachments();
@@ -102,11 +108,19 @@ async function applyPortalSession(session) {
     button.disabled=!allowed;
   });
   switchView('dashboard');
-  for(const business of ['onboarding','resignation']) {
+  const salaryMonthAtLogin = document.getElementById('salary-month').value;
+  for(const business of ['onboarding','resignation','salary']) {
     if(!portalHasBusinessPermission(business))continue;
     try {
       const result=await portalCall('/portal/schema',{businessType:business}); if(generation!==portalSessionGeneration||activePortalSession?.account?.id!==session.account?.id)return; portalSchemas[business]=result.fields;
-      const aliases=business==='onboarding'?{contract_term_type:'contract_type',contract_term:'contract_duration',work_hour_system:'working_hours',salary_form:'salary_type',start_month:'social_start_month'}:{employee_name:'resignation_name',id_card_no:'resignation_id',mobile:'resignation_mobile',email:'resignation_email',resignation_date:'resignation_date',social_stop_month:'stop_month',resignation_reason:'resignation_reason'};
+      if (business === 'salary') {
+        applyPortalSalaryMonth(result.defaultMonth, salaryMonthAtLogin);
+        continue;
+      }
+      portalState.locations[business] = Array.isArray(result.locations) ? result.locations : [];
+      const locationList = document.getElementById(business === 'onboarding' ? 'social-location-options' : 'resignation-social-location-options');
+      locationList.replaceChildren(...portalState.locations[business].map((location) => new Option(location.name, location.name)));
+      const aliases=business==='onboarding'?{contract_term_type:'contract_type',contract_term:'contract_duration',work_hour_system:'working_hours',salary_form:'salary_type',start_month:'social_start_month'}:{employee_name:'resignation_name',id_card_no:'resignation_id',mobile:'resignation_mobile',email:'resignation_email',resignation_date:'resignation_date',social_location:'resignation_social_location',social_stop_month:'stop_month',resignation_reason:'resignation_reason'};
       for(const field of result.fields){
         const control=document.getElementById(aliases[field.code]||field.code);
         if(!control||control.tagName==='OUTPUT')continue;
@@ -116,8 +130,33 @@ async function applyPortalSession(session) {
         }
         if(field.code!=='contract_term')control.required=field.required;
       }
+      if (business === 'onboarding') { updateProbationDates(); updatePortalFundRatios(); }
     }catch(error){if(!isPortalSessionChanged(error))showToast(error.message);}
   }
+}
+
+function applyPortalSalaryMonth(defaultMonth, previousMonth) {
+  const salaryMonth = document.getElementById('salary-month');
+  if (/^\d{4}-(0[1-9]|1[0-2])$/.test(defaultMonth || '') && salaryMonth.value === previousMonth) {
+    salaryMonth.value = defaultMonth;
+    renderSalaryPeriod();
+  }
+}
+
+function updatePortalFundRatios() {
+  const location = document.getElementById('social_location').value.trim();
+  const normalizedLocation = location.normalize('NFKC').toLowerCase();
+  const control = document.getElementById('fund_ratio');
+  const existing = portalState.fundRatioLocation === normalizedLocation ? control.value : '';
+  const matched = (portalState.locations?.onboarding || []).find((item) => String(item.name).trim().normalize('NFKC').toLowerCase() === normalizedLocation);
+  const ratios = [...new Set((matched?.fundRatios || []).filter((value) => typeof value === 'string' && value.trim()))];
+  control.replaceChildren(new Option(ratios.length ? '请选择公积金比例' : location ? '暂无可选比例' : '请先选择缴纳地', ''), ...ratios.map((value) => new Option(value, value)));
+  control.value = ratios.includes(existing) ? existing : '';
+  control.disabled = ratios.length === 0;
+  control.required = ratios.length > 0;
+  document.getElementById('fund-ratio-required')?.classList.toggle('hidden', ratios.length === 0);
+  portalState.fundRatioLocation = normalizedLocation;
+  document.getElementById('fund-ratio-help').textContent = ratios.length ? '请按本次办理选择适用比例。' : location ? '暂未提供该地比例，可继续提交并在备注中补充说明。' : '按缴纳地提供可选比例。';
 }
 
 async function refreshPortalProgress(){
@@ -177,7 +216,6 @@ async function submitResignation(){
   const generation=portalSessionGeneration; const accountId=activePortalSession?.account?.id; const token=portalLinkToken();
   try{
     const fields=Object.fromEntries(new FormData(form).entries());
-    if(/^\d{4}-(0[1-9]|1[0-2])$/.test(String(fields.social_stop_month||''))) fields.social_stop_month=Number(String(fields.social_stop_month).slice(5))+'月';
     const files=await filesForPortal(portalState.resignationFiles); assertPortalSession(generation, accountId, token);
     const result=await portalCall('/portal/resignation',{fields,files},'resignation');
     assertPortalSession(generation, accountId, token);
@@ -205,7 +243,8 @@ async function runPortalImport(business,confirm){
   const generation=portalSessionGeneration; const accountId=activePortalSession?.account?.id; const token=portalLinkToken();
   try{
     const contentBase64=await fileAsBase64(file); assertPortalSession(generation, accountId, token);
-    const result=await portalCall('/portal/'+business+'/import/'+(confirm?'confirm':'preview'),{fileName:file.name,contentBase64},confirm?'import-'+business:undefined); assertPortalSession(generation, accountId, token);
+    const files = await filesForPortal(onboarding ? portalState.onboardingFiles : portalState.resignationFiles); assertPortalSession(generation, accountId, token);
+    const result=await portalCall('/portal/'+business+'/import/'+(confirm?'confirm':'preview'),{fileName:file.name,contentBase64,files},confirm?'import-'+business:undefined); assertPortalSession(generation, accountId, token);
     let details=document.getElementById(business+'-import-results');
     if(!details){details=document.createElement('div');details.id=business+'-import-results';details.className='table-wrap import-results';document.getElementById(statusId).after(details);}
     details.innerHTML='<table><thead><tr><th>Excel行号</th><th>结果</th><th>说明</th><th>办理编号</th></tr></thead><tbody>'+result.details.map((row)=>'<tr><td>'+row.rowNumber+'</td><td>'+(row.success?'成功':'失败')+'</td><td>'+escapeHtml(row.message)+'</td><td>'+escapeHtml(row.workOrderNo||'-')+'</td></tr>').join('')+'</tbody></table>';
@@ -219,6 +258,7 @@ document.getElementById('preview-import').addEventListener('click',()=>runPortal
 document.getElementById('confirm-import').addEventListener('click',()=>runPortalImport('onboarding',true));
 document.getElementById('preview-resignation-import').addEventListener('click',()=>runPortalImport('resignation',false));
 document.getElementById('confirm-resignation-import').addEventListener('click',()=>runPortalImport('resignation',true));
+document.getElementById('social_location').addEventListener('input', updatePortalFundRatios);
 document.getElementById('portal-password-form').addEventListener('submit',async(event)=>{
   event.preventDefault();const form=event.target;const button=form.querySelector('button[type="submit"]');
   if(form.elements.newPassword.value!==form.elements.confirmPassword.value){document.getElementById('portal-password-error').textContent='两次新密码不一致';return;}

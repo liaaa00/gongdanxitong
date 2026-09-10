@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { Repository } from 'typeorm';
 import { CustomerPortalRule, WorkOrder, WorkOrderCompletionEmail } from 'src/entities';
 import { UploadService } from 'src/modules/upload/upload.service';
+import { PortalNotificationSettingsService } from './portal-notifications/portal-notification-settings.service';
 
 const TEMPLATE_CODE = 'work-order-completion-result';
 const TEMPLATE_VERSION = 'v1';
@@ -19,6 +20,7 @@ export class CompletionEmailService {
     @InjectRepository(CustomerPortalRule)
     private readonly ruleRepository: Repository<CustomerPortalRule>,
     private readonly uploadService: UploadService,
+    private readonly notificationSettings: PortalNotificationSettingsService,
   ) {}
 
   async enqueueForCompletedWorkOrder(workOrder: WorkOrder): Promise<WorkOrderCompletionEmail | null> {
@@ -34,8 +36,11 @@ export class CompletionEmailService {
     if (existing) return existing;
 
     const result = await this.buildResultAttachment(workOrder, rule.completionEmailFields);
-    const subject = `工单${workOrder.orderNo}办结结果确认`;
-    const body = this.buildBody(workOrder, rule.objectionDeadlineDays);
+    const { subject, body } = await this.notificationSettings.render('completion', {
+      order_no: workOrder.orderNo, employee_name: workOrder.employeeName,
+      customer_name: workOrder.customerName ?? '', business_type: workOrder.orderType,
+      objection_notice: this.objectionNotice(rule.objectionDeadlineDays),
+    });
     const row = this.emailRepository.create({
       workOrderId: workOrder.id,
       customerId: workOrder.customerId,
@@ -104,16 +109,10 @@ export class CompletionEmailService {
     return { fileId: meta.fileId, hash: createHash('sha256').update(buffer).digest('hex') };
   }
 
-  private buildBody(workOrder: WorkOrder, objectionDeadlineDays: number | null): string {
-    const deadline = objectionDeadlineDays === null
+  private objectionNotice(objectionDeadlineDays: number | null): string {
+    return objectionDeadlineDays === null
       ? '如有异议，请按双方约定时间反馈。'
       : `如有异议，请在${objectionDeadlineDays}天内反馈；逾期未反馈视为确认结果无误。`;
-    return [
-      `您好，工单${workOrder.orderNo}已办理完成。`,
-      `员工：${workOrder.employeeName}`,
-      '详细办理结果请查看邮件附件《办结结果确认》。',
-      deadline,
-    ].join('\n');
   }
 
   private stringifyValue(value: unknown): string {

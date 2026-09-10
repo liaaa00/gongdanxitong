@@ -10,16 +10,22 @@ const ONBOARDING_TEMPLATE_FIELDS = [
   ['need_esign', '入职·需要电子签'], ['esign_platform', '入职·电子签平台'], ['contract_template', '入职·合同模板'],
   ['need_onboarding_contact', '入职·需要入职联系'], ['feedback_deadline', '入职·反馈时限'], ['is_common_template', '入职·通用模板'],
   ['supplementary_materials', '入职·补充材料'], ['need_company_payroll', '入职·企业发薪'], ['payroll_location', '入职·发薪地'],
+  ['payroll_cycle', '入职·发薪月份'], ['payroll_date', '入职·发薪日'], ['need_payroll_slip', '入职·是否需要工资单'],
+  ['purchased_products', '入职·已购产品'], ['service_fee', '入职·服务费'], ['deposit', '入职·押金'],
   ['need_contract_urge', '入职·催签合同'], ['social_urge', '入职·社保公积金催办规则'], ['special_remark', '入职·特殊说明'],
 ] as const;
 const RESIGNATION_TEMPLATE_FIELDS = [
   ['need_resignation_cert', '离职·是否开具离职证明'], ['cert_delivery_address', '离职·证明送达地址'],
   ['cert_delivery_method', '离职·证明形式'], ['certificate_template', '离职·证明模板'],
 ] as const;
+export const CUSTOMER_RULE_FIELD_LABELS: Record<string, string> = {
+  ...Object.fromEntries([...ONBOARDING_TEMPLATE_FIELDS, ...RESIGNATION_TEMPLATE_FIELDS].map(([key, label]) => [key, label.replace(/^.*?·/, '')])),
+  branch_id: '商社', branchId: '商社', branch_code: '商社编码', branch_name: '商社名称', social_location: '缴纳地',
+};
 const BOOLEAN_ONBOARDING_FIELDS = new Set(['need_company_contract', 'need_esign', 'need_onboarding_contact', 'need_company_payroll', 'need_contract_urge']);
 export const TEMPLATE_HEADERS = [
   '客户UUID', '客户编码', '客户名称', ...ONBOARDING_TEMPLATE_FIELDS.map(([, label]) => label),
-  ...RESIGNATION_TEMPLATE_FIELDS.map(([, label]) => label), '薪资·每月账单日', '薪资·启用提醒',
+  ...RESIGNATION_TEMPLATE_FIELDS.map(([, label]) => label), '薪资·每月账单日', '薪资·启用提醒', '薪资·发薪周期',
   '共享邮箱·地址', '共享邮箱·路由标识', '办结邮件·启用', '办结邮件·收件人', '办结邮件·抄送',
   '办结邮件·回复地址', '办结邮件·结果字段', '客户异议期限（天）', '规则·启用',
 ];
@@ -58,6 +64,7 @@ export function buildTemplateRow(rule: CustomerRuleItem) {
   for (const [code, label] of RESIGNATION_TEMPLATE_FIELDS) row[label] = valueToCell(rule.resignationDefaults?.[code]);
   row['薪资·每月账单日'] = valueToCell(rule.salaryRules?.billingDay);
   row['薪资·启用提醒'] = valueToCell(rule.salaryRules?.reminderEnabled);
+  row['薪资·发薪周期'] = rule.salaryRules?.payrollMonthMode === 'current' ? '当月发当月' : rule.salaryRules?.payrollMonthMode === 'previous' ? '当月发上月' : '';
   row['共享邮箱·地址'] = valueToCell(rule.sharedEmailRules?.mailbox);
   row['共享邮箱·路由标识'] = valueToCell(rule.sharedEmailRules?.routeKey);
   row['办结邮件·启用'] = valueToCell(rule.completionEmailEnabled);
@@ -84,6 +91,10 @@ export function createRulesWorkbook(customers: CustomerRuleItem[]): XLSX.WorkBoo
     ['薪资提醒固定为账单日前3/2/1个工作日，不提供修改列；办结邮件固定覆盖入职、离职、薪资。'],
     ['附件统一使用共享邮箱；账单日、共享邮箱和办结邮件收件人须由人工配置。'],
     ['每个客户UUID仅允许一行，不支持公式；导入后查看逐行成功和失败明细。'],
+    ['入职发薪月份填写“当月”或“次月”，发薪日填写1至31；是否需要工资单填写“是”或“否”。'],
+    ['薪资发薪周期填写“当月发当月”或“当月发上月”；已购产品、服务费、押金为选填提醒信息。'],
+    ['缴纳地与商社规则通过页面维护；本模板不修改或清除这些城市规则。'],
+    ['入职规则非空时需要配置员工类型；只维护薪资业务可以保留入职规则为空。'],
   ]), '填写说明');
   return workbook;
 }
@@ -97,7 +108,11 @@ function parseTemplateRow(row: Record<string, unknown>): SaveCustomerRuleInput {
   const onboardingDefaults: Record<string, RuleValue> = {};
   for (const [code, label] of ONBOARDING_TEMPLATE_FIELDS) {
     const value = read(label, BOOLEAN_ONBOARDING_FIELDS.has(code));
-    if (value !== undefined) onboardingDefaults[code] = value;
+    if (value === undefined) continue;
+    if (code === 'payroll_cycle' && !['当月', '次月'].includes(String(value))) throw new Error(`${label}：请填写“当月”或“次月”`);
+    if (code === 'payroll_date' && (!/^\d{1,2}$/.test(String(value)) || Number(value) < 1 || Number(value) > 31)) throw new Error(`${label}：请输入1至31的整数`);
+    if (code === 'need_payroll_slip' && !['是', '否'].includes(String(value))) throw new Error(`${label}：请填写“是”或“否”`);
+    onboardingDefaults[code] = ['payroll_cycle', 'payroll_date', 'need_payroll_slip', 'purchased_products', 'service_fee', 'deposit'].includes(code) ? String(value) : value;
   }
   if (Object.keys(onboardingDefaults).length) rule.onboardingDefaults = onboardingDefaults;
   const resignationDefaults: Record<string, RuleValue> = {};
@@ -108,7 +123,8 @@ function parseTemplateRow(row: Record<string, unknown>): SaveCustomerRuleInput {
   if (Object.keys(resignationDefaults).length) rule.resignationDefaults = resignationDefaults;
   const billingDay = read('薪资·每月账单日');
   const reminderEnabled = read('薪资·启用提醒', true);
-  if (billingDay !== undefined || reminderEnabled !== undefined) {
+  const payrollMonthMode = read('薪资·发薪周期');
+  if (billingDay !== undefined || reminderEnabled !== undefined || payrollMonthMode !== undefined) {
     rule.salaryRules = { reminderWorkdayOffsets: [3, 2, 1] };
     if (billingDay !== undefined) {
       const day = Number(billingDay);
@@ -116,6 +132,10 @@ function parseTemplateRow(row: Record<string, unknown>): SaveCustomerRuleInput {
       rule.salaryRules.billingDay = day;
     }
     if (reminderEnabled !== undefined) rule.salaryRules.reminderEnabled = reminderEnabled as boolean;
+    if (payrollMonthMode !== undefined) {
+      if (!['当月发当月', '当月发上月', 'current', 'previous'].includes(String(payrollMonthMode))) throw new Error('薪资·发薪周期：请填写“当月发当月”或“当月发上月”');
+      rule.salaryRules.payrollMonthMode = ['当月发当月', 'current'].includes(String(payrollMonthMode)) ? 'current' : 'previous';
+    }
   }
   const mailbox = read('共享邮箱·地址');
   const routeKey = read('共享邮箱·路由标识');

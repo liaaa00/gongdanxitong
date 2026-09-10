@@ -5,13 +5,18 @@ import AdminCustomers from '@/pages/Admin/Customers';
 import CustomerRules from '@/pages/CustomerRules';
 import CustomerPortalAccounts from './CustomerPortalAccounts';
 import CustomerPortalBusiness from './CustomerPortalBusiness';
+import PortalNotifications from './PortalNotifications';
+import PortalMonitor from './PortalMonitor';
+import { useAuth } from '@/hooks/useAuth';
 
-const VALID_TABS = new Set(['customers', 'accounts', 'rules', 'business']);
+const VALID_TABS = new Set(['customers', 'accounts', 'rules', 'business', 'notifications', 'monitor']);
 
 const CustomerConfig: React.FC = () => {
+  const {hasRole}=useAuth();
+  const isAdmin=hasRole('admin');
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab') || 'customers';
-  const activeKey = VALID_TABS.has(requestedTab) ? requestedTab : 'customers';
+  const activeKey = VALID_TABS.has(requestedTab) && (isAdmin || !['notifications','monitor'].includes(requestedTab)) ? requestedTab : 'customers';
   const customerId = searchParams.get('customerId');
 
   return (
@@ -32,6 +37,10 @@ const CustomerConfig: React.FC = () => {
           { key: 'accounts', label: '门户账号', children: <CustomerPortalAccounts /> },
           { key: 'rules', label: '办理规则与通知', children: <CustomerRules embedded /> },
           { key: 'business', label: '业务受理与邮件', children: <CustomerPortalBusiness /> },
+          ...(isAdmin ? [
+            { key:'notifications',label:'自动通知与工作日历',children:<PortalNotifications/> },
+            { key:'monitor',label:'门户全过程监控',children:<PortalMonitor/> },
+          ] : []),
         ]}
       />
     </PageContainer>

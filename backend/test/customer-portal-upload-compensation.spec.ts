@@ -66,19 +66,29 @@ function fixture(options: { queueError?: Error; commitError?: Error; commitSucce
   };
   const auth = { session: jest.fn(async () => ({ customer: { id: customerId }, account: { id: accountId }, businessPermissions: ['salary'], mustChangePassword: false })) };
   const rules = { findOne: jest.fn(async () => ({ sharedEmailRules: { mailbox: 'shared@example.test' }, completionEmailEnabled: true, completionEmailTo: ['recipient@example.test'], completionEmailCc: [] })) };
-  const customers = { findOne: jest.fn(async () => ({ id: customerId })) };
-  const service = new CustomerPortalService(auth as never, dataSource as never, submissions as never, rules as never, customers as never, {} as never, {} as never, mails as never, {} as never, {} as never, {} as never, {} as never, new ExcelParserService(), uploads as never);
+  const customers = { findOne: jest.fn(async () => ({ id: customerId, customerName: '配置客户名称' })) };
+  const notificationSettings = { render: jest.fn(async () => ({ subject: '共享办结主题', body: '共享办结正文' })) };
+  const service = new CustomerPortalService(auth as never, dataSource as never, submissions as never, rules as never, customers as never, {} as never, {} as never, mails as never, {} as never, {} as never, {} as never, {} as never, new ExcelParserService(), uploads as never, {} as never, {} as never, undefined, notificationSettings as never);
   const invoke = (nextEntry: Entry, files = [file]) => {
     entry = nextEntry;
     if (entry === 'completeSalary') return service.completeSalary(submissionId, customerId, '已核验完成', user as never);
     return service[entry]({ ...input, files }, user as never);
   };
-  return { invoke, uploads, dataSource, queries, committedEmails };
+  return { invoke, uploads, dataSource, queries, committedEmails, notificationSettings };
 }
 
 describe('Customer portal file compensation', () => {
   beforeEach(() => { jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined); });
   afterEach(() => { jest.restoreAllMocks(); });
+
+  it('renders salary completion with the actual customer and queues the shared template with its result attachment', async () => {
+    const { invoke, notificationSettings, committedEmails, dataSource } = fixture();
+    await expect(invoke('completeSalary')).resolves.toMatchObject({ status: 'completed', resultNote: '已核验完成' });
+    expect(notificationSettings.render).toHaveBeenCalledWith('completion', expect.objectContaining({ customer_name: '配置客户名称', order_no: 'SAL-TEST', business_type: '薪资' }), expect.objectContaining({ getRepository: expect.any(Function) }));
+    expect(committedEmails).toHaveLength(1);
+    expect(committedEmails[0]).toMatchObject({ subject: '共享办结主题', bodySnapshot: '共享办结正文', status: 'pending', attachmentId: expect.any(String) });
+    expect(dataSource.transaction).toHaveBeenCalledTimes(1);
+  });
 
   it.each<Entry>(['submit', 'attachments', 'completeSalary'])('removes newly saved files when %s email queue persistence fails', async (entry) => {
     const failure = new Error('queue insert failed');

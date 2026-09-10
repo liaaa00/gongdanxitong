@@ -3,8 +3,11 @@ import { useSearchParams } from 'react-router-dom';
 import { Alert, App, Button, Form, Input, Modal, Select, Space, Table, Tag } from 'antd';
 import { getAllCustomerRules, type CustomerRuleItem } from '@/services/customerRules';
 import { completePortalSalary,getPortalEmails,getPortalSalary,retryPortalEmail,type PortalEmailRecord,type PortalSalaryRecord } from '@/services/customerPortalBusiness';
+import PortalIntakeReview from './PortalIntakeReview';
+import { useAuth } from '@/hooks/useAuth';
 
 export default function CustomerPortalBusiness(){
+  const {hasAnyRole}=useAuth();
   const {message}=App.useApp();const [params,setParams]=useSearchParams();
   const [customers,setCustomers]=useState<CustomerRuleItem[]>([]);const customerId=params.get('customerId')||customers[0]?.customerId||'';
   const [salary,setSalary]=useState<PortalSalaryRecord[]>([]);const [emails,setEmails]=useState<PortalEmailRecord[]>([]);
@@ -16,6 +19,7 @@ export default function CustomerPortalBusiness(){
   return <Space direction="vertical" size="middle" style={{width:'100%'}}>
     <Space><Select aria-label="选择办理客户" showSearch optionFilterProp="label" style={{minWidth:420}} value={customerId||undefined} options={customers.map((item)=>({value:item.customerId,label:`${item.customerName}（${item.customerCode}） · ${item.customerId}`}))} onChange={(id)=>{const next=new URLSearchParams(params);next.set('tab','business');next.set('customerId',id);setParams(next);}}/><Button onClick={()=>void load()} loading={loading}>刷新记录</Button></Space>
     <Alert type="info" showIcon message="薪资由内部人员核对后办结；附件统一进入共享邮箱发送队列" description="邮箱配置可暂留空，待完成客户共享邮箱与系统邮件服务配置后，在发送记录中重试。"/>
+    {hasAnyRole(['admin','business_group_leader','business_group_member']) && <PortalIntakeReview customerId={customerId} />}
     <Table<PortalSalaryRecord> rowKey="id" loading={loading} dataSource={salary} pagination={{pageSize:20}} title={()=>'薪资受理与办理'} columns={[
       {title:'受理编号',dataIndex:'requestNo'},{title:'所属月份',render:(_,row)=>row.fields.month||'-'},
       {title:'客户确认',render:(_,row)=>row.fields.mode==='same'?'与上月无变化':row.fields.channel==='attachment'?'上传变化附件':'有变化'},

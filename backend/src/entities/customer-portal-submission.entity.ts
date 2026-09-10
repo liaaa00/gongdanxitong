@@ -10,6 +10,7 @@ export class CustomerPortalSubmission {
   @Column({ name: 'input_hash', type: 'varchar', length: 64 }) inputHash!: string;
   @Column({ name: 'request_no', type: 'varchar', length: 64 }) requestNo!: string;
   @Column({ name: 'work_order_id', type: 'uuid', nullable: true }) workOrderId!: string | null;
+  @Column({ name: 'monitor_trace_id', type: 'uuid', nullable: true }) monitorTraceId!: string | null;
   @Column({ type: 'jsonb', default: () => "'{}'::jsonb" }) fields!: Record<string, unknown>;
   @Column({ type: 'varchar', length: 16, default: 'received' }) status!: 'received' | 'completed';
   @Column({ name: 'result_note', type: 'text', nullable: true }) resultNote!: string | null;

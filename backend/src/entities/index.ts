@@ -4,6 +4,7 @@ export * from './certificate-type.entity';
 export * from './customer-assignee.entity';
 export * from './customer-portal-account.entity';
 export * from './customer-portal-rule.entity';
+export * from './customer-portal-monitor.entity';
 export * from './customer.entity';
 export * from './contract-subject.entity';
 export * from './department.entity';
@@ -43,3 +44,4 @@ export * from './work-order-completion-email.entity';
 export * from './work-order.entity';
 
 export { CustomerPortalSubmission } from './customer-portal-submission.entity';
+export { PortalNotificationSetting } from './portal-notification-setting.entity';

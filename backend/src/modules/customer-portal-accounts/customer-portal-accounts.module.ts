@@ -3,9 +3,10 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Customer, CustomerPortalAccount, CustomerPortalRule } from 'src/entities';
 import { CustomerPortalAccountsController, PortalAuthController } from './customer-portal-accounts.controller';
 import { CustomerPortalAccountsService } from './customer-portal-accounts.service';
+import { PortalNotificationsModule } from 'src/modules/portal-notifications/portal-notifications.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([CustomerPortalAccount, Customer, CustomerPortalRule])],
+  imports: [TypeOrmModule.forFeature([CustomerPortalAccount, Customer, CustomerPortalRule]), PortalNotificationsModule],
   controllers: [CustomerPortalAccountsController, PortalAuthController],
   providers: [CustomerPortalAccountsService],
   exports: [CustomerPortalAccountsService],

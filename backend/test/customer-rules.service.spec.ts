@@ -1,5 +1,6 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { BusinessScope, Customer, CustomerPortalRule, OrderType, WorkOrder, WorkOrderStatus } from 'src/entities';
+import { Branch, BusinessScope, Customer, CustomerPortalRule, OrderType, WorkOrder, WorkOrderStatus } from 'src/entities';
+import { AddCustomerPaymentLocationRules20260910110000 } from 'src/database/migrations/20260910110000-AddCustomerPaymentLocationRules';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { CustomerRulesService } from 'src/modules/customer-rules/customer-rules.service';
 
@@ -21,22 +22,33 @@ function customer(id = '11111111-1111-4111-8111-111111111111'): Customer {
   };
 }
 
+const BRANCH_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+function branch(overrides: Partial<Branch> = {}): Partial<Branch> {
+  return { id: BRANCH_ID, customerId: customer().id, businessScope: BusinessScope.BEILUN, isActive: true, branchCode: 'B01', branchName: '宁波商社', city: '宁波', ...overrides };
+}
+function locationRule(overrides: Partial<CustomerPortalRule['paymentLocationRules'][number]> = {}) {
+  return { socialLocation: '宁波', branchId: BRANCH_ID, onboardingDefaults: { employee_type: '正式员工' }, resignationDefaults: { need_resignation_cert: '否' }, ...overrides };
+}
+
 function queryBuilder(result: Customer | null, list: Customer[] = result ? [result] : []) {
   let customerId: string | undefined;
   let customerIds: string[] | undefined;
+  let businessScope: BusinessScope | undefined;
   let activeOnly = false;
   let skip = 0;
   let take = list.length;
   const filter = () => list.filter((item) => (!activeOnly || item.isActive)
+    && (!businessScope || item.businessScope === businessScope)
     && (!customerId || item.id === customerId) && (!customerIds || customerIds.includes(item.id)));
-  const applyWhere = (sql: string, params?: { customerId?: string; customerIds?: string[] }) => {
+  const applyWhere = (sql: string, params?: { customerId?: string; customerIds?: string[]; businessScope?: BusinessScope }) => {
     if (sql === 'customer.id = :customerId') customerId = params?.customerId;
     if (sql === 'customer.id IN (:...customerIds)') customerIds = params?.customerIds;
     if (sql === 'customer.isActive = true') activeOnly = true;
+    if (sql === 'customer.businessScope = :businessScope') businessScope = params?.businessScope;
     return qb;
   };
   const qb: any = {
-    where: jest.fn((sql, params) => { customerId = undefined; customerIds = undefined; activeOnly = false; return applyWhere(sql, params); }),
+    where: jest.fn((sql, params) => { customerId = undefined; customerIds = undefined; businessScope = undefined; activeOnly = false; return applyWhere(sql, params); }),
     andWhere: jest.fn(applyWhere),
     innerJoin: jest.fn(() => qb),
     orderBy: jest.fn(() => qb),
@@ -56,6 +68,7 @@ function makeService(options: {
   existingRule?: Partial<CustomerPortalRule> | null;
   customerExists?: boolean;
   workOrders?: Partial<WorkOrder>[];
+  branches?: Partial<Branch>[];
 } = {}) {
   const accessibleCustomer = options.accessibleCustomer === undefined ? customer() : options.accessibleCustomer;
   const customerQb = queryBuilder(accessibleCustomer, options.listCustomers ?? (accessibleCustomer ? [accessibleCustomer] : []));
@@ -93,12 +106,17 @@ function makeService(options: {
   const workOrderRepository: any = {
     find: jest.fn(async () => options.workOrders ?? []),
   };
+  const branchRepository = {
+    find: jest.fn(async ({ where }) => (options.branches ?? []).filter((row) => Object.entries(where).every(([key, value]) => row[key as keyof Branch] === value))),
+    findOne: jest.fn(async ({ where }) => (options.branches ?? []).find((row) => Object.entries(where).every(([key, value]) => row[key as keyof Branch] === value)) ?? null),
+  };
   return {
-    service: new CustomerRulesService(ruleRepository, customerRepository, workOrderRepository),
+    service: new CustomerRulesService(ruleRepository, customerRepository, workOrderRepository, branchRepository as any),
     customerQb,
     ruleRepository,
     customerRepository,
     workOrderRepository,
+    branchRepository,
   };
 }
 
@@ -134,6 +152,7 @@ describe('CustomerRulesService', () => {
     const { service, ruleRepository } = makeService();
     const result = await service.upsert('11111111-1111-4111-8111-111111111111', {
       onboardingDefaults: {
+        employee_type: '正式员工',
         business_mode: '  直营网  ',
         need_esign: true,
         fund_ratio: 12,
@@ -141,7 +160,7 @@ describe('CustomerRulesService', () => {
       },
     }, user(['business_group_member']));
 
-    expect(result.onboardingDefaults).toEqual({ business_mode: '直营网', need_esign: true, fund_ratio: 12 });
+    expect(result.onboardingDefaults).toEqual({ employee_type: '正式员工', business_mode: '直营网', need_esign: true, fund_ratio: 12 });
     expect(ruleRepository.save).toHaveBeenCalledWith(expect.objectContaining({ updatedBy: 'user-1' }));
   });
 
@@ -166,7 +185,7 @@ describe('CustomerRulesService', () => {
     }, user(['business_group_member']));
 
     expect(result.resignationDefaults).toMatchObject({ need_resignation_cert: '是', cert_delivery_address: 'hr@example.com' });
-    expect(result.salaryRules).toEqual({ billingDay: 20, reminderEnabled: true, reminderWorkdayOffsets: [3, 2, 1] });
+    expect(result.salaryRules).toEqual({ billingDay: 20, reminderEnabled: true, reminderWorkdayOffsets: [3, 2, 1], payrollMonthMode: 'current' });
     expect(result.sharedEmailRules).toEqual({ mailbox: 'shared@example.com', routeKey: 'customer-1' });
     expect(ruleRepository.save).toHaveBeenCalledWith(expect.objectContaining({ customerId: '11111111-1111-4111-8111-111111111111' }));
   });
@@ -221,7 +240,7 @@ describe('CustomerRulesService', () => {
     const { service } = makeService({
       existingRule: {
         customerId: '11111111-1111-4111-8111-111111111111',
-        onboardingDefaults: { contract_subject: '浙江企服', need_esign: true },
+        onboardingDefaults: { employee_type: '正式员工', contract_subject: '浙江企服', need_esign: true },
         resignationDefaults: { need_resignation_cert: '否' },
         salaryRules: { billingDay: 20, reminderEnabled: true, reminderWorkdayOffsets: [3, 2, 1] },
         sharedEmailRules: { mailbox: 'shared@example.com', routeKey: 'CUST001' },
@@ -234,9 +253,10 @@ describe('CustomerRulesService', () => {
       customerId: '11111111-1111-4111-8111-111111111111',
       customerCode: 'CUST001',
       configured: true,
-      onboardingDefaults: { contract_subject: '浙江企服', need_esign: true },
+      onboardingDefaults: { employee_type: '正式员工', contract_subject: '浙江企服', need_esign: true },
       resignationDefaults: { need_resignation_cert: '否' },
-      salaryRules: { billingDay: 20, reminderEnabled: true, reminderWorkdayOffsets: [3, 2, 1] },
+      paymentLocationRules: [],
+      salaryRules: { billingDay: 20, reminderEnabled: true, reminderWorkdayOffsets: [3, 2, 1], payrollMonthMode: 'current' },
       sharedEmailRules: { mailbox: 'shared@example.com', routeKey: 'CUST001' },
       readiness: { ready: true, missing: [] },
     });
@@ -246,7 +266,7 @@ describe('CustomerRulesService', () => {
   it('batch imports valid customers and reports invalid rows without losing valid rows', async () => {
     const { service } = makeService();
     const result = await service.batchUpsert([
-      { customerId: '11111111-1111-4111-8111-111111111111', rule: { onboardingDefaults: { contract_subject: '浙江企服' } } },
+      { customerId: '11111111-1111-4111-8111-111111111111', rule: { onboardingDefaults: { employee_type: '正式员工', contract_subject: '浙江企服' } } },
       { customerId: '99999999-9999-4999-8999-999999999999', rule: { onboardingDefaults: { contract_subject: '无效客户' } } },
     ], user(['business_group_member']));
 
@@ -291,7 +311,7 @@ describe('CustomerRulesService', () => {
   it('merges explicit rule fields and keeps omitted Excel cells and manual false values', async () => {
     const { service } = makeService({ existingRule: {
       customerId: '11111111-1111-4111-8111-111111111111',
-      onboardingDefaults: { contract_subject: '人工主体', need_esign: false },
+      onboardingDefaults: { employee_type: '正式员工', contract_subject: '人工主体', need_esign: false },
       resignationDefaults: { need_resignation_cert: '是', cert_delivery_address: '人工地址' },
       salaryRules: { billingDay: 20, reminderEnabled: false, reminderWorkdayOffsets: [3, 2, 1] },
       sharedEmailRules: { mailbox: 'shared@example.com', routeKey: 'manual' },
@@ -304,9 +324,9 @@ describe('CustomerRulesService', () => {
       sharedEmailRules: { routeKey: 'updated' },
       completionEmailCc: [' cc@example.com '],
     }, user(['admin']));
-    expect(result.onboardingDefaults).toEqual({ contract_subject: '人工主体', need_esign: false, business_mode: '新增业务模式' });
+    expect(result.onboardingDefaults).toEqual({ employee_type: '正式员工', contract_subject: '人工主体', need_esign: false, business_mode: '新增业务模式' });
     expect(result.resignationDefaults).toMatchObject({ need_resignation_cert: '是', cert_delivery_address: '人工地址', cert_delivery_method: '电子版' });
-    expect(result.salaryRules).toEqual({ billingDay: 20, reminderEnabled: true, reminderWorkdayOffsets: [3, 2, 1] });
+    expect(result.salaryRules).toEqual({ billingDay: 20, reminderEnabled: true, reminderWorkdayOffsets: [3, 2, 1], payrollMonthMode: 'current' });
     expect(result.sharedEmailRules).toEqual({ mailbox: 'shared@example.com', routeKey: 'updated' });
     expect(result.completionEmailEnabled).toBe(true);
     expect(result.completionEmailTo).toEqual(['hr@example.com']);
@@ -334,12 +354,12 @@ describe('CustomerRulesService', () => {
   it('supports an explicit empty field without clearing omitted fields', async () => {
     const { service } = makeService({ existingRule: {
       customerId: '11111111-1111-4111-8111-111111111111',
-      onboardingDefaults: { contract_subject: '人工主体', special_remark: '旧说明' },
+      onboardingDefaults: { employee_type: '正式员工', contract_subject: '人工主体', special_remark: '旧说明' },
     } });
     const result = await service.upsert('11111111-1111-4111-8111-111111111111', {
       onboardingDefaults: { special_remark: null, fund_ratio: '5%+5%' },
     }, user(['admin']));
-    expect(result.onboardingDefaults).toEqual({ contract_subject: '人工主体', fund_ratio: '5%+5%' });
+    expect(result.onboardingDefaults).toEqual({ employee_type: '正式员工', contract_subject: '人工主体', fund_ratio: '5%+5%' });
   });
 
   it('reports malformed rows and original Excel row numbers while continuing valid rows', async () => {
@@ -348,7 +368,7 @@ describe('CustomerRulesService', () => {
       null,
       { customerId: '', rule: {} },
       { customerId: 'CUST001', rule: { isActive: true }, rowNumber: 9 },
-      { customerId: '11111111-1111-4111-8111-111111111111', rule: { onboardingDefaults: { need_esign: false } }, rowNumber: 12 },
+      { customerId: '11111111-1111-4111-8111-111111111111', rule: { onboardingDefaults: { employee_type: '正式员工', need_esign: false } }, rowNumber: 12 },
       { customerId: '22222222-2222-4222-8222-222222222222', rule: undefined },
     ] as any, user(['admin']));
     expect(result).toMatchObject({ total: 5, successCount: 1, failedCount: 4 });
@@ -364,12 +384,12 @@ describe('CustomerRulesService', () => {
     const result = await service.batchUpsert([
       { customerId: id, rule: { onboardingDefaults: { contract_subject: '不应保存' } } },
       { customerId: ` ${id.toUpperCase()} `, rule: { onboardingDefaults: { contract_subject: '同样不保存' } } },
-      { customerId: other, rule: { onboardingDefaults: { contract_subject: '正确客户' } } },
+      { customerId: other, rule: { onboardingDefaults: { employee_type: '正式员工', contract_subject: '正确客户' } } },
     ], user(['admin']));
     expect(result).toMatchObject({ successCount: 1, failedCount: 2 });
     expect(result.results.slice(0, 2).every((row) => row.message.includes('重复'))).toBe(true);
     expect(ruleRepository.save).toHaveBeenCalledTimes(1);
-    expect(ruleRepository.save.mock.calls[0][0]).toMatchObject({ customerId: other, onboardingDefaults: { contract_subject: '正确客户' } });
+    expect(ruleRepository.save.mock.calls[0][0]).toMatchObject({ customerId: other, onboardingDefaults: { employee_type: '正式员工', contract_subject: '正确客户' } });
   });
 
   it('rejects empty and oversized batches before making writes', async () => {
@@ -468,6 +488,131 @@ describe('CustomerRulesService', () => {
     ] });
     await service.importFromExistingOrders([id], user(['admin']));
     expect(ruleRepository.save.mock.calls[0][0].onboardingDefaults).toEqual({ need_esign: false, contract_subject: '有效主体', is_common_template: '是' });
+  });
+
+  it('saves location-specific rules using the selected branch UUID without guessing from names or codes', async () => {
+    const { service, branchRepository } = makeService({ branches: [branch()] });
+    const saved = await service.upsert(customer().id, { paymentLocationRules: [locationRule({ socialLocation: ' 宁波 ' })] }, user(['business_group_member']));
+    expect(saved.paymentLocationRules).toEqual([locationRule()]);
+    expect(branchRepository.findOne).toHaveBeenCalledWith({ where: { id: BRANCH_ID, customerId: customer().id, businessScope: BusinessScope.BEILUN, isActive: true } });
+    expect(saved.readiness.missing).not.toContain('入职规则');
+    expect(saved.readiness.missing).not.toContain('离职规则');
+  });
+
+  it.each([
+    { isActive: false },
+    { customerId: '22222222-2222-4222-8222-222222222222' },
+    { businessScope: BusinessScope.OUT_OF_PROVINCE },
+    { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' },
+  ])('rejects a branch outside the active UUID/customer/scope boundary: %j', async (changes) => {
+    const { service, ruleRepository } = makeService({ branches: [branch(changes)] });
+    await expect(service.upsert(customer().id, { paymentLocationRules: [locationRule()] }, user(['admin']))).rejects.toThrow('所选商社不存在、已停用或不属于当前客户及业务范围');
+    expect(ruleRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('rejects duplicate locations after trim while preserving other exact location differences', async () => {
+    const { service, ruleRepository } = makeService({ branches: [branch()] });
+    await expect(service.upsert(customer().id, { paymentLocationRules: [locationRule(), locationRule({ socialLocation: ' 宁波 ' })] }, user(['admin']))).rejects.toThrow('缴纳地重复');
+    expect(ruleRepository.save).not.toHaveBeenCalled();
+    const saved = await service.upsert(customer().id, { paymentLocationRules: [locationRule(), locationRule({ socialLocation: '宁波市' })] }, user(['admin']));
+    expect(saved.paymentLocationRules.map((item) => item.socialLocation)).toEqual(['宁波', '宁波市']);
+  });
+
+  it.each([null, {}, [null], [{ ...locationRule(), branchId: 'B01' }], [{ ...locationRule(), customerCode: 'CUST001' }], [{ ...locationRule(), socialLocation: '  ' }], [{ ...locationRule(), onboardingDefaults: [] }]])('rejects malformed location configuration without saving: %j', async (paymentLocationRules) => {
+    const { service, ruleRepository } = makeService({ branches: [branch()] });
+    await expect(service.upsert(customer().id, { paymentLocationRules } as any, user(['admin']))).rejects.toBeInstanceOf(BadRequestException);
+    expect(ruleRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('validates effective per-location defaults while preserving only the local overrides', async () => {
+    const { service } = makeService({ branches: [branch()] });
+    const saved = await service.upsert(customer().id, {
+      onboardingDefaults: { employee_type: '正式员工', need_esign: false },
+      resignationDefaults: { need_resignation_cert: '是', cert_delivery_address: '客户指定收件地址' },
+      paymentLocationRules: [locationRule({ onboardingDefaults: { payroll_cycle: '次月', payroll_date: '15', need_payroll_slip: '否' }, resignationDefaults: { cert_delivery_method: '纸质版' } })],
+    }, user(['admin']));
+    expect(saved.paymentLocationRules[0].onboardingDefaults).toEqual({ payroll_cycle: '次月', payroll_date: '15', need_payroll_slip: '否' });
+    expect(saved.paymentLocationRules[0].resignationDefaults).toEqual({ cert_delivery_method: '纸质版' });
+    await expect(service.upsert(customer().id, { paymentLocationRules: [locationRule({ resignationDefaults: { need_resignation_cert: '是' } })] }, user(['admin']))).rejects.toThrow('送达地址');
+  });
+
+  it('returns location rules from detail, list and portal defaults and allows an explicit empty array', async () => {
+    const existingRule = { customerId: customer().id, paymentLocationRules: [locationRule()] };
+    const { service } = makeService({ existingRule });
+    expect((await service.get(customer().id, user(['admin']))).paymentLocationRules).toEqual(existingRule.paymentLocationRules);
+    expect((await service.list({ page: 1, pageSize: 20 }, user(['admin']))).list[0].paymentLocationRules).toEqual(existingRule.paymentLocationRules);
+    expect((await service.getPortalDefaults(customer().id, user(['admin']))).paymentLocationRules).toEqual(existingRule.paymentLocationRules);
+    expect((await service.upsert(customer().id, { paymentLocationRules: [] }, user(['admin']))).paymentLocationRules).toEqual([]);
+  });
+
+  it('returns only active branches for the current customer and business scope', async () => {
+    const { service, branchRepository } = makeService({ branches: [branch(), branch({ id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', isActive: false }), branch({ customerId: '22222222-2222-4222-8222-222222222222' }), branch({ businessScope: BusinessScope.OUT_OF_PROVINCE })] });
+    expect(await service.getLocationOptions(customer().id, user(['business_group_member']))).toEqual([{ id: BRANCH_ID, branchCode: 'B01', branchName: '宁波商社', city: '宁波' }]);
+    expect(branchRepository.find).toHaveBeenCalledWith({ where: { customerId: customer().id, businessScope: BusinessScope.BEILUN, isActive: true }, order: { branchCode: 'ASC', id: 'ASC' } });
+  });
+
+  it('keeps list, detail, branch options and writes within the authenticated business scope', async () => {
+    const second = { ...customer('22222222-2222-4222-8222-222222222222'), businessScope: BusinessScope.OUT_OF_PROVINCE };
+    const { service, ruleRepository } = makeService({ listCustomers: [customer(), second] });
+    const caller = { ...user(['admin']), businessScope: BusinessScope.BEILUN };
+    expect((await service.list({ page: 1, pageSize: 20 }, caller)).list.map((item) => item.customerId)).toEqual([customer().id]);
+    await expect(service.get(second.id, caller)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.getLocationOptions(second.id, caller)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.upsert(second.id, { salaryRules: { billingDay: 20 } }, caller)).rejects.toBeInstanceOf(NotFoundException);
+    expect(ruleRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('requires employee type for edited onboarding configurations but permits legacy salary and mailbox-only updates', async () => {
+    const { service } = makeService({ existingRule: { customerId: customer().id, onboardingDefaults: { need_esign: false } } });
+    await expect(service.upsert(customer().id, { onboardingDefaults: { contract_subject: '主体' } }, user(['admin']))).rejects.toThrow('员工类型');
+    await expect(service.upsert(customer().id, { onboardingDefaults: { employee_type: '   ' } }, user(['admin']))).rejects.toThrow('员工类型');
+    const saved = await service.upsert(customer().id, { salaryRules: { billingDay: 20 }, sharedEmailRules: { mailbox: 'shared@example.test' } }, user(['admin']));
+    expect(saved.onboardingDefaults).toEqual({ need_esign: false });
+    expect(saved.readiness.missing).toContain('入职规则·员工类型');
+  });
+
+  it('shows missing employee type in each applicable location and accepts a location-specific employee type', async () => {
+    const { service } = makeService({ branches: [branch()], existingRule: { customerId: customer().id, onboardingDefaults: { need_esign: false }, paymentLocationRules: [locationRule({ onboardingDefaults: {} })] } });
+    expect((await service.get(customer().id, user(['admin']))).readiness.missing).toContain('宁波·入职规则·员工类型');
+    const saved = await service.upsert(customer().id, { onboardingDefaults: { need_company_payroll: true }, paymentLocationRules: [locationRule()] }, user(['admin']));
+    expect(saved.readiness.missing.some((item) => item.includes('员工类型'))).toBe(false);
+  });
+
+  it('stores payroll and informational fee fields as configured text without requiring fee fields', async () => {
+    const { service } = makeService();
+    const defaults = { employee_type: '正式员工', payroll_cycle: '当月', payroll_date: '31', need_payroll_slip: '是', purchased_products: '社保服务、工资代发', service_fee: '按合同约定', deposit: '未约定' };
+    const saved = await service.upsert(customer().id, { onboardingDefaults: defaults }, user(['admin']));
+    expect(saved.onboardingDefaults).toEqual(defaults);
+    await expect(service.upsert(customer().id, { onboardingDefaults: { employee_type: '正式员工' } }, user(['admin']))).resolves.toMatchObject({ onboardingDefaults: { employee_type: '正式员工' } });
+  });
+
+  it.each([{ payroll_cycle: '上月' }, { payroll_date: '0' }, { payroll_date: '32' }, { payroll_date: 15 }, { need_payroll_slip: true }, { need_payroll_slip: '不知道' }, { purchased_products: [] }, { service_fee: 10 }, { deposit: false }])('rejects invalid payroll and fee rule values: %j', async (defaults) => {
+    const { service } = makeService();
+    await expect(service.upsert(customer().id, { onboardingDefaults: { employee_type: '正式员工', ...defaults } }, user(['admin']))).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('defaults legacy payroll month to current and preserves previous through other salary patches', async () => {
+    const { service } = makeService({ existingRule: { customerId: customer().id, salaryRules: { billingDay: 20, reminderEnabled: true, reminderWorkdayOffsets: [3, 2, 1], payrollMonthMode: 'previous' } } });
+    expect((await makeService().service.get(customer().id, user(['admin']))).salaryRules.payrollMonthMode).toBe('current');
+    expect((await service.upsert(customer().id, { salaryRules: { reminderEnabled: false } }, user(['admin']))).salaryRules).toEqual({ billingDay: 20, reminderEnabled: false, reminderWorkdayOffsets: [3, 2, 1], payrollMonthMode: 'previous' });
+    for (const payrollMonthMode of ['next', null, 1, false]) await expect(service.upsert(customer().id, { salaryRules: { payrollMonthMode } }, user(['admin']))).rejects.toThrow('薪资所属月份');
+  });
+
+  it('never derives new payroll, fee, employee-type or branch mappings from historical orders', async () => {
+    const defaults = { payroll_cycle: '次月', payroll_date: '15', need_payroll_slip: '是', purchased_products: '产品', service_fee: '100', deposit: '500', employee_type: '正式员工' };
+    const { service, ruleRepository } = makeService({ workOrders: [{ customerId: customer().id, businessScope: BusinessScope.BEILUN, orderType: OrderType.ONBOARDING, status: WorkOrderStatus.COMPLETED, submittedAt: new Date('2026-09-10T00:00:00Z'), extraData: { ...defaults, need_esign: '否', branch_id: BRANCH_ID, social_location: '宁波', payrollMonthMode: 'previous' } }] });
+    await service.importFromExistingOrders([customer().id], user(['admin']));
+    expect(ruleRepository.save.mock.calls[0][0].onboardingDefaults).toEqual({ need_esign: false });
+    expect(ruleRepository.save.mock.calls[0][0].paymentLocationRules).toEqual([]);
+    expect(ruleRepository.save.mock.calls[0][0].salaryRules.payrollMonthMode).toBe('current');
+  });
+
+  it('adds only the payment-location JSONB column without rewriting existing rules or business data', async () => {
+    const query = jest.fn();
+    await new AddCustomerPaymentLocationRules20260910110000().up({ query } as any);
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledWith(expect.stringContaining("ADD COLUMN IF NOT EXISTS payment_location_rules jsonb NOT NULL DEFAULT '[]'::jsonb"));
+    expect(query.mock.calls[0][0]).not.toMatch(/\bUPDATE\b|\bDELETE\b|\bTRUNCATE\b/i);
   });
 
 });

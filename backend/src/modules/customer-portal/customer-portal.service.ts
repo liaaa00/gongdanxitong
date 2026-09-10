@@ -4,7 +4,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { DataSource, EntityManager, In, MoreThanOrEqual, Repository } from 'typeorm';
 import { Workbook } from 'exceljs';
 import { isUUID } from 'class-validator';
-import { BusinessScope, Customer, CustomerPortalRule, FieldConfig, OrderType, WorkOrder, WorkOrderCompletionEmail } from 'src/entities';
+import { BusinessScope, Customer, CustomerPortalRule, FieldConfig, FieldType, OrderType, WorkOrder, WorkOrderCompletionEmail } from 'src/entities';
 import { CustomerPortalSubmission } from 'src/entities/customer-portal-submission.entity';
 import { CustomerPortalAccountsService, PortalBusinessType, businessTypesForPermissions } from '../customer-portal-accounts/customer-portal-accounts.service';
 import { JwtUserPayload } from '../auth/auth.types';
@@ -16,10 +16,14 @@ import { ExcelParserService } from '../imports/excel-parser.service';
 import { UploadService } from '../upload/upload.service';
 import { ConfigService } from '@nestjs/config';
 import { AppConfig } from 'src/config/configuration';
+import { ContractSubjectsService, getAllowedFundRatios } from '../contract-subjects/contract-subjects.service';
+import { PortalRuleApplicationService } from '../customer-rules/portal-rule-application.service';
+import { getDispatchModuleLabel, isDispatchModuleVisibleForOrderType, isExportOnlyDispatchModule } from 'src/common/constants/dispatch-modules';
+import { PortalNotificationSettingsService } from '../portal-notifications/portal-notification-settings.service';
 
 const EDITABLE = {
-  onboarding: ['employee_name','id_card_type','id_card_no','mobile','email','household_type','ethnicity','education','marital_status','household_address','current_address','position','position_type','work_city','contract_term_type','contract_term','contract_start_date','contract_end_date','probation_start_date','probation_months','probation_end_date','probation_salary','probation_other_salary','work_hour_system','salary_form','base_salary','other_salary','social_location','start_month','social_base','fund_base','bank_name','bank_account'],
-  resignation: ['employee_name','id_card_no','mobile','email','resignation_date','social_stop_month','resignation_reason'],
+  onboarding: ['employee_name','id_card_type','id_card_no','mobile','email','household_type','ethnicity','education','marital_status','household_address','current_address','position','position_type','work_city','contract_term_type','contract_term','contract_start_date','contract_end_date','probation_start_date','probation_months','probation_end_date','probation_salary','probation_other_salary','work_hour_system','salary_form','base_salary','other_salary','social_location','start_month','social_base','fund_base','fund_ratio','remark','bank_name','bank_account'],
+  resignation: ['employee_name','id_card_no','mobile','email','resignation_date','social_location','social_stop_month','resignation_reason'],
 };
 const MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 type Business = PortalBusinessType;
@@ -46,7 +50,10 @@ export class CustomerPortalService {
     private readonly validation: ImportFieldValidationService,
     private readonly parser: ExcelParserService,
     private readonly uploads: UploadService,
+    private readonly contractSubjects: ContractSubjectsService,
+    private readonly ruleApplication: PortalRuleApplicationService,
     @Optional() private readonly configService?: ConfigService<AppConfig, true>,
+    @Optional() private readonly notificationSettings?: PortalNotificationSettingsService,
   ) {}
 
   private async session(input: PortalInput, requireBusiness = true): Promise<Session> {
@@ -57,10 +64,20 @@ export class CustomerPortalService {
   }
 
   async schema(input: PortalInput) {
-    await this.session(input);
-    if (input.businessType === 'salary') return { fields: [], reminderWorkdayOffsets: [3,2,1] };
+    const session = await this.session(input);
+    const rule = await this.rules.findOne({ where: { customerId: session.customer.id, isActive: true } });
+    if (input.businessType === 'salary') return { fields: [], reminderWorkdayOffsets: [3,2,1], defaultMonth: this.defaultSalaryMonth(rule) };
     const fields = await this.editableFields(input.businessType as 'onboarding'|'resignation');
-    return { fields: fields.map((field) => ({ code: field.fieldCode, name: field.fieldName, required: field.isRequired, options: field.dropdownOptions ?? [], type: field.fieldType })) };
+    const names = [...new Set([...(await this.contractSubjects.listFundLocations()), ...(rule?.paymentLocationRules ?? []).map((item) => item.socialLocation)])];
+    const locations = await Promise.all(names.map(async (name) => ({ name, fundRatios: getAllowedFundRatios(await this.contractSubjects.findFundRuleByLocation(name)) })));
+    return { fields: fields.map((field) => ({ code: field.fieldCode, name: field.fieldName, required: field.isRequired, options: field.dropdownOptions ?? [], type: field.fieldType })), locations };
+  }
+
+  private defaultSalaryMonth(rule: CustomerPortalRule | null): string {
+    const current = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' }).slice(0, 7);
+    if (rule?.salaryRules?.payrollMonthMode !== 'previous') return current;
+    const [year, month] = current.split('-').map(Number);
+    return `${month === 1 ? year - 1 : year}-${String(month === 1 ? 12 : month - 1).padStart(2, '0')}`;
   }
 
   async template(input: PortalInput) {
@@ -78,6 +95,24 @@ export class CustomerPortalService {
     // Metadata binds the standard workbook to its customer and current field schema.
     const book = new Workbook();
     await book.xlsx.load(generated.buffer as never);
+    if (business === 'onboarding') {
+      const sheet = book.worksheets[0];
+      for (const range of [...sheet.model.merges]) if (/^\w+1:\w+1$/.test(range)) sheet.unMergeCells(range);
+      sheet.getRow(1).eachCell({ includeEmpty: true }, (cell) => { cell.value = null; });
+      sheet.mergeCells(1, 1, 1, fields.length + 2);
+      sheet.getCell(1, 1).value = '客户填写资料；试用期选填。特殊城市要求请填备注。银行卡信息如不由外服联系员工收集，则需在本次填写。';
+      sheet.getCell(2, fields.length + 2).value = '附件';
+      sheet.getCell(3, fields.length + 2).value = '选填';
+      sheet.getCell(4, fields.length + 2).value = '本批次附件请在门户页面单独上传，统一送至共享邮箱。';
+      const locationColumn = fields.findIndex((field) => field.fieldCode === 'social_location') + 2;
+      if (locationColumn >= 2) for (let row = 6; row <= 505; row++) {
+        const cell = sheet.getCell(row, locationColumn);
+        if (cell.dataValidation) cell.dataValidation = { ...cell.dataValidation, showErrorMessage: false };
+      }
+    } else {
+      book.worksheets[0].getCell(3, fields.length + 2).value = '本批次附件请在门户页面单独上传，统一送至共享邮箱。';
+      book.worksheets[0].getCell(4, fields.length + 2).value = '';
+    }
     const metadata = book.addWorksheet('__portal'); metadata.state = 'veryHidden';
     metadata.addRows([['customerId', session.customer.id], ['businessType', business], ['schema', this.schemaHash(fields)]]);
     return { fileName: business === 'onboarding' ? '客户入职标准模板.xlsx' : '客户离职标准模板.xlsx', mimeType: MIME, contentBase64: Buffer.from(await book.xlsx.writeBuffer()).toString('base64') };
@@ -88,21 +123,38 @@ export class CustomerPortalService {
     const configured = await this.templateConfig.list(business as OrderType);
     return EDITABLE[business].map((code) => all.find((field) => field.fieldCode === code)).filter((field): field is FieldConfig => Boolean(field)).map((field) => {
       const override = configured.find((item) => item.fieldCode === field.fieldCode);
-      return Object.assign(new FieldConfig(), field, {
+      const result = Object.assign(new FieldConfig(), field, {
         // The customer submits intake; internal-only requirements remain for internal review.
         isRequired: business === 'resignation' ? ['employee_name','id_card_no','mobile','resignation_date','social_stop_month','resignation_reason'].includes(field.fieldCode) : (override?.isRequired ?? field.isRequired),
         defaultRequired: business === 'resignation' ? ['employee_name','id_card_no','mobile','resignation_date','social_stop_month','resignation_reason'].includes(field.fieldCode) : (override?.defaultRequired ?? field.defaultRequired),
         conditionalRequired: override?.conditionalRequired ?? field.conditionalRequired,
+        importTemplateConfigured: true,
       });
+      if (['bank_name', 'bank_account', 'fund_ratio', 'remark'].includes(field.fieldCode) || field.fieldCode.startsWith('probation_')) {
+        result.isRequired = false; result.defaultRequired = false; result.conditionalRequired = null;
+      }
+      if (['social_location', 'fund_ratio', 'social_stop_month'].includes(field.fieldCode)) {
+        result.fieldType = FieldType.TEXT; result.dropdownOptions = null;
+        result.validationRegex = null; result.validationMsg = null;
+      }
+      if (field.fieldCode === 'social_stop_month') {
+        result.fieldName = '社保公积金停保月（几月不产生费用填几月）';
+        result.validationRegex = '^\\d{4}-(0[1-9]|1[0-2])$';
+        result.validationMsg = '停保月请填写完整年月，例如 2027-01（该月起不产生费用）';
+        result.helpText = result.validationMsg; result.placeholder = '2027-01';
+      }
+      if (['bank_name', 'bank_account'].includes(field.fieldCode)) result.helpText = '如不由外服联系员工收集该信息，则需在本次收集页面填写。';
+      if (field.fieldCode === 'remark') result.helpText = '特殊城市的社保公积金要求请在此备注，由内部人员确认。';
+      return result;
     });
   }
 
   private schemaHash(fields: FieldConfig[]) { return this.hash(fields.map((field) => [field.fieldCode,field.fieldName,field.isRequired,field.dropdownOptions])); }
   private hash(value: unknown) { return createHash('sha256').update(JSON.stringify(value)).digest('hex'); }
 
-  private normalizeSalary(fields: Record<string, unknown>): NormalizedSalary {
+  private normalizeSalary(fields: Record<string, unknown>, defaultMonth: string): NormalizedSalary {
     if (Object.keys(fields).some((key) => !['mode','note','channel','month'].includes(key))) throw new BadRequestException('薪资不接受员工明细或金额字段');
-    const month = String(fields.month ?? new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' }).slice(0,7));
+    const month = String(fields.month ?? defaultMonth);
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new BadRequestException('薪资所属月份格式错误');
     if (!['same','changed'].includes(String(fields.mode))) throw new BadRequestException('请选择有变化或与上月无变化');
     const note = String(fields.note ?? '').trim();
@@ -115,17 +167,33 @@ export class CustomerPortalService {
   private async validateFields(business: 'onboarding'|'resignation', raw: Record<string, unknown>, rowNo = 1) {
     const fields = await this.editableFields(business);
     if (Object.keys(raw).some((code) => !fields.some((field) => field.fieldCode === code))) throw new BadRequestException('包含客户不可填写或已停用的字段');
-    const result = await this.validation.validateRow({ rowNo, raw, mapping: fields.map((field) => ({header:field.fieldCode,fieldCode:field.fieldCode})), orderType: business as OrderType, fields });
+    const result = await this.validation.validateRow({ rowNo, raw, mapping: fields.map((field) => ({header:field.fieldCode,fieldCode:field.fieldCode})), orderType: business as OrderType, fields, context: 'portal_intake' });
     if (!result.ok) throw new BadRequestException(result.errors.map((error) => error.message).join('；'));
+    if (business === 'onboarding') {
+      const probation = ['probation_start_date', 'probation_months', 'probation_end_date', 'probation_salary', 'probation_other_salary'];
+      if (probation.some((code) => raw[code] !== undefined && raw[code] !== null && String(raw[code]).trim())) {
+        if (['probation_start_date', 'probation_months', 'probation_salary'].some((code) => raw[code] === undefined || raw[code] === null || !String(raw[code]).trim())) throw new BadRequestException('填写试用期时，请补齐试用期开始日期、月数和工资');
+        const months = Number(raw.probation_months);
+        if (!Number.isInteger(months) || months < 1 || months > 6) throw new BadRequestException('试用期月数必须为 1 至 6');
+      }
+      const location = String(result.normalized.social_location ?? '').trim();
+      const fundRule = location ? await this.contractSubjects.findFundRuleByLocation(location) : null;
+      const ratio = String(result.normalized.fund_ratio ?? '').trim();
+      const options = getAllowedFundRatios(fundRule);
+      if (fundRule && options.length && !ratio) throw new BadRequestException('请选择缴纳地允许的公积金比例');
+      if (ratio && (!fundRule || !options.includes(ratio))) throw new BadRequestException('公积金比例不属于该缴纳地允许的比例；未配置缴纳地请留空并备注');
+      if (String(result.normalized.remark ?? '').length > 1000) throw new BadRequestException('社保公积金备注最多1000字');
+    }
     return result.normalized;
   }
 
   async submit(input: PortalInput, user?: JwtUserPayload) {
     const session = await this.session(input);
     const business = input.businessType!;
+    const rule = await this.rules.findOne({ where: { customerId: session.customer.id, isActive: true } });
     if (!/^[A-Za-z0-9._:-]{1,100}$/.test(input.requestId ?? '')) throw new BadRequestException('请求编号无效');
-    const normalized: NormalizedSalary | Record<string, unknown> = business === 'salary'
-      ? this.normalizeSalary(input.fields ?? {})
+    const normalized: Record<string, unknown> = business === 'salary'
+      ? this.normalizeSalary(input.fields ?? {}, this.defaultSalaryMonth(rule))
       : await this.validateFields(business, input.fields ?? {});
     if (business === 'salary' && normalized.channel === 'attachment' && !input.files?.length) throw new BadRequestException('请上传薪资文件');
     if (business === 'salary' && normalized.channel !== 'attachment' && input.files?.length) throw new BadRequestException('当前薪资填写方式不接受附件');
@@ -139,7 +207,6 @@ export class CustomerPortalService {
         if (existing.inputHash !== fingerprint) throw new ConflictException('同一请求编号不能提交不同资料');
         return this.receipt(existing);
       }
-      const rule = await this.rules.findOne({ where: { customerId: session.customer.id, isActive: true } });
       let orderId: string | null = null;
       let requestNo: string;
       if (business === 'salary') {
@@ -150,15 +217,20 @@ export class CustomerPortalService {
         requestNo = '';
       }
       if (business !== 'salary') {
+        const resolved = await this.ruleApplication.resolve(rule, session.customer.id, business, normalized.social_location);
+        const intake = { ...normalized };
+        if (business === 'resignation') intake.social_stop_month = `${Number(String(normalized.social_stop_month).slice(5))}月`;
         // Recover a draft if a prior connection failed after the existing work-order service committed it.
         const recovered = await this.orders.createQueryBuilder('w').where('w.customer_id = :customerId', { customerId: session.customer.id }).andWhere("w.extra_data ->> 'portal_intake_key' = :key", { key }).andWhere("w.extra_data ->> 'portal_input_hash' = :fingerprint", { fingerprint }).andWhere("w.order_type = :orderType", { orderType: business }).getOne();
         const draft = recovered ?? await this.workOrders.createDraft({ orderType: business as OrderType, customerId: session.customer.id, extraData: {
-          ...normalized, ...(business === 'onboarding' ? rule?.onboardingDefaults : rule?.resignationDefaults),
+          ...resolved.defaults, ...intake,
+          ...(resolved.branch ? { branchId: resolved.branch.id, branch_code: resolved.branch.branchCode } : {}),
+          portal_configuration_pending: resolved.missing.length > 0, portal_configuration_missing: resolved.missing,
           customer_name: session.customer.customerName, customer_code: session.customer.customerCode, portal_intake_key: key, portal_input_hash: fingerprint, portal_business_type: business,
-        } }, await this.getPortalActor());
+        } }, await this.getPortalActor(), resolved.branch?.id ?? null);
         orderId = draft.id; requestNo = draft.orderNo;
       }
-      const row = await repo.save(repo.create({ customerId: session.customer.id, accountId: session.account.id, businessType: business, requestId: input.requestId!, inputHash: fingerprint, requestNo, workOrderId: orderId, fields: business === 'salary' ? normalized : {}, status: 'received', resultNote: null, completedAt: null }));
+      const row = await repo.save(repo.create({ customerId: session.customer.id, accountId: session.account.id, businessType: business, requestId: input.requestId!, inputHash: fingerprint, requestNo, workOrderId: orderId, fields: normalized, status: 'received', resultNote: null, completedAt: null }));
       if (input.files?.length) await this.enqueueAttachments(row, input.files, rule, manager.getRepository(WorkOrderCompletionEmail), createdFileIds);
       return this.receipt(row);
     });
@@ -198,10 +270,11 @@ export class CustomerPortalService {
     const meta = book.getWorksheet('__portal');
     if (!meta || meta.getCell('B1').text !== session.customer.id || meta.getCell('B2').text !== business || meta.getCell('B3').text !== this.schemaHash(fields)) throw new BadRequestException('模板客户、业务类型或字段版本不一致，请重新下载模板');
     const sheet = book.worksheets[0];
+    const headerRow = business === 'onboarding' ? 2 : 1;
     const expectedHeaders = ['字段名', ...fields.map((field) => field.fieldName), '附件'];
-    const actualHeaders = Array.from({ length: expectedHeaders.length }, (_, index) => String(sheet.getCell(1, index + 1).text ?? '').trim());
-    if (actualHeaders.length !== expectedHeaders.length || actualHeaders.some((header, index) => header !== expectedHeaders[index])) throw new BadRequestException('模板表头被修改，请重新下载标准模板');
-    const parsed = await this.parser.parseBuffer(buffer, { headerRows: 1 });
+    const actualHeaders = Array.from({ length: Math.max(expectedHeaders.length, sheet.getRow(headerRow).cellCount) }, (_, index) => String(sheet.getCell(headerRow, index + 1).text ?? '').trim());
+    if (actualHeaders.some((header, index) => index < expectedHeaders.length ? header !== expectedHeaders[index] : Boolean(header))) throw new BadRequestException('模板表头被修改，请重新下载标准模板');
+    const parsed = await this.parser.parseBuffer(buffer, { headerRows: 1, headerStartRow: headerRow });
     const headers = fields.map((field) => field.fieldName);
     if (!parsed.rows.length || parsed.rows.length > 500) throw new BadRequestException('每次请导入1至500条资料');
     const details: Array<{rowNumber:number;success:boolean;message:string;workOrderNo?:string}> = [];
@@ -211,7 +284,7 @@ export class CustomerPortalService {
       const raw = Object.fromEntries(fields.map((field) => [field.fieldCode, parsed.rows[index][field.fieldName] ?? '']));
       try {
         await this.validateFields(business, raw, rowNumber);
-        const result = confirm ? await this.submit({ ...input, files: undefined, fields: raw, requestId: `excel-${digest.slice(0,48)}-${rowNumber}` }, user) : undefined;
+        const result = confirm ? await this.submit({ ...input, fields: raw, requestId: `excel-${digest.slice(0,48)}-${rowNumber}` }, user) : undefined;
         details.push({ rowNumber, success:true, message: confirm ? '已受理' : '校验通过', ...(result ? {workOrderNo:result.workOrderNo} : {}) });
       } catch (error) { details.push({rowNumber,success:false,message:error instanceof Error ? error.message : '导入失败'}); }
     }
@@ -224,12 +297,16 @@ export class CustomerPortalService {
     const since = new Date();
     since.setMonth(since.getMonth() - 6);
     const rows = await this.submissions.find({ where: {customerId:session.customer.id,businessType:In(allowed),createdAt:MoreThanOrEqual(since)},order:{createdAt:'DESC'},take:200 });
-    const orders = rows.some((row)=>row.workOrderId) ? await this.orders.find({where:{id:In(rows.map((row)=>row.workOrderId).filter(Boolean)),customerId:session.customer.id}}) : [];
+    const orders = rows.some((row)=>row.workOrderId) ? await this.orders.find({where:{id:In(rows.map((row)=>row.workOrderId).filter(Boolean)),customerId:session.customer.id},relations:{dispatchedOrders:true}}) : [];
     const mails = rows.length ? await this.mails.find({where:[{portalSubmissionId:In(rows.map((row)=>row.id))},...(orders.length?[{workOrderId:In(orders.map((row)=>row.id)),customerId:session.customer.id}]:[])],order:{createdAt:'DESC'}}) : [];
     const list = rows.map((row)=> {
       const order = orders.find((item)=>item.id===row.workOrderId);
       const mail = mails.find((item)=>(item.portalSubmissionId===row.id || Boolean(row.workOrderId && item.workOrderId===row.workOrderId)) && item.templateCode !== 'portal-attachments');
-      return {id:row.id,requestNo:row.requestNo,businessType:row.businessType,subject:order?.employeeName ?? String(row.fields.month ?? ''),status:order?.status ?? row.status,createdAt:row.createdAt,completedAt:order?.completedAt ?? row.completedAt,result:row.resultNote,completionEmailStatus:mail?.status ?? null};
+      const steps = (order?.dispatchedOrders ?? []).filter(child => !isExportOnlyDispatchModule(child.moduleCode) && isDispatchModuleVisibleForOrderType(child.moduleCode, order!.orderType))
+        .map(child => ({ name: getDispatchModuleLabel(child.moduleCode), status: child.status, completedAt: child.completedAt }));
+      const labels: Record<string,string> = { pending:'待办理',processing:'办理中',completed:'已办结',returned:'已退回',void:'已作废',withdrawn:'已撤回',modify_pending:'修改审核中',withdraw_pending:'撤回审核中',void_pending:'作废审核中' };
+      const result = order ? (steps.length ? steps.map(step=>`${step.name}：${labels[step.status] ?? '办理中'}`).join('；') : '资料已受理，等待内部审核') : row.resultNote;
+      return {id:row.id,requestNo:row.requestNo,businessType:row.businessType,subject:order?.employeeName ?? String(row.fields.month ?? ''),status:order?.status ?? row.status,createdAt:row.createdAt,completedAt:order?.completedAt ?? row.completedAt,result,steps,completionEmailStatus:mail?.status ?? null};
     });
     return { list, total:list.length, summary:{processing:list.filter((row)=>!['completed','void','withdrawn'].includes(row.status)).length,completed:list.filter((row)=>row.status==='completed').length}, month:new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'}).slice(0,7) };
   }
@@ -308,11 +385,12 @@ export class CustomerPortalService {
     });
   }
 
-  private async assertCustomerAccess(customerId: string, user: JwtUserPayload): Promise<void> {
+  private async assertCustomerAccess(customerId: string, user: JwtUserPayload): Promise<Customer> {
     if (!isUUID(customerId)) throw new BadRequestException('客户 UUID 格式错误');
     const businessScope = user.businessScope ?? BusinessScope.BEILUN;
     const customer = await this.customers.findOne({ where: { id: customerId, businessScope } });
     if (!customer) throw new NotFoundException('客户不存在');
+    return customer;
   }
 
   async listSalary(customerId: string, user: JwtUserPayload) {
@@ -322,7 +400,7 @@ export class CustomerPortalService {
 
   async completeSalary(id:string,customerId:string,resultNote:string,user:JwtUserPayload) {
     if(!resultNote.trim() || resultNote.length>2000)throw new BadRequestException('请填写2000字以内的办理结果');
-    await this.assertCustomerAccess(customerId,user);
+    const customer = await this.assertCustomerAccess(customerId,user);
     return this.withUploadCompensation(this.hash([customerId, id, 'salary-completion']), async(manager, createdFileIds)=>{
       const repo=manager.getRepository(CustomerPortalSubmission);
       const row=await repo.findOne({where:{id,customerId,businessType:'salary'},lock:{mode:'pessimistic_write'}});
@@ -331,12 +409,16 @@ export class CustomerPortalService {
       row.status='completed';row.resultNote=resultNote.trim();row.completedAt=new Date();
       const rule=await this.rules.findOne({where:{customerId,isActive:true}});
       if(rule?.completionEmailEnabled && rule.completionEmailTo.length){
+        const content = this.notificationSettings ? await this.notificationSettings.render('completion', {
+          order_no:row.requestNo, employee_name:'', customer_name:customer.customerName, business_type:'薪资',
+          objection_notice:rule.objectionDeadlineDays===null?'如有异议，请按约定时间反馈。':`如有异议，请在${rule.objectionDeadlineDays}天内反馈。`,
+        },manager) : {subject:`薪资${row.requestNo}办结结果`,body:row.resultNote};
         const book=new Workbook();const sheet=book.addWorksheet('薪资办结结果');
         sheet.addRows([['受理编号','所属月份','办理结果'],[row.requestNo,String(row.fields.month),row.resultNote]]);
         const buffer=Buffer.from(await book.xlsx.writeBuffer());const file=await this.uploads.saveBuffer({kind:'excel',buffer,originalName:`${row.requestNo}-薪资办结结果.xlsx`,mimeType:MIME});
         createdFileIds.push(file.fileId);
         const mails=manager.getRepository(WorkOrderCompletionEmail);
-        await mails.save(mails.create({workOrderId:null,portalSubmissionId:row.id,customerId,completedVersion:1,templateCode:'portal-salary-completion',templateVersion:'v1',toRecipients:rule.completionEmailTo,ccRecipients:rule.completionEmailCc,replyTo:rule.completionEmailReplyTo,subject:`薪资${row.requestNo}办结结果`,bodySnapshot:row.resultNote,attachmentId:file.fileId,attachmentIds:[],attachmentHash:this.hash(buffer),status:'pending',attemptCount:0,nextRetryAt:null,lastError:null,sentAt:null}));
+        await mails.save(mails.create({workOrderId:null,portalSubmissionId:row.id,customerId,completedVersion:1,templateCode:'portal-salary-completion',templateVersion:'v1',toRecipients:rule.completionEmailTo,ccRecipients:rule.completionEmailCc,replyTo:rule.completionEmailReplyTo,subject:content.subject,bodySnapshot:content.body,attachmentId:file.fileId,attachmentIds:[],attachmentHash:this.hash(buffer),status:'pending',attemptCount:0,nextRetryAt:null,lastError:null,sentAt:null}));
       }
       return repo.save(row);
     });
