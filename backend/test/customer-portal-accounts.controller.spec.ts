@@ -22,6 +22,10 @@ describe('CustomerPortalAccountsController HTTP validation', () => {
       ],
     }).compile();
     app = moduleRef.createNestApplication();
+    app.use((request: { user?: unknown }, _response: unknown, next: () => void) => {
+      request.user = { sub: 'controller-user', username: 'controller-user', roles: ['admin'], businessScope: 'beilun' };
+      next();
+    });
     app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }));
     await app.init();
   });
@@ -34,7 +38,11 @@ describe('CustomerPortalAccountsController HTTP validation', () => {
     }
     expect(service.create).not.toHaveBeenCalled();
     await request(app.getHttpServer()).post(accountPath).send(account).expect(201);
-    expect(service.create).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ businessPermissions: ['employee_changes'] }));
+    expect(service.create).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ businessPermissions: ['employee_changes'] }),
+      expect.objectContaining({ sub: 'controller-user', roles: ['admin'], businessScope: 'beilun' }),
+    );
   });
 
   it('preserves false booleans and refuses string coercion on all account mutation endpoints', async () => {

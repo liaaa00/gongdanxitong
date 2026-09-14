@@ -1,5 +1,5 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { Branch, BusinessScope, Customer, CustomerPortalRule, OrderType, WorkOrder, WorkOrderStatus } from 'src/entities';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Branch, BusinessScope, Customer, CustomerAssignee, CustomerPortalRule, OrderType, WorkOrder, WorkOrderStatus } from 'src/entities';
 import { AddCustomerPaymentLocationRules20260910110000 } from 'src/database/migrations/20260910110000-AddCustomerPaymentLocationRules';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { CustomerRulesService } from 'src/modules/customer-rules/customer-rules.service';
@@ -40,9 +40,10 @@ function queryBuilder(result: Customer | null, list: Customer[] = result ? [resu
   const filter = () => list.filter((item) => (!activeOnly || item.isActive)
     && (!businessScope || item.businessScope === businessScope)
     && (!customerId || item.id === customerId) && (!customerIds || customerIds.includes(item.id)));
-  const applyWhere = (sql: string, params?: { customerId?: string; customerIds?: string[]; businessScope?: BusinessScope }) => {
+  const applyWhere = (sql: string, params?: { customerId?: string; customerIds?: string[]; assignedCustomerIds?: string[]; businessScope?: BusinessScope }) => {
     if (sql === 'customer.id = :customerId') customerId = params?.customerId;
-    if (sql === 'customer.id IN (:...customerIds)') customerIds = params?.customerIds;
+    if (sql.includes('customer.id IN (:...customerIds)')) customerIds = params?.customerIds;
+    if (sql.includes('customer.id IN (:...assignedCustomerIds)')) customerIds = params?.assignedCustomerIds;
     if (sql === 'customer.isActive = true') activeOnly = true;
     if (sql === 'customer.businessScope = :businessScope') businessScope = params?.businessScope;
     return qb;
@@ -69,6 +70,7 @@ function makeService(options: {
   customerExists?: boolean;
   workOrders?: Partial<WorkOrder>[];
   branches?: Partial<Branch>[];
+  assignees?: Partial<CustomerAssignee>[];
 } = {}) {
   const accessibleCustomer = options.accessibleCustomer === undefined ? customer() : options.accessibleCustomer;
   const customerQb = queryBuilder(accessibleCustomer, options.listCustomers ?? (accessibleCustomer ? [accessibleCustomer] : []));
@@ -110,8 +112,11 @@ function makeService(options: {
     find: jest.fn(async ({ where }) => (options.branches ?? []).filter((row) => Object.entries(where).every(([key, value]) => row[key as keyof Branch] === value))),
     findOne: jest.fn(async ({ where }) => (options.branches ?? []).find((row) => Object.entries(where).every(([key, value]) => row[key as keyof Branch] === value)) ?? null),
   };
+  const assigneeRepository = options.assignees === undefined ? undefined : {
+    find: jest.fn(async ({ where }: any) => (options.assignees ?? []).filter((row) => Object.entries(where).every(([key, value]) => row[key as keyof CustomerAssignee] === value))),
+  };
   return {
-    service: new CustomerRulesService(ruleRepository, customerRepository, workOrderRepository, branchRepository as any),
+    service: new CustomerRulesService(ruleRepository, customerRepository, workOrderRepository, branchRepository as any, assigneeRepository as any),
     customerQb,
     ruleRepository,
     customerRepository,
@@ -131,21 +136,27 @@ describe('CustomerRulesService', () => {
     }
   });
 
-  it('allows every business role to list all active customers without assignee filtering', async () => {
+  it('returns no customers to business users without an active assignment', async () => {
     for (const role of ['business_group_member', 'business_group_leader', 'salesperson']) {
-      const { service, customerQb } = makeService();
+      const { service, customerQb } = makeService({ assignees: [] });
       const result = await service.list({ page: 1, pageSize: 20 }, user([role], 'sales-1'));
-      expect(result.total).toBe(1);
-      expect(customerQb.innerJoin).not.toHaveBeenCalled();
+      expect(result.total).toBe(0);
+      expect(customerQb.andWhere).not.toHaveBeenCalledWith('customer.id IN (:...assignedCustomerIds)', expect.anything());
     }
   });
 
-  it('allows a business member to maintain any existing customer and only rejects missing customers', async () => {
-    const { service } = makeService();
-    await expect(service.get('11111111-1111-4111-8111-111111111111', user(['business_group_member']))).resolves.toMatchObject({ customerId: '11111111-1111-4111-8111-111111111111' });
+  it('limits business members to active customer assignments and keeps managers read-only', async () => {
+    const firstId = '11111111-1111-4111-8111-111111111111';
+    const secondId = '22222222-2222-4222-8222-222222222222';
+    const assigned = makeService({ listCustomers: [customer(firstId), customer(secondId)], assignees: [{ customerId: firstId, userId: 'user-1', businessScope: BusinessScope.BEILUN, isActive: true }] });
+    const member = user(['business_group_member']);
+    expect((await assigned.service.list({ page: 1, pageSize: 20 }, member)).list.map((item) => item.customerId)).toEqual([firstId]);
+    await expect(assigned.service.get(firstId, member)).resolves.toMatchObject({ customerId: firstId });
+    await expect(assigned.service.get(secondId, member)).rejects.toBeInstanceOf(ForbiddenException);
 
-    const missing = makeService({ accessibleCustomer: null, customerExists: true });
-    await expect(missing.service.get('22222222-2222-4222-8222-222222222222', user(['business_group_member']))).rejects.toBeInstanceOf(NotFoundException);
+    const manager = makeService({ assignees: [] });
+    await expect(manager.service.get(firstId, user(['business_owner']))).resolves.toMatchObject({ customerId: firstId });
+    await expect(manager.service.upsert(firstId, { isActive: true }, user(['business_owner']))).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('accepts only the internal onboarding default whitelist and normalizes values', async () => {

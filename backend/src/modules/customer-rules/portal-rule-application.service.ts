@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { DataSource, EntityManager, IsNull, Not } from 'typeorm';
-import { Branch, BusinessScope, Customer, CustomerPortalRule, OperationLog, OrderType, WorkOrder, WorkOrderStatus } from 'src/entities';
+import { Branch, BusinessScope, Customer, CustomerAssignee, CustomerPortalRule, OperationLog, OrderType, WorkOrder, WorkOrderStatus } from 'src/entities';
 import { CustomerPortalSubmission } from 'src/entities/customer-portal-submission.entity';
 import { JwtUserPayload } from '../auth/auth.types';
+import { hasAnyRole, hasManagementScopeRole, isAdminRole, WORK_ORDER_CREATOR_ROLES } from 'src/common/auth/role-permissions';
 
 const isBlank = (value: unknown) => value === undefined || value === null || (typeof value === 'string' && !value.trim());
 
@@ -36,8 +37,14 @@ export class PortalRuleApplicationService {
   }
 
   async syncPending(customerId: string, user: JwtUserPayload) {
+    if (hasManagementScopeRole(user.roles) && !isAdminRole(user.roles)) throw new ForbiddenException('业务负责人仅可查看客户门户配置');
+    if (!isAdminRole(user.roles) && !hasAnyRole(user.roles, WORK_ORDER_CREATOR_ROLES)) throw new ForbiddenException('当前账号无客户门户配置权限');
     const customer = await this.dataSource.getRepository(Customer).findOne({ where: { id: customerId, businessScope: BusinessScope.BEILUN, isActive: true } });
     if (!customer) throw new NotFoundException('客户不存在');
+    if (!isAdminRole(user.roles)) {
+      const assignment = await this.dataSource.getRepository(CustomerAssignee).findOne({ where: { customerId, userId: user.sub, businessScope: user.businessScope ?? BusinessScope.BEILUN, isActive: true } });
+      if (!assignment) throw new ForbiddenException('当前账号未分配该客户');
+    }
     const submissions = await this.dataSource.getRepository(CustomerPortalSubmission).find({ where: { customerId, workOrderId: Not(IsNull()) }, order: { createdAt: 'ASC' } });
     const results: Array<{ workOrderId: string; requestNo: string; status: 'updated' | 'skipped' | 'failed'; message: string; fields?: string[] }> = [];
     for (const submission of submissions) {

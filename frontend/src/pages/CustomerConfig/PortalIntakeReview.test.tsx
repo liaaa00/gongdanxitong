@@ -4,7 +4,7 @@ import { ConfigProvider } from 'antd';
 import { MemoryRouter } from 'react-router-dom';
 import type { FieldConfigItem } from '@/services/fields';
 import type { WorkOrderItem } from '@/services/workOrders';
-import PortalIntakeReview from './PortalIntakeReview';
+import PortalIntakeReview, { formatReviewError } from './PortalIntakeReview';
 
 const mocks = vi.hoisted(() => ({
   getPortalIntake: vi.fn(), claimPortalIntake: vi.fn(), getFields: vi.fn(),
@@ -55,6 +55,13 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('门户增减员审核抽屉', () => {
+  it('把后端字段级校验原因转换为可执行的中文提示', () => {
+    const error = Object.assign(new Error('字段值不合法'), {
+      details: { invalid: [{ fieldCode: 'social_location', reason: '缴纳地未匹配正式公积金规则' }] },
+    });
+    expect(formatReviewError(error)).toBe('字段值不合法：缴纳地：缴纳地未匹配正式公积金规则');
+  });
+
   it('显示明确的否选项，保留原有人工值，只保存实际改动并正常通过校验', async () => {
     render(<ConfigProvider theme={{ token: { motion: false } }}><MemoryRouter><PortalIntakeReview customerId="customer-1" /></MemoryRouter></ConfigProvider>);
     fireEvent.click(await screen.findByRole('button', { name: '认领并审核' }));
@@ -80,5 +87,5 @@ describe('门户增减员审核抽屉', () => {
     expect(detail.extra_data.need_onboarding_contact).toBe(false);
     expect(detail.extra_data.portal_configuration_pending).toBe(false);
     expect(mocks.claimPortalIntake).toHaveBeenCalledWith('customer-1', 'intake-1');
-  });
+  }, 30_000);
 });

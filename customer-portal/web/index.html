@@ -812,18 +812,16 @@
                 <div class="field"><label for="position"><span class="required">*</span>岗位</label><input id="position" name="position" required placeholder="请输入岗位名称"></div>
                 <div class="field"><label for="position_type"><span class="required">*</span>岗位类型</label><select id="position_type" name="position_type" required><option value="">请选择</option><option>管理</option><option>非管理</option></select></div>
                 <div class="field"><label for="work_city"><span class="required">*</span>工作城市</label><input id="work_city" name="work_city" required placeholder="例如：宁波"></div>
-                <div class="field"><label for="contract_type"><span class="required">*</span>合同期限形式</label><select id="contract_type" name="contract_type" required><option value="">请选择</option><option value="fixed">固定期限</option><option value="open">无固定期限</option></select></div>
+                <div class="field"><label for="contract_type"><span class="required">*</span>合同期限形式</label><select id="contract_type" name="contract_type" required><option value="">请选择</option><option value="fixed">固定期限</option><option value="open">无固定期限</option><option value="task">任务期限</option></select></div>
                 <div class="field"><label for="contract_start_date"><span class="required">*</span>合同开始日期</label><input id="contract_start_date" name="contract_start_date" type="date" required></div>
-                <div class="field condition-row visible" id="contract-duration-row"><label for="contract_duration"><span class="required">*</span>合同期限（月）</label><input id="contract_duration" name="contract_duration" type="number" min="1" placeholder="例如：36"></div>
-                <div class="field condition-row visible" id="contract-end-row"><label>合同终止日期</label><output id="contract_end_date" class="derived">填写开始日期和期限后自动计算</output></div>
-                <div class="field"><label for="probation_start_date">试用期开始日期</label><input id="probation_start_date" name="probation_start_date" type="date"><small class="field-help">没有试用期时无需填写；填写后请补充试用期月数和工资。</small></div>
-                <div class="field condition-row" id="probation-month-row"><label for="probation_months"><span class="required">*</span>试用期（月）</label><input id="probation_months" name="probation_months" type="number" min="1" max="6" placeholder="例如：3"></div>
-                <div class="field condition-row" id="probation-end-row"><label>试用期结束日期</label><output id="probation_end_date" class="derived">填写试用期后自动计算</output></div>
+                <div class="field condition-row visible" id="contract-end-row"><label for="contract_end_date">合同终止日期</label><input id="contract_end_date" name="contract_end_date" type="date"></div>
+                <div class="field"><label for="probation_start_date">试用期开始日期</label><input id="probation_start_date" name="probation_start_date" type="date"></div>
+                <div class="field" id="probation-end-row"><label for="probation_end_date">试用期结束日期</label><input id="probation_end_date" name="probation_end_date" type="date"></div>
                 <div class="field"><label for="working_hours"><span class="required">*</span>工时制</label><select id="working_hours" name="working_hours" required><option value="">请选择</option><option>标准工时</option><option>综合工时</option><option>不定时工时</option></select></div>
-                <div class="field"><label for="salary_type"><span class="required">*</span>工资形式</label><select id="salary_type" name="salary_type" required><option value="按月">按月</option><option value="按日">按日</option><option value="按小时">按小时</option></select></div>
-                <div class="field"><label for="base_salary"><span class="required">*</span>基本工资</label><div class="input-prefix"><span>￥</span><input id="base_salary" name="base_salary" type="number" min="0.01" step="0.01" required placeholder="0.00"></div></div>
+                <div class="field"><label for="salary_type"><span class="required">*</span>工资形式</label><select id="salary_type" name="salary_type" required><option value="按月">按月</option></select></div>
+                <div class="field"><label for="base_salary"><span class="required">*</span>基本工资</label><input id="base_salary" name="base_salary" type="text" maxlength="500" required placeholder="可填写数字、货币格式或文字说明"></div>
                 <div class="field"><label for="other_salary">其他工资项目（如有）</label><input id="other_salary" name="other_salary" type="text" maxlength="1000" placeholder="例如：绩效工资按考核结果发放"></div>
-                <div class="field condition-row" id="probation-salary-row"><label for="probation_salary"><span class="required">*</span>试用期基本工资</label><div class="input-prefix"><span>￥</span><input id="probation_salary" name="probation_salary" type="number" min="0" step="0.01" placeholder="填写试用期时必填"></div></div>
+                <div class="field condition-row" id="probation-salary-row"><label for="probation_salary">试用期基本工资</label><input id="probation_salary" name="probation_salary" type="text" maxlength="500" placeholder="可填写数字、货币格式或文字说明"></div>
                 <div class="field condition-row" id="probation-other-salary-row"><label for="probation_other_salary">试用期其他工资项目（如有）</label><input id="probation_other_salary" name="probation_other_salary" type="text" maxlength="1000" placeholder="可填写金额或文字说明"></div>
               </div>
             </section>
@@ -843,6 +841,7 @@
             <section class="form-section" data-step-panel="4" aria-labelledby="onboarding-step-4">
               <div class="section-heading"><div><h2 id="onboarding-step-4">银行卡与确认</h2><p>如不由外服联系员工收集该信息，则需在本次收集页面填写。</p></div><span class="inline-note">银行卡信息仅用于薪酬发放登记。</span></div>
               <div class="form-grid">
+                <div class="field"><label for="bank_location">开户地</label><input id="bank_location" name="bank_location" placeholder="请输入开户城市"></div>
                 <div class="field"><label for="bank_name">开户银行</label><input id="bank_name" name="bank_name" placeholder="请输入开户银行"></div>
                 <div class="field full"><label for="bank_account">银行借记卡帐号</label><input id="bank_account" name="bank_account" inputmode="numeric" pattern="[0-9]{8,30}" minlength="8" maxlength="30" title="请输入8-30位数字，不能包含空格或括号" placeholder="请输入8-30位银行卡号"></div>
                 <label class="check-option full"><input id="onboarding-consent" type="checkbox" required>我已确认以上资料准确，并同意提交办理。</label>
@@ -952,7 +951,7 @@
 
   <section id="portal-password-panel" class="hidden" style="max-width:520px;margin:60px auto;padding:24px"><h1>修改登录密码</h1><p>请设置您自己的密码后继续办理。</p><form id="portal-password-form" class="form-shell"><div class="field"><label>当前密码</label><input name="oldPassword" type="password" autocomplete="current-password" required></div><div class="field"><label>新密码</label><input name="newPassword" type="password" autocomplete="new-password" minlength="8" maxlength="72" required placeholder="8至72位，包含字母和数字"></div><div class="field"><label>确认新密码</label><input name="confirmPassword" type="password" autocomplete="new-password" required></div><p id="portal-password-error" role="alert"></p><button type="submit" class="primary-button">保存新密码</button><button id="portal-password-back" type="button" class="quiet-button">返回工作台</button></form></section>
 <script>
-    const portalState = { onboardingStep: 1, salaryMode: null, salaryChannel: null, salaryAttachmentInvalid: false, progressFilter: 'all', modalAction: null, submittingOnboarding: false, onboardingRequestId: null, onboardingFiles: [], resignationFiles: [], onboardingAttachmentIds: [], importPreview: null, importMapping: {}, importFileId: null, importRequestId: null, resignationImportFileId: null, standardTemplateDownloads: { onboarding: false, resignation: false }, importing: false };
+    const portalState = { onboardingStep: 1, salaryMode: null, salaryChannel: null, salaryAttachmentInvalid: false, progressFilter: 'all', modalAction: null, submittingOnboarding: false, onboardingRequestId: null, onboardingFiles: [], resignationFiles: [], onboardingAttachmentIds: [], importPreview: null, importMapping: {}, importFileId: null, importRequestId: null, resignationImportFileId: null, standardTemplateDownloads: { onboarding: false, resignation: false }, importing: false, correctionSubmissionId: null, correctionBusinessType: null, correctionOriginalFields: null, correctionFields: [] };
     const authPage = document.getElementById('auth-page');
     const portalApp = document.getElementById('portal-app');
     const toast = document.getElementById('toast');
@@ -1091,18 +1090,14 @@
       for (const [name, value] of new FormData(form).entries()) {
         if (name !== 'onboarding-consent' && value !== '') fields[name] = value;
       }
-      const contractEndDate = document.getElementById('contract_end_date').textContent;
-      const probationEndDate = document.getElementById('probation_end_date').textContent;
-      if (/^\d{4}-\d{2}-\d{2}$/.test(contractEndDate)) fields.contract_end_date = contractEndDate;
-      if (/^\d{4}-\d{2}-\d{2}$/.test(probationEndDate)) fields.probation_end_date = probationEndDate;
-      fields.contract_term_type = fields.contract_type === 'fixed' ? '固定期限' : '无固定期限';
-      if (fields.contract_duration) fields.contract_term = fields.contract_duration;
+      fields.contract_term_type = fields.contract_type === 'fixed' ? '固定期限' : fields.contract_type === 'task' ? '任务期限' : '无固定期限';
       fields.work_hour_system = fields.working_hours || '';
       fields.salary_form = fields.salary_type || '';
       fields.start_month = fields.social_start_month || '';
       if (fields.position_type === '\u7ba1\u7406') fields.position_type = '\u7ba1\u7406\u7c7b';
       if (fields.position_type === '\u975e\u7ba1\u7406') fields.position_type = '\u975e\u7ba1\u7406\u7c7b';
-      if (fields.work_hour_system === '\u6807\u51c6\u5de5\u65f6') fields.work_hour_system = '\u6807\u51c6\u5de5\u65f6\u5236';
+      const workHourSystemAliases = { '\u6807\u51c6\u5de5\u65f6': '\u6807\u51c6\u5de5\u65f6\u5236', '\u7efc\u5408\u5de5\u65f6': '\u7efc\u5408\u5de5\u65f6\u5236', '\u4e0d\u5b9a\u65f6\u5de5\u65f6': '\u4e0d\u5b9a\u65f6\u5de5\u65f6\u5236' };
+      fields.work_hour_system = workHourSystemAliases[fields.work_hour_system] || fields.work_hour_system;
       delete fields.contract_type;
       delete fields.contract_duration;
       delete fields.working_hours;
@@ -1188,7 +1183,7 @@ excelInput.addEventListener('change', () => updateFileDropzone(excelInput, excel
       }
       event.target.value = ''; renderOnboardingAttachments(); if (portalState.onboardingFiles.length) setToolStatus('attachment-status', '已选择 ' + portalState.onboardingFiles.length + ' 个附件。');
     });
-    const importFieldOptions = [['employee_name','姓名'],['id_card_type','证件类型'],['id_card_no','证件号码'],['mobile','移动电话'],['email','电子邮件'],['position','岗位'],['position_type','岗位类型'],['contract_term_type','合同期限形式'],['contract_term','合同期限'],['contract_start_date','合同开始日期'],['work_city','工作城市'],['work_hour_system','工时制'],['salary_form','工资形式'],['base_salary','基本工资'],['social_location','缴纳地'],['start_month','社保起缴月'],['social_base','社保缴费工资'],['fund_base','公积金缴费工资'],['bank_account','银行卡号']];
+    const importFieldOptions = [['employee_name','姓名'],['id_card_type','证件类型'],['id_card_no','证件号码'],['mobile','移动电话'],['email','电子邮件'],['position','岗位'],['position_type','岗位类型'],['contract_term_type','合同期限形式'],['contract_start_date','合同开始日期'],['contract_end_date','合同终止日期'],['probation_end_date','试用期结束日期'],['work_city','工作城市'],['work_hour_system','工时制'],['salary_form','工资形式'],['base_salary','基本工资'],['social_location','缴纳地'],['start_month','社保起缴月'],['social_base','社保缴费工资'],['fund_base','公积金缴费工资'],['bank_location','开户地'],['bank_account','银行卡号']];
 
 
 
@@ -1205,39 +1200,45 @@ excelInput.addEventListener('change', () => updateFileDropzone(excelInput, excel
 
     function addMonths(dateValue, months) {
       if (!dateValue || !months) return '';
-      const date = new Date(dateValue + 'T00:00:00');
-      date.setMonth(date.getMonth() + Number(months));
+      const start = new Date(dateValue + 'T00:00:00Z');
+      const date = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + Number(months), 1));
+      const last = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).getUTCDate();
+      date.setUTCDate(Math.min(start.getUTCDate(), last));
       return date.toISOString().slice(0, 10);
     }
     function updateContractDates() {
-      const isOpen = document.getElementById('contract_type').value === 'open';
-      const duration = document.getElementById('contract_duration');
-      document.getElementById('contract-duration-row').classList.toggle('visible', !isOpen);
+      const contractType = document.getElementById('contract_type').value;
+      const isOpen = contractType === 'open';
       document.getElementById('contract-end-row').classList.toggle('visible', !isOpen);
-      duration.required = !isOpen;
       const contractStart = document.getElementById('contract_start_date').value;
-      document.getElementById('contract_end_date').textContent = isOpen ? '无固定期限，不需要填写终止日期' : (addMonths(contractStart, duration.value) || '填写开始日期和期限后自动计算');
+      const end = document.getElementById('contract_end_date');
+      end.disabled = isOpen;
+      end.required = !isOpen;
+      end.min = contractStart;
       const socialStartMonth = document.getElementById('social_start_month');
       if (contractStart && !socialStartMonth.value) socialStartMonth.value = Number(contractStart.slice(5, 7)) + '月';
       updateProbationDates();
     }
     function updateProbationDates() {
-      const hasStart = Boolean(document.getElementById('probation_start_date').value);
-      const months = document.getElementById('probation_months');
-      document.getElementById('probation-month-row').classList.toggle('visible', hasStart);
-      document.getElementById('probation-end-row').classList.toggle('visible', hasStart);
-      months.required = hasStart;
-      months.disabled = !hasStart;
-      const salary = document.getElementById('probation_salary');
-      salary.required = hasStart;
-      salary.disabled = !hasStart;
-      document.getElementById('probation_other_salary').disabled = !hasStart;
-      document.getElementById('probation-salary-row').classList.toggle('visible', hasStart);
-      document.getElementById('probation-other-salary-row').classList.toggle('visible', hasStart);
-      document.getElementById('probation_end_date').textContent = hasStart ? (addMonths(document.getElementById('probation_start_date').value, months.value) || '填写试用期月数后自动计算') : '填写试用期后自动计算';
+      const start = document.getElementById('contract_start_date').value;
+      const contractEnd = document.getElementById('contract_end_date').value;
+      const isOpen = document.getElementById('contract_type').value === 'open';
+      const end = document.getElementById('probation_end_date');
+      const probationStart = document.getElementById('probation_start_date').value;
+      end.required = false;
+      end.min = probationStart && probationStart > start ? probationStart : start;
+      const months = !isOpen && contractEnd && contractEnd <= addMonths(start, 12) ? 1 : !isOpen && contractEnd && contractEnd <= addMonths(start, 36) ? 2 : 6;
+      const limit = addMonths(start, months);
+      end.max = !isOpen && contractEnd && contractEnd < limit ? contractEnd : limit;
+      for (const id of ['probation_salary', 'probation_other_salary']) {
+        document.getElementById(id).required = false;
+        document.getElementById(id).disabled = false;
+      }
+      document.getElementById('probation-salary-row').classList.toggle('visible', true);
+      document.getElementById('probation-other-salary-row').classList.toggle('visible', true);
     }
-    ['contract_type', 'contract_start_date', 'contract_duration'].forEach((id) => document.getElementById(id).addEventListener('input', updateContractDates));
-    ['probation_start_date', 'probation_months'].forEach((id) => document.getElementById(id).addEventListener('input', updateProbationDates));
+    ['contract_type', 'contract_start_date', 'contract_end_date'].forEach((id) => document.getElementById(id).addEventListener('input', updateContractDates));
+    ['probation_start_date', 'probation_end_date'].forEach((id) => document.getElementById(id).addEventListener('input', updateProbationDates));
     updateContractDates();
     updateProbationDates();
 

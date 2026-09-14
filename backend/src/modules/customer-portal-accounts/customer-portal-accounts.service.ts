@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -12,7 +13,9 @@ import * as bcrypt from 'bcrypt';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { Repository } from 'typeorm';
 import { AppConfig } from 'src/config/configuration';
-import { Customer, CustomerPortalAccount, CustomerPortalRule } from 'src/entities';
+import { BusinessScope, Customer, CustomerAssignee, CustomerPortalAccount, CustomerPortalRule } from 'src/entities';
+import { hasAnyRole, hasManagementScopeRole, isAdminRole, WORK_ORDER_CREATOR_ROLES } from 'src/common/auth/role-permissions';
+import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { PortalNotificationsService } from 'src/modules/portal-notifications/portal-notifications.service';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -77,10 +80,12 @@ export class CustomerPortalAccountsService {
     @InjectRepository(CustomerPortalRule)
     private readonly ruleRepository: Repository<CustomerPortalRule>,
     private readonly notifications: PortalNotificationsService,
+    @Optional() @InjectRepository(CustomerAssignee)
+    private readonly customerAssigneeRepository?: Repository<CustomerAssignee>,
   ) {}
 
-  async list(customerId: string) {
-    await this.getCustomer(customerId);
+  async list(customerId: string, user?: JwtUserPayload) {
+    await this.getCustomer(customerId, user);
     const rows = await this.accountRepository.find({
       where: { customerId },
       order: { createdAt: 'ASC' },
@@ -88,8 +93,8 @@ export class CustomerPortalAccountsService {
     return rows.map((row) => this.toView(row));
   }
 
-  async create(customerId: string, input: SavePortalAccountInput) {
-    const customer = await this.getCustomer(customerId);
+  async create(customerId: string, input: SavePortalAccountInput, user?: JwtUserPayload) {
+    const customer = await this.getCustomer(customerId, user, true);
     this.validateBooleans(input);
     const businessPermissions = this.validatePermissions(input.businessPermissions);
     await this.ensureRuleReady(customerId, businessPermissions);
@@ -115,7 +120,8 @@ export class CustomerPortalAccountsService {
     });
   }
 
-  async update(customerId: string, accountId: string, input: SavePortalAccountInput) {
+  async update(customerId: string, accountId: string, input: SavePortalAccountInput, user?: JwtUserPayload) {
+    await this.getCustomer(customerId, user, true);
     const row = await this.getAccount(customerId, accountId);
     this.validateBooleans(input);
     const currentPermissions = normalizePortalBusinessPermissions(row.businessPermissions);
@@ -137,7 +143,7 @@ export class CustomerPortalAccountsService {
     if (input.mustChangePassword !== undefined) changes.mustChangePassword = input.mustChangePassword;
     if (input.businessPermissions !== undefined) changes.businessPermissions = nextPermissions;
     if (!row.isActive && changes.isActive) {
-      const customer = await this.getCustomer(customerId);
+      const customer = await this.getCustomer(customerId, user, true);
       await this.accountRepository.manager.transaction(async (manager) => {
         await this.updateSecuritySettings(row, changes, manager.getRepository(CustomerPortalAccount));
         await this.notifications.enqueueAccountActivation(manager, this.activationNoticeAccount({ ...row, ...changes, sessionVersion: row.sessionVersion + 1 }), customer);
@@ -146,7 +152,8 @@ export class CustomerPortalAccountsService {
     return this.toView(await this.getAccount(customerId, accountId));
   }
 
-  async resetPassword(customerId: string, accountId: string, password: string, mustChangePassword = true) {
+  async resetPassword(customerId: string, accountId: string, password: string, mustChangePassword = true, user?: JwtUserPayload) {
+    await this.getCustomer(customerId, user, true);
     const row = await this.getAccount(customerId, accountId);
     this.validateBooleans({ mustChangePassword });
     await this.updateSecuritySettings(row, {
@@ -244,9 +251,21 @@ export class CustomerPortalAccountsService {
     };
   }
 
-  private async getCustomer(customerId: string) {
-    const customer = await this.customerRepository.findOne({ where: { id: customerId } });
+  private async getCustomer(customerId: string, user?: JwtUserPayload, write = false) {
+    if (user) {
+      if (write && hasManagementScopeRole(user.roles) && !isAdminRole(user.roles)) throw new ForbiddenException('业务负责人仅可查看门户账号');
+      // Management-scope roles have read access across their business scope;
+      // mutation remains blocked by the write check above.
+      if (!isAdminRole(user.roles) && !hasManagementScopeRole(user.roles) && !hasAnyRole(user.roles, WORK_ORDER_CREATOR_ROLES)) {
+        throw new ForbiddenException('当前账号无客户门户账号权限');
+      }
+    }
+    const customer = await this.customerRepository.findOne({ where: { id: customerId, ...(user ? { businessScope: user.businessScope ?? BusinessScope.BEILUN } : {}) } });
     if (!customer) throw new NotFoundException('客户不存在');
+    if (user && !isAdminRole(user.roles) && !hasManagementScopeRole(user.roles)) {
+      const assignment = this.customerAssigneeRepository && await this.customerAssigneeRepository.findOne({ where: { customerId, userId: user.sub, businessScope: user.businessScope ?? BusinessScope.BEILUN, isActive: true } });
+      if (!assignment) throw new ForbiddenException('当前账号未分配该客户');
+    }
     return customer;
   }
 

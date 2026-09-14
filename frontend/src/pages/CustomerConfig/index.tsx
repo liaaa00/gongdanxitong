@@ -1,4 +1,5 @@
 import { useSearchParams } from 'react-router-dom';
+import { Navigate } from 'react-router-dom';
 import { PageContainer } from '@ant-design/pro-components';
 import { Alert, Tabs } from 'antd';
 import AdminCustomers from '@/pages/Admin/Customers';
@@ -18,6 +19,11 @@ const CustomerConfig: React.FC = () => {
   const requestedTab = searchParams.get('tab') || 'customers';
   const activeKey = VALID_TABS.has(requestedTab) && (isAdmin || !['notifications','monitor'].includes(requestedTab)) ? requestedTab : 'customers';
   const customerId = searchParams.get('customerId');
+
+  if (requestedTab === 'intake-review') {
+    const query = customerId ? `?customerId=${encodeURIComponent(customerId)}` : '';
+    return <Navigate to={`/portal-intake-review${query}`} replace />;
+  }
 
   return (
     <PageContainer title="客户门户配置" subTitle="统一维护客户资料、门户登录账号、办理规则与通知邮箱">

@@ -4,6 +4,8 @@ import { Audit } from 'src/common/decorators/audit.decorator';
 import { Public } from 'src/common/decorators/public.decorator';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { AuditInterceptor } from 'src/common/interceptors/audit.interceptor';
+import { CurrentUser } from 'src/common/decorators/current-user.decorator';
+import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { CustomerPortalAccountsService, PORTAL_BUSINESS_PERMISSIONS, PORTAL_BUSINESS_TYPES, PortalBusinessPermission, PortalBusinessType } from './customer-portal-accounts.service';
 
 const CUSTOMER_CONFIG_ROLES = [
@@ -122,14 +124,14 @@ export class CustomerPortalAccountsController {
   constructor(private readonly service: CustomerPortalAccountsService) {}
 
   @Get()
-  list(@Param('customerId') customerId: string) {
-    return this.service.list(customerId);
+  list(@Param('customerId') customerId: string, @CurrentUser() user: JwtUserPayload) {
+    return this.service.list(customerId, user);
   }
 
   @Post()
   @Audit('customer_portal_accounts', 'create')
-  create(@Param('customerId') customerId: string, @Body() payload: CreatePortalAccountDto) {
-    return this.service.create(customerId, payload);
+  create(@Param('customerId') customerId: string, @Body() payload: CreatePortalAccountDto, @CurrentUser() user: JwtUserPayload) {
+    return this.service.create(customerId, payload, user);
   }
 
   @Put(':accountId')
@@ -138,8 +140,9 @@ export class CustomerPortalAccountsController {
     @Param('customerId') customerId: string,
     @Param('accountId') accountId: string,
     @Body() payload: UpdatePortalAccountDto,
+    @CurrentUser() user: JwtUserPayload,
   ) {
-    return this.service.update(customerId, accountId, payload);
+    return this.service.update(customerId, accountId, payload, user);
   }
 
   @Post(':accountId/reset-password')
@@ -148,8 +151,9 @@ export class CustomerPortalAccountsController {
     @Param('customerId') customerId: string,
     @Param('accountId') accountId: string,
     @Body() payload: ResetPortalPasswordDto,
+    @CurrentUser() user: JwtUserPayload,
   ) {
-    return this.service.resetPassword(customerId, accountId, payload.password, payload.mustChangePassword);
+    return this.service.resetPassword(customerId, accountId, payload.password, payload.mustChangePassword, user);
   }
 }
 

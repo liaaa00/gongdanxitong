@@ -32,6 +32,7 @@ const CustomerRules: React.FC<CustomerRulesProps> = ({ embedded = false }) => {
   const [activeTab, setActiveTab] = useState('onboarding');
   const [filling, setFilling] = useState(false);
   const [fillResult, setFillResult] = useState<FillPendingRulesResult | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [keyword, setKeyword] = useState('');
   const [appliedKeyword, setAppliedKeyword] = useState('');
   const [page, setPage] = useState(1);
@@ -77,6 +78,7 @@ const CustomerRules: React.FC<CustomerRulesProps> = ({ embedded = false }) => {
     setCurrent(null);
     setActiveTab('onboarding');
     setFillResult(null);
+    setSaveError(null);
     form.resetFields();
     try {
       const detail = await getCustomerRule(record.customerId);
@@ -97,12 +99,15 @@ const CustomerRules: React.FC<CustomerRulesProps> = ({ embedded = false }) => {
 
   const save = async () => {
     if (!current) return;
+    setSaveError(null);
     let values: SaveCustomerRuleInput;
     try { await form.validateFields(); values = form.getFieldsValue(true); } catch { return; }
     const onboarding = values.onboardingDefaults || {};
     if (Object.values(onboarding).some(hasRuleValue) && !String(onboarding.employee_type ?? '').trim()) {
       setActiveTab('onboarding');
-      form.setFields([{ name: ['onboardingDefaults', 'employee_type'], errors: ['填写入职规则时必须配置员工类型'] }]);
+      const errorMessage = '填写入职规则时必须配置员工类型';
+      setSaveError(errorMessage);
+      form.setFields([{ name: ['onboardingDefaults', 'employee_type'], errors: [errorMessage] }]);
       return;
     }
     const payload: SaveCustomerRuleInput = {
@@ -125,9 +130,12 @@ const CustomerRules: React.FC<CustomerRulesProps> = ({ embedded = false }) => {
       form.resetFields();
       setDetailForm(persisted);
       await load();
+      setSaveError(null);
       message.success('客户规则已保存并从服务端重新读取');
     } catch (error: any) {
-      message.error(error?.message || '客户规则保存失败');
+      const errorMessage = error?.message || '客户规则保存失败';
+      setSaveError(errorMessage);
+      message.error(errorMessage);
     } finally {
       setSaving(false);
     }
@@ -194,6 +202,7 @@ const CustomerRules: React.FC<CustomerRulesProps> = ({ embedded = false }) => {
           { key: 'status', label: '持久化状态', children: current.configured ? <Tag color="success">已保存</Tag> : <Tag>尚未保存</Tag> },
           { key: 'updated', label: '最后更新', children: current.updatedAt ? new Date(current.updatedAt).toLocaleString('zh-CN', { hour12: false }) : '-' },
         ]} />}
+        {saveError && <Alert type="error" showIcon message={saveError} style={{ marginBottom: 16 }} />}
         <Form form={form} layout="vertical" initialValues={{
           onboardingDefaults: {}, resignationDefaults: {}, paymentLocationRules: [],
           salaryRules: { billingDay: null, reminderEnabled: true, reminderWorkdayOffsets: [3, 2, 1] },

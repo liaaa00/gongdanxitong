@@ -232,11 +232,11 @@ const CustomerPortalAccounts: React.FC = () => {
 
       <Modal title={editing ? '编辑门户账号' : '新增门户账号'} open={accountOpen} onOk={() => void saveAccount()} confirmLoading={saving} onCancel={() => setAccountOpen(false)} destroyOnHidden>
         <Form form={form} layout="vertical">
-          <Form.Item name="businessPermissions" label="业务权限" extra="增员和减员共用一个权限；薪资单独授权" rules={[{ required: true, type: 'array', min: 1, message: '请至少选择一项业务权限' }]}><Checkbox.Group options={PORTAL_BUSINESS_OPTIONS} /></Form.Item>
-          {selectedMissingRules.length > 0 && <Alert type="warning" showIcon message="所选业务的办理规则尚未完成" description={selectedMissingRules.join('、')} style={{ marginBottom: 16 }} />}
           <Form.Item name="loginEmail" label="登录邮箱" rules={[{ required: true, message: '请输入登录邮箱' }, { type: 'email', message: '邮箱格式不正确' }]}><Input autoComplete="off" placeholder="name@example.com" /></Form.Item>
           <Form.Item name="contactName" label="联系人姓名/备注" rules={[{ required: true, message: '请输入联系人姓名或备注' }, { max: 100 }]}><Input placeholder="例如：张女士（增减员联系人）" /></Form.Item>
           {!editing && <Form.Item name="password" label="初始密码" rules={[{ required: true, message: '请输入初始密码' }, { pattern: /^(?=.*[A-Za-z])(?=.*\d).{8,72}$/, message: '8 至 72 位，且同时包含字母和数字' }]}><Input.Password autoComplete="new-password" /></Form.Item>}
+          <Form.Item name="businessPermissions" label="业务权限" extra="增员和减员共用一个权限；薪资单独授权" rules={[{ required: true, type: 'array', min: 1, message: '请至少选择一项业务权限' }]}><Checkbox.Group options={PORTAL_BUSINESS_OPTIONS} /></Form.Item>
+          {selectedMissingRules.length > 0 && <Alert type="warning" showIcon message="所选业务的办理规则尚未完成" description={selectedMissingRules.join('、')} style={{ marginBottom: 16 }} />}
           <Form.Item name="isActive" label="启用账号" valuePropName="checked"><Switch /></Form.Item>
           <Form.Item name="mustChangePassword" label="下次登录必须修改密码" valuePropName="checked"><Switch /></Form.Item>
         </Form>

@@ -58,17 +58,18 @@ test('onboarding keeps the four-step layered intake and backend field mapping', 
     assert.match(page, new RegExp('name="' + fieldCode + '"'));
   }
 
-  assert.doesNotMatch(page, /name="bank_location"/);
+  assert.match(page, /name="bank_location"/);
   assert.match(page, /name="bank_account"[^>]+pattern="\[0-9\]\{8,30\}"/);
 
   for (const backendFieldCode of [
-    'contract_term_type', 'contract_term', 'work_hour_system', 'salary_form',
+    'contract_term_type', 'work_hour_system', 'salary_form',
     'start_month', 'contract_end_date', 'probation_end_date',
   ]) {
     assert.match(page, new RegExp(backendFieldCode));
   }
   assert.match(page, /合同终止日期/);
-  assert.match(page, /自动计算/);
+  assert.doesNotMatch(page, /name="(?:contract_duration|probation_months)"/);
+  assert.match(page, /id="probation_end_date" name="probation_end_date" type="date"/);
 
   const contractPanel = page.match(/data-step-panel="2"[\s\S]*?<\/section>/)?.[0];
   const socialPanel = page.match(/data-step-panel="3"[\s\S]*?<\/section>/)?.[0];
@@ -88,13 +89,21 @@ test('onboarding submits through the portal gateway instead of the internal back
   const page = (await readFile(pagePath, 'utf8')) + '\n' + (await readFile(new URL('../web/portal-business.js', import.meta.url), 'utf8'));
 
   assert.match(page, /new URLSearchParams\(window\.location\.search\)\.get\('token'\)/);
-  assert.match(page, /portalCall\('\/portal\/onboarding'/);
+  assert.match(page, /portalCall\([^)]*['"]\/portal\/onboarding['"]/);
   assert.match(page, /new FormData\(form\)/);
   assert.match(page, /result\.workOrderNo/);
   assert.match(page, /refreshPortalProgress\(\)/);
   assert.match(page, /escapeHtml\(value\|\|'-'\)/);
   assert.match(page, /submittingOnboarding/);
   assert.doesNotMatch(page, /\/api\/work-orders/);
+});
+
+test('onboarding normalizes every customer-facing work-hour label to the backend enum', async () => {
+  const page = await readFile(pagePath, 'utf8');
+  assert.ok(page.includes("'\\u6807\\u51c6\\u5de5\\u65f6': '\\u6807\\u51c6\\u5de5\\u65f6\\u5236'"));
+  assert.ok(page.includes("'\\u7efc\\u5408\\u5de5\\u65f6': '\\u7efc\\u5408\\u5de5\\u65f6\\u5236'"));
+  assert.ok(page.includes("'\\u4e0d\\u5b9a\\u65f6\\u5de5\\u65f6': '\\u4e0d\\u5b9a\\u65f6\\u5de5\\u65f6\\u5236'"));
+  assert.match(page, /fields\.work_hour_system\s*=\s*workHourSystemAliases\[fields\.work_hour_system\]/);
 });
 
 test('inline portal script has valid JavaScript syntax', async () => {

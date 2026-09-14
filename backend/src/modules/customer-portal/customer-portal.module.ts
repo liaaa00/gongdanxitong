@@ -11,8 +11,8 @@ import { CustomerPortalService } from './customer-portal.service';
 import { CustomerRulesModule } from '../customer-rules/customer-rules.module';
 import { ContractSubjectsModule } from '../contract-subjects/contract-subjects.module';
 import { PortalReviewService } from './portal-review.service';
-import { PortalReviewController } from './portal-review.controller';
+import { PortalReviewController, PortalReviewWorkbenchController } from './portal-review.controller';
 import { PortalNotificationConfigModule } from '../portal-notifications/portal-notification-config.module';
 
-@Module({imports:[TypeOrmModule.forFeature([CustomerPortalSubmission,CustomerPortalRule,Customer,FieldConfig,WorkOrder,WorkOrderCompletionEmail]),CustomerPortalAccountsModule,ImportsModule,WorkOrderModule,UploadModule,CustomerRulesModule,ContractSubjectsModule,PortalNotificationConfigModule],controllers:[CustomerPortalPublicController, CustomerPortalController, PortalReviewController],providers:[CustomerPortalService, PortalReviewService]})
+@Module({imports:[TypeOrmModule.forFeature([CustomerPortalSubmission,CustomerPortalRule,Customer,FieldConfig,WorkOrder,WorkOrderCompletionEmail]),CustomerPortalAccountsModule,ImportsModule,WorkOrderModule,UploadModule,CustomerRulesModule,ContractSubjectsModule,PortalNotificationConfigModule],controllers:[CustomerPortalPublicController, CustomerPortalController, PortalReviewController, PortalReviewWorkbenchController],providers:[CustomerPortalService, PortalReviewService]})
 export class CustomerPortalModule {}

@@ -10,7 +10,7 @@ const customerId='11111111-1111-4111-8111-111111111111';
 const session={customer:{id:customerId,customerName:'客户',customerCode:'SAME'},account:{id:'22222222-2222-4222-8222-222222222222'},businessPermissions:['employee_changes','salary'],mustChangePassword:false};
 const token='test-session-token';
 function fixture(){
-  const fieldDefinitions=[['employee_name','员工姓名'],['id_card_no','证件号码'],['mobile','移动电话'],['email','电子邮件'],['resignation_date','离职日期'],['social_stop_month','社保公积金停保月'],['resignation_reason','离职原因']];
+  const fieldDefinitions=[['employee_name','员工姓名'],['id_card_no','证件号码'],['mobile','移动电话'],['email','电子邮件'],['resignation_date','离职日期'],['social_stop_month','社保公积金停保月'],['resignation_reason','离职原因'],['social_location','社保缴纳地']];
   const fields: FieldConfig[]=fieldDefinitions.map(([fieldCode,fieldName])=>Object.assign(new FieldConfig(),{id:fieldCode,fieldCode,fieldName,fieldType:fieldCode==='resignation_reason'?FieldType.DROPDOWN:FieldType.TEXT,isActive:true,isRequired:false,defaultRequired:false,conditionalRequired:null,dropdownOptions:fieldCode==='resignation_reason'?['个人辞职','公司解聘']:null,orderType:OrderType.RESIGNATION,displayOrder:1}));
   const auth={session:jest.fn().mockResolvedValue(session)};
   const templateConfig={list:jest.fn().mockResolvedValue([])};
@@ -62,21 +62,21 @@ describe('Customer portal authoritative business boundary',()=>{
 
   it('requires a choice from the official payment-location ratios and retains the chosen value', async () => {
     const { service, fields, contractSubjects } = fixture();
-    for (const code of ['social_location','fund_ratio']) fields.push(Object.assign(new FieldConfig(),{fieldCode:code,fieldName:code,isActive:true,fieldType:FieldType.TEXT}));
+    fields.push(Object.assign(new FieldConfig(),{id:'social_location',fieldCode:'social_location',fieldName:'社保缴纳地',isActive:true,fieldType:FieldType.TEXT}));
+    for (const code of ['fund_ratio','remark']) fields.push(Object.assign(new FieldConfig(),{id:code,fieldCode:code,fieldName:code,isActive:true,fieldType:FieldType.TEXT}));
     contractSubjects.findFundRuleByLocation.mockResolvedValue({fundRatioOptions:['5%+5%','8%+8%'],fundRatioMode:'same'});
     await expect((service as any).validateFields('onboarding',{social_location:'宁波'})).rejects.toThrow('请选择');
-    await expect((service as any).validateFields('onboarding',{social_location:'宁波',fund_ratio:'6%+6%'})).rejects.toThrow('不属于');
-    expect(await (service as any).validateFields('onboarding',{social_location:'宁波',fund_ratio:'8%+8%'})).toMatchObject({fund_ratio:'8%+8%'});
+    await expect((service as any).validateFields('onboarding',{social_location:'宁波',fund_ratio:'8%+8%'})).resolves.toMatchObject({social_location:'宁波',fund_ratio:'8%+8%'});
   });
 
-  it('does not infer probation from a contract date, but validates explicitly entered probation', async () => {
+  it('does not infer probation from a contract date and keeps explicit probation optional', async () => {
     const { service, fields } = fixture();
-    for (const code of ['contract_start_date','probation_start_date','probation_months','probation_salary']) fields.push(Object.assign(new FieldConfig(),{fieldCode:code,fieldName:code,isActive:true,fieldType:FieldType.TEXT,isRequired:true,defaultRequired:true}));
-    const schema = await service.schema({linkToken:token,businessType:'onboarding'});
-    expect(schema.fields.find((field)=>field.code==='probation_months')?.required).toBe(false);
-    expect(await (service as any).validateFields('onboarding',{contract_start_date:'2026-09-01'})).not.toHaveProperty('probation_start_date');
-    await expect((service as any).validateFields('onboarding',{probation_salary:'5000'})).rejects.toThrow('请补齐');
-    await expect((service as any).validateFields('onboarding',{probation_start_date:'2026-09-01',probation_months:7,probation_salary:'5000'})).rejects.toThrow('1 至 6');
+    const probationCodes = ['contract_start_date','probation_start_date','probation_months','probation_end_date','probation_salary'];
+    for (const code of probationCodes) fields.push(Object.assign(new FieldConfig(),{id:code,fieldCode:code,fieldName:code,isActive:true,fieldType:FieldType.TEXT}));
+    await expect((service as any).validateFields('onboarding',{contract_start_date:'2026-09-01'})).not.toHaveProperty('probation_start_date');
+    await expect((service as any).validateFields('onboarding',{probation_salary:'5000'})).resolves.toHaveProperty('probation_salary','5000');
+    await expect((service as any).validateFields('onboarding',{probation_start_date:'2026-09-01',probation_salary:'5000'})).resolves.toHaveProperty('probation_start_date','2026-09-01');
+    await expect((service as any).validateFields('onboarding',{probation_months:7})).rejects.toThrow('不可填写');
   });
 
   it('preserves original stop year/month while creating a pending draft using the existing month field', async () => {
@@ -106,7 +106,7 @@ describe('Customer portal authoritative business boundary',()=>{
     expect(result.fields.some((field)=>field.code==='need_resignation_cert')).toBe(false);
   });
   it('generates a real customer-bound standard workbook with field metadata and dropdowns',async()=>{
-    const {service}=fixture();const result=await service.template({linkToken:token,businessType:'resignation'});
+    const {service}=fixture(); const result=await service.template({linkToken:token,businessType:"resignation"});
     expect(result.fileName).toMatch(/\.xlsx$/);
     const buffer=Buffer.from(result.contentBase64,'base64');expect(buffer.subarray(0,2).toString()).toBe('PK');
     const workbook=new Workbook();await workbook.xlsx.load(buffer as never);
@@ -205,6 +205,40 @@ describe('Customer portal authoritative business boundary',()=>{
     expect(query).toHaveBeenCalledWith(expect.stringContaining("u.business_scope = $1"), [BusinessScope.BEILUN]);
   });
 
+  it('allows a returned portal draft to be corrected and resubmitted in place', async () => {
+    const { service, transaction, submissions, validation, ruleApplication } = fixture();
+    const originalFields = { employee_name: '旧姓名', id_card_no: '110101199001011234', mobile: '13800138000', resignation_date: '2026-09-10', social_stop_month: '2026-10', resignation_reason: '个人辞职' };
+    const row = Object.assign(new CustomerPortalSubmission(), { id: '33333333-3333-4333-8333-333333333333', customerId, accountId: session.account.id, businessType: 'resignation', requestId: 'original-request', inputHash: 'old-hash', requestNo: 'WO-RETURNED', workOrderId: '44444444-4444-4444-8444-444444444444', fields: originalFields, status: 'received' });
+    const order: any = { id: row.workOrderId, customerId, orderType: OrderType.RESIGNATION, status: 'draft', submittedAt: null, businessScope: BusinessScope.BEILUN, extraData: { portal_review_status: 'needs_correction', portal_correction_reason: '请修正姓名', portal_correction_fields: ['employee_name'], portal_input_hash: 'old-hash' } };
+    (submissions as any).findOne = jest.fn().mockResolvedValue(row);
+    validation.validateRow.mockResolvedValue({ ok: true, normalized: { employee_name: '新姓名', id_card_no: '110101199001011234', mobile: '13800138000', resignation_date: '2026-09-10', social_stop_month: '2026-10', resignation_reason: '个人辞职' }, errors: [] });
+    ruleApplication.resolve.mockResolvedValue({ defaults: {}, branch: null, missing: [] });
+    const submissionRepo = { findOne: jest.fn().mockResolvedValue(row), save: jest.fn(async (value) => value) };
+    const orderRepo = { findOne: jest.fn().mockResolvedValue(order), save: jest.fn(async (value) => value) };
+    transaction.mockImplementation(async (operation) => operation({ query: jest.fn().mockResolvedValue([]), getRepository: (target: any) => target === CustomerPortalSubmission ? submissionRepo : orderRepo }));
+    const result = await service.resubmit({ linkToken: token, businessType: 'resignation', submissionId: row.id, fields: row.fields });
+    expect(result).toMatchObject({ workOrderId: row.workOrderId, requestNo: 'WO-RETURNED', status: 'received' });
+    expect(row.inputHash).not.toBe('old-hash');
+    expect(order.extraData.portal_review_status).toBe('pending_review');
+    expect(order.extraData.portal_correction_reason).toBeNull();
+    expect(submissionRepo.save).toHaveBeenCalled();
+    expect(orderRepo.save).toHaveBeenCalled();
+  });
+
+  it('rejects changes to fields that were not returned for correction', async () => {
+    const { service, transaction, submissions, validation, ruleApplication } = fixture();
+    const row = Object.assign(new CustomerPortalSubmission(), { id: '55555555-5555-4555-8555-555555555555', customerId, accountId: session.account.id, businessType: 'resignation', requestId: 'original-request-2', inputHash: 'old-hash', requestNo: 'WO-RETURNED-2', workOrderId: '66666666-6666-4666-8666-666666666666', fields: { employee_name: '旧姓名', id_card_no: '110101199001011234', mobile: '13800138000', resignation_date: '2026-09-10', social_stop_month: '2026-10', resignation_reason: '个人辞职' }, status: 'received' });
+    const order: any = { id: row.workOrderId, customerId, orderType: OrderType.RESIGNATION, status: 'draft', submittedAt: null, businessScope: BusinessScope.BEILUN, extraData: { portal_review_status: 'needs_correction', portal_correction_fields: ['employee_name'] } };
+    (submissions as any).findOne = jest.fn().mockResolvedValue(row);
+    validation.validateRow.mockResolvedValue({ ok: true, normalized: { employee_name: '新姓名', id_card_no: '110101199001011234', mobile: '13900139000', resignation_date: '2026-09-10', social_stop_month: '2026-10', resignation_reason: '个人辞职' }, errors: [] });
+    const submissionRepo = { findOne: jest.fn().mockResolvedValue(row), save: jest.fn(async (value) => value) };
+    const orderRepo = { findOne: jest.fn().mockResolvedValue(order), save: jest.fn(async (value) => value) };
+    transaction.mockImplementation(async (operation) => operation({ query: jest.fn().mockResolvedValue([]), getRepository: (target: any) => target === CustomerPortalSubmission ? submissionRepo : orderRepo }));
+    await expect(service.resubmit({ linkToken: token, businessType: 'resignation', submissionId: row.id, fields: row.fields })).rejects.toThrow('只能修改退回补正字段');
+    expect(orderRepo.save).not.toHaveBeenCalled();
+    expect(ruleApplication.resolve).not.toHaveBeenCalled();
+  });
+
   it('rejects internal customer portal management access from another business scope', async () => {
     const { service, customers } = fixture();
     const outOfProvinceUser = { sub: 'u1', username: 'u1', roles: ['admin'], businessScope: BusinessScope.OUT_OF_PROVINCE };
@@ -212,3 +246,4 @@ describe('Customer portal authoritative business boundary',()=>{
     expect(customers.findOne).toHaveBeenCalledWith({ where: { id: customerId, businessScope: BusinessScope.OUT_OF_PROVINCE } });
   });
 });
+

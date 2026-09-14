@@ -4,10 +4,11 @@ import { createHash, randomUUID } from 'node:crypto';
 import { DataSource, EntityManager, In, MoreThanOrEqual, Repository } from 'typeorm';
 import { Workbook } from 'exceljs';
 import { isUUID } from 'class-validator';
-import { BusinessScope, Customer, CustomerPortalRule, FieldConfig, FieldType, OrderType, WorkOrder, WorkOrderCompletionEmail } from 'src/entities';
+import { BusinessScope, Customer, CustomerAssignee, CustomerPortalRule, FieldConfig, FieldType, OrderType, WorkOrder, WorkOrderCompletionEmail, WorkOrderStatus } from 'src/entities';
 import { CustomerPortalSubmission } from 'src/entities/customer-portal-submission.entity';
 import { CustomerPortalAccountsService, PortalBusinessType, businessTypesForPermissions } from '../customer-portal-accounts/customer-portal-accounts.service';
 import { JwtUserPayload } from '../auth/auth.types';
+import { hasManagementScopeRole, isAdminRole } from 'src/common/auth/role-permissions';
 import { WorkOrderService } from '../work-orders/work-order.service';
 import { ImportTemplateService } from '../imports/import-template.service';
 import { ImportTemplateConfigService, ImportTemplateFieldView } from '../imports/import-template-config.service';
@@ -29,7 +30,7 @@ const MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 type Business = PortalBusinessType;
 type Session = Awaited<ReturnType<CustomerPortalAccountsService['session']>>;
 export interface PortalFile { name: string; mimeType: string; bizPurpose?: string; contentBase64: string }
-export interface PortalInput { linkToken: string; businessType?: Business; requestId?: string; fields?: Record<string, unknown>; fileName?: string; contentBase64?: string; files?: PortalFile[] }
+export interface PortalInput { linkToken: string; businessType?: Business; requestId?: string; submissionId?: string; fields?: Record<string, unknown>; fileName?: string; contentBase64?: string; files?: PortalFile[] }
 type NormalizedSalary = { month: string; mode: 'same' | 'changed'; note: string; channel: 'text' | 'attachment' | null };
 
 @Injectable()
@@ -85,7 +86,7 @@ export class CustomerPortalService {
     if (input.businessType === 'salary') throw new BadRequestException('薪资使用变化说明或附件，无员工明细模板');
     const business = input.businessType as 'onboarding'|'resignation';
     const fields = await this.editableFields(business);
-    const configured = await this.templateConfig.list(business as OrderType);
+    const configured = (await this.templateConfig.list(business as OrderType)) ?? [];
     const views = fields.map((field): ImportTemplateFieldView => ({
       ...(configured.find((item) => item.fieldCode === field.fieldCode) ?? {}),
       ...field, orderType: business as OrderType, order_type: business as OrderType,
@@ -121,7 +122,7 @@ export class CustomerPortalService {
   private async editableFields(business: 'onboarding'|'resignation'): Promise<FieldConfig[]> {
     const all = await this.fields.find({ where: { isActive: true, fieldCode: In(EDITABLE[business]) } });
     const configured = await this.templateConfig.list(business as OrderType);
-    return EDITABLE[business].map((code) => all.find((field) => field.fieldCode === code)).filter((field): field is FieldConfig => Boolean(field)).map((field) => {
+    return EDITABLE[business].filter((code) => business !== 'onboarding' || !['contract_term', 'probation_months'].includes(code)).map((code) => all.find((field) => field.fieldCode === code)).filter((field): field is FieldConfig => Boolean(field)).map((field) => {
       const override = configured.find((item) => item.fieldCode === field.fieldCode);
       const result = Object.assign(new FieldConfig(), field, {
         // The customer submits intake; internal-only requirements remain for internal review.
@@ -170,12 +171,6 @@ export class CustomerPortalService {
     const result = await this.validation.validateRow({ rowNo, raw, mapping: fields.map((field) => ({header:field.fieldCode,fieldCode:field.fieldCode})), orderType: business as OrderType, fields, context: 'portal_intake' });
     if (!result.ok) throw new BadRequestException(result.errors.map((error) => error.message).join('；'));
     if (business === 'onboarding') {
-      const probation = ['probation_start_date', 'probation_months', 'probation_end_date', 'probation_salary', 'probation_other_salary'];
-      if (probation.some((code) => raw[code] !== undefined && raw[code] !== null && String(raw[code]).trim())) {
-        if (['probation_start_date', 'probation_months', 'probation_salary'].some((code) => raw[code] === undefined || raw[code] === null || !String(raw[code]).trim())) throw new BadRequestException('填写试用期时，请补齐试用期开始日期、月数和工资');
-        const months = Number(raw.probation_months);
-        if (!Number.isInteger(months) || months < 1 || months > 6) throw new BadRequestException('试用期月数必须为 1 至 6');
-      }
       const location = String(result.normalized.social_location ?? '').trim();
       const fundRule = location ? await this.contractSubjects.findFundRuleByLocation(location) : null;
       const ratio = String(result.normalized.fund_ratio ?? '').trim();
@@ -231,6 +226,61 @@ export class CustomerPortalService {
         orderId = draft.id; requestNo = draft.orderNo;
       }
       const row = await repo.save(repo.create({ customerId: session.customer.id, accountId: session.account.id, businessType: business, requestId: input.requestId!, inputHash: fingerprint, requestNo, workOrderId: orderId, fields: normalized, status: 'received', resultNote: null, completedAt: null }));
+      if (input.files?.length) await this.enqueueAttachments(row, input.files, rule, manager.getRepository(WorkOrderCompletionEmail), createdFileIds);
+      return this.receipt(row);
+    });
+  }
+
+  /** Re-submit a portal draft that internal staff returned for correction. The
+   * original request/order number is retained so the correction stays in the
+   * same business trail; only the customer supplied fields and intake hash are
+   * replaced after the same validation and transaction lock as first submit. */
+  async resubmit(input: PortalInput) {
+    const session = await this.session(input);
+    const business = input.businessType;
+    if (business !== 'onboarding' && business !== 'resignation') throw new BadRequestException('退回补正只支持增员或减员');
+    if (!input.submissionId || !isUUID(input.submissionId)) throw new BadRequestException('退回受理记录无效');
+    const rule = await this.rules.findOne({ where: { customerId: session.customer.id, isActive: true } });
+    const normalized: Record<string, unknown> = await this.validateFields(business, input.fields ?? {});
+    const fingerprint = this.hash({ business, fields: normalized, files: input.files ?? [] });
+    const submission = await this.submissions.findOne({ where: { id: input.submissionId, customerId: session.customer.id, accountId: session.account.id, businessType: business } });
+    if (!submission?.workOrderId) throw new NotFoundException('退回受理记录不存在');
+    return this.withUploadCompensation(`portal-resubmit:${submission.id}`, async (manager, createdFileIds) => {
+      await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`portal-resubmit:${submission.id}`]);
+      const repo = manager.getRepository(CustomerPortalSubmission);
+      const row = await repo.findOne({ where: { id: submission.id, customerId: session.customer.id, accountId: session.account.id }, lock: { mode: 'pessimistic_write' } });
+      const order = await manager.getRepository(WorkOrder).findOne({ where: { id: submission.workOrderId!, customerId: session.customer.id, businessScope: BusinessScope.BEILUN }, lock: { mode: 'pessimistic_write' } });
+      if (!row || !order || order.orderType !== business || order.submittedAt || order.status !== WorkOrderStatus.DRAFT || order.extraData?.portal_review_status !== 'needs_correction') {
+        throw new ConflictException('该受理记录当前不能重新提交');
+      }
+      const correctionFields = new Set(
+        (Array.isArray(order.extraData?.portal_correction_fields) ? order.extraData.portal_correction_fields : [])
+          .map((field) => String(field).trim())
+          .filter(Boolean),
+      );
+      if (!correctionFields.size) throw new BadRequestException('退回记录未指定可补正字段');
+      const originalFields = (row.fields ?? {}) as Record<string, unknown>;
+      const changedKeys = new Set([...Object.keys(originalFields), ...Object.keys(normalized)]);
+      const invalidCorrectionField = [...correctionFields].some((field) => !changedKeys.has(field));
+      if (invalidCorrectionField) throw new BadRequestException('退回补正字段无效，请联系审核人员重新退回');
+      const comparable = (value: unknown) => this.hash([value === undefined, value]);
+      for (const field of changedKeys) {
+        if (correctionFields.has(field)) continue;
+        if (comparable(originalFields[field]) !== comparable(normalized[field])) {
+          throw new ConflictException(`只能修改退回补正字段：${field}`);
+        }
+      }
+      const resolved = await this.ruleApplication.resolve(rule, session.customer.id, business, normalized.social_location);
+      const intake = { ...normalized };
+      if (business === 'resignation') intake.social_stop_month = `${Number(String(normalized.social_stop_month).slice(5))}月`;
+      row.inputHash = fingerprint; row.fields = normalized; row.status = 'received'; row.resultNote = null; row.completedAt = null;
+      order.extraData = { ...order.extraData, ...resolved.defaults, ...intake,
+        ...(resolved.branch ? { branchId: resolved.branch.id, branch_code: resolved.branch.branchCode } : {}),
+        portal_configuration_pending: resolved.missing.length > 0, portal_configuration_missing: resolved.missing,
+        portal_input_hash: fingerprint, portal_review_status: 'pending_review', portal_correction_reason: null,
+        portal_correction_fields: [], portal_reviewed_by: null };
+      await manager.getRepository(WorkOrder).save(order);
+      await repo.save(row);
       if (input.files?.length) await this.enqueueAttachments(row, input.files, rule, manager.getRepository(WorkOrderCompletionEmail), createdFileIds);
       return this.receipt(row);
     });
@@ -305,8 +355,10 @@ export class CustomerPortalService {
       const steps = (order?.dispatchedOrders ?? []).filter(child => !isExportOnlyDispatchModule(child.moduleCode) && isDispatchModuleVisibleForOrderType(child.moduleCode, order!.orderType))
         .map(child => ({ name: getDispatchModuleLabel(child.moduleCode), status: child.status, completedAt: child.completedAt }));
       const labels: Record<string,string> = { pending:'待办理',processing:'办理中',completed:'已办结',returned:'已退回',void:'已作废',withdrawn:'已撤回',modify_pending:'修改审核中',withdraw_pending:'撤回审核中',void_pending:'作废审核中' };
-      const result = order ? (steps.length ? steps.map(step=>`${step.name}：${labels[step.status] ?? '办理中'}`).join('；') : '资料已受理，等待内部审核') : row.resultNote;
-      return {id:row.id,requestNo:row.requestNo,businessType:row.businessType,subject:order?.employeeName ?? String(row.fields.month ?? ''),status:order?.status ?? row.status,createdAt:row.createdAt,completedAt:order?.completedAt ?? row.completedAt,result,steps,completionEmailStatus:mail?.status ?? null};
+      const reviewStatus = String(order?.extraData?.portal_review_status ?? '');
+      const customerCorrection = reviewStatus === 'needs_correction';
+      const result = customerCorrection ? (String(order?.extraData?.portal_correction_reason ?? '') || '请补充或修正资料') : (order ? (steps.length ? steps.map(step=>`${step.name}：${labels[step.status] ?? '办理中'}`).join('；') : '资料已受理，等待内部审核') : row.resultNote);
+      return {id:row.id,requestNo:row.requestNo,businessType:row.businessType,subject:order?.employeeName ?? String(row.fields.month ?? ''),status:customerCorrection ? 'needs_correction' : (order?.status ?? row.status),createdAt:row.createdAt,completedAt:order?.completedAt ?? row.completedAt,result,steps,completionEmailStatus:mail?.status ?? null,correctionReason:customerCorrection ? String(order?.extraData?.portal_correction_reason ?? '') : '',correctionFields:customerCorrection && Array.isArray(order?.extraData?.portal_correction_fields) ? order.extraData.portal_correction_fields : [],fields:row.fields};
     });
     return { list, total:list.length, summary:{processing:list.filter((row)=>!['completed','void','withdrawn'].includes(row.status)).length,completed:list.filter((row)=>row.status==='completed').length}, month:new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'}).slice(0,7) };
   }
@@ -394,13 +446,171 @@ export class CustomerPortalService {
   }
 
   async listSalary(customerId: string, user: JwtUserPayload) {
-    await this.assertCustomerAccess(customerId, user);
+    await this.assertAssignedCustomerAccess(customerId, user);
     return this.submissions.find({where:{customerId,businessType:'salary'},order:{createdAt:'DESC'},take:200});
+  }
+  async listSalaryWorkbench(month: string | undefined, user: JwtUserPayload) {
+    const targetMonth = month?.trim() || this.defaultSalaryMonth(null);
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(targetMonth)) {
+      throw new BadRequestException('薪资所属月份格式应为 YYYY-MM');
+    }
+    const businessScope = user.businessScope ?? BusinessScope.BEILUN;
+    const customers = await this.listPortalBusinessCustomers(user, businessScope);
+    if (!customers.length) {
+      return { month: targetMonth, summary: { total: 0, submitted: 0, notSubmitted: 0, received: 0, completed: 0 }, list: [] };
+    }
+    const customerIds = customers.map((customer) => customer.id);
+    const [rules, submissions, emails] = await Promise.all([
+      this.rules.find({ where: { customerId: In(customerIds), isActive: true } }),
+      this.submissions.find({ where: { customerId: In(customerIds), businessType: 'salary' }, order: { createdAt: 'DESC' }, take: 5000 }),
+      this.mails.find({ where: { customerId: In(customerIds) }, order: { createdAt: 'DESC' }, take: 5000 }),
+    ]);
+    const latestByCustomer = new Map<string, CustomerPortalSubmission>();
+    for (const submission of submissions) {
+      if (String(submission.fields?.month ?? '') !== targetMonth || !latestByCustomer.has(submission.customerId)) {
+        if (String(submission.fields?.month ?? '') === targetMonth && !latestByCustomer.has(submission.customerId)) latestByCustomer.set(submission.customerId, submission);
+      }
+    }
+    const ruleByCustomer = new Map(rules.map((rule) => [rule.customerId, rule]));
+    const emailsBySubmission = new Map<string, WorkOrderCompletionEmail[]>();
+    for (const email of emails) {
+      if (!email.portalSubmissionId) continue;
+      const rows = emailsBySubmission.get(email.portalSubmissionId) ?? [];
+      rows.push(email);
+      emailsBySubmission.set(email.portalSubmissionId, rows);
+    }
+    const list = await Promise.all(customers.map(async (customer) => {
+      const submission = latestByCustomer.get(customer.id);
+      const customerEmails = submission ? (emailsBySubmission.get(submission.id) ?? []) : [];
+      const attachmentIds = Array.from(new Set(customerEmails.flatMap((email) => [email.attachmentId, ...(email.attachmentIds ?? [])]).filter((id): id is string => Boolean(id))));
+      const attachments = await Promise.all(attachmentIds.map(async (fileId) => {
+        try {
+          const meta = await this.uploads.resolveFile(fileId);
+          return { fileId, fileName: meta.originalName, mimeType: meta.mimeType, size: meta.size, downloadUrl: `/api/files/${fileId}` };
+        } catch {
+          return { fileId, fileName: fileId, mimeType: null, size: null, downloadUrl: `/api/files/${fileId}` };
+        }
+      }));
+      const completionEmail = customerEmails.find((email) => email.templateCode === 'portal-salary-completion') ?? null;
+      const attachmentEmail = customerEmails.find((email) => email.templateCode === 'portal-attachments') ?? null;
+      const status = submission?.status === 'completed' ? 'completed' : submission ? 'received' : 'not_submitted';
+      return {
+        customerId: customer.id,
+        customerName: customer.customerName,
+        customerCode: customer.customerCode,
+        configured: Boolean(ruleByCustomer.get(customer.id)),
+        expectedMonth: targetMonth,
+        submissionId: submission?.id ?? null,
+        requestNo: submission?.requestNo ?? null,
+        status,
+        mode: submission?.fields?.mode ?? null,
+        channel: submission?.fields?.channel ?? null,
+        note: submission?.fields?.note ?? null,
+        createdAt: submission?.createdAt ?? null,
+        completedAt: submission?.completedAt ?? null,
+        resultNote: submission?.resultNote ?? null,
+        attachmentEmailStatus: attachmentEmail?.status ?? null,
+        completionEmailStatus: completionEmail?.status ?? null,
+        attachmentCount: attachments.length,
+        attachments,
+      };
+    }));
+    return {
+      month: targetMonth,
+      summary: {
+        total: list.length,
+        submitted: list.filter((row) => row.status !== 'not_submitted').length,
+        notSubmitted: list.filter((row) => row.status === 'not_submitted').length,
+        received: list.filter((row) => row.status === 'received').length,
+        completed: list.filter((row) => row.status === 'completed').length,
+      },
+      list,
+    };
+  }
+
+  async listSalaryReturns(query: {
+    month?: string;
+    customerId?: string;
+    status?: string;
+    search?: string;
+    page?: string | number;
+    pageSize?: string | number;
+  }, user: JwtUserPayload) {
+    const month = String(query.month ?? '').trim();
+    if (month && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new BadRequestException('薪资所属月份格式应为 YYYY-MM');
+    const businessScope = user.businessScope ?? BusinessScope.BEILUN;
+    let customers: Customer[];
+    customers = await this.listPortalBusinessCustomers(user, businessScope);
+    if (query.customerId) customers = customers.filter((customer) => customer.id === query.customerId);
+    if (!customers.length) return { items: [], total: 0, page: 1, pageSize: 20 };
+    const customerIds = customers.map((customer) => customer.id);
+    const [submissions, emails] = await Promise.all([
+      this.submissions.find({ where: { customerId: In(customerIds), businessType: 'salary' }, order: { createdAt: 'DESC' }, take: 10000 }),
+      this.mails.find({ where: { customerId: In(customerIds) }, order: { createdAt: 'DESC' }, take: 10000 }),
+    ]);
+    const customerMap = new Map(customers.map((customer) => [customer.id, customer]));
+    const emailsBySubmission = new Map<string, WorkOrderCompletionEmail[]>();
+    for (const email of emails) {
+      if (!email.portalSubmissionId) continue;
+      const rows = emailsBySubmission.get(email.portalSubmissionId) ?? [];
+      rows.push(email);
+      emailsBySubmission.set(email.portalSubmissionId, rows);
+    }
+    const keyword = String(query.search ?? '').trim().toLowerCase();
+    const filtered = await Promise.all(submissions.filter((submission) => {
+      if (month && String(submission.fields?.month ?? '') !== month) return false;
+      if (query.status && submission.status !== query.status) return false;
+      if (!keyword) return true;
+      const customer = customerMap.get(submission.customerId);
+      return [submission.requestNo, customer?.customerName, customer?.customerCode, submission.fields?.month, submission.fields?.note]
+        .some((value) => String(value ?? '').toLowerCase().includes(keyword));
+    }).map(async (submission) => {
+      const customer = customerMap.get(submission.customerId);
+      const submissionEmails = emailsBySubmission.get(submission.id) ?? [];
+      const attachmentEmail = submissionEmails.find((email) => email.templateCode === 'portal-attachments') ?? null;
+      const completionEmail = submissionEmails.find((email) => email.templateCode === 'portal-salary-completion') ?? null;
+      const resolveAttachments = async (fileIds: string[]) => Promise.all(fileIds.map(async (fileId) => {
+        try {
+          const meta = await this.uploads.resolveFile(fileId);
+          return { fileId, fileName: meta.originalName, mimeType: meta.mimeType, size: meta.size, downloadUrl: `/api/files/${fileId}` };
+        } catch {
+          return { fileId, fileName: fileId, mimeType: null, size: null, downloadUrl: `/api/files/${fileId}` };
+        }
+      }));
+      const uniqueIds = (email: WorkOrderCompletionEmail | null) => Array.from(new Set([email?.attachmentId, ...(email?.attachmentIds ?? [])].filter((id): id is string => Boolean(id))));
+      // 客户在门户上传的附件与内部办结后生成的回传附件分开呈现，业务员才能同时看到文字填写和附件提交两种内容。
+      const submissionAttachments = await resolveAttachments(uniqueIds(attachmentEmail));
+      const completionAttachments = await resolveAttachments(uniqueIds(completionEmail));
+      const attachments = [...submissionAttachments, ...completionAttachments];
+      return {
+        id: submission.id,
+        customerId: submission.customerId,
+        customerName: customer?.customerName ?? '',
+        customerCode: customer?.customerCode ?? '',
+        requestNo: submission.requestNo,
+        month: String(submission.fields?.month ?? ''),
+        status: submission.status,
+        mode: submission.fields?.mode ?? null,
+        channel: submission.fields?.channel ?? null,
+        note: submission.fields?.note ?? null,
+        createdAt: submission.createdAt,
+        completedAt: submission.completedAt,
+        resultNote: submission.resultNote,
+        attachments,
+        submissionAttachments,
+        completionAttachments,
+        attachmentEmail: attachmentEmail ? { id: attachmentEmail.id, status: attachmentEmail.status, attemptCount: attachmentEmail.attemptCount, lastError: attachmentEmail.lastError, sentAt: attachmentEmail.sentAt, toRecipients: attachmentEmail.toRecipients } : null,
+        completionEmail: completionEmail ? { id: completionEmail.id, status: completionEmail.status, attemptCount: completionEmail.attemptCount, lastError: completionEmail.lastError, sentAt: completionEmail.sentAt, toRecipients: completionEmail.toRecipients } : null,
+      };
+    }));
+    const page = Math.max(1, Number(query.page) || 1);
+    const pageSize = Math.min(100, Math.max(1, Number(query.pageSize) || 20));
+    return { items: filtered.slice((page - 1) * pageSize, page * pageSize), total: filtered.length, page, pageSize };
   }
 
   async completeSalary(id:string,customerId:string,resultNote:string,user:JwtUserPayload) {
     if(!resultNote.trim() || resultNote.length>2000)throw new BadRequestException('请填写2000字以内的办理结果');
-    const customer = await this.assertCustomerAccess(customerId,user);
+    const customer = await this.assertAssignedCustomerAccess(customerId,user);
     return this.withUploadCompensation(this.hash([customerId, id, 'salary-completion']), async(manager, createdFileIds)=>{
       const repo=manager.getRepository(CustomerPortalSubmission);
       const row=await repo.findOne({where:{id,customerId,businessType:'salary'},lock:{mode:'pessimistic_write'}});
@@ -425,15 +635,41 @@ export class CustomerPortalService {
   }
 
   async emailRecords(customerId:string,user:JwtUserPayload) {
-    await this.assertCustomerAccess(customerId,user);
+    await this.assertAssignedCustomerAccess(customerId,user);
     return this.mails.find({where:{customerId},order:{createdAt:'DESC'},take:200});
   }
   async retryEmail(id:string,customerId:string,user:JwtUserPayload){
-    await this.assertCustomerAccess(customerId,user);
+    await this.assertAssignedCustomerAccess(customerId,user);
     const row=await this.mails.findOne({where:{id,customerId}});if(!row)throw new NotFoundException('发送记录不存在');
     if(!['failed','pending'].includes(row.status))throw new ConflictException('当前邮件状态不允许重试');
     if(row.templateCode==='portal-attachments'){const rule=await this.rules.findOne({where:{customerId,isActive:true}});if(!rule?.sharedEmailRules?.mailbox)throw new BadRequestException('请先配置共享邮箱');if(!this.isMailTransportConfigured())throw new BadRequestException('共享邮箱 SMTP 尚未配置，请先完成邮件服务配置');row.toRecipients=[rule.sharedEmailRules.mailbox];}
     row.status='pending';row.attemptCount=0;row.nextRetryAt=null;row.lastError=null;return this.mails.save(row);
+  }
+
+  private async listPortalBusinessCustomers(user: JwtUserPayload, businessScope: BusinessScope): Promise<Customer[]> {
+    const roles = user.roles ?? [];
+    if (isAdminRole(roles) || hasManagementScopeRole(roles)) {
+      return this.customers.find({ where: { businessScope, isActive: true }, order: { customerName: 'ASC', customerCode: 'ASC' } });
+    }
+    const assigned = await this.dataSource.getRepository(CustomerAssignee).find({
+      where: { userId: user.sub, businessScope, isActive: true },
+      select: ['customerId'],
+    });
+    const customerIds = assigned.map((item) => item.customerId);
+    return customerIds.length
+      ? this.customers.find({ where: { id: In(customerIds), businessScope, isActive: true }, order: { customerName: 'ASC', customerCode: 'ASC' } })
+      : [];
+  }
+
+  private async assertAssignedCustomerAccess(customerId: string, user: JwtUserPayload): Promise<Customer> {
+    const customer = await this.assertCustomerAccess(customerId, user);
+    const roles = user.roles ?? [];
+    if (isAdminRole(roles) || hasManagementScopeRole(roles)) return customer;
+    const assignment = await this.dataSource.getRepository(CustomerAssignee).findOne({
+      where: { customerId, userId: user.sub, businessScope: user.businessScope ?? BusinessScope.BEILUN, isActive: true },
+    });
+    if (!assignment) throw new ForbiddenException('当前账号未分配该客户');
+    return customer;
   }
 
   private isMailTransportConfigured(): boolean {

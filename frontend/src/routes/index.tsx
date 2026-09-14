@@ -24,6 +24,8 @@ const HistoryWorkOrders = lazy(() => import('@/pages/HistoryWorkOrders'));
 const ExportTemplates = lazy(() => import('@/pages/ExportTemplates'));
 const NotificationsPage = lazy(() => import('@/pages/Notifications'));
 const CustomerConfig = lazy(() => import('@/pages/CustomerConfig'));
+const PortalIntakeReviewPage = lazy(() => import('@/pages/PortalIntakeReview'));
+const SalaryReturnsPage = lazy(() => import('@/pages/SalaryReturns'));
 const CustomerRules = lazy(() => import('@/pages/CustomerRules'));
 const InServiceOrderList = lazy(() => import('@/pages/InServiceOrders'));
 const InServiceOrderNew = lazy(() => import('@/pages/InServiceOrders/New'));
@@ -193,6 +195,8 @@ const AppRoutes: React.FC = () => (
         <Route path="export-templates" element={<RoleRoute><RouteGuard moduleName="导出模板"><ExportTemplates /></RouteGuard></RoleRoute>} />
         <Route path="notifications" element={<RoleRoute><RouteGuard moduleName="消息通知"><NotificationsPage /></RouteGuard></RoleRoute>} />
         <Route path="customer-config" element={<RoleRoute><RouteGuard moduleName="客户门户配置"><CustomerConfig /></RouteGuard></RoleRoute>} />
+        <Route path="portal-intake-review" element={<RoleRoute><RouteGuard moduleName="门户审核工单"><PortalIntakeReviewPage /></RouteGuard></RoleRoute>} />
+        <Route path="salary-returns" element={<RoleRoute><RouteGuard moduleName="薪酬回传"><SalaryReturnsPage /></RouteGuard></RoleRoute>} />
         <Route path="customer-rules" element={<RoleRoute><RouteGuard moduleName="客户规则配置"><CustomerRules /></RouteGuard></RoleRoute>} />
 
         <Route path="in-service" element={<RoleRoute><RouteGuard moduleName="单项业务办理"><InServiceOrderList /></RouteGuard></RoleRoute>} />

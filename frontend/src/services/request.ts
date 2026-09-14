@@ -2,6 +2,12 @@ import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import type { ApiResponse } from './types';
 import { readBusinessScope } from '@/utils/businessScope';
 
+export interface ApiError extends Error {
+  code?: number;
+  details?: Record<string, unknown>;
+  traceId?: string;
+}
+
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '');
 
 export const DEFAULT_PAGE_SIZE = 20;
@@ -128,6 +134,30 @@ function showErrorToast(msg: string) {
   }
 }
 
+function attachApiError(error: Error, payload: unknown): ApiError {
+  const apiError = error as ApiError;
+  if (payload && typeof payload === 'object') {
+    const record = payload as Record<string, unknown>;
+    if (typeof record.code === 'number') apiError.code = record.code;
+    if (record.details && typeof record.details === 'object') apiError.details = record.details as Record<string, unknown>;
+    if (typeof record.traceId === 'string') apiError.traceId = record.traceId;
+  }
+  return apiError;
+}
+
+/** 保留后端字段级校验原因，供页面展示可执行的修正提示。 */
+export function getApiErrorDetails(error: unknown): Record<string, unknown> | undefined {
+  if (!error || typeof error !== 'object') return undefined;
+  const direct = (error as ApiError).details;
+  if (direct) return direct;
+  const responseData = (error as AxiosError).response?.data;
+  if (responseData && typeof responseData === 'object') {
+    const details = (responseData as Record<string, unknown>).details;
+    if (details && typeof details === 'object') return details as Record<string, unknown>;
+  }
+  return undefined;
+}
+
 function isSilentError(config?: unknown): boolean {
   return Boolean((config as { silentError?: boolean } | undefined)?.silentError);
 }
@@ -148,7 +178,7 @@ const onResponseFulfilled = (response: { data: ApiResponse; config?: unknown }) 
     }
     const errMsg = res.message || '请求失败';
     if (!isSilentError(response.config)) showErrorToast(errMsg);
-    return Promise.reject(new Error(errMsg));
+    return Promise.reject(attachApiError(new Error(errMsg), res));
   }
   return res.data;
 };
@@ -177,6 +207,7 @@ const onResponseRejected = (error: AxiosError) => {
   if (!isSilentError(error.config)) showErrorToast(friendlyMsg);
 
   // 将友好消息附加到 error 上，供调用方选择性使用
+  attachApiError(error, error.response?.data);
   (error as AxiosError & { _friendlyMsg: string })._friendlyMsg = friendlyMsg;
 
   return Promise.reject(error);

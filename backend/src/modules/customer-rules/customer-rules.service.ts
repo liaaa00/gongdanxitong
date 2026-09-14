@@ -1,10 +1,11 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, IsNull, Not, Repository } from 'typeorm';
 import { isEmail, isUUID } from 'class-validator';
 import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 import { toPageResult } from 'src/common/types/pagination.types';
-import { Branch, BusinessScope, Customer, CustomerPaymentLocationRule, CustomerPortalRule, OrderType, WorkOrder, WorkOrderStatus } from 'src/entities';
+import { Branch, BusinessScope, Customer, CustomerAssignee, CustomerPaymentLocationRule, CustomerPortalRule, OrderType, WorkOrder, WorkOrderStatus } from 'src/entities';
+import { hasAnyRole, hasManagementScopeRole, isAdminRole, WORK_ORDER_CREATOR_ROLES } from 'src/common/auth/role-permissions';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
 
 const ONBOARDING_DEFAULT_FIELDS = new Set([
@@ -83,6 +84,8 @@ export class CustomerRulesService {
     private readonly workOrderRepository: Repository<WorkOrder>,
     @InjectRepository(Branch)
     private readonly branchRepository: Repository<Branch>,
+    @Optional() @InjectRepository(CustomerAssignee)
+    private readonly customerAssigneeRepository?: Repository<CustomerAssignee>,
   ) {}
 
   async list(query: PaginationQueryDto, user: JwtUserPayload) {
@@ -91,6 +94,11 @@ export class CustomerRulesService {
     const qb = this.customerRepository.createQueryBuilder('customer');
     qb.where('customer.isActive = true');
     qb.andWhere('customer.businessScope = :businessScope', { businessScope: user.businessScope ?? BusinessScope.BEILUN });
+    const assignedCustomerIds = await this.getAssignedCustomerIds(user);
+    if (assignedCustomerIds !== null) {
+      if (assignedCustomerIds.length === 0) return toPageResult(page, pageSize, 0, []);
+      qb.andWhere('customer.id IN (:...assignedCustomerIds)', { assignedCustomerIds });
+    }
     if (query.keyword) {
       qb.andWhere('(customer.customerCode ILIKE :keyword OR customer.customerName ILIKE :keyword)', { keyword: `%${query.keyword}%` });
     }
@@ -136,6 +144,7 @@ export class CustomerRulesService {
 
   async upsert(customerId: string, input: SaveCustomerPortalRuleInput, user: JwtUserPayload) {
     this.validateInput(input);
+    this.assertWritable(user);
     const customer = await this.getAccessibleCustomer(customerId, user);
     let rule = await this.ruleRepository.findOne({ where: { customerId } });
     if (!rule) {
@@ -191,6 +200,7 @@ export class CustomerRulesService {
   }
 
   async batchUpsert(rows: BatchSaveCustomerPortalRuleInput[], user: JwtUserPayload) {
+    this.assertWritable(user);
     if (!Array.isArray(rows) || rows.length === 0) throw new BadRequestException('批量导入至少需要一条客户规则');
     if (rows.length > 500) throw new BadRequestException('每批最多导入 500 条客户规则');
     const customerIdCounts = new Map<string, number>();
@@ -220,11 +230,17 @@ export class CustomerRulesService {
   }
 
   async importFromExistingOrders(customerIds: string[] | undefined, user: JwtUserPayload) {
+    this.assertWritable(user);
     if (customerIds !== undefined && (!Array.isArray(customerIds) || customerIds.length > 500 || customerIds.some((id) => typeof id !== 'string' || !isUUID(id)))) {
       throw new BadRequestException('历史带入必须使用有效客户 UUID，每批最多 500 个客户');
     }
     const customerQb = this.customerRepository.createQueryBuilder('customer').where('customer.isActive = true');
     customerQb.andWhere('customer.businessScope = :businessScope', { businessScope: user.businessScope ?? BusinessScope.BEILUN });
+    const assignedCustomerIds = await this.getAssignedCustomerIds(user);
+    if (assignedCustomerIds !== null) {
+      if (assignedCustomerIds.length === 0) return { customerCount: 0, importedCount: 0, skippedCount: 0, failedCount: 0, sourceOrderCount: 0, results: [] };
+      customerQb.andWhere('customer.id IN (:...assignedCustomerIds)', { assignedCustomerIds });
+    }
     if (customerIds?.length) customerQb.andWhere('customer.id IN (:...customerIds)', { customerIds });
     const customers = await customerQb.getMany();
     if (customers.length === 0) return { customerCount: 0, importedCount: 0, skippedCount: 0, failedCount: 0, sourceOrderCount: 0, results: [] };
@@ -310,8 +326,24 @@ export class CustomerRulesService {
     const qb = this.customerRepository.createQueryBuilder('customer').where('customer.id = :customerId', { customerId });
     qb.andWhere('customer.businessScope = :businessScope', { businessScope: user.businessScope ?? BusinessScope.BEILUN });
     const customer = await qb.getOne();
-    if (customer) return customer;
-    throw new NotFoundException('客户不存在');
+    if (!customer) throw new NotFoundException('客户不存在');
+    const assignedCustomerIds = await this.getAssignedCustomerIds(user);
+    if (assignedCustomerIds !== null && !assignedCustomerIds.includes(customer.id)) throw new ForbiddenException('当前账号未分配该客户');
+    return customer;
+  }
+
+  private assertWritable(user: JwtUserPayload) {
+    if (hasManagementScopeRole(user.roles) && !isAdminRole(user.roles)) throw new ForbiddenException('业务负责人仅可查看客户门户配置');
+    if (!isAdminRole(user.roles) && !hasAnyRole(user.roles, WORK_ORDER_CREATOR_ROLES)) throw new ForbiddenException('当前账号无客户门户配置权限');
+  }
+
+  /** null means the user has global customer visibility; an array is the effective assignment scope. */
+  private async getAssignedCustomerIds(user: JwtUserPayload): Promise<string[] | null> {
+    if (isAdminRole(user.roles) || hasManagementScopeRole(user.roles)) return null;
+    if (!hasAnyRole(user.roles, WORK_ORDER_CREATOR_ROLES)) throw new ForbiddenException('当前账号无客户门户配置权限');
+    // Unit-test doubles may omit the optional repository; the Nest module always injects it.
+    if (!this.customerAssigneeRepository) return null;
+    return (await this.customerAssigneeRepository.find({ where: { userId: user.sub, businessScope: user.businessScope ?? BusinessScope.BEILUN, isActive: true }, select: ['customerId'] })).map((row) => row.customerId);
   }
 
   private deriveRulesFromOrders(orders: WorkOrder[]) {

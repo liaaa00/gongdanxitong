@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
+import { normalizeResignationFields } from '../connector/portal-onboarding.mjs';
 
 const page = await readFile(new URL('../web/index.html', import.meta.url), 'utf8');
 const business = await readFile(new URL('../web/portal-business.js', import.meta.url), 'utf8');
@@ -28,37 +29,66 @@ function runFunctions(code, context) {
   return context;
 }
 
+test('onboarding maps every portal work-hour label to the internal canonical value', () => {
+  const formValues = {
+    working_hours: '标准工时',
+    contract_type: 'fixed',
+    contract_duration: '36',
+    salary_type: '按月',
+    social_start_month: '9月',
+  };
+  const form = { entries: () => Object.entries(formValues) };
+  const controls = {
+    'contract_end_date': element(''),
+    'contract_end_date_manual': element(''),
+    'probation_end_date': element(''),
+  };
+  const code = page.slice(page.indexOf('    function onboardingPayload('), page.indexOf('    function gatewayUrl('));
+  const context = runFunctions(code, {
+    FormData: function FormData() { return form; },
+    document: { getElementById: (id) => id === 'onboarding-form' ? form : controls[id] },
+  });
+  const expected = new Map([
+    ['标准工时', '标准工时制'],
+    ['综合工时', '综合工时制'],
+    ['不定时工时', '不定时工时制'],
+  ]);
+  for (const [label, canonical] of expected) {
+    formValues.working_hours = label;
+    assert.equal(context.onboardingPayload().work_hour_system, canonical);
+  }
+});
+
 test('entering contract dates does not opt an employee into probation; clearing probation removes its requirements', () => {
-  const ids = ['contract_type', 'contract_duration', 'contract-duration-row', 'contract-end-row', 'contract_start_date', 'contract_end_date', 'social_start_month', 'probation_start_date', 'probation_months', 'probation-month-row', 'probation-end-row', 'probation_end_date', 'probation_salary', 'probation_other_salary', 'probation-salary-row', 'probation-other-salary-row'];
+  const ids = ['contract_type', 'contract-end-row', 'contract_start_date', 'contract_end_date', 'social_start_month', 'probation_start_date', 'probation-end-row', 'probation_end_date', 'probation_salary', 'probation_other_salary', 'probation-salary-row', 'probation-other-salary-row'];
   const nodes = Object.fromEntries(ids.map((id) => [id, element()]));
   nodes.contract_type.value = 'fixed';
-  nodes.contract_duration.value = '12';
+  nodes.contract_end_date.value = '2027-09-09';
   nodes.contract_start_date.value = '2026-09-10';
   const code = page.slice(page.indexOf('    function addMonths('), page.indexOf("    ['contract_type', 'contract_start_date'"));
   const context = runFunctions(code, { document: { getElementById: (id) => nodes[id] } });
 
   context.updateContractDates();
   assert.equal(nodes.probation_start_date.value, '');
-  assert.equal(nodes.probation_months.required, false);
+  assert.equal(nodes.probation_end_date.required, false);
   assert.equal(nodes.probation_salary.required, false);
-  assert.equal(nodes.probation_months.disabled, true);
-  assert.equal(nodes['probation-end-row'].classList.contains('visible'), false);
+  assert.equal(nodes.probation_end_date.max, '2026-10-10');
 
   nodes.probation_start_date.value = '2026-09-10';
-  nodes.probation_months.value = '3';
   context.updateProbationDates();
-  assert.equal(nodes.probation_months.required, true);
-  assert.equal(nodes.probation_salary.required, true);
+  assert.equal(nodes.probation_end_date.required, false);
+  assert.equal(nodes.probation_salary.required, false);
   assert.equal(nodes.probation_other_salary.disabled, false);
-  assert.match(nodes.probation_end_date.textContent, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(nodes.probation_end_date.min, '2026-09-10');
 
   nodes.probation_start_date.value = '';
   context.updateProbationDates();
-  assert.equal(nodes.probation_months.required, false);
+  assert.equal(nodes.probation_end_date.required, false);
   assert.equal(nodes.probation_salary.required, false);
-  assert.equal(nodes.probation_salary.disabled, true);
-  assert.equal(nodes.probation_other_salary.disabled, true);
-  assert.doesNotMatch(nodes.probation_end_date.textContent, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(nodes.probation_salary.disabled, false);
+  assert.equal(nodes.probation_other_salary.disabled, false);
+  assert.equal(nodes.probation_end_date.value, '');
+  assert.equal(context.addMonths('2028-01-31', 1), '2028-02-29');
 });
 
 test('fund ratios follow the selected location, discard the previous location choice, and allow an unknown location without a guessed ratio', () => {
@@ -103,14 +133,17 @@ test('salary uses the configured period across a year boundary without replacing
   assert.equal(month.value, '2026-11');
 });
 
-test('resignation submits the full stop year-month and actual contribution location', async () => {
+test('resignation omits a blank optional email and submits a valid full stop year-month and contribution location', async () => {
   const button = element();
   const form = { reportValidity: () => true, querySelector: () => button };
   const feedback = element();
   let sent;
   const context = runFunctions(businessFunction('submitResignation'), {
     document: { getElementById: (id) => id === 'resignation-form' ? form : feedback },
-    FormData: class { entries() { return Object.entries({ employee_name: '测试员工', social_stop_month: '2027-01', social_location: '上海' }); } },
+    FormData: class { entries() { return Object.entries({
+      employee_name: '测试员工', id_card_no: '330102199001010011', mobile: '13800138000', email: '',
+      resignation_date: '2027-01-04', social_stop_month: '2027-01', social_location: '上海', resignation_reason: '个人原因',
+    }); } },
     portalSessionGeneration: 1, activePortalSession: { account: { id: 'account-a' } }, portalLinkToken: () => 'token-a',
     portalState: { resignationFiles: [] }, filesForPortal: async () => [], assertPortalSession() {}, isPortalSessionChanged: () => false,
     portalCall: async (path, payload) => { sent = { path, payload }; return { workOrderNo: 'RS-1' }; }, refreshPortalProgress: async () => {},
@@ -119,6 +152,8 @@ test('resignation submits the full stop year-month and actual contribution locat
   assert.equal(sent.path, '/portal/resignation');
   assert.equal(sent.payload.fields.social_stop_month, '2027-01');
   assert.equal(sent.payload.fields.social_location, '上海');
+  assert.equal(Object.hasOwn(sent.payload.fields, 'email'), false);
+  assert.equal(normalizeResignationFields(sent.payload.fields).social_stop_month, '1月');
   assert.equal(button.disabled, false);
 });
 
@@ -147,3 +182,11 @@ for (const kind of ['onboarding', 'resignation']) {
     }
   });
 }
+
+test('portal correction guard allows returned fields and rejects changes to all other fields', () => {
+  const context = runFunctions(businessFunction('correctionFieldViolation'), {});
+  const original = { employee_name: '张三', social_location: '上海', mobile: '13800000000' };
+  assert.equal(context.correctionFieldViolation(original, { ...original, employee_name: '张小三' }, ['employee_name']), null);
+  assert.equal(context.correctionFieldViolation(original, { ...original, social_location: '宁波' }, ['employee_name']), 'social_location');
+  assert.equal(context.correctionFieldViolation(original, { employee_name: '张三', social_location: '上海' }, ['employee_name']), 'mobile');
+});

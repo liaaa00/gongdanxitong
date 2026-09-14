@@ -6,6 +6,9 @@ const MONTH_PATTERN = /^(?:[1-9]|1[0-2])月$/;
 const MOBILE_PATTERN = /^1[3-9]\d{9}$/;
 const BANK_TEXT_PATTERN = /^[^\s()[\]{}<>（）【】]+$/;
 const BANK_ACCOUNT_PATTERN = /^\d{8,30}$/;
+const CONTRACT_TERM_TYPES = new Set(['固定期限', '无固定期限', '任务期限']);
+const WORK_HOUR_SYSTEMS = new Set(['标准工时制', '综合工时制', '不定时工时制']);
+const SALARY_FORMS = new Set(['按月']);
 const TOKEN_VERSION = 1;
 const TOKEN_AUDIENCE = 'customer-portal';
 // Keep the public portal attachment limit below the 50 MB reverse-proxy body limit
@@ -18,8 +21,8 @@ const ALLOWED_ATTACHMENT_EXTENSIONS = new Set(['.pdf', '.jpg', '.jpeg', '.png', 
 const CUSTOMER_ONBOARDING_FIELDS = new Set([
   'employee_name', 'id_card_type', 'id_card_no', 'mobile', 'email',
   'household_type', 'ethnicity', 'education', 'marital_status', 'household_address', 'current_address',
-  'position', 'position_type', 'work_city', 'contract_term_type', 'contract_term',
-  'contract_start_date', 'contract_end_date', 'probation_start_date', 'probation_months', 'probation_end_date',
+  'position', 'position_type', 'work_city', 'contract_term_type',
+  'contract_start_date', 'contract_end_date', 'probation_start_date', 'probation_end_date',
   'work_hour_system', 'salary_form', 'base_salary', 'other_salary', 'probation_salary',
   'social_location', 'start_month', 'social_base', 'fund_base',
   'bank_location', 'bank_name', 'bank_account',
@@ -243,6 +246,15 @@ export function normalizeOnboardingFields(fields) {
   for (const fieldCode of ['contract_start_date', 'contract_end_date', 'probation_start_date', 'probation_end_date']) {
     assertDate(normalized[fieldCode], fieldCode);
   }
+  if (!CONTRACT_TERM_TYPES.has(normalized.contract_term_type)) {
+    throw new PortalRequestError('INVALID_FIELDS', 'contract_term_type must be 固定期限、无固定期限或任务期限');
+  }
+  if (!WORK_HOUR_SYSTEMS.has(normalized.work_hour_system)) {
+    throw new PortalRequestError('INVALID_FIELDS', 'work_hour_system is invalid');
+  }
+  if (!SALARY_FORMS.has(normalized.salary_form)) {
+    throw new PortalRequestError('INVALID_FIELDS', 'salary_form must be 按月');
+  }
   if (normalized.start_month && !MONTH_PATTERN.test(normalized.start_month)) {
     throw new PortalRequestError('INVALID_FIELDS', 'start_month must use 1月-12月');
   }
@@ -261,7 +273,7 @@ export function normalizeOnboardingFields(fields) {
 
 const CUSTOMER_RESIGNATION_FIELDS = new Set([
   'employee_name', 'id_card_no', 'mobile', 'email',
-  'resignation_date', 'social_stop_month', 'stop_month', 'resignation_reason',
+  'resignation_date', 'social_location', 'social_stop_month', 'stop_month', 'resignation_reason',
 ]);
 
 const REQUIRED_CUSTOMER_RESIGNATION_FIELDS = [
@@ -348,7 +360,7 @@ function normalizeStandardTemplateResult(preview, businessType) {
   }
   const expected = businessType === 'resignation'
     ? ['employee_name', 'id_card_no', 'mobile', 'email', 'resignation_date', 'social_stop_month', 'resignation_reason']
-    : ['employee_name', 'id_card_type', 'id_card_no', 'mobile', 'email', 'position', 'position_type', 'contract_term_type', 'contract_term', 'contract_start_date', 'work_city', 'work_hour_system', 'salary_form', 'base_salary', 'social_location', 'start_month', 'social_base', 'fund_base', 'bank_account'];
+    : ['employee_name', 'id_card_type', 'id_card_no', 'mobile', 'email', 'position', 'position_type', 'contract_term_type', 'contract_start_date', 'contract_end_date', 'probation_end_date', 'work_city', 'work_hour_system', 'salary_form', 'base_salary', 'social_location', 'start_month', 'social_base', 'fund_base', 'bank_account'];
   const mapping = preview.suggestedMapping || preview.mapping;
   if (isPlainObject(mapping)) {
     const mapped = [...new Set(Object.values(mapping).map((value) => String(value || '').trim()).filter(Boolean))];
@@ -382,7 +394,7 @@ async function requestBackend(path, init, options = {}) {
   const backendUrl = (options.backendUrl || process.env.LOCAL_BACKEND_URL || '').replace(/\/$/, '');
   const backendToken = options.backendToken || process.env.PORTAL_BACKEND_TOKEN || '';
   const fetchImpl = options.fetchImpl || fetch;
-  const publicPortalEndpoint = /^\/api\/(?:portal-auth\/(?:login|session|change-password)|customer-portal\/(?:schema|template|submit|import\/preview|import\/confirm|progress|attachments))$/.test(path);
+  const publicPortalEndpoint = /^\/api\/(?:portal-auth\/(?:login|session|change-password)|customer-portal\/(?:schema|template|submit|resubmit|import\/preview|import\/confirm|progress|attachments))$/.test(path);
   if (!backendUrl || (!publicPortalEndpoint && !backendToken)) {
     throw new PortalRequestError('PORTAL_CONFIGURATION_ERROR', 'LOCAL_BACKEND_URL is required; internal employee endpoints also require PORTAL_BACKEND_TOKEN');
   }
@@ -708,12 +720,12 @@ export async function handlePortalAction(payload, options = {}) {
       'onboarding.import_preview':['import/preview','onboarding'], 'onboarding.import_confirm':['import/confirm','onboarding'],
       'resignation.import_preview':['import/preview','resignation'], 'resignation.import_confirm':['import/confirm','resignation'],
       'shared_email.send_attachments':['attachments',payload.businessType], 'portal.schema':['schema',payload.businessType],
-      'portal.template':['template',payload.businessType], 'portal.progress':['progress',undefined],
+      'portal.template':['template',payload.businessType], 'portal.resubmit':['resubmit',payload.businessType], 'portal.progress':['progress',undefined],
     };
     const intake = intakeActions[payload.action];
     if (intake) {
       const body = {linkToken:payload.linkToken, ...(intake[1] ? {businessType:intake[1]} : {})};
-      for(const key of ['requestId','fields','files','fileName','contentBase64']) if(payload[key]!==undefined)body[key]=payload[key];
+      for(const key of ['requestId','submissionId','fields','files','fileName','contentBase64']) if(payload[key]!==undefined)body[key]=payload[key];
       const traceId = payload._monitor?.traceId;
       const connectorToken = options.token || process.env.CONNECTOR_TOKEN;
       const monitorHeaders = /^[0-9a-f-]{36}$/i.test(traceId || '') && connectorToken

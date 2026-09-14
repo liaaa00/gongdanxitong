@@ -45,6 +45,7 @@ function fixture(options: { queueError?: Error; commitError?: Error; commitSucce
     }),
   };
   const dataSource = {
+    getRepository: jest.fn(() => ({ find: jest.fn(async () => []), findOne: jest.fn(async () => ({ id: 'assign-1' })) })),
     transaction: jest.fn(async (operation) => {
       const transaction = ++transactionCount;
       const manager = {

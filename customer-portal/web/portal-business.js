@@ -44,6 +44,10 @@ function clearPortalClientState() {
   portalState.modalAction = null;
   portalState.progressFilter = 'all';
   portalState.submittingOnboarding = false;
+  portalState.correctionSubmissionId = null;
+  portalState.correctionBusinessType = null;
+  portalState.correctionOriginalFields = null;
+  portalState.correctionFields = [];
   document.querySelectorAll('input[type="file"]').forEach((input) => { input.value = ''; });
   document.querySelectorAll('form').forEach((form) => form.reset());
   if (typeof initializeSalaryPeriod === 'function') initializeSalaryPeriod();
@@ -128,9 +132,9 @@ async function applyPortalSession(session) {
           const old=control.value;control.replaceChildren(new Option('请选择',''),...field.options.map((value)=>new Option(value,value)));
           if(field.options.includes(old))control.value=old;
         }
-        if(field.code!=='contract_term')control.required=field.required;
+        control.required=field.required;
       }
-      if (business === 'onboarding') { updateProbationDates(); updatePortalFundRatios(); }
+      if (business === 'onboarding') { updateContractDates(); updatePortalFundRatios(); }
     }catch(error){if(!isPortalSessionChanged(error))showToast(error.message);}
   }
 }
@@ -164,14 +168,18 @@ async function refreshPortalProgress(){
   const result=await portalCall('/portal/progress');
   assertPortalSession(generation, accountId, token);
   const names={onboarding:'入职',resignation:'离职',salary:'薪资'};
-  const labels={draft:'待内部审核',pending:'待办理',processing:'办理中',received:'已受理',completed:'已完结',returned:'已退回',withdrawn:'已撤回',void:'已作废'};
-  const rows=result.list.map((row)=>{
+  const labels={draft:'待内部审核',pending:'待办理',processing:'办理中',received:'已受理',completed:'已完结',needs_correction:'待补正',returned:'已退回',withdrawn:'已撤回',void:'已作废'};
+  const rows=result.list.map((row,index)=>{
     const done=row.status==='completed';
     const values=[row.requestNo,row.subject,names[row.businessType],String(row.createdAt).slice(0,10)];
     const mail=row.completionEmailStatus==='sent'?'结果邮件已发送':row.completionEmailStatus==='failed'?'结果邮件待重试':row.completionEmailStatus?'结果邮件待发送':'';
-    return {html:values.map((value)=>'<td>'+escapeHtml(value||'-')+'</td>').join('')+'<td><span class="status '+(done?'done':'processing')+'">'+escapeHtml(labels[row.status]||'办理中')+'</span></td>',result:[row.result,mail].filter(Boolean).join('；'),done};
+    const correction = row.status === 'needs_correction';
+    const action = correction && row.businessType !== 'salary' ? '<button type="button" class="quiet-button progress-correction" data-correction-index="'+index+'">修改并重新提交</button>' : '';
+    return {html:values.map((value)=>'<td>'+escapeHtml(value||'-')+'</td>').join('')+'<td><span class="status '+(done?'done':'processing')+'">'+escapeHtml(labels[row.status]||'办理中')+'</span></td>',result:[row.result,mail].filter(Boolean).join('；'),done,action,row};
   });
-  document.getElementById('progress-rows').innerHTML=rows.map((row)=>'<tr data-progress-status="'+(row.done?'done':'processing')+'">'+row.html+'<td>'+escapeHtml(row.result||'等待办理结果')+'</td></tr>').join('')||'<tr><td colspan="6">暂无办理记录</td></tr>';
+  document.getElementById('progress-rows').innerHTML=rows.map((row)=>'<tr data-progress-status="'+(row.done?'done':'processing')+'">'+row.html+'<td>'+escapeHtml(row.result||'等待办理结果')+(row.action||'')+'</td></tr>').join('')||'<tr><td colspan="6">暂无办理记录</td></tr>';
+  window.portalCorrectionRows = result.list;
+  document.querySelectorAll('.progress-correction').forEach((button)=>button.addEventListener('click',()=>beginPortalCorrection(window.portalCorrectionRows[Number(button.dataset.correctionIndex)])));
   document.getElementById('dashboard-recent').innerHTML=rows.slice(0,5).map((row)=>'<tr>'+row.html+'</tr>').join('')||'<tr><td colspan="5">暂无办理记录</td></tr>';
   const stats=document.querySelectorAll('.stat-value');
   const counts=[result.summary.processing,result.summary.completed,result.list.filter((row)=>row.businessType==='salary').length,result.total];
@@ -195,16 +203,55 @@ async function downloadStandardTemplate(businessType){
 
 async function filesForPortal(items){return Promise.all(items.map(async(item)=>({name:item.file.name,mimeType:item.file.type||'application/octet-stream',bizPurpose:item.bizPurpose||'other',contentBase64:await fileAsBase64(item.file)})));}
 
+function correctionFieldViolation(originalFields, nextFields, correctionFields){
+  const original=originalFields&&typeof originalFields==='object'?originalFields:{};
+  const next=nextFields&&typeof nextFields==='object'?nextFields:{};
+  const allowed=new Set((Array.isArray(correctionFields)?correctionFields:[]).map((field)=>String(field).trim()).filter(Boolean));
+  const comparable=(value)=>value===undefined?'__portal_undefined__':JSON.stringify(value);
+  for(const field of new Set([...Object.keys(original),...Object.keys(next)])){
+    if(!allowed.has(field)&&comparable(original[field])!==comparable(next[field])) return field;
+  }
+  return null;
+}
+
+function assertPortalCorrectionFields(businessType, fields){
+  if(portalState.correctionBusinessType!==businessType||!portalState.correctionSubmissionId)return;
+  if(!portalState.correctionFields?.length)throw new Error('退回记录未指定可补正字段，请联系审核人员重新退回');
+  const violation=correctionFieldViolation(portalState.correctionOriginalFields,fields,portalState.correctionFields);
+  if(violation)throw new Error('只能修改退回补正字段：'+violation);
+}
+
+function clearPortalCorrection(){
+  portalState.correctionSubmissionId=null;
+  portalState.correctionBusinessType=null;
+  portalState.correctionOriginalFields=null;
+  portalState.correctionFields=[];
+}
+
+function beginPortalCorrection(row){
+  if(!row || row.status!=='needs_correction') return;
+  const correctionFields=(Array.isArray(row.correctionFields)?row.correctionFields:[]).map((field)=>String(field).trim()).filter(Boolean);
+  if(!correctionFields.length){showToast('该退回记录未指定待补字段，请联系审核人员重新退回');return;}
+  portalState.correctionSubmissionId=row.id; portalState.correctionBusinessType=row.businessType;
+  portalState.correctionOriginalFields={...(row.fields||{})}; portalState.correctionFields=correctionFields;
+  const aliases=row.businessType==='onboarding'?{contract_term_type:'contract_type',contract_term:'contract_duration',work_hour_system:'working_hours',salary_form:'salary_type',start_month:'social_start_month'}:{employee_name:'resignation_name',id_card_no:'resignation_id',mobile:'resignation_mobile',email:'resignation_email',resignation_date:'resignation_date',social_location:'resignation_social_location',social_stop_month:'stop_month',resignation_reason:'resignation_reason'};
+  const fields=row.fields||{}; Object.entries(fields).forEach(([code,value])=>{const control=document.getElementById(aliases[code]||code);if(control){control.value=String(value??'');control.dispatchEvent(new Event('change',{bubbles:true}));}});
+  if(row.businessType==='onboarding') switchView('onboarding'); else switchView('resignation');
+  showToast((row.correctionReason?row.correctionReason+'；':'')+'请补正：'+correctionFields.join('、')+'；其他字段不能修改');
+}
+
 async function submitOnboarding(){
   if(portalState.submittingOnboarding)return;
   const button=document.getElementById('onboarding-next');portalState.submittingOnboarding=true;button.disabled=true;
   const generation=portalSessionGeneration; const accountId=activePortalSession?.account?.id; const token=portalLinkToken();
   try{
-    const fields=onboardingPayload();delete fields.bank_location;
+    const fields=onboardingPayload();
+    const correctionId=portalState.correctionBusinessType==='onboarding' ? portalState.correctionSubmissionId : null;
+    if(correctionId)assertPortalCorrectionFields('onboarding',fields);
     const files=await filesForPortal(portalState.onboardingFiles); assertPortalSession(generation, accountId, token);
-    const result=await portalCall('/portal/onboarding',{fields,files},'onboarding');
+    const result=await portalCall(correctionId?'/portal/resubmit':'/portal/onboarding',{fields,files,...(correctionId?{submissionId:correctionId,businessType:'onboarding'}:{})},correctionId?'resubmit-'+correctionId:'onboarding');
     assertPortalSession(generation, accountId, token);
-    onboardingFeedback('资料已受理，编号：'+result.workOrderNo+'；可在办理进度查看结果。',false);
+    if(correctionId)clearPortalCorrection(); onboardingFeedback('资料已受理，编号：'+result.workOrderNo+'；可在办理进度查看结果。',false);
     await refreshPortalProgress();showToast('入职资料已受理');
   }catch(error){if(!isPortalSessionChanged(error))onboardingFeedback(error.message,true);}finally{portalState.submittingOnboarding=false;button.disabled=false;}
 }
@@ -215,11 +262,16 @@ async function submitResignation(){
   const box=document.getElementById('resignation-feedback');
   const generation=portalSessionGeneration; const accountId=activePortalSession?.account?.id; const token=portalLinkToken();
   try{
-    const fields=Object.fromEntries(new FormData(form).entries());
+    const fields={};
+    for(const [name,value] of new FormData(form).entries()){
+      if(value!=='')fields[name]=value;
+    }
+    const correctionId=portalState.correctionBusinessType==='resignation' ? portalState.correctionSubmissionId : null;
+    if(correctionId)assertPortalCorrectionFields('resignation',fields);
     const files=await filesForPortal(portalState.resignationFiles); assertPortalSession(generation, accountId, token);
-    const result=await portalCall('/portal/resignation',{fields,files},'resignation');
+    const result=await portalCall(correctionId?'/portal/resubmit':'/portal/resignation',{fields,files,...(correctionId?{submissionId:correctionId,businessType:'resignation'}:{})},correctionId?'resubmit-'+correctionId:'resignation');
     assertPortalSession(generation, accountId, token);
-    box.textContent='资料已受理，编号：'+result.workOrderNo;box.className='form-feedback visible';await refreshPortalProgress();
+    if(correctionId)clearPortalCorrection(); box.textContent='资料已受理，编号：'+result.workOrderNo;box.className='form-feedback visible';await refreshPortalProgress();
   }catch(error){if(!isPortalSessionChanged(error)){box.textContent=error.message;box.className='form-feedback visible error';}}finally{button.disabled=false;}
 }
 

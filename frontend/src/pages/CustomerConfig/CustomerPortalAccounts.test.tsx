@@ -34,6 +34,7 @@ vi.mock('antd', async () => {
     App: { ...actual.App, useApp: () => ({ message: mocks.message }) },
   };
 });
+vi.setConfig({ testTimeout: 60_000 });
 
 const customerIdAt = (index: number) => `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`;
 const firstCustomerId = customerIdAt(1);

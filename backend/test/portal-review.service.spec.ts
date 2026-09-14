@@ -38,6 +38,20 @@ describe('Portal draft review ownership',()=>{
     await expect(service.claim(customerId,'submission',{...user,roles:['social_insurance_specialist']})).rejects.toThrow('无增减员审核权限');
     expect(save).not.toHaveBeenCalled();
   });
+  it('returns a claimed draft to the customer with an auditable reason and field list',async()=>{
+    const {service,order}=fixture();
+    await expect(service.requestCorrection(customerId,'submission',{reason:'请补充缴纳地',fields:[' social_location ','social_location','']},user)).resolves.toMatchObject({workOrderId:'order',reviewStatus:'needs_correction'});
+    expect(order.extraData.portal_review_status).toBe('needs_correction');
+    expect(order.extraData.portal_correction_reason).toBe('请补充缴纳地');
+    expect(order.extraData.portal_correction_fields).toEqual(['social_location']);
+    expect(order.extraData.portal_reviewed_by).toBeNull();
+  });
+  it('requires at least one non-empty correction field',async()=>{
+    const {service,save}=fixture();
+    await expect(service.requestCorrection(customerId,'submission',{reason:'请补充缴纳地',fields:['  ','']},user)).rejects.toThrow('请至少指定一个待补字段');
+    await expect(service.requestCorrection(customerId,'submission',{reason:'请补充缴纳地'},user)).rejects.toThrow('请至少指定一个待补字段');
+    expect(save).not.toHaveBeenCalled();
+  });
   it.each(['submitted','wrongSource','otherReviewer','existingChild'])('protects %s records',async scenario=>{
     const {service,order,repos,save}=fixture();
     if(scenario==='submitted')order.status=WorkOrderStatus.PROCESSING;
@@ -45,5 +59,25 @@ describe('Portal draft review ownership',()=>{
     if(scenario==='otherReviewer')order.extraData.portal_reviewed_by='other';
     if(scenario==='existingChild')(repos.get(DispatchedOrder) as {count:jest.Mock}).count.mockResolvedValue(1);
     await expect(service.claim(customerId,'submission',user)).rejects.toThrow();expect(save).not.toHaveBeenCalled();
+  });
+
+  it('allows business owners to view all active customers while keeping review actions read-only', async () => {
+    const businessOwner = { sub: 'owner', username: 'owner', roles: ['business_owner'], businessScope: BusinessScope.BEILUN };
+    const customerRepo = {
+      find: jest.fn().mockResolvedValue([{ id: customerId, businessScope: BusinessScope.BEILUN, isActive: true }]),
+      findOne: jest.fn(),
+    };
+    const submissionRepo = { find: jest.fn().mockResolvedValue([{ id: 'submission-owner', customerId, accountId: 'account', requestId: 'request', inputHash: 'hash', businessType: 'onboarding', workOrderId: 'order-owner', createdAt: new Date() }]), findOne: jest.fn() };
+    const orderRepo = { find: jest.fn().mockResolvedValue([{ id: 'order-owner', customerId, status: WorkOrderStatus.DRAFT, createdBy: 'system', submittedAt: null, extraData: {} }]), findOne: jest.fn() };
+    const dataSource = {
+      getRepository: jest.fn((entity: unknown) => entity === Customer ? customerRepo : entity === CustomerPortalSubmission ? submissionRepo : orderRepo),
+    };
+    const service = new PortalReviewService(dataSource as never, {} as never);
+
+    const result = await service.listWorkbench(businessOwner, {});
+    expect(result).toMatchObject({ total: 1 });
+    expect(result.items[0]).toEqual(expect.objectContaining({ canClaim: false, canReview: false }));
+    expect(customerRepo.find).toHaveBeenCalled();
+    await expect(service.claim(customerId, 'submission', businessOwner)).rejects.toThrow('无增减员审核权限');
   });
 });

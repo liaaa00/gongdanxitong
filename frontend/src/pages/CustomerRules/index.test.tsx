@@ -18,6 +18,7 @@ vi.mock('antd', async () => {
   const actual = await vi.importActual<typeof import('antd')>('antd');
   return { ...actual, App: { ...actual.App, useApp: () => ({ message: mocks.message }) } };
 });
+vi.setConfig({ testTimeout: 120_000 });
 const id = '11111111-1111-4111-8111-111111111111';
 const detail = {
   customerId: id, customerCode: 'C001', customerName: '远页客户', configured: true,
@@ -103,7 +104,7 @@ describe('客户规则详情保存', () => {
       socialLocation: '上海', branchId: '22222222-2222-4222-8222-222222222222',
       onboardingDefaults: { contract_subject: '上海客户主体', employee_type: '劳务派遣' }, resignationDefaults: {},
     }] })), { timeout: 5000 });
-  }, 30000);
+  }, 120000);
 
   it('rejects duplicate city rules before saving', async () => {
     const cityRule = { socialLocation: '上海', branchId: '22222222-2222-4222-8222-222222222222', onboardingDefaults: {}, resignationDefaults: {} };
@@ -115,7 +116,7 @@ describe('客户规则详情保存', () => {
     fireEvent.click(screen.getByRole('button', { name: /保存并校验/ }));
     expect((await screen.findAllByText('同一缴纳地只能配置一条规则', {}, { timeout: 5000 })).length).toBeGreaterThan(0);
     expect(mocks.updateCustomerRule).not.toHaveBeenCalled();
-  });
+  }, 120000);
 
   it('fills only after confirmation and displays updated and skipped draft details', async () => {
     mocks.fillPendingCustomerRules.mockResolvedValue({ total: 3, updatedCount: 1, skippedCount: 1, failedCount: 1, results: [

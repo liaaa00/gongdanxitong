@@ -1,6 +1,6 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import CustomerConfig from './index';
 const auth=vi.hoisted(()=>({admin:false}));
 vi.mock('@/hooks/useAuth',()=>({useAuth:()=>({hasRole:()=>auth.admin})}));
@@ -12,6 +12,10 @@ vi.mock('./CustomerPortalBusiness',()=>({default:()=> <div>业务内容</div>}))
 vi.mock('./PortalNotifications',()=>({default:()=> <div>通知配置内容</div>}));
 vi.mock('./PortalMonitor',()=>({default:()=> <div>管理员监控内容</div>}));
 afterEach(cleanup);
+const LocationProbe = () => {
+  const location = useLocation();
+  return <div>{`location:${location.pathname}${location.search}`}</div>;
+};
 describe('Customer portal operations visibility',()=>{
   it('keeps monitoring and global notification settings restricted to administrators, including direct tab URLs',()=>{
     auth.admin=false;render(<MemoryRouter initialEntries={['/customer-config?tab=monitor']}><CustomerConfig/></MemoryRouter>);
@@ -25,4 +29,8 @@ describe('Customer portal operations visibility',()=>{
     expect(screen.getByRole('tab',{name:'门户全过程监控'})).toHaveAttribute('aria-selected','true');
     expect(screen.getByText('管理员监控内容')).toBeVisible();
   });
-});
+  it('redirects the legacy embedded intake review tab to the standalone portal review page',()=>{
+    auth.admin=false;render(<MemoryRouter initialEntries={['/customer-config?tab=intake-review&customerId=customer-1']}><Routes><Route path="/customer-config" element={<CustomerConfig/>}/><Route path="/portal-intake-review" element={<LocationProbe/>}/></Routes></MemoryRouter>);
+    expect(screen.getByText('location:/portal-intake-review?customerId=customer-1')).toBeInTheDocument();
+    expect(screen.queryByRole('tab',{name:'增减员资料审核'})).not.toBeInTheDocument();
+  });});

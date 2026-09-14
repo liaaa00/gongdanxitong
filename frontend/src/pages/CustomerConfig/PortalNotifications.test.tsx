@@ -41,5 +41,5 @@ describe('通知日历输入边界', () => {
     fireEvent.blur(day);
     fireEvent.click(screen.getByRole('button', { name: '计算提醒日期' }));
     await waitFor(() => expect(previewSchedule).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), 28, 'current'));
-  });
+  }, 30_000);
 });

@@ -73,11 +73,10 @@ function completeFields() {
     position: '测试岗位',
     position_type: '非管理类',
     contract_term_type: '固定期限',
-    contract_term: '36',
+    contract_end_date: '2029-08-31',
     contract_start_date: '2026-09-01',
     contract_end_date: '2029-09-01',
     probation_start_date: '2026-09-01',
-    probation_months: '3',
     probation_end_date: '2026-12-01',
     work_city: '宁波',
     work_hour_system: '标准工时制',
@@ -116,6 +115,13 @@ test('customer intake accepts the phase-one fields and rejects internal-only fie
     ...completeFields(),
     need_company_contract: '是',
   }), /not available to the customer/);
+});
+
+test('customer intake accepts task contracts and rejects unsupported contract or salary options', () => {
+  const task = { ...completeFields(), contract_term_type: '任务期限' };
+  assert.deepEqual(normalizeOnboardingFields(task), task);
+  assert.throws(() => normalizeOnboardingFields({ ...completeFields(), contract_term_type: '按年' }), /contract_term_type/);
+  assert.throws(() => normalizeOnboardingFields({ ...completeFields(), salary_form: '按日' }), /salary_form/);
 });
 
 test('customer intake validates required, date, month, mobile and bank fields', () => {
@@ -303,6 +309,18 @@ test('resignation and salary adapters enforce the final portal fields', async ()
   assert.deepEqual(normalizeSalaryFields({ mode: 'same', month: '2026-08' }), { mode: 'same', note: '', channel: null, month: '2026-08' });
   assert.throws(() => normalizeSalaryFields({ mode: 'same', month: '2026-13' }), /YYYY-MM/);
   assert.throws(() => normalizeSalaryFields({ mode: 'changed', channel: 'spreadsheet' }), /text or attachment/);
+});
+
+test('resignation accepts an omitted optional email and preserves the actual contribution location', () => {
+  const fields = {
+    employee_name: '测试员工', id_card_no: '330102199001010011', mobile: '13800138000',
+    resignation_date: '2027-01-04', social_location: '上海', social_stop_month: '2027-01', resignation_reason: '个人原因',
+  };
+  assert.deepEqual(normalizeResignationFields(fields), { ...fields, social_stop_month: '1月' });
+
+  const { mobile, ...missingMobile } = fields;
+  assert.throws(() => normalizeResignationFields(missingMobile), /missing required fields: mobile/);
+  assert.throws(() => normalizeResignationFields({ ...fields, mobile: '' }), /field value is invalid: mobile/);
 });
 
 
