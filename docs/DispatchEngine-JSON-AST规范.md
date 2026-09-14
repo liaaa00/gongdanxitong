@@ -632,7 +632,7 @@ null
 ```json
 { "op": "EQ", "field": "need_company_contract", "value": "是" }
 ```
-- `payroll_location` 仅当 `need_company_payroll=是` 时必填：
+- `payroll_location`（发薪地，含“北仑总发薪”）仅当 `need_company_payroll=是` 时必填：
 ```json
 { "op": "EQ", "field": "need_company_payroll", "value": "是" }
 ```

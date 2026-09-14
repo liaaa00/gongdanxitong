@@ -115,6 +115,9 @@ frontend/visual-report.json
 /revised_form_preview.html
 # 运行日志文本（*.log 已忽略）
 /启动日志.txt
+# 归档目录绝不忽略（治理计划 1-1：docs/archive/ 不 ignore；置于所有临时规则之后强制生效）
+!docs/archive/
+!docs/archive/**
 # 工具/Agent 本地状态（与业务无关，用户可能在用，本轮不提交不删除）
 .workbuddy/
 .vibeyardignore
