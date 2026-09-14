@@ -70,7 +70,60 @@ backend/uploads/
 /tmp_*
 
 # Local portal verification backup, tokens and artifacts
+# (portal-merge-20260909/ 与 portal-reviewed-20260910/ 是 AI修改记录.md 引用的证据，
+#  物理保留在磁盘但整体忽略入库；其余 .tmp_local_e2e/ 内容按 T02 治理计划 1-1/1-9 一并忽略)
 /.tmp_local_e2e/portal-merge-20260909/
 /.tmp_local_e2e/portal-reviewed-20260910/
 /customer-portal/.codex-*
 /customer-portal/_codex_tmp*
+
+# ===== T02 仓库基线收敛（治理计划-2026-09-14.md 1-1/1-9）=====
+# 发布产物（可由发布脚本再生；SOURCE_COMMIT* 语义见 docs/deploy/ 发布记录）
+/.release/
+# E2E 临时验证工作区（整目录；其中证据文件已由 docs/AI修改记录.md 引用，磁盘保留、不入库）
+/.tmp_local_e2e/
+# 服务器对比/验证临时区（import-regression.log 等证据磁盘保留、不入库）
+/.tmp_server_compare/
+# backend 临时验证产物
+backend/.tmp_*
+# 根级/子目录临时验证文件
+**/.tmp_*
+/tmp_*
+**/tmp_*
+**/tmp-*
+temp-*
+temp_*
+!**/temp-keep-*
+# 一次性 DB 排查脚本（迁 scripts/oneoff/ 前先忽略，避免误提交）
+/check-*.js
+backend/check-*.js
+# 一次性脚本物理归档目录（治理计划 1-5，只作留痕不作可维护源码）
+/scripts/oneoff/
+# 一次性/临时测试脚本与产物
+/test-*.ps1
+/tmp_*.ps1
+/test-*.xlsx
+/test-*.js
+# 备份文件
+*.bak
+# 截图/可视化验收临时产物
+frontend/*.png
+frontend/pw-results/
+frontend/visual-report.json
+/page_check.docx
+/revised_form_check.docx
+/revised_form_preview.html
+# 运行日志文本（*.log 已忽略）
+/启动日志.txt
+# 工具/Agent 本地状态（与业务无关，用户可能在用，本轮不提交不删除）
+.workbuddy/
+.vibeyardignore
+teammsg.json
+# 演示/竞赛制作材料（复赛演示专用，非业务源码）
+/竞赛材料/
+# 本地 DB 快照/数据文件
+data/
+# 监控栈本地配置（G11 阶段3 落地时再决定入库范围）
+/monitoring/
+# 本地网关脚本（门户联调用临时脚本）
+customer-portal/gateway/
