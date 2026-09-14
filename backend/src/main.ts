@@ -7,6 +7,7 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { traceIdMiddleware } from './common/middleware/trace-id.middleware';
 import { AppConfig } from './config/configuration';
+import { buildCorsOptions } from './config/cors';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -16,7 +17,9 @@ async function bootstrap(): Promise<void> {
   app.useBodyParser('urlencoded', { extended: true, limit: '50mb' });
 
   app.setGlobalPrefix('api');
-  app.enableCors();
+  // CORS 白名单（治理计划 2-6 / G7）：允许本机与局域网来源，来源与端口口径由
+  // config/env.ps1 通过环境变量注入，不硬编码单一 IP。见 src/config/cors.ts。
+  app.enableCors(buildCorsOptions());
 
   app.use(traceIdMiddleware);
 

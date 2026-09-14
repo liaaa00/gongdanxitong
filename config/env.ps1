@@ -105,6 +105,10 @@ function Get-TicketLanIP {
 
 # 可用 TICKET_LAN_IP 显式覆盖（多网卡或演示机固定 IP 时）。
 $ServerLanIp = if ($env:TICKET_LAN_IP) { $env:TICKET_LAN_IP } else { Get-TicketLanIP }
+# CORS 白名单同源口径（治理计划 2-6 / G7）：后端 src/config/cors.ts 读取
+# TICKET_LAN_IP 派生 http://<LAN_IP>:5173 与 :3000 两个来源；如需额外域名/端口，
+# 用 ALLOWED_ORIGINS（逗号分隔）追加。改 IP 只改本文件一处，不硬编码进代码。
+if ($ServerLanIp) { $env:TICKET_LAN_IP = $ServerLanIp }
 if ($ServerLanIp) {
     $LanApiBase      = "http://${ServerLanIp}:$BackendPort/api"
     $LanFrontendBase = "http://${ServerLanIp}:$FrontendPort"
