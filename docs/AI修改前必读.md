@@ -186,3 +186,49 @@ git status --short
 > 按项目回归清单处理。
 
 AI 必须主动读取 `docs/AI修改前必读.md` 和 `docs/业务规则回归清单.md`。
+
+## 11. 端口与环境口径（2026-09-14 治理阶段0）
+
+本机局域网裸跑的端口/主机/路径唯一事实源是 `config/env.ps1`：
+
+- PostgreSQL：`127.0.0.1:5433` / `ticket_system`（便携版实测端口，**不是** 5432）
+- 后端 NestJS：`0.0.0.0:3000`，健康检查 `http://127.0.0.1:3000/api/health`
+- 前端 Vite dev：`0.0.0.0:5173`，且 `strictPort: true`（占用即报错，不再静默漂移到 5178）
+
+规则：
+
+1. 任何脚本、配置、文档**不得再自行硬编码** 3000 / 5173 / 5433；根目录 `日常启动.ps1`、`快速启动.ps1`、`局域网启动.ps1`、`升级启动.ps1`、`停止系统.ps1` 必须先 `. config\env.ps1` 再引用变量。
+2. 端口口径改动只允许改 `config/env.ps1` 一处，然后运行 `scripts\检查环境口径.ps1`（退出码必须为 0；加 `-Live` 可同时实测监听）。
+3. Docker / Nginx 生产形态（容器内 `postgres:5432`、对外 `HTTP_PORT=8080`）是另一套命名空间，口径在根 `.env` 与 `docker-compose*.yml`，不要与本机裸跑口径混写。
+4. 密码只存在于 `backend/.env`（已 gitignore）。新脚本需要数据库密码时用 `Get-TicketDbPassword` 读取，**绝不把真实密码写进任何入库文件**。
+
+### 11.1 5173 被占用时如何定位占用进程
+
+Vite 启不来（`strictPort` 报错退出）说明 5173 已有监听者。定位步骤：
+
+```powershell
+# 1) 看是哪个 PID 占了 5173
+Get-NetTCPConnection -LocalPort 5173 -State Listen | Select-Object LocalAddress,LocalPort,OwningProcess
+
+# 2) 把 PID 翻译成进程名 / 可执行路径 / 完整命令行
+$pid5173 = (Get-NetTCPConnection -LocalPort 5173 -State Listen | Select-Object -First 1).OwningProcess
+Get-Process -Id $pid5173 | Select-Object Id,ProcessName,Path
+(Get-CimInstance Win32_Process -Filter "ProcessId=$pid5173").CommandLine
+
+# 3) 确认是自己的旧前端（命令行含 vite 或本项目路径）后，才精确停止该 PID
+Stop-Process -Id $pid5173 -Force
+```
+
+- 启动脚本已内置同样逻辑：失败时会打印 `Port 5173 is held by <name> PID=<pid>` 与 executable/command line，并明确提示可用 `停止系统.ps1` 释放。
+- 禁止用"批量杀所有 node"的方式腾端口（会误伤其他项目）；`停止系统.ps1` 只按 `config/env.ps1` 里的 3000/5173 精确处理。
+- 若占用者是其他工具（如另一套 Vite/IDE 预览），改端口只能改 `config/env.ps1` 一处，并同步 `scripts\检查环境口径.ps1` 复验。
+
+### 11.2 日常入口
+
+| 场景 | 命令 |
+|---|---|
+| 只跑当前源码（不迁移、不种子） | `.\快速启动.ps1`（等价 `.\日常启动.ps1`，可加 `-Restart` 先停再起） |
+| 作为服务器对外提供局域网访问 | `.\局域网启动.ps1`（构建 + 种子 + 起前后端） |
+| 升级（备份 + 构建 + 迁移 + 种子） | `.\升级启动.ps1 [-StartAfterUpgrade]` |
+| 停止应用（保留数据库） | `.\停止系统.ps1 [-StopPostgres]` |
+

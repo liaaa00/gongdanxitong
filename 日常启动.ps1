@@ -1,6 +1,7 @@
-param(
+﻿param(
     [switch]$NoBrowser,
-    [switch]$NoPause
+    [switch]$NoPause,
+    [switch]$Restart
 )
 
 try {
@@ -10,108 +11,107 @@ try {
 
 $ErrorActionPreference = 'Stop'
 $rootPath = $PSScriptRoot
-$backendPath = Join-Path $rootPath 'backend'
-$frontendPath = Join-Path $rootPath 'frontend'
-$nodeDir = 'D:\AI\node-v20.20.2-win-x64'
-$npmCmd = Join-Path $nodeDir 'npm.cmd'
-$dbHost = '127.0.0.1'
-$dbPort = 5433
-$dbName = 'ticket_system'
-$backendPort = 3000
-$frontendPort = 5173
 
-$env:PATH = "$nodeDir;$env:PATH"
-$env:HOST = '0.0.0.0'
-$env:PORT = [string]$backendPort
-$env:DB_HOST = $dbHost
-$env:DB_PORT = [string]$dbPort
-$env:DB_USERNAME = 'postgres'
-$env:DB_PASSWORD = 'postgres'
-$env:DB_DATABASE = $dbName
+# 端口/主机/路径的唯一事实源：config/env.ps1（禁止在本文件硬编码 3000/5173/5433）
+. (Join-Path $rootPath 'config\env.ps1')
+
+# 日常启动只跑当前源码：不迁移、不种子（见 docs/业务规则回归清单.md 第 33 节）
 $env:AUTO_SEED = 'false'
-Remove-Item Env:VITE_API_BASE_URL -ErrorAction SilentlyContinue
+$env:DB_PASSWORD = Get-TicketDbPassword
 
-function Assert-Path([string]$path, [string]$name) {
+function Assert-PathExist([string]$path, [string]$name) {
     if (-not (Test-Path -LiteralPath $path)) { throw "$name not found: $path" }
 }
-function Get-ListeningProcess([int]$port) {
-    return Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue |
-        Select-Object -First 1
-}
 function Get-ReadyProcess([int]$port, [string]$url, [string]$name) {
-    $listen = Get-ListeningProcess $port
+    $listen = Get-TicketListeningProcess $port
     if (-not $listen) { return $null }
-    if (Wait-Http200 $url 5) { return $listen.OwningProcess }
-    $proc = Get-Process -Id $listen.OwningProcess -ErrorAction SilentlyContinue
-    $label = if ($proc) { "$($proc.ProcessName) PID=$($proc.Id)" } else { "PID=$($listen.OwningProcess)" }
-    throw "$name port $port is occupied by $label but health check failed. Stop that service explicitly, then retry."
+    if (Wait-TicketHttp200 $url 5) { return $listen.OwningProcess }
+    $owner = Get-TicketPortOwnerLabel $port
+    throw "$name port $port is occupied by $($owner.Name) PID=$($owner.Pid) but health check failed. Stop that service explicitly, then retry. See docs/AI修改前必读.md for how to locate the owner."
 }
-function Wait-Http200([string]$url, [int]$seconds) {
-    $deadline = (Get-Date).AddSeconds($seconds)
-    while ((Get-Date) -lt $deadline) {
-        try {
-            $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
-            if ($response.StatusCode -eq 200) { return $true }
-        } catch {}
-        Start-Sleep -Seconds 1
+function Report-PortOwner([int]$port) {
+    $owner = Get-TicketPortOwnerLabel $port
+    if ($owner) {
+        Write-Host "  Port $port is held by $($owner.Name) PID=$($owner.Pid) on $($owner.Address)" -ForegroundColor Yellow
+        if ($owner.Path) { Write-Host "    executable: $($owner.Path)" -ForegroundColor DarkGray }
+        if ($owner.Command) { Write-Host "    command   : $($owner.Command)" -ForegroundColor DarkGray }
+    } else {
+        Write-Host "  Port $port is free." -ForegroundColor Gray
     }
-    return $false
-}
-function Get-LanIP {
-    $candidate = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
-        Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' -and $_.AddressState -eq 'Preferred' } |
-        Sort-Object InterfaceMetric |
-        Select-Object -First 1
-    return $candidate.IPAddress
 }
 
-Assert-Path $backendPath 'Backend directory'
-Assert-Path $frontendPath 'Frontend directory'
-Assert-Path $nodeDir 'Node.js directory'
-Assert-Path $npmCmd 'npm command'
-if (-not (Get-ListeningProcess $dbPort)) {
-    throw "PostgreSQL is not listening on $dbHost port $dbPort. Run the database service or 升级启动.ps1 first."
+function Stop-ProjectNodeProcesses {
+    # Same semantics as 停止系统.ps1: free the app ports, then drop project-owned
+    # node processes (nest watcher / vite) so no orphan watcher respawns later.
+    Stop-TicketAppPort -Ports @($BackendPort, $FrontendPort)
+    $nodes = Get-Process -Name node -ErrorAction SilentlyContinue
+    foreach ($node in $nodes) {
+        $cmd = $null
+        try { $cmd = (Get-CimInstance Win32_Process -Filter "ProcessId=$($node.Id)" -ErrorAction Stop).CommandLine } catch {}
+        $isProjectNode = $false
+        if ($cmd -and ($cmd -like "*$rootPath*" -or $cmd -like '*dist\main.js*' -or $cmd -like '*dist\main *' -or $cmd -like '*vite*')) { $isProjectNode = $true }
+        if (-not $cmd -and $node.Path -and $node.Path -like "$NodeDir*") { $isProjectNode = $true }
+        if ($isProjectNode) {
+            try { Write-Host "  Stop project Node PID=$($node.Id)" -ForegroundColor Gray; Stop-Process -Id $node.Id -Force -ErrorAction Stop }
+            catch { Write-Host "  Node PID=$($node.Id) already stopped or cannot stop: $($_.Exception.Message)" -ForegroundColor DarkYellow }
+        }
+    }
+    Start-Sleep -Seconds 2
 }
-$backendPid = Get-ReadyProcess $backendPort "http://127.0.0.1:$backendPort/api/health" 'Backend'
-$frontendPid = Get-ReadyProcess $frontendPort "http://127.0.0.1:$frontendPort" 'Frontend'
 
-$branch = (& git -C $rootPath branch --show-current 2>$null | Select-Object -First 1)
-$commit = (& git -C $rootPath rev-parse --short HEAD 2>$null | Select-Object -First 1)
-$dirty = @(& git -C $rootPath status --porcelain --untracked-files=no 2>$null).Count -gt 0
-Write-Host "Source: branch=$branch commit=$commit dirty=$dirty"
-Write-Host "Database: $dbHost port $dbPort / $dbName"
+Assert-PathExist $BackendPath 'Backend directory'
+Assert-PathExist $FrontendPath 'Frontend directory'
+Assert-PathExist $NodeDir 'Node.js directory'
+Assert-PathExist $NpmCmd 'npm command'
+if (-not (Get-TicketListeningProcess $DbPort)) {
+    throw "PostgreSQL is not listening on $DbHost port $DbPort. Start the portable PostgreSQL or run 升级启动.ps1 first."
+}
+
+if ($Restart) {
+    Write-Host 'Mode: restart requested, stopping current backend/frontend services first.' -ForegroundColor Yellow
+    Stop-ProjectNodeProcesses
+    if (Test-TicketPortListen $BackendPort) { Report-PortOwner $BackendPort; throw "Backend port $BackendPort is still listening after restart cleanup." }
+    if (Test-TicketPortListen $FrontendPort) { Report-PortOwner $FrontendPort; throw "Frontend port $FrontendPort is still listening after restart cleanup." }
+}
+
+$backendPid = Get-ReadyProcess $BackendPort $HealthUrl 'Backend'
+$frontendPid = Get-ReadyProcess $FrontendPort $FrontendHealthUrl 'Frontend'
+
+$source = Get-TicketSourceRevision -RepoPath $rootPath
+Write-Host "Source: branch=$($source.Branch) commit=$($source.Commit) dirty=$($source.Dirty)"
+Write-Host "Database: $DbHost port $DbPort / $DbName"
 Write-Host 'Mode: daily source start; migrations and seed are disabled.'
 
 $backendOut = Join-Path $rootPath 'backend-run.out.log'
 $backendErr = Join-Path $rootPath 'backend-run.err.log'
-$backendProcess = $null
 if ($null -eq $backendPid) {
-    $backendProcess = Start-Process -FilePath $npmCmd -ArgumentList @('run', 'start:dev') -WorkingDirectory $backendPath -PassThru -WindowStyle Hidden -RedirectStandardOutput $backendOut -RedirectStandardError $backendErr
-    if (-not (Wait-Http200 "http://127.0.0.1:$backendPort/api/health" 120)) {
-        throw "Backend did not become ready on port $backendPort. See $backendErr"
+    Start-Process -FilePath $NpmCmd -ArgumentList @('run', 'start:dev') -WorkingDirectory $BackendPath -PassThru -WindowStyle Hidden -RedirectStandardOutput $backendOut -RedirectStandardError $backendErr | Out-Null
+    if (-not (Wait-TicketHttp200 $HealthUrl $BackendReadyTimeoutSec)) {
+        Report-PortOwner $BackendPort
+        throw "Backend did not become ready on port $BackendPort. See $backendErr"
     }
-    $backendPid = (Get-ListeningProcess $backendPort).OwningProcess
+    $backendPid = (Get-TicketListeningProcess $BackendPort).OwningProcess
 } else {
     Write-Host "Backend already healthy; reusing PID=$backendPid"
 }
 
 $frontendOut = Join-Path $rootPath 'frontend-run.out.log'
 $frontendErr = Join-Path $rootPath 'frontend-run.err.log'
-$frontendProcess = $null
 if ($null -eq $frontendPid) {
-    $frontendProcess = Start-Process -FilePath $npmCmd -ArgumentList @('run', 'dev', '--', '--host', '0.0.0.0', '--port', [string]$frontendPort) -WorkingDirectory $frontendPath -PassThru -WindowStyle Hidden -RedirectStandardOutput $frontendOut -RedirectStandardError $frontendErr
-    if (-not (Wait-Http200 "http://127.0.0.1:$frontendPort" 60)) {
-        throw "Frontend did not become ready on port $frontendPort. See $frontendErr"
+    Start-Process -FilePath $NpmCmd -ArgumentList @('run', 'dev', '--', '--host', $FrontendHost, '--port', [string]$FrontendPort, '--strictPort') -WorkingDirectory $FrontendPath -PassThru -WindowStyle Hidden -RedirectStandardOutput $frontendOut -RedirectStandardError $frontendErr | Out-Null
+    if (-not (Wait-TicketHttp200 $FrontendHealthUrl $FrontendReadyTimeoutSec)) {
+        Report-PortOwner $FrontendPort
+        throw "Frontend did not become ready on port $FrontendPort (strictPort is on, so Vite exits instead of drifting). See $frontendErr"
     }
-    $frontendPid = (Get-ListeningProcess $frontendPort).OwningProcess
+    $frontendPid = (Get-TicketListeningProcess $FrontendPort).OwningProcess
 } else {
     Write-Host "Frontend already healthy; reusing PID=$frontendPid"
 }
-$localIP = Get-LanIP
-$launchUrl = "http://localhost:$frontendPort/?source=$([uri]::EscapeDataString("$commit-$(Get-Date -Format 'yyyyMMddHHmmss')"))"
+$launchUrl = "http://localhost:$FrontendPort/?source=$([uri]::EscapeDataString("$($source.Commit)-$(Get-Date -Format 'yyyyMMddHHmmss')"))"
 if (-not $NoBrowser) { Start-Process $launchUrl }
 Write-Host "Started: backend PID=$backendPid frontend PID=$frontendPid"
-Write-Host "Frontend: http://localhost:$frontendPort"
-if ($localIP) { Write-Host ("LAN: http://" + $localIP + ":" + $frontendPort) }
+Write-Host "Frontend: http://localhost:$FrontendPort"
+Write-Host "Backend health: $HealthUrl"
+if ($ServerLanIp) { Write-Host "LAN: http://${ServerLanIp}:$FrontendPort" }
 Write-Host 'No database migration or seed was run. Use 升级启动.ps1 for an explicit upgrade.'
 if (-not $NoPause) { Read-Host 'Press Enter to close this launcher window; services keep running' }

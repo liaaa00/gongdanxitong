@@ -45,3 +45,17 @@
 4. AI 的对话记忆或推断。
 
 用户最新要求与旧规则冲突时:先指出冲突点 → 确认是否覆盖 → 同步改代码+测试+清单+记录。
+
+## 5. 端口与环境唯一事实源(2026-09-14 治理阶段0)
+
+- 本机局域网裸跑的端口/主机/路径只从 **`config/env.ps1`** 读取:
+  PostgreSQL `127.0.0.1:5433` / `ticket_system`,后端 `0.0.0.0:3000`,前端 dev `0.0.0.0:5173`(`strictPort`)。
+- 任何脚本、配置、文档、测试**不得再自行硬编码** 3000 / 5173 / 5433;需要端口时 dot-source `config\env.ps1` 后引用 `$BackendPort` / `$FrontendPort` / `$DbPort`。
+- 改端口只允许改 `config/env.ps1` 一处,改完必须跑 `scripts\检查环境口径.ps1`(退出码 0 才算过)。
+- Docker / Nginx 生产形态(容器内 `postgres:5432`、`HTTP_PORT=8080`)是另一套命名空间,口径在根 `.env` 与 `docker-compose*.yml`,禁止与本机裸跑口径混写。
+- 密码只存在于 `backend/.env`(已 gitignore);用 `Get-TicketDbPassword` 读取,**绝不把真实密码/JWT 写入任何入库文件**。
+- 5173 被占时如何定位占用进程:见 `docs/AI修改前必读.md` 第 11.1 节。
+
+> 注:本节原计划写入 `docs/project-rules/AGENTS.md`,但该文件在仓库中不存在(第 0 节引用的是缺路径),
+> 故条款落在本文件(每个新会话唯一自动加载的入口),待 T02 仓库收敛时一并校正引用路径。
+

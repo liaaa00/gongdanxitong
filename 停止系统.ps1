@@ -3,37 +3,22 @@
 )
 
 # Ticket System stop script. Stops app ports and Node processes, keeps PostgreSQL by default.
+# Ports/paths come ONLY from config/env.ps1.
 $ErrorActionPreference = 'Continue'
-$nodeDir = 'D:\AI\node-v20.20.2-win-x64'
-$pgBin = 'D:\pgsql16portable\pgsql\bin\pg_ctl.exe'
-$pgData = 'D:\pgsql16portable\data'
-$ports = @(3000, 5173)
+$rootPath = $PSScriptRoot
+. (Join-Path $rootPath 'config\env.ps1')
 
-function Stop-PortProcess([int]$port) {
-    $connections = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
-    foreach ($conn in $connections) {
-        $processId = $conn.OwningProcess
-        if ($processId -and $processId -ne 0) {
-            try {
-                $proc = Get-Process -Id $processId -ErrorAction Stop
-                Write-Host "  Stop port $port process PID=$processId ($($proc.ProcessName))" -ForegroundColor Gray
-                Stop-Process -Id $processId -Force -ErrorAction Stop
-            } catch {
-                Write-Host "  Port $port PID=$processId already stopped or cannot stop: $($_.Exception.Message)" -ForegroundColor DarkYellow
-            }
-        }
-    }
-}
+$ports = @($BackendPort, $FrontendPort)
 
 Write-Host '========================================' -ForegroundColor Cyan
 Write-Host '  Ticket System stopping...' -ForegroundColor Cyan
 Write-Host '========================================' -ForegroundColor Cyan
 
 Write-Host "`n[1/2] Stop backend/frontend ports and Node processes..." -ForegroundColor Yellow
-foreach ($port in $ports) { Stop-PortProcess $port }
+Stop-TicketAppPort -Ports $ports
 
 $nodeProcesses = Get-Process -Name node -ErrorAction SilentlyContinue | Where-Object {
-    ($_.Path -and ($_.Path -like "$nodeDir*" -or $_.Path -like '*\node.exe'))
+    ($_.Path -and ($_.Path -like "$NodeDir*" -or $_.Path -like '*\node.exe'))
 }
 if ($nodeProcesses) {
     foreach ($proc in $nodeProcesses) {
@@ -54,16 +39,16 @@ if ($leftListen) {
     Write-Host '  Warning: some ports are still listening:' -ForegroundColor Yellow
     $leftListen | Select-Object LocalAddress, LocalPort, State, OwningProcess | Format-Table -AutoSize
 } else {
-    Write-Host '  Ports 3000/5173 are free.' -ForegroundColor Green
+    Write-Host "  Ports $BackendPort/$FrontendPort are free." -ForegroundColor Green
 }
 
-Write-Host "`n[2/2] PostgreSQL..." -ForegroundColor Yellow
+Write-Host "`n[2/2] PostgreSQL ($DbHost : $DbPort)..." -ForegroundColor Yellow
 if ($StopPostgres) {
-    if (Test-Path -LiteralPath $pgBin) {
-        & $pgBin stop -D $pgData -m fast
+    if (Test-Path -LiteralPath $PgBin) {
+        & $PgBin stop -D $PgData -m fast
         Write-Host '  PostgreSQL stopped.' -ForegroundColor Green
     } else {
-        Write-Host "  pg_ctl not found: $pgBin" -ForegroundColor Gray
+        Write-Host "  pg_ctl not found: $PgBin" -ForegroundColor Gray
     }
 } else {
     Write-Host '  PostgreSQL kept running to preserve shared server database access.' -ForegroundColor Green

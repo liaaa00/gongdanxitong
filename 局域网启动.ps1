@@ -5,55 +5,39 @@
 
 # Ticket System LAN startup script for Windows PowerShell 5.1.
 # Logic is ASCII-only and all project paths are derived from PSScriptRoot.
+# Ports/hosts/paths come ONLY from config/env.ps1 - never hardcode them here.
 
 $ErrorActionPreference = 'Stop'
 $rootPath = $PSScriptRoot
-$backendPath = Join-Path $rootPath 'backend'
-$frontendPath = Join-Path $rootPath 'frontend'
-$nodeDir = 'D:\AI\node-v20.20.2-win-x64'
-$npmCmd = Join-Path $nodeDir 'npm.cmd'
-$pgBin = 'D:\pgsql16portable\pgsql\bin\pg_ctl.exe'
-$pgData = 'D:\pgsql16portable\data'
-$backendPort = 3000
-$frontendPort = 5173
+. (Join-Path $rootPath 'config\env.ps1')
+
 $runSeed = $true
 
-$env:PATH = "$nodeDir;$env:PATH"
-$env:HOST = '0.0.0.0'
-$env:PORT = [string]$backendPort
+$env:PATH = "$NodeDir;$env:PATH"
+$env:HOST = $BackendHost
+$env:PORT = [string]$BackendPort
+$env:DB_HOST = $DbHost
+$env:DB_PORT = [string]$DbPort
+$env:DB_USERNAME = $DbUsername
+$env:DB_PASSWORD = Get-TicketDbPassword
+$env:DB_DATABASE = $DbName
 $env:AUTO_SEED = 'true'
 $env:VITE_API_BASE_URL = $null
+[Environment]::SetEnvironmentVariable('VITE_API_BASE_URL', $null, [EnvironmentVariableTarget]::Process)
 
 function Write-Step([string]$message) { Write-Host "`n$message" -ForegroundColor Yellow }
-function Assert-Path([string]$path, [string]$name) { if (-not (Test-Path -LiteralPath $path)) { throw "$name not found: $path" } }
+function Assert-PathExist([string]$path, [string]$name) { if (-not (Test-Path -LiteralPath $path)) { throw "$name not found: $path" } }
 function Assert-LastExit([string]$name) { if ($LASTEXITCODE -ne 0) { throw "$name failed with exit code $LASTEXITCODE" } }
 
-function Stop-PortProcess([int]$port) {
-    $connections = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
-    foreach ($conn in $connections) {
-        $processId = $conn.OwningProcess
-        if ($processId -and $processId -ne 0) {
-            try {
-                $proc = Get-Process -Id $processId -ErrorAction Stop
-                Write-Host "  Stop port $port process PID=$processId ($($proc.ProcessName))" -ForegroundColor Gray
-                Stop-Process -Id $processId -Force -ErrorAction Stop
-            } catch {
-                Write-Host "  Port $port PID=$processId already stopped or cannot stop: $($_.Exception.Message)" -ForegroundColor DarkYellow
-            }
-        }
-    }
-}
-
 function Stop-ProjectNodeProcesses {
-    Stop-PortProcess $backendPort
-    Stop-PortProcess $frontendPort
+    Stop-TicketAppPort -Ports @($BackendPort, $FrontendPort)
     $nodes = Get-Process -Name node -ErrorAction SilentlyContinue
     foreach ($node in $nodes) {
         $cmd = $null
         try { $cmd = (Get-CimInstance Win32_Process -Filter "ProcessId=$($node.Id)" -ErrorAction Stop).CommandLine } catch {}
         $isProjectNode = $false
         if ($cmd -and ($cmd -like "*$rootPath*" -or $cmd -like '*dist\main.js*' -or $cmd -like '*vite*')) { $isProjectNode = $true }
-        if (-not $cmd -and $node.Path -and $node.Path -like "$nodeDir*") { $isProjectNode = $true }
+        if (-not $cmd -and $node.Path -and $node.Path -like "$NodeDir*") { $isProjectNode = $true }
         if ($isProjectNode) {
             try { Write-Host "  Stop project Node PID=$($node.Id)" -ForegroundColor Gray; Stop-Process -Id $node.Id -Force -ErrorAction Stop }
             catch { Write-Host "  Node PID=$($node.Id) already stopped or cannot stop: $($_.Exception.Message)" -ForegroundColor DarkYellow }
@@ -62,101 +46,92 @@ function Stop-ProjectNodeProcesses {
     Start-Sleep -Seconds 2
 }
 
-function Test-PortListen([int]$port) { return [bool](Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue) }
-function Wait-Http200([string]$url, [int]$seconds) {
-    for ($i = 1; $i -le $seconds; $i++) {
-        try { $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop; if ($response.StatusCode -eq 200) { return $true } } catch {}
-        Start-Sleep -Seconds 1
-    }
-    return $false
-}
-function Assert-ServiceReady([int]$port, [string]$url, [string]$name) {
-    $deadline = (Get-Date).AddSeconds(120)
+function Assert-ServiceReady([int]$port, [string]$url, [string]$name, [int]$serviceReadyTimeoutSec = $BackendReadyTimeoutSec) {
+    $deadline = (Get-Date).AddSeconds($serviceReadyTimeoutSec)
     while ((Get-Date) -lt $deadline) {
-        if ((Test-PortListen $port) -and (Wait-Http200 $url 1)) {
-            $listen = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction Stop | Select-Object -First 1
-            return $listen.OwningProcess
+        if ((Test-TicketPortListen $port) -and (Wait-TicketHttp200 $url 1)) {
+            return (Get-TicketListeningProcess $port).OwningProcess
         }
         Start-Sleep -Seconds 1
     }
-    throw "$name failed: port $port did not listen or $url did not return HTTP 200 within 120s"
-}
-function Get-LanIP {
-    $candidates = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
-        Where-Object {
-            $_.IPAddress -notlike '127.*' -and
-            $_.IPAddress -notlike '169.254.*' -and
-            $_.AddressState -eq 'Preferred' -and
-            $_.InterfaceAlias -notlike '*vEthernet*' -and
-            $_.InterfaceAlias -notlike '*Docker*' -and
-            $_.InterfaceAlias -notlike '*WSL*' -and
-            $_.InterfaceAlias -notlike '*VMware*' -and
-            $_.InterfaceAlias -notlike '*VirtualBox*' -and
-            $_.InterfaceAlias -notlike '*Loopback*'
-        } |
-        Sort-Object @{ Expression = { if ($_.PrefixOrigin -eq 'Dhcp') { 0 } else { 1 } } }, InterfaceMetric
-    return $candidates | Select-Object -First 1 -ExpandProperty IPAddress
+    throw "$name failed: port $port did not listen or $url did not return HTTP 200 within ${serviceReadyTimeoutSec}s"
 }
 
 Write-Host '========================================' -ForegroundColor Cyan
 Write-Host '  Ticket System LAN server starting' -ForegroundColor Cyan
 Write-Host '========================================' -ForegroundColor Cyan
-Assert-Path $backendPath 'Backend directory'; Assert-Path $frontendPath 'Frontend directory'; Assert-Path $nodeDir 'Node.js directory'
+Assert-PathExist $BackendPath 'Backend directory'; Assert-PathExist $FrontendPath 'Frontend directory'; Assert-PathExist $NodeDir 'Node.js directory'
 
-Write-Step '[1/7] Stop old project Node processes and free ports 3000/5173...'
+Write-Step "[1/7] Stop old project Node processes and free ports $BackendPort/$FrontendPort..."
 Stop-ProjectNodeProcesses
-if (Test-PortListen $backendPort) { throw 'Port 3000 is still listening after cleanup' }
-if (Test-PortListen $frontendPort) { throw 'Port 5173 is still listening after cleanup' }
+if (Test-TicketPortListen $BackendPort) { throw "Port $BackendPort is still listening after cleanup" }
+if (Test-TicketPortListen $FrontendPort) {
+    $owner = Get-TicketPortOwnerLabel $FrontendPort
+    if ($owner) { Write-Host "  Occupier: $($owner.Name) PID=$($owner.Pid) cmd=$($owner.Command)" -ForegroundColor Yellow }
+    throw "Port $FrontendPort is still listening after cleanup"
+}
 Write-Host '  Cleanup OK.' -ForegroundColor Green
 
-Write-Step '[2/7] Start/check PostgreSQL shared database...'
+Write-Step "[2/7] Start/check PostgreSQL shared database ($DbHost : $DbPort / $DbName)..."
 $pgProcess = Get-Process -Name postgres -ErrorAction SilentlyContinue
 if ($pgProcess) { Write-Host '  PostgreSQL already running.' -ForegroundColor Green }
-else { Assert-Path $pgBin 'PostgreSQL pg_ctl'; $logFile = "D:\pgsql16portable\pg_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"; & $pgBin start -D $pgData -l $logFile; Assert-LastExit 'Start PostgreSQL'; Start-Sleep -Seconds 3; Write-Host '  PostgreSQL started.' -ForegroundColor Green }
+else {
+    Assert-PathExist $PgBin 'PostgreSQL pg_ctl'
+    $logFile = Join-Path $PgRoot ("pg_" + (Get-Date -Format 'yyyyMMdd_HHmmss') + ".log")
+    & $PgBin start -D $PgData -l $logFile
+    Assert-LastExit 'Start PostgreSQL'
+    Start-Sleep -Seconds 3
+    Write-Host '  PostgreSQL started.' -ForegroundColor Green
+}
+if (-not (Test-TicketPortListen $DbPort)) { throw "PostgreSQL is not listening on $DbHost port $DbPort" }
 
 Write-Step '[3/7] Build latest backend dist...'
-Push-Location $backendPath
+Push-Location $BackendPath
 try { npm run build; Assert-LastExit 'npm run build' }
 finally { Pop-Location }
 
 Write-Step '[4/7] Sync field definitions from compiled seed...'
-Push-Location $backendPath
+Push-Location $BackendPath
 try {
-    & (Join-Path $nodeDir 'node.exe') 'dist\database\seeds\index.js'
+    & $NodeExe 'dist\database\seeds\index.js'
     Assert-LastExit 'Seed execution'
     Write-Host '  Seed completed.' -ForegroundColor Green
 } finally { Pop-Location }
 
-Write-Step '[5/7] Start backend on 0.0.0.0:3000...'
+Write-Step "[5/7] Start backend on $BackendHost : $BackendPort..."
 $backendOut = Join-Path $rootPath 'backend-run.out.log'
 $backendErr = Join-Path $rootPath 'backend-run.err.log'
-$backendProcess = Start-Process -FilePath (Join-Path $nodeDir 'node.exe') -ArgumentList @('dist\main.js') -WorkingDirectory $backendPath -PassThru -WindowStyle Hidden -RedirectStandardOutput $backendOut -RedirectStandardError $backendErr
+$backendProcess = Start-Process -FilePath $NodeExe -ArgumentList @('dist\main.js') -WorkingDirectory $BackendPath -PassThru -WindowStyle Hidden -RedirectStandardOutput $backendOut -RedirectStandardError $backendErr
 Start-Sleep -Seconds 3
-$backendPid = Assert-ServiceReady $backendPort "http://127.0.0.1:$backendPort/api/health" 'Backend'
-Write-Host "  Backend OK. PID=$backendPid StartedPID=$($backendProcess.Id) URL=http://127.0.0.1:$backendPort/api/health" -ForegroundColor Green
+$backendPid = Assert-ServiceReady $BackendPort $HealthUrl 'Backend'
+Write-Host "  Backend OK. PID=$backendPid StartedPID=$($backendProcess.Id) URL=$HealthUrl" -ForegroundColor Green
 
-Write-Step '[6/7] Start frontend on 0.0.0.0:5173 with relative /api proxy to 127.0.0.1:3000...'
+Write-Step "[6/7] Start frontend on $FrontendHost : $FrontendPort (strictPort) with relative /api proxy to $ViteApiTarget..."
 $frontendOut = Join-Path $rootPath 'frontend-run.out.log'
 $frontendErr = Join-Path $rootPath 'frontend-run.err.log'
-$viteJs = Join-Path $frontendPath 'node_modules\vite\bin\vite.js'
-Assert-Path $viteJs 'Vite CLI'
-Remove-Item Env:VITE_API_BASE_URL -ErrorAction SilentlyContinue
-$frontendProcess = Start-Process -FilePath (Join-Path $nodeDir 'node.exe') -ArgumentList @($viteJs, '--host', '0.0.0.0', '--port', [string]$frontendPort) -WorkingDirectory $frontendPath -PassThru -WindowStyle Hidden -RedirectStandardOutput $frontendOut -RedirectStandardError $frontendErr
+$viteJs = Join-Path $FrontendPath 'node_modules\vite\bin\vite.js'
+Assert-PathExist $viteJs 'Vite CLI'
+[Environment]::SetEnvironmentVariable('VITE_API_BASE_URL', $null, [EnvironmentVariableTarget]::Process)
+$frontendProcess = Start-Process -FilePath $NodeExe -ArgumentList @($viteJs, '--host', $FrontendHost, '--port', [string]$FrontendPort, '--strictPort') -WorkingDirectory $FrontendPath -PassThru -WindowStyle Hidden -RedirectStandardOutput $frontendOut -RedirectStandardError $frontendErr
 Start-Sleep -Seconds 3
-$frontendPid = Assert-ServiceReady $frontendPort "http://127.0.0.1:$frontendPort" 'Frontend'
-Write-Host "  Frontend OK. PID=$frontendPid StartedPID=$($frontendProcess.Id) URL=http://127.0.0.1:$frontendPort" -ForegroundColor Green
+try {
+    $frontendPid = Assert-ServiceReady $FrontendPort $FrontendHealthUrl 'Frontend' $FrontendReadyTimeoutSec
+} catch {
+    $owner = Get-TicketPortOwnerLabel $FrontendPort
+    if ($owner) { Write-Host "  Possible occupier of port $FrontendPort : $($owner.Name) PID=$($owner.Pid) cmd=$($owner.Command)" -ForegroundColor Yellow }
+    throw
+}
+Write-Host "  Frontend OK. PID=$frontendPid StartedPID=$($frontendProcess.Id) URL=$FrontendHealthUrl" -ForegroundColor Green
 
 Write-Step '[7/7] Print access URLs...'
-$localIP = Get-LanIP
-if (-not $NoBrowser) { Start-Process "http://localhost:$frontendPort" }
+if (-not $NoBrowser) { Start-Process "http://localhost:$FrontendPort" }
 Write-Host "`nSTARTED SUCCESSFULLY" -ForegroundColor Green
 Write-Host "Backend PID: $backendPid" -ForegroundColor Green
 Write-Host "Frontend PID: $frontendPid" -ForegroundColor Green
-Write-Host "Server local URL: http://localhost:$frontendPort" -ForegroundColor Yellow
-if ($localIP) { Write-Host "Coworker URL: http://${localIP}:$frontendPort" -ForegroundColor Yellow }
+Write-Host "Server local URL: http://localhost:$FrontendPort" -ForegroundColor Yellow
+if ($ServerLanIp) { Write-Host "Coworker URL: http://${ServerLanIp}:$FrontendPort" -ForegroundColor Yellow }
 Write-Host 'Demo login: lizhanbo / 123456 (all seed users use 123456; admin123 is obsolete, returns 401, and must not be used for demos).' -ForegroundColor Yellow
-Write-Host 'Frontend API mode: browser calls relative /api; Vite proxy sends to server 127.0.0.1:3000.' -ForegroundColor Cyan
-Write-Host 'Database: server PostgreSQL 127.0.0.1:5432 / ticket_system.' -ForegroundColor Cyan
+Write-Host "Frontend API mode: browser calls relative /api; Vite proxy sends to server $ViteApiTarget." -ForegroundColor Cyan
+Write-Host "Database: server PostgreSQL $DbHost : $DbPort / $DbName" -ForegroundColor Cyan
+Write-Host "Single source of truth for all ports above: config/env.ps1" -ForegroundColor DarkGray
 if (-not $NoPause) { Write-Host "`nPress Enter to close this launcher window. Services keep running." -ForegroundColor Gray; Read-Host }
-
-
