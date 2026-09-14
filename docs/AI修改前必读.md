@@ -180,6 +180,23 @@ git status --short
 - `frontend/dist/`（如未被忽略）
 - 其他临时文件
 
+### 8.1 禁止破坏性 git 命令（2026-09-15 事故后规则）
+
+- **严禁 `git reset --hard` 与 `git clean`**（含 `-fd`/`-xdf` 等任意变体）。这两条命令会无差别清除工作区**未提交的修改与未跟踪文件**，且往往波及"不纳入提交也不删除"的工具配置文件，git 对象库无残留、不可恢复。
+- 回滚演练/临时验证：只用 `git revert`（必要时 `--no-commit`）并配合 `git revert --abort` 收尾；或**新建临时 worktree**（`git worktree add <path> <commit>`）在其中操作，结束后 `git worktree remove <path> --force`。
+- 若确需丢弃自己的未提交内容，**先 `git stash` 或复制到仓库外目录**，不得直接 hard reset。
+- 事故先例：`docs/AI修改记录.md` 2026-09-15 T02 节事故记录与 `docs/archive/2026-Q3-分组清单.md` 事故节（`git reset --hard HEAD` 误清 6 个工具 SKILL.md 未提交修改）。
+
+### 8.2 仓库对象库损坏事故教训（2026-09-15 凌晨事故后规则）
+
+2026-09-15 02:28，一个**并发进程**（非当前会话）将 `.git/objects` 批量删除至回收站，并把 `main` ref 改写到无关旧 commit，导致对象库损坏、历史链断裂（`79a6326`、`ce4a743` 两笔 commit 对象永久丢失）。经抢救（回收站复位 pack + `update-ref` 修复 ref + `hash-object -w` 内容寻址自愈），T02 树内容零丢失，但以下教训必须固化为规则：
+
+1. **多 AI / 多进程并发操作同一仓库是根因**。任何会话在动 git 写操作（commit/checkout/stash/fetch）前，先 `git status` + `git worktree list` 确认没有其他自动化进程（如 `.spectrai-worktrees/**` linked worktree、其他 AI 窗口）正在共享同一对象库；发现并发迹象（ref 突然变动、对象消失、index.lock 争用）立即**冻结本会话一切 git 写操作**并上报，不得继续写。
+2. **每日至少 `git push origin main` 一次**。本地对象库不是可靠备份——pack 可以被整体删除。每天开始工作前先 push，重要节点（每个任务组收尾）后立即 push，保持 GitHub 异地副本与本地差距 ≤ 1 天。
+3. **发现 `.pack` / 松散对象消失，第一时间查回收站**。Windows 下进程删除文件默认进回收站，用 `Microsoft.PowerShell.Utility`/资源管理器在回收站中按原路径 `$R*` 条目复制回 `.git/objects/pack/`、`objects/xx/` 即可恢复，**不要**先重建仓库或重新 clone 覆盖现场。抢救前后各做 `git status` 快照与 `.git` 冷备份。
+4. **锚点 tag 不删除**。历史断链的 tag（如 `governance/baseline-20260914`）保留作事故见证，另打新锚点 tag 续链；断链点用 lightweight tag（如 `governance/broken-chain-94649ed`）标注。
+5. **未提交的跨天工作要落冷备份**。超过一个会话的交付（如 T03 九文件），除工作区外复制一份到仓库外目录（对象库损坏会连带丢失"只存在于工作区+未跟踪"的内容）。
+
 ## 9. 回复用户时要说明
 
 每次修改完成后，回复里至少说明：
