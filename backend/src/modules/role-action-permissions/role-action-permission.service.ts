@@ -19,6 +19,8 @@ export const ROLE_ACTIONS = [
   'work_order.delete',
   'route.dashboard',
   'route.notifications',
+  'route.portal_intake_review',
+  'route.salary_returns',
   'route.work_orders',
   'route.work_order_create',
   'route.work_order_import',
@@ -67,6 +69,7 @@ const ALL_ACTIONS = [...ROLE_ACTIONS];
 
 const DASHBOARD_ACTIONS: RoleActionCode[] = ['route.dashboard', 'route.dispatched_detail'];
 const NOTIFICATION_ACTIONS: RoleActionCode[] = ['route.notifications'];
+const PORTAL_BUSINESS_ACTIONS: RoleActionCode[] = ['route.portal_intake_review', 'route.salary_returns'];
 const WORK_ORDER_BUSINESS_ACTIONS: RoleActionCode[] = [
   'route.work_orders',
   'route.work_order_create',
@@ -147,16 +150,16 @@ const SOCIAL_INSURANCE_RESIGN_MODULE_ACTIONS: RoleActionCode[] = [
 
 export const DEFAULT_ROLE_ACTION_PERMISSIONS: RoleActionPermissionMatrix = {
   admin: ALL_ACTIONS,
-  biz_manager: ['work_order.view_all', 'work_order.export', 'route.dashboard', 'route.dispatched_detail', 'route.leader_dashboard'],
-  business_owner: ['work_order.view_all', 'work_order.export', 'route.dashboard', 'route.dispatched_detail', 'route.leader_dashboard'],
-  manager: ['work_order.view_all', 'work_order.export', 'route.dashboard', 'route.dispatched_detail', 'route.leader_dashboard'],
+  biz_manager: ['work_order.view_all', 'work_order.export', 'route.dashboard', 'route.dispatched_detail', 'route.leader_dashboard', ...PORTAL_BUSINESS_ACTIONS],
+  business_owner: ['work_order.view_all', 'work_order.export', 'route.dashboard', 'route.dispatched_detail', 'route.leader_dashboard', ...PORTAL_BUSINESS_ACTIONS],
+  manager: ['work_order.view_all', 'work_order.export', 'route.dashboard', 'route.dispatched_detail', 'route.leader_dashboard', ...PORTAL_BUSINESS_ACTIONS],
 
-  biz_leader: ['work_order.view_team', 'work_order.create', 'work_order.import', 'work_order.update', 'work_order.withdraw', 'work_order.void', 'work_order.urge', 'work_order.export', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, ...WORK_ORDER_BUSINESS_ACTIONS, ...BUSINESS_SUB_ROUTE_ACTIONS, 'route.offboarding', 'dispatched_order.batch_urge', 'route.leader_dashboard'],
-  business_group_leader: ['work_order.view_team', 'work_order.create', 'work_order.import', 'work_order.update', 'work_order.withdraw', 'work_order.void', 'work_order.urge', 'work_order.export', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, ...WORK_ORDER_BUSINESS_ACTIONS, ...BUSINESS_SUB_ROUTE_ACTIONS, 'route.offboarding', 'dispatched_order.batch_urge', 'route.leader_dashboard'],
+  biz_leader: ['work_order.view_team', 'work_order.create', 'work_order.import', 'work_order.update', 'work_order.withdraw', 'work_order.void', 'work_order.urge', 'work_order.export', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, ...WORK_ORDER_BUSINESS_ACTIONS, ...PORTAL_BUSINESS_ACTIONS, ...BUSINESS_SUB_ROUTE_ACTIONS, 'route.offboarding', 'dispatched_order.batch_urge', 'route.leader_dashboard'],
+  business_group_leader: ['work_order.view_team', 'work_order.create', 'work_order.import', 'work_order.update', 'work_order.withdraw', 'work_order.void', 'work_order.urge', 'work_order.export', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, ...WORK_ORDER_BUSINESS_ACTIONS, ...PORTAL_BUSINESS_ACTIONS, ...BUSINESS_SUB_ROUTE_ACTIONS, 'route.offboarding', 'dispatched_order.batch_urge', 'route.leader_dashboard'],
 
-  biz_member: ['work_order.view', 'work_order.create', 'work_order.import', 'work_order.update', 'work_order.withdraw', 'work_order.void', 'work_order.urge', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, ...WORK_ORDER_BUSINESS_ACTIONS, ...BUSINESS_SUB_ROUTE_ACTIONS, 'dispatched_order.batch_urge'],
-  business_group_member: ['work_order.view', 'work_order.create', 'work_order.import', 'work_order.update', 'work_order.withdraw', 'work_order.void', 'work_order.urge', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, ...WORK_ORDER_BUSINESS_ACTIONS, ...BUSINESS_SUB_ROUTE_ACTIONS, 'dispatched_order.batch_urge'],
-  salesperson: ['work_order.view', 'work_order.create', 'work_order.import', 'work_order.update', 'work_order.withdraw', 'work_order.void', 'work_order.urge', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, ...WORK_ORDER_BUSINESS_ACTIONS, ...BUSINESS_SUB_ROUTE_ACTIONS, 'dispatched_order.batch_urge'],
+  biz_member: ['work_order.view', 'work_order.create', 'work_order.import', 'work_order.update', 'work_order.withdraw', 'work_order.void', 'work_order.urge', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, ...WORK_ORDER_BUSINESS_ACTIONS, ...PORTAL_BUSINESS_ACTIONS, ...BUSINESS_SUB_ROUTE_ACTIONS, 'dispatched_order.batch_urge'],
+  business_group_member: ['work_order.view', 'work_order.create', 'work_order.import', 'work_order.update', 'work_order.withdraw', 'work_order.void', 'work_order.urge', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, ...WORK_ORDER_BUSINESS_ACTIONS, ...PORTAL_BUSINESS_ACTIONS, ...BUSINESS_SUB_ROUTE_ACTIONS, 'dispatched_order.batch_urge'],
+  salesperson: ['work_order.view', 'work_order.create', 'work_order.import', 'work_order.update', 'work_order.withdraw', 'work_order.void', 'work_order.urge', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, ...WORK_ORDER_BUSINESS_ACTIONS, ...PORTAL_BUSINESS_ACTIONS, ...BUSINESS_SUB_ROUTE_ACTIONS, 'dispatched_order.batch_urge'],
 
   shared_leader: ['work_order.view_team', 'work_order.export', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, 'route.leader_dashboard', ...CONTRACT_MODULE_ACTIONS, ...ONBOARDING_CONTACT_MODULE_ACTIONS, ...RESIGNATION_CONTACT_MODULE_ACTIONS],
   shared_team_owner: ['work_order.view_team', 'work_order.export', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, 'route.leader_dashboard', ...CONTRACT_MODULE_ACTIONS, ...ONBOARDING_CONTACT_MODULE_ACTIONS, ...RESIGNATION_CONTACT_MODULE_ACTIONS],
@@ -244,6 +247,8 @@ export class RoleActionPermissionService {
       { code: 'work_order.delete', name: '删除工单', description: '允许删除工单；建议仅管理员拥有' },
       { code: 'route.dashboard', name: '仪表盘入口', description: '允许访问仪表盘' },
       { code: 'route.notifications', name: '消息通知入口', description: '允许访问消息通知' },
+      { code: 'route.portal_intake_review', name: '门户审核工单入口', description: '允许查看并处理门户提交的增员、减员审核工单' },
+      { code: 'route.salary_returns', name: '薪酬回传入口', description: '允许查看门户薪酬提交、办理结果和回传邮件状态' },
       { code: 'route.work_orders', name: '主工单列表入口', description: '允许访问主工单列表' },
       { code: 'route.work_order_create', name: '新建工单入口', description: '允许访问新建工单页面' },
       { code: 'route.work_order_import', name: '主工单导入入口', description: '允许访问主工单批量导入页面' },

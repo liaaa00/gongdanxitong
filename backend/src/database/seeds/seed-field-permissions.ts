@@ -102,6 +102,7 @@ const CONTRACT_EDITABLE = new Set(['contract_feedback', 'special_contract_templa
 const ONBOARDING_VISIBLE = new Set([
   'customer_name','customer_code','employee_name','id_card_no','mobile','email',
   'education','graduation_school','major','graduation_date',
+  'bank_name','bank_account',
   'need_onboarding_contact','feedback_deadline','is_common_template','template_name','social_urge','special_remark',
 ]);
 const ONBOARDING_EDITABLE = new Set([

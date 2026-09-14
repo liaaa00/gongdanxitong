@@ -8,6 +8,17 @@ function readRootFile(path: string): string {
 }
 
 describe('Production deployment assets', () => {
+  it('supports native dependency fallback builds and includes only the approved repair script at runtime', () => {
+    const dockerfile = readRootFile('backend/Dockerfile');
+    expect(dockerfile.split('FROM node:20-alpine AS build')[0]).toContain('apk add --no-cache python3 make g++');
+    expect(dockerfile).toContain('ENV npm_config_nodedir=/usr/local');
+    expect(dockerfile).toContain('ENV npm_config_build_from_source=true');
+    const runtime = dockerfile.split('FROM node:20-alpine AS runtime')[1];
+    expect(runtime).toContain('COPY --from=build /app/scripts/repair-onboarding-contact-bank-orders.ts ./scripts/repair-onboarding-contact-bank-orders.ts');
+    expect(runtime).not.toContain('apk add');
+    expect(runtime).not.toContain('COPY --from=build /app/scripts ./scripts');
+  });
+
   it('requires production secrets and keeps PostgreSQL off public interfaces', () => {
     const baseCompose = readRootFile('docker-compose.yml');
     const productionCompose = readRootFile('docker-compose.production.yml');
