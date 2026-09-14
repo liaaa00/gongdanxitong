@@ -82,6 +82,14 @@ function buildService(fields: FieldConfig[], rows: ImportTemplateField[] = []) {
 }
 
 describe('ImportTemplateConfigService', () => {
+  it('excludes removed duration inputs from configured and fallback onboarding templates', async () => {
+    const fields = ['contract_term', 'probation_months', 'contract_end_date', 'probation_end_date'].map((fieldCode) => field({ fieldCode }));
+    for (const rows of [[], fields.map(({ fieldCode }) => templateField({ fieldCode }))]) {
+      const { service } = buildService(fields, rows);
+      expect((await service.list(OrderType.ONBOARDING)).map((item) => item.fieldCode)).toEqual(['contract_end_date', 'probation_end_date']);
+      expect((await service.listAvailableFields(OrderType.ONBOARDING)).map((item) => item.fieldCode)).toEqual(['contract_end_date', 'probation_end_date']);
+    }
+  });
   const onboardingFields = [
     field({ fieldCode: 'employee_name', fieldName: '姓名', isRequired: true, displayOrder: 1 }),
     field({ fieldCode: 'gender', fieldName: '性别', displayOrder: 2 }),

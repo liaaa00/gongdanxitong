@@ -115,6 +115,15 @@ describe('ExportTemplatesService', () => {
     expect(probationCell.numFmt).toBe('yyyy/mm/dd');
   });
 
+  it('exports the entered probation end date without requiring legacy months', async () => {
+    const template = { id: 'tpl-1', templateName: EXPORT_NAME, moduleCode: 'contract', fieldList: [{ fieldCode: 'probation_end_date', header: ['Probation end'] }] };
+    const orders = [{ moduleCode: 'contract', handler: null, handlerId: null, status: 'pending', parentOrder: { orderNo: 'ON1', extraData: { probation_end_date: '2026-02-01' } } }];
+    const { service, upload } = serviceWith(template, orders);
+    const workbook = await loadAppliedWorkbook(service, upload);
+    expect(workbook.worksheets[0].getCell(2, 1).value).toBe('2026-02-01');
+    expect(workbook.worksheets[0].getCell(2, 1).formula).toBeUndefined();
+  });
+
   async function loadAppliedWorkbook(service: ExportTemplatesService, upload: { saveBuffer: jest.Mock }) {
     const ExcelJS = require('exceljs');
     let captured: Buffer | undefined;

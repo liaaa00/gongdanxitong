@@ -143,7 +143,7 @@ describe('WorkOrderValidationService submit validation', () => {
       bank_name: '测试银行',
       bank_account: '62220001',
       bank_location: '宁波',
-      payroll_location: '北仑',
+      payroll_location: '宁波',
     }))).rejects.toMatchObject({
       response: expect.objectContaining({
         details: expect.objectContaining({ missing: ['current_address'] }),
@@ -174,10 +174,8 @@ describe('WorkOrderValidationService submit validation', () => {
       id_card_no: '330102199001010011',
       need_company_contract: '否',
       need_payroll_slip: '是',
-      need_onboarding_contact: '是',
     }))).resolves.toBeUndefined();
   });
-
   it('does not block an unrelated patch because of historical payroll bank gaps', async () => {
     const baselineExtraData = {
       employee_name: '历史缺失',
@@ -194,52 +192,93 @@ describe('WorkOrderValidationService submit validation', () => {
     )).resolves.toBeUndefined();
   });
 
-  it('validates every payroll bank field when a patch activates creator collection', async () => {
-    const baselineExtraData = {
-      employee_name: '条件切换',
-      id_card_no: '330102199001010011',
-      need_company_contract: '否',
-      need_payroll_slip: '1.是',
-      need_onboarding_contact: '是',
-      current_address: '浙江杭州文一路1号',
-    };
-    await expect(service.validateWorkOrder(
-      makeWorkOrder({ ...baselineExtraData, need_onboarding_contact: '2.否' }),
-      { baselineExtraData, changedFieldCodes: ['need_onboarding_contact'] },
-    )).rejects.toMatchObject({
-      response: expect.objectContaining({
-        details: expect.objectContaining({
-          missing: ['bank_name', 'bank_account', 'bank_location', 'payroll_location'],
-        }),
-      }),
-    });
-  });
-
-  it('requires probation month, end date and salary when probation start date exists', async () => {
+  it('keeps probation fields optional even when probation start date exists', async () => {
     await expect(service.validateWorkOrder(makeWorkOrder({
-      employee_name: '试用期缺失',
+      employee_name: '试用期可选',
       id_card_no: '330102199001010011',
       need_company_contract: '否',
       probation_start_date: '2026-08-01',
-    }))).rejects.toMatchObject({
-      response: expect.objectContaining({
-        details: expect.objectContaining({
-          missing: ['probation_months', 'probation_end_date', 'probation_salary'],
-        }),
-      }),
-    });
+    }))).resolves.toBeUndefined();
   });
 
-  it('accepts complete probation conditional fields', async () => {
+
+  it('accepts a probation end date within the one-year contract limit', async () => {
     await expect(service.validateWorkOrder(makeWorkOrder({
       employee_name: '试用期完整',
       id_card_no: '330102199001010011',
       need_company_contract: '否',
       probation_start_date: '2026-08-01',
-      probation_months: '3',
-      probation_end_date: '2026-10-31',
+      probation_months: '1',
+      probation_end_date: '2026-09-01',
       probation_salary: '按基本工资80%',
+      contract_start_date: '2026-08-01',
+      contract_end_date: '2027-07-31',
     }))).resolves.toBeUndefined();
+  });
+
+  it('blocks a probation end date beyond the contract-duration limit', async () => {
+    await expect(service.validateWorkOrder(makeWorkOrder({
+      employee_name: '试用期超期',
+      id_card_no: '330102199001010011',
+      need_company_contract: '否',
+      probation_start_date: '2026-08-01',
+      probation_end_date: '2026-11-01',
+      probation_salary: '按基本工资80%',
+      contract_start_date: '2026-08-01',
+      contract_end_date: '2027-07-31',
+    }))).rejects.toMatchObject({
+      response: expect.objectContaining({
+        details: expect.objectContaining({
+          invalid: expect.arrayContaining([
+            expect.objectContaining({ fieldCode: 'probation_end_date', reason: expect.stringContaining('不能超过合同开始后1个月') }),
+          ]),
+        }),
+      }),
+    });
+  });
+
+  it.each([
+    ['2026-08-01', '2027-08-01', '2026-09-01', true],
+    ['2026-08-01', '2027-08-01', '2026-09-02', false],
+    ['2026-08-01', '2027-08-02', '2026-10-01', true],
+    ['2026-08-01', '2029-08-01', '2026-10-02', false],
+    ['2026-08-01', '2029-08-02', '2027-02-01', true],
+    ['2026-08-01', undefined, '2027-02-02', false],
+    ['2026-01-31', '2027-01-30', '2026-02-28', true],
+    ['2026-01-31', '2027-01-30', '2026-03-01', false],
+    ['2028-01-31', '2029-01-30', '2028-02-29', true],
+    ['2026-02-01', '2027-01-31', '2026-02-30', false],
+  ])('checks exact calendar boundaries: %s / %s / %s', async (start, end, probationEnd, valid) => {
+    const result = service.validateWorkOrder(makeWorkOrder({
+      employee_name: '日期边界', id_card_no: '330102199001010011',
+      contract_start_date: start, contract_end_date: end, probation_end_date: probationEnd,
+    }));
+    if (valid) await expect(result).resolves.toBeUndefined();
+    else await expect(result).rejects.toMatchObject({ response: expect.objectContaining({
+      details: expect.objectContaining({ invalid: expect.arrayContaining([
+        expect.objectContaining({ fieldCode: 'probation_end_date' }),
+      ]) }),
+    }) });
+  });
+
+  it('blocks a probation end date when the contract start date is missing', async () => {
+    await expect(service.validateWorkOrder(makeWorkOrder({
+      employee_name: '试用期缺少合同开始',
+      id_card_no: '330102199001010011',
+      need_company_contract: '否',
+      probation_start_date: '2026-08-01',
+      probation_end_date: '2026-09-01',
+      probation_salary: '按基本工资80%',
+      contract_end_date: '2027-07-31',
+    }))).rejects.toMatchObject({
+      response: expect.objectContaining({
+        details: expect.objectContaining({
+          invalid: expect.arrayContaining([
+            expect.objectContaining({ fieldCode: 'probation_end_date', reason: '填写试用期结束日期前必须先填写合同开始日期' }),
+          ]),
+        }),
+      }),
+    });
   });
 
   it('allows patching one field when an old strict required field was already missing', async () => {

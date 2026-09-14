@@ -9,7 +9,7 @@ import {
 } from '@ant-design/pro-components';
 import type { ProFormInstance } from '@ant-design/pro-components';
 import { App, Card, Col, Row } from 'antd';
-import type { Dayjs } from 'dayjs';
+import dayjs, { type Dayjs } from 'dayjs';
 import {
   findFundRuleForLocation,
   getAllowedFundRatios,
@@ -256,6 +256,7 @@ function DynamicForm({
     }
     if (orderType === 'onboarding') {
       filtered = filtered.filter((f) => {
+        if (!readOnly && ['contract_term', 'probation_months'].includes(f.field_code)) return false;
         const group = f.collection_group?.trim();
         // 后端 hot fix 同步期间可能不返回 collection_group；前端容错为“未分组/其他”仍渲染，避免选客户后字段全被过滤掉。
         if (!group) return true;
@@ -264,7 +265,7 @@ function DynamicForm({
     }
 
     return filtered.sort((a, b) => a.display_order - b.display_order);
-  }, [fields, orderType]);
+  }, [fields, orderType, readOnly]);
 
   const groupedFields = useMemo(() => {
     const groups = new Map<string, FieldConfig[]>();
@@ -480,6 +481,18 @@ function DynamicForm({
             fieldProps={{
               ...commonProps.fieldProps,
               style: { width: '100%' },
+              disabledDate: orderType === 'onboarding' && field.field_code === 'probation_end_date' ? (date: Dayjs) => {
+                const start = dayjs(currentValues.contract_start_date as string);
+                if (!currentValues.contract_start_date || !start.isValid()) return true;
+                const contractEnd = currentValues.contract_end_date ? dayjs(currentValues.contract_end_date as string) : null;
+                const open = currentValues.contract_term_type === '无固定期限';
+                if (!open && (!contractEnd || !contractEnd.isValid())) return true;
+                const months = open ? 6 : !contractEnd!.isAfter(start.add(12, 'month'), 'day') ? 1 : !contractEnd!.isAfter(start.add(36, 'month'), 'day') ? 2 : 6;
+                const probationStart = currentValues.probation_start_date ? dayjs(currentValues.probation_start_date as string) : null;
+                return date.isBefore(start, 'day') || date.isAfter(start.add(months, 'month'), 'day')
+                  || Boolean(contractEnd && !open && date.isAfter(contractEnd, 'day'))
+                  || Boolean(probationStart && date.isBefore(probationStart, 'day'));
+              } : undefined,
               getPopupContainer: (triggerNode: HTMLElement) => triggerNode.parentElement || document.body,
             }}
           />

@@ -1,4 +1,5 @@
 import { ForbiddenException, HttpStatus, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { assertNotLegacyProvinceWrite } from './legacy-province-write.guard';
 import { Workbook } from 'exceljs';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, MoreThan, Not, QueryFailedError, Repository } from 'typeorm';
@@ -169,6 +170,7 @@ export class WorkOrderService {
 
   async createDraft(payload: CreateWorkOrderDto, user: JwtUserPayload, portalBranchId?: string | null): Promise<WorkOrderDetailItem> {
     this.assertBusinessOwnerReadOnly(user);
+    assertNotLegacyProvinceWrite(payload.orderType);
     const extraData = this.sanitizeExtraData(payload.extraData);
     const businessScope = this.resolveBusinessScope(payload.orderType);
     const customerId = await this.validationService.resolveCustomerId(payload.customerId, extraData, businessScope);
@@ -245,6 +247,7 @@ export class WorkOrderService {
     this.assertBusinessOwnerReadOnly(user);
     const workOrder = await this.loadWorkOrder(id);
     this.assertOwner(workOrder, user.sub);
+    assertNotLegacyProvinceWrite(workOrder.orderType);
     await this.assertPortalReviewWrite(workOrder, user, payload.extraData);
     if (workOrder.extraData?.portal_intake_key && (
       (payload.customerId !== undefined && payload.customerId !== workOrder.customerId)
@@ -474,6 +477,7 @@ export class WorkOrderService {
         throw businessException(4100, HttpStatus.NOT_FOUND, '工单不存在');
       }
 
+      assertNotLegacyProvinceWrite(workOrder.orderType);
       if (workOrder.extraData?.portal_configuration_pending === true) {
         throw businessException(4110, HttpStatus.BAD_REQUEST, '门户办理配置尚未补齐，请先同步客户办理配置后再提交');
       }
@@ -1096,8 +1100,13 @@ export class WorkOrderService {
     qb.andWhere("w.order_type::text IN ('onboarding','resignation')");
 
     if (!isAdminRole(user.roles)) {
+      const departmentIdsCache = new Map<string, string[]>();
       if (hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES)) {
-        const departmentIds = await this.validationService.resolveUserDepartmentIds(user.sub);
+        let departmentIds = departmentIdsCache.get(user.sub);
+        if (!departmentIds) {
+          departmentIds = await this.validationService.resolveUserDepartmentIds(user.sub);
+          departmentIdsCache.set(user.sub, departmentIds);
+        }
         if (departmentIds.length === 0) {
           return { items: [], total: 0, page, pageSize };
         }
@@ -1207,12 +1216,14 @@ export class WorkOrderService {
     }
 
     const items: WorkOrderListItem[] = [];
+    // 请求级权限模块缓存：非管理员且非创建人的行共享一次 resolveReadableBackendModules 结果，避免 N+1。
+    const accessibleModulesCache = new Map<string, string[]>();
     for (const row of rows) {
       const rawSubOrders = (childrenByParentId.get(row.id) ?? [])
         .filter((child) => isPhase1VisibleDispatchModule(child.moduleCode))
         .sort((a, b) => getModuleSortOrder(a.moduleCode) - getModuleSortOrder(b.moduleCode));
       const subOrders = toWorkOrderSubOrderItems(rawSubOrders);
-      const filteredSubOrders = await this.filterSubOrdersByUserPermission(row.createdBy, subOrders, user);
+      const filteredSubOrders = await this.filterSubOrdersByUserPermission(row.createdBy, subOrders, user, accessibleModulesCache);
       items.push(toWorkOrderListItem(row, filteredSubOrders));
     }
 
@@ -1224,7 +1235,8 @@ export class WorkOrderService {
     if (!isPhase1VisibleOrderType(workOrder.orderType)) {
       throw new NotFoundException('工单不存在');
     }
-    await this.assertReadable(workOrder, user);
+    const departmentIdsCache = new Map<string, string[]>();
+    await this.assertReadable(workOrder, user, departmentIdsCache);
     const detail = await this.loadDetail(id);
     const filtered = await this.filterSubOrdersByUserPermission(workOrder.createdBy, detail.dispatchedOrders, user);
     detail.dispatchedOrders = filtered;
@@ -2129,7 +2141,7 @@ export class WorkOrderService {
     }
   }
 
-  private async assertReadable(workOrder: WorkOrder, user: JwtUserPayload): Promise<void> {
+  private async assertReadable(workOrder: WorkOrder, user: JwtUserPayload, departmentIdsCache?: Map<string, string[]>): Promise<void> {
     if (isAdminRole(user.roles)) {
       return;
     }
@@ -2138,15 +2150,12 @@ export class WorkOrderService {
       return;
     }
 
-    if (hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES)) {
-      const departmentIds = await this.validationService.resolveUserDepartmentIds(user.sub);
-      if (departmentIds.includes(workOrder.departmentId)) {
-        return;
+    if (hasAnyRole(user.roles, BUSINESS_MANAGER_ROLES) || hasAnyRole(user.roles, BUSINESS_LEADER_ROLES)) {
+      let departmentIds = departmentIdsCache?.get(user.sub);
+      if (!departmentIds) {
+        departmentIds = await this.validationService.resolveUserDepartmentIds(user.sub);
+        departmentIdsCache?.set(user.sub, departmentIds);
       }
-    }
-
-    if (hasAnyRole(user.roles, BUSINESS_LEADER_ROLES)) {
-      const departmentIds = await this.validationService.resolveUserDepartmentIds(user.sub);
       if (departmentIds.includes(workOrder.departmentId)) {
         return;
       }
@@ -2216,6 +2225,7 @@ export class WorkOrderService {
     parentCreatedBy: string,
     subOrders: WorkOrderSubOrderItem[],
     user: JwtUserPayload,
+    accessibleModulesCache?: Map<string, string[]>,
   ): Promise<WorkOrderSubOrderItem[]> {
     // 任务1：业务侧父单创建人可查看自己主工单下的离职证明子工单（只读，不放开办理；后道账号即使碰巧是创建人也不放行）。
     const isBusinessCreator = parentCreatedBy === user.sub
@@ -2223,7 +2233,11 @@ export class WorkOrderService {
     const canReadResignationCert = isAdminRole(user.roles) || isResignationCertHandler(user) || isBusinessCreator;
     const candidates = subOrders.filter((sub) => sub.moduleCode !== 'resignation_cert' || canReadResignationCert);
     if (isAdminRole(user.roles) || parentCreatedBy === user.sub) return candidates;
+    const cachedModules = accessibleModulesCache?.get('__modules__');
+    if (cachedModules) return candidates;
     const accessibleModules = await this.resolveReadableBackendModules(user);
+    accessibleModulesCache?.set('__modules__', accessibleModules);
+
     return candidates.filter((sub) => sub.moduleCode === 'resignation_cert' || accessibleModules.includes(sub.moduleCode));
   }
 

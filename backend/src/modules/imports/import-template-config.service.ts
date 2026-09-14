@@ -51,6 +51,8 @@ export interface ImportTemplateFieldView {
 // 入职导入模板排除：办理岗在子单完成时填写的反馈字段，不进业务员发起的导入表。
 // 注意：contract_template（劳动合同模板）是业务员发起阶段字段，必须保留在导入模板与导入校验中。
 const ONBOARDING_IMPORT_EXCLUDED_FIELDS = new Set([
+  'contract_term',
+  'probation_months',
   'gender',
   'birth_date',
   'age',

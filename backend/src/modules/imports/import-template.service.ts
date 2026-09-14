@@ -25,7 +25,7 @@ type TemplateField = FieldConfig & {
 const MAIN_SHEET_NAME = '当前字段配置';
 const OPTIONS_SHEET_NAME = '__options';
 
-const ONBOARDING_CUSTOMER_FIELD_COUNT = 31;
+const ONBOARDING_CUSTOMER_FIELD_COUNT = 29;
 const ONBOARDING_ASSISTED_FIELD_COUNT = 10;
 const SPECIAL_OPTIONS_BASE_COLUMN = 80;
 const ONBOARDING_COLUMN_WIDTHS: Partial<Record<string, number>> = {
@@ -119,7 +119,7 @@ export class ImportTemplateService {
     const exampleRow = sheet.getRow(isOnboarding ? 5 : 4);
 
     if (isOnboarding) {
-      this.writeOnboardingInstructionRow(sheet);
+      this.writeOnboardingInstructionRow(sheet, fields.length);
     }
     headerRow.getCell(1).value = '字段名';
     requiredRow.getCell(1).value = '是否必填';
@@ -153,13 +153,13 @@ export class ImportTemplateService {
     exampleRow.font = { size: 11, name: '宋体', charset: 134, scheme: 'minor', color: { argb: 'FF999999' } };
   }
 
-  private writeOnboardingInstructionRow(sheet: Worksheet): void {
+  private writeOnboardingInstructionRow(sheet: Worksheet, fieldCount: number): void {
     const instructionFont = { bold: true, italic: true, size: 11, name: '宋体', charset: 134, scheme: 'minor' as const };
     sheet.getCell('A1').value = '填表说明：';
-    sheet.getCell('B1').value = 'B-AF列为客户必须填写';
-    sheet.getCell('AG1').value = 'AG-AP列为客户填写或外服入职联系收集';
-    sheet.getCell('AQ1').value = 'AQ-BJ列为外服客户经理填写';
-    for (const address of ['A1', 'B1', 'AG1', 'AQ1']) {
+    sheet.getCell('B1').value = 'B-AD列为客户填写，必填以第3行为准';
+    sheet.getCell('AE1').value = 'AE-AN列为客户填写或外服入职联系收集';
+    sheet.getCell('AO1').value = `AO-${this.columnLetter(fieldCount + 1)}列为外服客户经理填写`;
+    for (const address of ['A1', 'B1', 'AE1', 'AO1']) {
       sheet.getCell(address).font = instructionFont;
     }
   }

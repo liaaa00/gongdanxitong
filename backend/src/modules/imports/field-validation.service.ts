@@ -1,4 +1,5 @@
 import { Injectable, Optional } from '@nestjs/common';
+import { validateProbationDates } from '../work-orders/probation-date-validation';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CandidateField, MappingItemInput, RowValidationResult, RowValidationWarning } from './types';
@@ -49,6 +50,8 @@ const OUT_OF_PROVINCE_OPTIONAL_FIELDS = new Set([
 ]);
 
 const ONBOARDING_IMPORT_EXCLUDED_FIELDS = new Set([
+  'contract_term',
+  'probation_months',
   'gender',
   'birth_date',
   'age',
@@ -237,6 +240,9 @@ export class ImportFieldValidationService {
     return fields
       .filter((field) => !ONBOARDING_IMPORT_EXCLUDED_FIELDS.has(field.fieldCode))
       .map((field) => {
+        if (field.fieldCode.startsWith('probation_')) {
+          return { ...field, isRequired: false, defaultRequired: false, conditionalRequired: null } as FieldConfig;
+        }
         if (field.fieldCode === 'is_common_template') {
           return {
             ...field,
@@ -292,8 +298,9 @@ export class ImportFieldValidationService {
     fields: FieldConfig[];
     context?: 'portal_intake';
   }): Promise<RowValidationResult> {
-    const fields = this.hasTemplateConfigMetadata(input.fields) ? input.fields : this.applyInferredImportRules(input.fields);
+    let fields = this.hasTemplateConfigMetadata(input.fields) ? input.fields : this.applyInferredImportRules(input.fields);
     const isOnboardingImport = this.isOnboardingImportFieldSet(fields, input.orderType);
+    if (isOnboardingImport) fields = fields.filter((field) => !['contract_term', 'probation_months'].includes(field.fieldCode));
     const mapped = this.mapRow(input.raw, input.mapping, fields, input.defaults ?? {});
     const normalized = mapped.normalized;
     const warnings = mapped.warnings;
@@ -304,6 +311,9 @@ export class ImportFieldValidationService {
       Object.assign(normalized, normalizeOutOfProvinceRow(normalized));
     }
     const errors: RowValidationError[] = [];
+    if (isOnboardingImport) {
+      errors.push(...validateProbationDates(normalized).map(({ fieldCode, reason }) => ({ fieldCode, reason: 'relation' as const, message: reason })));
+    }
 
     for (const field of fields) {
       const value = normalized[field.fieldCode];

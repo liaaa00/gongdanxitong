@@ -223,6 +223,15 @@ describe('WorkOrderService unit tests', () => {
     },
   );
 
+  it.each([OrderType.OUT_OF_PROVINCE_INCREASE, OrderType.OUT_OF_PROVINCE_DECREASE])(
+    'rejects province main-order creation through the generic endpoint: %s', async (orderType) => {
+      await expect(service.createDraft({ orderType, extraData: {} }, makeUser()))
+        .rejects.toMatchObject({ status: 410 });
+      expect(workOrderRepository.save).not.toHaveBeenCalled();
+      expect(validationService.resolveCustomerId).not.toHaveBeenCalled();
+    },
+  );
+
   it('creates a draft work order and persists all business fields in extraData', async () => {
     const saved = makeWorkOrder();
     workOrderRepository.save.mockResolvedValue(saved);
@@ -419,10 +428,10 @@ describe('WorkOrderService unit tests', () => {
     }));
   });
 
-  it('derives province scope on the backend and strips client scope aliases', async () => {
+  it('derives Beilun scope on the backend and strips client province scope aliases', async () => {
     const provinceOrder = makeWorkOrder({
-      orderType: OrderType.OUT_OF_PROVINCE_INCREASE,
-      businessScope: BusinessScope.OUT_OF_PROVINCE,
+      orderType: OrderType.ONBOARDING,
+      businessScope: BusinessScope.BEILUN,
       extraData: {
         customer_name: 'Acme',
         customer_code: 'C001',
@@ -436,17 +445,17 @@ describe('WorkOrderService unit tests', () => {
     workOrderRepository.findOne.mockResolvedValue(provinceOrder);
 
     await service.createDraft({
-      orderType: OrderType.OUT_OF_PROVINCE_INCREASE,
+      orderType: OrderType.ONBOARDING,
       extraData: {
         ...provinceOrder.extraData,
-        businessScope: BusinessScope.BEILUN,
-        business_scope: BusinessScope.BEILUN,
+        businessScope: BusinessScope.OUT_OF_PROVINCE,
+        business_scope: BusinessScope.OUT_OF_PROVINCE,
       },
     }, makeUser());
 
     expect(workOrderRepository.create).toHaveBeenCalledWith(expect.objectContaining({
-      orderType: OrderType.OUT_OF_PROVINCE_INCREASE,
-      businessScope: BusinessScope.OUT_OF_PROVINCE,
+      orderType: OrderType.ONBOARDING,
+      businessScope: BusinessScope.BEILUN,
       extraData: expect.not.objectContaining({
         businessScope: expect.anything(),
         business_scope: expect.anything(),
@@ -479,6 +488,22 @@ describe('WorkOrderService unit tests', () => {
     expect(operationLogRepository.save).toHaveBeenCalledTimes(1);
     expect(result.employeeName).toBe('Bob');
   });
+
+  it.each([OrderType.OUT_OF_PROVINCE_INCREASE, OrderType.OUT_OF_PROVINCE_DECREASE])(
+    'blocks generic update and submit for historical province main orders: %s', async (orderType) => {
+      const order = makeWorkOrder({ orderType });
+      workOrderRepository.findOne.mockResolvedValue(order);
+      await expect(service.update(order.id, { extraData: { employee_name: 'Changed' } }, makeUser()))
+        .rejects.toMatchObject({ status: 410 });
+      const manager = { query: jest.fn(async () => []), getRepository: jest.fn(() => workOrderRepository) };
+      workOrderRepository.manager.transaction.mockImplementation(async callback => callback(manager));
+      await expect(service.submit(order.id, { extraData: { employee_name: 'Changed' } }, makeUser()))
+        .rejects.toMatchObject({ status: 410 });
+      expect(order.extraData.employee_name).not.toBe('Changed');
+      expect(workOrderRepository.save).not.toHaveBeenCalled();
+      expect(dispatchedOrderRepository.save).not.toHaveBeenCalled();
+    },
+  );
 
   it('blocks dispatch of persisted pending portal configuration before a payload can clear it', async () => {
     const draft = makeWorkOrder({ extraData: { employee_name: 'Alice', portal_configuration_pending: true } });

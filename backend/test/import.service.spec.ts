@@ -113,7 +113,7 @@ describe('ImportFieldValidationService scenarios', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('requires contract term and end date only outside open-ended contracts', async () => {
+  it('requires only contract end date outside open-ended contracts, not removed duration', async () => {
     const contractFields = [
       field({
         fieldCode: 'contract_term_type',
@@ -155,7 +155,6 @@ describe('ImportFieldValidationService scenarios', () => {
       fields: contractFields,
     });
     expect(fixedTerm.errors).toEqual(expect.arrayContaining([
-      expect.objectContaining({ fieldCode: 'contract_term', reason: 'required' }),
       expect.objectContaining({ fieldCode: 'contract_end_date', reason: 'required' }),
     ]));
   });
@@ -530,19 +529,19 @@ describe('ImportFieldValidationService scenarios', () => {
     expect(result.normalized).toMatchObject({
       gender: '男',
       birth_date: '1990-01-01',
-      probation_end_date: '2026-08-31',
+      probation_end_date: null,
     });
     expect(typeof result.normalized.age).toBe('number');
     expect(result.normalized.probation_salary).toBe(8000);
   });
 
-  it('requires probation month, derived end date and salary when probation start date exists', async () => {
+  it('allows optional probation fields even when probation start date exists', async () => {
     const probationFields = [
       ...fields,
       field({ fieldCode: 'probation_start_date', fieldName: '试用期开始日期', fieldType: FieldType.DATE }),
-      field({ fieldCode: 'probation_months', fieldName: '试用期（月）', conditionalRequired: { field: 'probation_start_date', op: 'EXISTS' } }),
-      field({ fieldCode: 'probation_end_date', fieldName: '试用期结束日期', fieldType: FieldType.DATE, conditionalRequired: { field: 'probation_start_date', op: 'EXISTS' } }),
-      field({ fieldCode: 'probation_salary', fieldName: '试用期工资', fieldType: FieldType.NUMBER, conditionalRequired: { field: 'probation_start_date', op: 'EXISTS' } }),
+      field({ fieldCode: 'probation_months', fieldName: '试用期（月）' }),
+      field({ fieldCode: 'probation_end_date', fieldName: '试用期结束日期', fieldType: FieldType.DATE }),
+      field({ fieldCode: 'probation_salary', fieldName: '试用期工资', fieldType: FieldType.NUMBER }),
     ];
     const result = await service.validateRow({
       rowNo: 13,
@@ -550,19 +549,11 @@ describe('ImportFieldValidationService scenarios', () => {
       mapping: [
         ...mapping,
         { header: '试用期开始日期', fieldCode: 'probation_start_date' },
-        { header: '试用期（月）', fieldCode: 'probation_months' },
-        { header: '试用期结束日期', fieldCode: 'probation_end_date' },
-        { header: '试用期工资', fieldCode: 'probation_salary' },
       ],
       fields: probationFields,
     });
 
-    expect(result.ok).toBe(false);
-    expect(result.errors).toEqual(expect.arrayContaining([
-      expect.objectContaining({ fieldCode: 'probation_months', reason: 'required' }),
-      expect.objectContaining({ fieldCode: 'probation_end_date', reason: 'required' }),
-      expect.objectContaining({ fieldCode: 'probation_salary', reason: 'required' }),
-    ]));
+    expect(result.ok).toBe(true);
   });
 
   it('keeps contract_template alias matching available outside onboarding import fields', async () => {
@@ -796,9 +787,9 @@ describe('portal intake validation boundary', () => {
     field({ fieldCode: 'need_onboarding_contact', fieldName: '是否集约收集' }),
     field({ fieldCode: 'bank_account', fieldName: '银行卡号', validationRegex: '^[0-9]{8,30}$' }),
     field({ fieldCode: 'probation_start_date', fieldName: '试用期开始日期', fieldType: FieldType.DATE }),
-    field({ fieldCode: 'probation_months', fieldName: '试用期月数', fieldType: FieldType.NUMBER, conditionalRequired: { field: 'probation_start_date', op: 'EXISTS' } }),
-    field({ fieldCode: 'probation_end_date', fieldName: '试用期结束日期', fieldType: FieldType.DATE, conditionalRequired: { field: 'probation_start_date', op: 'EXISTS' } }),
-    field({ fieldCode: 'probation_salary', fieldName: '试用期工资', fieldType: FieldType.NUMBER, conditionalRequired: { field: 'probation_start_date', op: 'EXISTS' } }),
+    field({ fieldCode: 'probation_months', fieldName: '试用期月数', fieldType: FieldType.NUMBER }),
+    field({ fieldCode: 'probation_end_date', fieldName: '试用期结束日期', fieldType: FieldType.DATE }),
+    field({ fieldCode: 'probation_salary', fieldName: '试用期工资', fieldType: FieldType.NUMBER }),
   ];
   const portalMapping = portalFields.map((item) => ({ header: item.fieldCode, fieldCode: item.fieldCode }));
 
@@ -847,18 +838,15 @@ describe('portal intake validation boundary', () => {
     ]));
   });
 
-  it('continues deriving probation dates and enforces probation salary in portal intake', async () => {
+  it('does not derive probation end date from retired month input', async () => {
     const { service } = fixture();
     const input = {
       rowNo: 4, orderType: OrderType.ONBOARDING, fields: portalFields, mapping: portalMapping, context: 'portal_intake' as const,
       raw: { employee_name: '测试员工', id_card_no: '330102199001010011', probation_start_date: '2026-06-01', probation_months: '3' },
     };
-    const missing = await service.validateRow(input);
-    expect(missing.ok).toBe(false);
-    expect(missing.normalized.probation_end_date).toBe('2026-08-31');
-    expect(missing.errors).toContainEqual(expect.objectContaining({ fieldCode: 'probation_salary', reason: 'required' }));
-    const valid = await service.validateRow({ ...input, raw: { ...input.raw, probation_salary: '8000' } });
-    expect(valid.ok).toBe(true);
-    expect(valid.normalized.probation_salary).toBe(8000);
+    const result = await service.validateRow(input);
+    expect(result.ok).toBe(true);
+    expect(result.normalized.probation_end_date).toBeNull();
+    expect(result.normalized.probation_salary).toBeNull();
   });
 });

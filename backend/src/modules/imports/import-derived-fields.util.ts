@@ -66,24 +66,6 @@ function parseDateInput(value: unknown): { year: number; month: number; day: num
   return { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) };
 }
 
-function parseMonths(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) return Math.trunc(value);
-  const text = readText(value);
-  if (!text) return null;
-  const match = text.match(/^(\d{1,2})(?:\.0+)?(?:个月|月)?$/);
-  if (!match) return null;
-  const months = Number(match[1]);
-  return months > 0 && months <= 120 ? months : null;
-}
-
-function addMonthsClamped(date: { year: number; month: number; day: number }, months: number): Date {
-  const zeroBasedMonth = date.month - 1 + months;
-  const targetYear = date.year + Math.floor(zeroBasedMonth / 12);
-  const targetMonth = ((zeroBasedMonth % 12) + 12) % 12;
-  const maxDay = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
-  return new Date(Date.UTC(targetYear, targetMonth, Math.min(date.day, maxDay)));
-}
-
 function formatUtcDate(date: Date): string {
   const year = date.getUTCFullYear();
   const month = String(date.getUTCMonth() + 1).padStart(2, '0');
@@ -99,16 +81,6 @@ export function applyOnboardingDerivedFields(extraData: Record<string, unknown>,
     if (!hasValue(extraData.age)) {
       const age = calculateAge(identity.birthDate, referenceDate);
       if (age !== null) extraData.age = age;
-    }
-  }
-
-  if (!hasValue(extraData.probation_end_date)) {
-    const start = parseDateInput(extraData.probation_start_date);
-    const months = parseMonths(extraData.probation_months);
-    if (start && months !== null) {
-      const end = addMonthsClamped(start, months);
-      end.setUTCDate(end.getUTCDate() - 1);
-      extraData.probation_end_date = formatUtcDate(end);
     }
   }
 

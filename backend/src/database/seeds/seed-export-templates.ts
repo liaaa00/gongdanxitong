@@ -18,9 +18,6 @@ type Source =
 // 公式列模板：占位符 {code} 由导出引擎解析（有对应列→单元格引用，无对应列→订单取值字面量）。
 const FORMULA_GENDER =
   'IFERROR(IF(MOD(VALUE(MID({id_card_no},17,1)),2)=1,"男","女"),"")';
-const FORMULA_PROBATION_END =
-  'IFERROR(EDATE({probation_start_date},VALUE({probation_months}))-1,"")';
-const DATE_NUM_FMT = 'yyyy/mm/dd';
 
 interface TemplateSeed {
   templateName: string;
@@ -66,7 +63,7 @@ const contractSuchuangColumns: Array<[string, string, Source]> = [
   ['合同终止', '', { fieldCode: 'contract_end_date' }],
   ['版本', '默认为“013.2021版”即可', { const: '013.2021版' }],
   ['试用期起始', '', { fieldCode: 'probation_start_date' }],
-  ['试用期终止', '', { fieldCode: 'probation_end_date', formula: FORMULA_PROBATION_END, numFmt: DATE_NUM_FMT }],
+  ['试用期终止', '', { fieldCode: 'probation_end_date' }],
   ['派遣起始', '默认为空值即可', { const: '' }],
   ['派遣终止', '默认为空值即可', { const: '' }],
   ['岗位', '', { fieldCode: 'position' }],
@@ -124,7 +121,7 @@ const contractEsignColumns: Array<[string, string, string, string, Source]> = [
   [FILE_TITLE, '合同起始时间（限20字）-签署方1', '21c52e1dddd94521a0e073d4b4b7fae3', '', { fieldCode: 'contract_start_date' }],
   [FILE_TITLE, '合同终止时间（限20字）-签署方1 ', '2eec9504c6bc4f64af358cf2c6a11381 ', '', { fieldCode: 'contract_end_date' }],
   [FILE_TITLE, '试用期起始时间（限20字）-签署方1', '0d70bceee0194d9fa2359da8f02985c0', '', { fieldCode: 'probation_start_date' }],
-  [FILE_TITLE, '试用期终止时间（限20字）-签署方1 ', '5126656741f24f54b02b886976a93075 ', '', { fieldCode: 'probation_end_date', formula: FORMULA_PROBATION_END, numFmt: DATE_NUM_FMT }],
+  [FILE_TITLE, '试用期终止时间（限20字）-签署方1 ', '5126656741f24f54b02b886976a93075 ', '', { fieldCode: 'probation_end_date' }],
   [FILE_TITLE, '项目名称（限18字）-签署方1', '31df218ef0d0453392408079c48f26aa', '', { fieldCode: 'project_name' }],
   [FILE_TITLE, '岗位名称（限14字）-签署方1 ', 'db5442bbb3974f4db12efae2761d5294 ', '', { fieldCode: 'position' }],
   [FILE_TITLE, '工作地点（限10字）-签署方1', '6b8ddf1d811e43bc8d8da9af24b13be3', '', { fieldCode: 'work_city' }],

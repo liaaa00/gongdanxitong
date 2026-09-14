@@ -8,6 +8,7 @@ import {
   ModuleHandler,
   Notification,
   OperationLog,
+  OrderType,
   WorkOrder,
   WorkOrderStatus,
 } from 'src/entities';
@@ -28,6 +29,21 @@ function repoMock<T extends object>(overrides: Partial<Record<string, unknown>> 
 }
 
 describe('return-resubmit flow', () => {
+  it.each([OrderType.OUT_OF_PROVINCE_INCREASE, OrderType.OUT_OF_PROVINCE_DECREASE])(
+    'does not redispatch historical province main orders: %s', async (orderType) => {
+      const order = { id: 'legacy-1', orderType, createdBy: 'u1', status: WorkOrderStatus.RETURNED };
+      const repository = repoMock<WorkOrder>({ findOne: jest.fn(async () => order) });
+      const manager = { query: jest.fn(async () => []), getRepository: jest.fn(() => repository) };
+      (repository.manager.transaction as jest.Mock).mockImplementation(async callback => callback(manager));
+      const service = new WorkOrderResubmitService(repository, repository as never, repository as never,
+        repository as never, {} as never, {} as never);
+      await expect(service.resubmit(order.id, {}, { sub: 'u1', username: 'sales', roles: ['salesperson'] }))
+        .rejects.toMatchObject({ status: 410 });
+      expect(repository.save).not.toHaveBeenCalled();
+      expect(order.status).toBe(WorkOrderStatus.RETURNED);
+    },
+  );
+
   it('resubmits a returned work order and rebinds pending child handlers', async () => {
     const user: JwtUserPayload = { sub: 'u1', username: 'sales', roles: ['salesperson'], departmentId: 'd1' } as JwtUserPayload;
     const returnedOrder = {

@@ -12,7 +12,7 @@ import { getFallbackFields } from '@/services/fields';
 describe('single create form field and role rules', () => {
   it('keeps the backend feedback exclusion set aligned with onboarding import fields', () => {
     expect([...AGENT_INITIATED_EXCLUDED_FIELD_CODES].sort()).toEqual(
-      ['contract_feedback', 'data_entry_feedback', 'onboarding_feedback'],
+      ['contract_feedback', 'contract_term', 'data_entry_feedback', 'onboarding_feedback', 'probation_months'],
     );
   });
 
@@ -42,7 +42,6 @@ describe('single create form field and role rules', () => {
   it('keeps onboarding conditional required rules aligned with the latest business requirements', () => {
     expect(CONDITIONAL_REQUIRED_BY_TYPE.onboarding).toEqual(expect.arrayContaining([
       { field: 'need_onboarding_contact', value: '否', requireFields: ['current_address'] },
-      { field: 'probation_start_date', operator: 'exists', requireFields: ['probation_months', 'probation_end_date', 'probation_salary'] },
     ]));
 
     const byCode = new Map(getFallbackFields('onboarding').map((field) => [field.field_code, field]));
@@ -52,7 +51,6 @@ describe('single create form field and role rules', () => {
       expect(byCode.get(fieldCode)).toMatchObject({
         is_required: false,
         default_required: false,
-        conditional_required: { op: 'EXISTS', field: 'probation_start_date' },
       });
     }
   });

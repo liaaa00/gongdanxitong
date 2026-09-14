@@ -210,6 +210,23 @@ describe('WorkOrders initiated read-only view', () => {
     expect(screen.queryByRole('button', { name: /批量导出/ })).not.toBeInTheDocument();
   });
 
+  it.each([
+    ['business_group_member', 'onboarding', '入职批量导入'],
+    ['business_group_member', 'resignation', '离职批量导入'],
+    ['business_group_leader', 'onboarding', '入职批量导入'],
+    ['business_group_leader', 'resignation', '离职批量导入'],
+  ])('keeps %s %s import alongside portal permissions', async (role, orderType, label) => {
+    mocks.pathname = '/work-orders';
+    mocks.search = `?orderType=${orderType}`;
+    mocks.roles = new Set([role]);
+    mocks.getMyRoleActions.mockResolvedValue(['route.portal_intake_review', 'route.salary_returns', 'work_order.import', 'route.work_order_import']);
+    render(<WorkOrders />);
+    await act(async () => { await Promise.resolve(); });
+    fireEvent.click(await screen.findByRole('button', { name: new RegExp(label) }));
+    expect(mocks.navigate).toHaveBeenCalledWith(`/work-orders/import?orderType=${orderType}`);
+    expect(screen.queryByRole('button', { name: /^删除$/ })).not.toBeInTheDocument();
+  });
+
   it('loads onboarding and resignation work orders by default without forcing onboarding filter', async () => {
     mocks.pathname = '/work-orders';
     mocks.search = '';

@@ -5,7 +5,9 @@ import type { ProFormInstance } from '@ant-design/pro-components';
 import { Card, Button, Space, App, Divider, Result } from 'antd';
 import { SendOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import DynamicForm from '@/components/DynamicForm';
-import type { FieldConfig, ConditionalRequired } from '@/components/DynamicForm';
+import type { FieldConfig } from '@/components/DynamicForm';
+import { CONDITIONAL_REQUIRED_BY_TYPE } from './conditionalRequired';
+export { CONDITIONAL_REQUIRED_BY_TYPE } from './conditionalRequired';
 import { useFieldPermissions } from '@/hooks/useFieldPermissions';
 import { getCreateWorkOrderFields } from '@/services/importTemplates';
 import { checkResignationInjuryWarning, createWorkOrder, submitWorkOrder } from '@/services/workOrders';
@@ -20,30 +22,6 @@ const ORDER_TYPE_LABEL: Record<SupportedOrderType, string> = {
   resignation: '离职',
 };
 
-const PAYROLL_BANK_CARD_FIELDS = ['bank_name', 'bank_account', 'bank_location', 'payroll_location'];
-
-export const CONDITIONAL_REQUIRED_BY_TYPE: Record<SupportedOrderType, ConditionalRequired[]> = {
-  onboarding: [
-    { field: 'need_company_contract', value: '是', requireFields: ['need_esign', 'esign_platform', 'contract_subject', 'project_name', 'work_arrangement', 'contract_template', 'need_contract_urge'] },
-    { field: 'esign_platform', value: 'E签宝', requireFields: ['company_address'] },
-    { field: 'need_company_payroll', value: '是', requireFields: ['payroll_location'] },
-    { field: 'need_onboarding_contact', value: '否', requireFields: ['current_address'] },
-    {
-      conditions: [
-        { field: 'need_payroll_slip', value: '是' },
-        { field: 'need_onboarding_contact', value: '否' },
-      ],
-      requireFields: PAYROLL_BANK_CARD_FIELDS,
-    },
-    { field: 'probation_start_date', operator: 'exists', requireFields: ['probation_months', 'probation_end_date', 'probation_salary'] },
-    { field: 'contract_template', value: '特殊模板', requireFields: ['special_contract_template_name'] },
-    { field: 'is_common_template', value: '否', requireFields: ['template_name'] },
-  ],
-  resignation: [
-    { field: 'is_common_template', value: '否', requireFields: ['template_name'] },
-  ],
-};
-
 function getOrderTypeFromSearch(search: string): SupportedOrderType {
   const value = new URLSearchParams(search).get('orderType');
   return value === 'resignation' ? 'resignation' : 'onboarding';
@@ -54,6 +32,8 @@ function getOrderTypeFromSearch(search: string): SupportedOrderType {
 // 注意：contract_template（劳动合同模板）虽不进导入模板，但在单条新增中是「企服发起劳动合同」的
 // 条件必填发起字段（见 CONDITIONAL_REQUIRED_BY_TYPE），必须保留，不能为对齐导入模板而移除。
 export const AGENT_INITIATED_EXCLUDED_FIELD_CODES = new Set([
+  'contract_term',
+  'probation_months',
   'contract_feedback',
   'onboarding_feedback',
   'data_entry_feedback',

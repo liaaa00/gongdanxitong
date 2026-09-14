@@ -3,6 +3,15 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import DynamicForm from './index';
 import type { FieldConfig, ConditionalRequired } from './index';
+import { CONDITIONAL_REQUIRED_BY_TYPE } from '@/pages/WorkOrders/New/conditionalRequired';
+
+// Ant Design returns a stable App context; changing this mock on every render
+// retriggers the form's catalog effects indefinitely.
+vi.mock('antd', async () => {
+  const actual = await vi.importActual<typeof import('antd')>('antd');
+  const context = { message: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } };
+  return { ...actual, App: { ...actual.App, useApp: () => context } };
+});
 
 const { mockGetContractSubjects, mockGetFundLocations, mockGetFundRulesByLocation } = vi.hoisted(() => ({
   mockGetContractSubjects: vi.fn(),
@@ -27,9 +36,44 @@ const mockFields: FieldConfig[] = [
 ];
 
 describe('DynamicForm', () => {
+  it('removes duration inputs only from editable onboarding forms', () => {
+    const fields: FieldConfig[] = ['contract_term', 'probation_months', 'probation_end_date'].map((field_code, display_order) => ({ field_code, field_name: field_code, field_type: 'text', is_required: false, default_required: false, display_order }));
+    const { rerender } = render(<DynamicForm fields={fields} orderType="onboarding" />);
+    expect(screen.queryByLabelText('contract_term')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('probation_months')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('probation_end_date')).toBeInTheDocument();
+    rerender(<DynamicForm fields={fields} orderType="renewal" />);
+    expect(screen.getByLabelText('contract_term')).toBeInTheDocument();
+    rerender(<DynamicForm fields={fields} orderType="onboarding" readOnly />);
+    expect(screen.getByLabelText('probation_months')).toBeInTheDocument();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetFundLocations.mockResolvedValue(['宁波']);
+  });
+
+  it.each([
+    ['否', '否', true], ['是', '否', true], ['否', '是', false], ['是', '是', false],
+  ])('validates onboarding bank fields with payroll=%s collection=%s', async (payroll, collection, required) => {
+    const onFinish = vi.fn().mockResolvedValue(undefined);
+    const codes = ['bank_name', 'bank_account', 'bank_location', 'payroll_location'];
+    render(<DynamicForm
+      fields={codes.map((field_code, display_order) => ({
+        field_code, field_name: field_code, field_type: 'text',
+        is_required: false, default_required: false, display_order,
+      }))}
+      initialValues={{ need_payroll_slip: payroll, need_onboarding_contact: collection }}
+      conditionalRequired={CONDITIONAL_REQUIRED_BY_TYPE.onboarding}
+      onFinish={onFinish}
+      submitText="提交"
+    />);
+    await userEvent.click(screen.getByRole('button', { name: /提\s*交/ }));
+    if (required) {
+      await waitFor(() => expect(screen.getAllByText(/时此项为必填/)).toHaveLength(4));
+      expect(onFinish).not.toHaveBeenCalled();
+    } else {
+      await waitFor(() => expect(onFinish).toHaveBeenCalled());
+    }
   });
 
   it('renders all 5 field types', async () => {
@@ -231,9 +275,9 @@ describe('DynamicForm', () => {
       />,
     );
 
-    const location = await screen.findByLabelText('缴纳地');
+    const location = await screen.findByRole('combobox', { name: '缴纳地' });
     await userEvent.click(location);
-    expect(await screen.findByText('宁波')).toBeInTheDocument();
+    expect(await screen.findByRole('option', { name: '宁波' })).toBeInTheDocument();
     expect(mockGetFundRulesByLocation).not.toHaveBeenCalled();
   });
 
@@ -280,8 +324,10 @@ describe('DynamicForm', () => {
       />,
     );
 
-    const location = await screen.findByLabelText('缴纳地');
-    await userEvent.clear(location);
+    const location = await screen.findByRole('combobox', { name: '缴纳地' });
+    const clear = location.closest('.ant-select')?.querySelector('.ant-select-clear');
+    expect(clear).toBeTruthy();
+    await userEvent.click(clear as HTMLElement);
     await waitFor(() => expect(formRef.current?.getFieldValue('fund_ratio')).toBeUndefined());
   });
 

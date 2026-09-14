@@ -117,7 +117,7 @@ describe('Imports ImportTemplateService round-trip', () => {
   it('matches the confirmed 0724 onboarding template layout and rules', async () => {
     const referenceHeaders = [
       '客户名称', '姓名', '证件类型', '证件号码', '移动电话', '电子邮件', '岗位', '岗位类型',
-      '合同期限形式', '合同期限', '合同开始日期', '合同终止日期', '试用期开始日期', '试用期（月）',
+      '合同期限形式', '合同开始日期', '合同终止日期', '试用期开始日期',
       '试用期结束日期', '工作城市', '工时制', '工资形式', '基本工资', '其他工资', '试用期工资',
       '试用期其他工资', '发薪周期', '发薪日期', '缴纳地', '参保起始月', '社保基数', '公积金基数',
       '公积金比例', '补充公积金比例', '是否需要工资单', '备注', '户籍性质', '民族', '学历', '婚姻状况', '现住地址', '户籍地址',
@@ -199,51 +199,49 @@ describe('Imports ImportTemplateService round-trip', () => {
     await workbook.xlsx.load(result.buffer as never);
     const sheet = workbook.getWorksheet('当前字段配置')!;
 
-    expect(result.fieldCount).toBe(63);
+    expect(result.fieldCount).toBe(61);
     expect(sheet.rowCount).toBe(5);
     expect((sheet.getRow(2).values as unknown[]).slice(2)).toEqual(referenceHeaders);
     expect(sheet.getCell('A1').value).toBe('填表说明：');
-    expect(sheet.getCell('B1').value).toBe('B-AF列为客户必须填写');
-    expect(sheet.getCell('AG1').value).toBe('AG-AP列为客户填写或外服入职联系收集');
-    expect(sheet.getCell('AP1').value).toBeNull();
-    expect(sheet.getCell('AQ1').value).toBe('AQ-BJ列为外服客户经理填写');
+    expect(sheet.getCell('B1').value).toBe('B-AD列为客户填写，必填以第3行为准');
+    expect(sheet.getCell('AE1').value).toBe('AE-AN列为客户填写或外服入职联系收集');
+    expect(sheet.getCell('AN1').value).toBeNull();
+    expect(sheet.getCell('AO1').value).toBe('AO-BJ列为外服客户经理填写');
 
     const headerFills = referenceHeaders.map((_, index) => (
       sheet.getRow(2).getCell(index + 2).fill as { fgColor?: { argb?: string; theme?: number; tint?: number } }
     ).fgColor);
-    expect(headerFills.filter((color) => color?.argb === 'FFFFFF00')).toHaveLength(31);
-    expect(headerFills[31]).toMatchObject({ theme: 9, tint: 0.6 });
-    expect(headerFills[40]).toMatchObject({ theme: 9, tint: 0.6 });
-    expect(headerFills[41]).toBeUndefined();
+    expect(headerFills.filter((color) => color?.argb === 'FFFFFF00')).toHaveLength(29);
+    expect(headerFills[29]).toMatchObject({ theme: 9, tint: 0.6 });
+    expect(headerFills[38]).toMatchObject({ theme: 9, tint: 0.6 });
+    expect(headerFills[39]).toBeUndefined();
 
-    expect(sheet.getCell('K3').value).toBe('条件必填');
-    expect(sheet.getCell('K4').value).toBe('满足条件时必填；固定期限时必填，如3年。');
-    expect(sheet.getCell('M3').value).toBe('条件必填');
-    expect(sheet.getCell('M4').value).toBe('满足条件时必填；格式：YYYY-MM-DD；固定期限时必填。标准格式：年-月-日。');
-    expect(sheet.getCell('T4').value).toBe('请填写数字；数字格式：保留小数点后两位。');
-    expect(sheet.getCell('V4').value).toBe('满足条件时必填；请填写数字；数字格式：保留小数点后两位。');
-    expect(sheet.getCell('AN4').value).toBe('城市的名字（待确认）');
-    expect(sheet.getCell('BF3').value).toBe('非必填');
-    expect(sheet.getCell('BF4').value).toBe('格式：YYYY-MM-DD；标准格式：年-月-日。');
+    expect(sheet.getCell('L3').value).toBe('条件必填');
+    expect(sheet.getCell('L4').value).toBe('满足条件时必填；格式：YYYY-MM-DD；固定期限时必填。标准格式：年-月-日。');
+    expect(sheet.getCell('R4').value).toBe('请填写数字；数字格式：保留小数点后两位。');
+    expect(sheet.getCell('T4').value).toBe('满足条件时必填；请填写数字；数字格式：保留小数点后两位。');
+    expect(sheet.getCell('AL4').value).toBe('城市的名字（待确认）');
+    expect(sheet.getCell('BD3').value).toBe('非必填');
+    expect(sheet.getCell('BD4').value).toBe('格式：YYYY-MM-DD；标准格式：年-月-日。');
+    expect(sheet.getCell('R5').value).toBe(1000);
+    expect(sheet.getCell('S5').value).toBe('绩效工资5000+岗位津贴2000');
     expect(sheet.getCell('T5').value).toBe(1000);
-    expect(sheet.getCell('U5').value).toBe('绩效工资5000+岗位津贴2000');
-    expect(sheet.getCell('V5').value).toBe(1000);
 
     const expectedWidths: Record<string, number> = {
-      U: 21.7272727272727,
-      AO: 18.5454545454545,
-      AP: 18.4545454545455,
-      AX: 18.3636363636364,
-      AY: 20.6363636363636,
-      AZ: 27.7272727272727,
-      BA: 26.8181818181818,
+      S: 21.7272727272727,
+      AM: 18.5454545454545,
+      AN: 18.4545454545455,
+      AV: 18.3636363636364,
+      AW: 20.6363636363636,
+      AX: 27.7272727272727,
+      AY: 26.8181818181818,
     };
     for (const [column, width] of Object.entries(expectedWidths)) {
       expect(sheet.getColumn(column).width).toBeCloseTo(width, 10);
     }
 
-    expect(sheet.getCell('R6').dataValidation?.formulae?.[0]).toContain('$A$1:$A$3');
-    expect(sheet.getCell('S6').dataValidation?.formulae?.[0]).toContain('$B$1:$B$1');
+    expect(sheet.getCell('P6').dataValidation?.formulae?.[0]).toContain('$A$1:$A$3');
+    expect(sheet.getCell('Q6').dataValidation?.formulae?.[0]).toContain('$B$1:$B$1');
   });
 
   it('generates a template whose headers parse back to configured field names', async () => {

@@ -1,4 +1,5 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
+import { validateProbationDates } from './probation-date-validation';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, ILike, Repository } from 'typeorm';
 import { Optional } from '@nestjs/common';
@@ -19,9 +20,6 @@ const STRICT_REQUIRED_FIELD_CODES = new Set([
   'customer_code',
   'province',
   'current_address',
-  'probation_months',
-  'probation_end_date',
-  'probation_salary',
   'social_insurance_result',
   'medical_insurance_result',
   'housing_fund_result',
@@ -34,9 +32,6 @@ const STRICT_REQUIRED_FIELD_NAMES: Record<string, string> = {
   customer_code: '客户代码',
   province: '省份',
   current_address: '现住地址',
-  probation_months: '试用期（月）',
-  probation_end_date: '试用期结束日期',
-  probation_salary: '试用期工资',
   social_insurance_result: '社保是否办结',
   medical_insurance_result: '医保是否办结',
   housing_fund_result: '公积金是否办结',
@@ -75,6 +70,7 @@ export class WorkOrderValidationService {
     const invalid: Array<{ fieldCode: string; reason: string }> = [];
 
     for (const field of fields) {
+      if (workOrder.orderType === OrderType.ONBOARDING && ['contract_term', 'probation_months'].includes(field.fieldCode)) continue;
       const appliesToOrder = field.orderType === null
         || field.orderType === workOrder.orderType
         || field.businessContext?.includes(workOrder.orderType) === true;
@@ -120,6 +116,10 @@ export class WorkOrderValidationService {
           invalid.push({ fieldCode: field.fieldCode, reason: field.validationMsg ?? 'regex' });
         }
       }
+    }
+
+    if (workOrder.orderType === OrderType.ONBOARDING) {
+      invalid.push(...validateProbationDates(workOrder.extraData));
     }
 
     const subjectFieldsChanged = !changedFieldCodes || [

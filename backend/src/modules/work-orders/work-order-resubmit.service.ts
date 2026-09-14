@@ -20,6 +20,7 @@ import { WorkOrderDetailItem, WorkOrderSubOrderItem } from './work-order.types';
 import { SubmitWorkOrderDto } from './dto/submit.dto';
 import { WorkOrderValidationService } from './work-order-validation.service';
 import { buildOnboardingChildren } from './onboarding-dispatch.helper';
+import { assertNotLegacyProvinceWrite } from './legacy-province-write.guard';
 
 type DispatchChildInput = {
   moduleCode: string;
@@ -65,6 +66,7 @@ export class WorkOrderResubmitService {
           throw businessException(5000, HttpStatus.FORBIDDEN, '无权限访问该资源');
         }
       }
+      assertNotLegacyProvinceWrite(workOrder.orderType);
       if (workOrder.status === WorkOrderStatus.PENDING) {
         const latestModifyResubmit = await operationLogRepo.findOne({
           where: {
