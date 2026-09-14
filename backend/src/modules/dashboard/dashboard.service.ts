@@ -1103,7 +1103,10 @@ export class DashboardService {
     ];
 
     return this.dataSource.transaction(async (manager) => {
-      await manager.query('SET LOCAL statement_timeout = $1', [LEADER_TREND_STATEMENT_TIMEOUT_MS]);
+      // PostgreSQL 规范禁止在 SET/RESET 命令中使用参数占位符（$1），否则直接抛
+      // `syntax error at or near "$1"`，被 getLeaderTrend 的 catch 捕获后每次调用都降级 fallback。
+      // 超时值为受控常量（非用户输入），直接内联为字面量，无注入面。
+      await manager.query(`SET LOCAL statement_timeout = ${LEADER_TREND_STATEMENT_TIMEOUT_MS}`);
       return manager.query(
         `
       WITH selected_month AS (
@@ -1180,7 +1183,8 @@ export class DashboardService {
     ];
 
     return this.dataSource.transaction(async (manager) => {
-      await manager.query('SET LOCAL statement_timeout = $1', [LEADER_TREND_STATEMENT_TIMEOUT_MS]);
+      // 同 queryLeaderTrendByDashboardScope：SET 命令禁用参数占位符，内联受控常量。
+      await manager.query(`SET LOCAL statement_timeout = ${LEADER_TREND_STATEMENT_TIMEOUT_MS}`);
       return manager.query(
         `
       WITH selected_month AS (

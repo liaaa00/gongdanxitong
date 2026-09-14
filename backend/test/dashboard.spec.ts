@@ -210,6 +210,33 @@ describe('DashboardService', () => {
     });
   });
 
+  it('leader-trend does not parameterize SET LOCAL statement_timeout (avoids syntax error fallback)', async () => {
+    // 回归治理计划 2-5：SET/RESET 命令禁用 $N 占位符，否则 PG 抛
+    // `syntax error at or near "$1"` 并被 getLeaderTrend catch 成 fallback WARN。
+    const query = jest.fn(async (sql: string) => {
+      if (String(sql).includes('SET LOCAL')) return [];
+      return [{ month: '2026-09', total: 3, completed: 2, voided: 1 }];
+    });
+    const dataSource = {
+      query,
+      transaction: jest.fn(async (callback: (manager: { query: typeof query }) => unknown) => callback({ query })),
+    };
+    const service = new DashboardService(dataSource as never, validationStub);
+    const warnSpy = jest.spyOn((service as unknown as { logger: { warn: (m: string) => void } }).logger, 'warn').mockImplementation(() => undefined);
+
+    const result = await service.getLeaderTrend('onboarding', { sub: 'admin-1', roles: ['admin'] } as never);
+
+    const setLocalCall = (query.mock.calls as unknown[][]).find((call) => String(call[0]).includes('SET LOCAL'));
+    expect(setLocalCall).toBeDefined();
+    expect(String(setLocalCall![0])).toContain('SET LOCAL statement_timeout = 7000');
+    expect(String(setLocalCall![0])).not.toMatch(/statement_timeout\s*=\s*\$\d/);
+    expect(setLocalCall![1]).toBeUndefined();
+    expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('leader-trend fallback'));
+    expect(result).toMatchObject({ orderType: 'onboarding', buckets: [{ month: '2026-09', total: 3, completed: 2, voided: 1 }] });
+
+    warnSpy.mockRestore();
+  });
+
   it('returns empty dashboard cards when business leader requests team scope but has no departments', async () => {
     const dataSource = { query: jest.fn().mockResolvedValueOnce([{ count: 6 }]) };
     const resolve = jest.fn(async () => []);
