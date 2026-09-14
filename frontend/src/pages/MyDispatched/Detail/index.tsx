@@ -222,7 +222,6 @@ const MyDispatchedDetail: React.FC = () => {
   const [creatorEditOpen, setCreatorEditOpen] = useState(false);
   const [creatorEditForm] = Form.useForm<Record<string, unknown>>();
   const creatorEditNeedContact = Form.useWatch('need_onboarding_contact', creatorEditForm);
-  const creatorEditProbationStart = Form.useWatch('probation_start_date', creatorEditForm);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [withdrawForm] = Form.useForm<{ reason: string }>();
   const [voidOpen, setVoidOpen] = useState(false);
@@ -364,6 +363,8 @@ const MyDispatchedDetail: React.FC = () => {
     [detailTemplateApplied, order?.visible_fields],
   );
   const visibleDetailFields = useMemo(() => filterByVisibleFields(fields, visibleFields), [fields, visibleFields]);
+  const creatorEditableFields = useMemo(() => visibleDetailFields.filter((field) => order?.order_type !== 'onboarding'
+    || !['contract_term', 'probation_months'].includes(field.field_code)), [visibleDetailFields, order?.order_type]);
   const detailFieldGroups = useMemo(
     () => templateFieldGroups.length > 0
       ? templateFieldGroups.map((group) => ({ title: group.title, codes: group.fieldCodes }))
@@ -533,12 +534,9 @@ const MyDispatchedDetail: React.FC = () => {
   const readOnlyBackPath = isTeamReadOnlyView ? '/my-work/team' : order?.status === 'completed' ? '/my-work/done' : '/my-work/pending';
   const creatorEditSource = (order?.extra_data ?? {}) as Record<string, unknown>;
   const effectiveNeedContact = creatorEditNeedContact ?? creatorEditSource.need_onboarding_contact;
-  const effectiveProbationStart = creatorEditProbationStart ?? creatorEditSource.probation_start_date;
-  const probationDependentFields = new Set(['probation_months', 'probation_end_date', 'probation_salary']);
   const isCreatorEditFieldRequired = (fieldCode: string, staticRequired?: boolean) => (
     Boolean(staticRequired)
     || (fieldCode === 'current_address' && effectiveNeedContact === '否')
-    || (probationDependentFields.has(fieldCode) && hasText(effectiveProbationStart))
   );
 
   const fillCreatorEditForm = () => {
@@ -619,16 +617,15 @@ const MyDispatchedDetail: React.FC = () => {
     }
     const original = (order.extra_data || {}) as Record<string, unknown>;
     const changed = Object.fromEntries(
-      visibleDetailFields
+      creatorEditableFields
         .map((field) => [field.field_code, values[field.field_code]] as const)
         .filter(([fieldCode, value]) => String(original[fieldCode] ?? '') !== String(value ?? '')),
     );
     const changedFieldCodes = new Set(Object.keys(changed));
-    const missingRequired = visibleDetailFields.filter((field) => {
+    const missingRequired = creatorEditableFields.filter((field) => {
       if (!isCreatorEditFieldRequired(field.field_code, field.is_required)) return false;
       const dependencyChanged = (
         (field.field_code === 'current_address' && changedFieldCodes.has('need_onboarding_contact'))
-        || (probationDependentFields.has(field.field_code) && changedFieldCodes.has('probation_start_date'))
       );
       return (changedFieldCodes.has(field.field_code) || dependencyChanged)
         && !hasText(values[field.field_code]);
@@ -1306,7 +1303,7 @@ const MyDispatchedDetail: React.FC = () => {
                 placeholder="请说明新增字段补录或资料修改原因"
               />
             </Form.Item>
-            {visibleDetailFields.map((field) => (
+            {creatorEditableFields.map((field) => (
               <Form.Item
                 key={field.field_code}
                 name={field.field_code}

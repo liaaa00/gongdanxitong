@@ -1,4 +1,4 @@
-import { ForbiddenException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, GoneException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Optional } from '@nestjs/common';
 import { In, Repository } from 'typeorm';
@@ -49,15 +49,7 @@ export class OutOfProvinceOrdersService {
   async create(dto: CreateOutOfProvinceOrderDto, user: JwtUserPayload): Promise<WorkOrderDetailItem> {
     await this.assertBusinessScopeAccess(user);
     await this.assertBusinessAction(user, 'work_order.create');
-    return this.workOrderService.createDraft({
-      orderType: dto.orderType,
-      customerId: dto.customerId,
-      departmentId: dto.departmentId,
-      extraData: {
-        ...dto.extraData,
-        province: dto.province,
-      },
-    }, user);
+    return this.rejectLegacyWrite();
   }
 
   async findAll(
@@ -153,14 +145,7 @@ export class OutOfProvinceOrdersService {
     await this.assertBusinessAction(user, 'work_order.update');
     const order = await this.findScopedEntity(id);
     this.assertOwner(order, user);
-    const extraData = dto.extraData || dto.province
-      ? { ...(dto.extraData ?? {}), ...(dto.province ? { province: dto.province } : {}) }
-      : undefined;
-    return this.workOrderService.update(id, {
-      customerId: dto.customerId,
-      departmentId: dto.departmentId,
-      extraData,
-    }, user);
+    return this.rejectLegacyWrite();
   }
 
   async submit(id: string, dto: SubmitWorkOrderDto, user: JwtUserPayload) {
@@ -168,7 +153,7 @@ export class OutOfProvinceOrdersService {
     await this.assertBusinessAction(user, 'work_order.update');
     const order = await this.findScopedEntity(id);
     this.assertOwner(order, user);
-    return this.workOrderService.submit(id, dto, user);
+    return this.rejectLegacyWrite();
   }
 
   async resubmit(id: string, dto: SubmitWorkOrderDto, user: JwtUserPayload) {
@@ -176,7 +161,11 @@ export class OutOfProvinceOrdersService {
     await this.assertBusinessAction(user, 'work_order.update');
     const order = await this.findScopedEntity(id);
     this.assertOwner(order, user);
-    return this.workOrderService.resubmit(id, dto, user);
+    return this.rejectLegacyWrite();
+  }
+
+  private rejectLegacyWrite(): never {
+    throw new GoneException('旧省外主工单写入口已停用，请从省外增减员页面办理；历史工单仍可查询。');
   }
 
   private async assertBusinessScopeAccess(user: JwtUserPayload): Promise<void> {

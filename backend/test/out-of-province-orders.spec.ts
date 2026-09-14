@@ -66,9 +66,9 @@ function makeService(options: { rows?: WorkOrder[]; scoped?: WorkOrder | null } 
 }
 
 describe('out-of-province order scope', () => {
-  it('forces province data through the dedicated create endpoint', async () => {
+  it('rejects legacy creation instead of creating a province main order', async () => {
     const { service, workOrderService } = makeService();
-    await service.create({
+    await expect(service.create({
       orderType: OrderType.OUT_OF_PROVINCE_INCREASE,
       province: '福建',
       extraData: {
@@ -76,15 +76,19 @@ describe('out-of-province order scope', () => {
         employee_name: 'Alice',
         id_card_no: '330101199001011234',
       },
-    }, { sub: 'sales-1', username: 'sales', roles: ['salesperson'] });
+    }, { sub: 'sales-1', username: 'sales', roles: ['salesperson'] })).rejects.toMatchObject({ status: 410 });
+    expect(workOrderService.createDraft).not.toHaveBeenCalled();
+  });
 
-    expect(workOrderService.createDraft).toHaveBeenCalledWith(
-      expect.objectContaining({
-        orderType: OrderType.OUT_OF_PROVINCE_INCREASE,
-        extraData: expect.objectContaining({ province: '福建' }),
-      }),
-      expect.objectContaining({ sub: 'sales-1' }),
-    );
+  it.each(['update', 'submit', 'resubmit'] as const)('rejects legacy %s without modifying or dispatching historical data', async (action) => {
+    const { service, workOrderService } = makeService({ scoped: {
+      id: 'legacy-order', createdBy: 'sales-1', businessScope: BusinessScope.OUT_OF_PROVINCE,
+      orderType: OrderType.OUT_OF_PROVINCE_INCREASE,
+    } as WorkOrder });
+    await expect(service[action]('legacy-order', {}, {
+      sub: 'sales-1', username: 'sales', roles: ['salesperson'],
+    })).rejects.toMatchObject({ status: 410 });
+    for (const write of Object.values(workOrderService)) expect(write).not.toHaveBeenCalled();
   });
 
   it('always filters the province list by scope and the two province order types', async () => {

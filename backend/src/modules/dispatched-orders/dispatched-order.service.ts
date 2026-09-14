@@ -535,7 +535,7 @@ export class DispatchedOrderService {
           completedAt: nextCompleted ? completedAt : null,
           completionRemark: remark || null,
           handlerId: order.handlerId ?? user.sub,
-          acceptedAt: order.acceptedAt ?? completedAt,
+          acceptedAt: order.acceptedAt,
         })
         .where('id = :id', { id })
         .andWhere('status IN (:...statuses)', { statuses: [DispatchedOrderStatus.PENDING, DispatchedOrderStatus.PROCESSING] })
@@ -616,7 +616,7 @@ export class DispatchedOrderService {
     const now = new Date();
     const nextCompleted = completionEvaluation.nextStatus === DispatchedOrderStatus.COMPLETED;
     order.handlerId = order.handlerId ?? user.sub;
-    order.acceptedAt = order.acceptedAt ?? now;
+
     order.status = completionEvaluation.nextStatus;
     order.completedAt = nextCompleted ? now : null;
     order.completionRemark = payload.remark?.trim() || null;
@@ -2232,7 +2232,7 @@ export class DispatchedOrderService {
     order.parentOrder.lastModifiedBy = user.sub;
     order.parentOrder.modificationRound += 1;
     order.status = evaluation.nextStatus;
-    order.acceptedAt = order.acceptedAt ?? completedAt;
+
     order.handlerId = order.handlerId ?? user.sub;
     order.completedAt = evaluation.complete ? completedAt : null;
     order.completionRemark = this.readImportString(row.remark ?? row.raw?.['办理备注'] ?? row.raw?.['备注']) ?? order.completionRemark;
@@ -2294,7 +2294,7 @@ export class DispatchedOrderService {
     const before = this.snapshot(order);
     if (order.status === DispatchedOrderStatus.PENDING) {
       order.status = DispatchedOrderStatus.PROCESSING;
-      order.acceptedAt = order.acceptedAt ?? new Date();
+
       order.handlerId = order.handlerId ?? user.sub;
       await this.dispatchedOrderRepository.save(order);
     }
@@ -2323,7 +2323,7 @@ export class DispatchedOrderService {
     );
     order.status = DispatchedOrderStatus.COMPLETED;
     order.completedAt = completedAt;
-    order.acceptedAt = order.acceptedAt ?? completedAt;
+
     order.handlerId = order.handlerId ?? user.sub;
     order.completionRemark = remark;
     await this.dispatchedOrderRepository.save(order);

@@ -286,7 +286,7 @@ describe('业务闭环 E2E', () => {
         });
     });
 
-    it('存在 COMPLETED 子单时，业务员 PUT 主工单 extraData 必须被拦截 (409 + code 4116)', async () => {
+    it('存在 COMPLETED 子单时，业务员 PUT 主工单 extraData 必须被拦截 (409 + code 4130)', async () => {
       const bizToken = tokens['yaoyiping'];
       const res = await request(server)
         .put(`/api/work-orders/${workOrderId}`)
@@ -294,7 +294,7 @@ describe('业务闭环 E2E', () => {
         .send({ extraData: { mobile: '13912345678' } });
 
       expect(res.status).toBe(409);
-      expect(envelopeCode(res.body)).toBe(4116);
+      expect(envelopeCode(res.body)).toBe(4130);
     });
 
     it('合同组主管 contractsup01 打回 contract 子工单后，业务员重新修改成功，并生成 dirty-mark 记录', async () => {
@@ -366,7 +366,7 @@ describe('业务闭环 E2E', () => {
       }
     });
 
-    it('业务1组组长 shenwenjun 能看见1组成员 (yaoyiping) 工单，但看不到2组 (zhouqiqing) 工单', async () => {
+    it('业务1组组长 shenwenjun 只能看见本人发起工单，看不到组员 (yaoyiping) 和2组 (zhouqiqing) 工单', async () => {
       const res = await request(server)
         .get('/api/work-orders?page=1&pageSize=200')
         .set(auth(tokens['shenwenjun']))
@@ -377,8 +377,8 @@ describe('业务闭环 E2E', () => {
       const ids = items.map((it) => it.id);
       const orderNos = items.map((it) => (it.orderNo as string) ?? (it.order_no as string));
 
-      expect(ids).toContain(g1OrderId);
-      expect(orderNos).toContain(g1OrderNo);
+      expect(ids).not.toContain(g1OrderId);
+      expect(orderNos).not.toContain(g1OrderNo);
 
       expect(ids).not.toContain(g2OrderId);
       expect(orderNos).not.toContain(g2OrderNo);
