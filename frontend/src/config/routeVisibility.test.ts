@@ -60,6 +60,17 @@ describe('routeVisibility admin-only configuration routes', () => {
     expect(canAccessPath('/onboarding/resignation_cert', roles([ROLE.SOCIAL_INSURANCE_SPECIALIST]))).toBe(false);
   });
 
+  it('exposes portal review and salary return routes to business roles while keeping processing roles out', () => {
+    const businessRoles = [ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER];
+    for (const role of businessRoles) {
+      expect(canAccessPath('/portal-intake-review', roles([role]))).toBe(true);
+      expect(canAccessPath('/salary-returns', roles([role]))).toBe(true);
+    }
+    for (const role of [ROLE.DATA_ENTRY_LEADER, ROLE.SHARED_TEAM_OWNER, ROLE.LABOR_CONTRACT_MEMBER, ROLE.ONBOARDING_RESIGNATION_MEMBER, ROLE.SOCIAL_INSURANCE_SPECIALIST]) {
+      expect(canAccessPath('/portal-intake-review', roles([role]))).toBe(false);
+      expect(canAccessPath('/salary-returns', roles([role]))).toBe(false);
+    }
+  });
   it('keeps business-front accounts inside their assigned business scope', () => {
     const memberRoles = roles([ROLE.BUSINESS_GROUP_MEMBER]);
     const adminRoles = roles([ROLE.ADMIN]);

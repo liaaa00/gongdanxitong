@@ -187,13 +187,13 @@ describe('BasicLayout menu visibility', () => {
       .not.toBe(buildKeepAliveCacheKey('out_of_province', '/dashboard', '?month=2026-08'));
   });
 
-  it('does not render a static menu while permission configuration is loading', () => {
+  it('keeps the previous menu visible while permission configuration reloads', () => {
     mockUserState.user = mockUserState.makeUser(['admin']);
     mockUserState.permissionConfigLoading = true;
 
     renderLayout(['/dashboard']);
 
-    expect(menuPaths()).toEqual([]);
+    expect(menuPaths()).toEqual(expect.arrayContaining(['/dashboard']));
   });
 
   it('shows the admin field and template configuration center with import templates only to admin', () => {

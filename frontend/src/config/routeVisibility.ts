@@ -138,6 +138,8 @@ export const ROUTE_VISIBILITY = {
   '/notifications': NOTIFICATION_ROLES,
   '/profile': ALL_ROLES,
   '/customer-config': [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER],
+  '/portal-intake-review': BUSINESS_ORDER_ROLES,
+  '/salary-returns': BUSINESS_ORDER_ROLES,
   '/customer-rules': [ROLE.ADMIN, ROLE.BUSINESS_OWNER, ROLE.BUSINESS_GROUP_LEADER, ROLE.BUSINESS_GROUP_MEMBER],
 
   // 主工单列表/创建入口：菜单中只保留 /work-orders，创建页由列表 toolBar 进入。
@@ -254,6 +256,8 @@ export type VisibilityRoute = keyof typeof ROUTE_VISIBILITY;
 const ROUTE_ACTION_PERMISSIONS: Partial<Record<VisibilityRoute, readonly string[]>> = {
   '/dashboard': ['route.dashboard'],
   '/notifications': ['route.notifications'],
+  '/portal-intake-review': ['route.portal_intake_review'],
+  '/salary-returns': ['route.salary_returns'],
   '/work-orders': ['route.work_orders'],
   '/work-orders/create': ['route.work_order_create'],
   '/work-orders/import': ['route.work_order_import'],
@@ -392,8 +396,8 @@ function normalizePermissions(permissions?: string[]): Set<string> {
   return new Set((permissions || []).map((item) => String(item || '').trim()).filter(Boolean));
 }
 
-const BUSINESS_OWNER_DYNAMIC_ROUTES: readonly VisibilityRoute[] = ['/dashboard', '/my-dispatched/:id'];
-const BUSINESS_MEMBER_DYNAMIC_ROUTES: readonly VisibilityRoute[] = ['/my-dispatched/:id'];
+const BUSINESS_OWNER_DYNAMIC_ROUTES: readonly VisibilityRoute[] = ['/dashboard', '/portal-intake-review', '/salary-returns', '/my-dispatched/:id'];
+const BUSINESS_MEMBER_DYNAMIC_ROUTES: readonly VisibilityRoute[] = ['/portal-intake-review', '/salary-returns', '/my-dispatched/:id'];
 const BACKEND_DYNAMIC_ROUTES: readonly VisibilityRoute[] = ['/my-dispatched/:id'];
 
 const RESTRICTED_DYNAMIC_PERMISSION_ROUTES: Partial<Record<CanonicalRole, readonly VisibilityRoute[]>> = {
@@ -401,7 +405,7 @@ const RESTRICTED_DYNAMIC_PERMISSION_ROUTES: Partial<Record<CanonicalRole, readon
   [ROLE.BUSINESS_GROUP_LEADER]: [
     '/dashboard', '/work-orders', '/work-orders/create', '/work-orders/import', '/work-orders/:id',
     '/out-of-province', '/out-of-province/import', '/out-of-province/new', '/my-dispatched/:id',
-    '/onboarding', '/onboarding/onboarding_contact', '/onboarding/contract', '/onboarding/data_entry', '/onboarding/social_insurance',
+    '/onboarding', '/portal-intake-review', '/salary-returns', '/onboarding/onboarding_contact', '/onboarding/contract', '/onboarding/data_entry', '/onboarding/social_insurance',
     '/offboarding', '/onboarding/resignation_contact', '/onboarding/data_entry_resign', '/onboarding/social_insurance_resign',
   ],
   [ROLE.BUSINESS_GROUP_MEMBER]: BUSINESS_MEMBER_DYNAMIC_ROUTES,

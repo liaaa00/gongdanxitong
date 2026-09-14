@@ -215,6 +215,8 @@ const RAW_MENU: MenuItem[] = [
   // 我的工单聚合入口已废除，子工单从各业务模块或消息通知进入。
   { path: '/notifications', name: '消息通知', icon: <BellOutlined /> },
   { path: '/customer-config', name: '客户门户配置', icon: <IdcardOutlined /> },
+  { path: '/portal-intake-review', name: '门户审核工单', icon: <AuditOutlined /> },
+  { path: '/salary-returns', name: '薪酬回传', icon: <FileTextOutlined /> },
   { path: '/admin', name: '管理后台', icon: <SettingOutlined />,
     children: [
       {
@@ -538,12 +540,8 @@ const BasicLayout: React.FC = () => {
     void fetchUser();
   }, [fetchUser, isLoggedIn, userLoading]);
 
-  const lastPathRef = useRef(location.pathname);
-  useEffect(() => {
-    if (lastPathRef.current === location.pathname && user) return;
-    lastPathRef.current = location.pathname;
-    refreshCurrentUser();
-  }, [location.pathname, refreshCurrentUser, user]);
+  // 切换路径不触发 /auth/me：已有用户时由 token 变化、visibilitychange、storage 事件刷新即可，
+  // 避免每次切菜单都拉取用户信息和权限配置造成不必要的请求与重渲染。
 
   useEffect(() => {
     const handleStorage = (event: StorageEvent) => {
@@ -568,10 +566,8 @@ const BasicLayout: React.FC = () => {
 
   // 按最新 /auth/me 返回的角色、权限和账号业务线过滤菜单。
   const filteredMenu = useMemo(
-    () => permissionConfigLoading
-      ? []
-      : filterMenuByRoles(RAW_MENU, user?.roles, user?.permissions, effectiveBusinessScope),
-    [effectiveBusinessScope, permissionConfigLoading, user?.permissions, user?.roles],
+    () => filterMenuByRoles(RAW_MENU, user?.roles, user?.permissions, effectiveBusinessScope),
+    [effectiveBusinessScope, user?.permissions, user?.roles],
   );
 
   const rootSubmenuKeys = useMemo(() => {

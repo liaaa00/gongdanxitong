@@ -16,6 +16,8 @@ export type RoleActionCode =
   | 'work_order.delete'
   | 'route.dashboard'
   | 'route.notifications'
+  | 'route.portal_intake_review'
+  | 'route.salary_returns'
   | 'route.work_orders'
   | 'route.work_order_create'
   | 'route.work_order_import'
@@ -81,6 +83,8 @@ export const DEFAULT_ACTIONS: RoleActionDefinition[] = [
   { code: 'work_order.delete', name: '删除工单', description: '允许删除工单；建议仅管理员拥有' },
   { code: 'route.dashboard', name: '仪表盘入口', description: '允许访问仪表盘' },
   { code: 'route.notifications', name: '消息通知入口', description: '允许访问消息通知' },
+  { code: 'route.portal_intake_review', name: '门户审核工单入口', description: '允许业务员查看并处理门户提交的增员、减员资料' },
+  { code: 'route.salary_returns', name: '薪酬回传入口', description: '允许查看门户薪资提交、办理结果和回传状态' },
   { code: 'route.work_orders', name: '主工单列表入口', description: '允许访问主工单列表' },
   { code: 'route.work_order_create', name: '新建工单入口', description: '允许访问新建工单页面' },
   { code: 'route.work_order_import', name: '主工单导入入口', description: '允许访问主工单批量导入页面' },
@@ -121,6 +125,7 @@ export const DEFAULT_ACTIONS: RoleActionDefinition[] = [
 const ALL_ACTIONS = DEFAULT_ACTIONS.map((item) => item.code);
 const DASHBOARD_ACTIONS: RoleActionCode[] = ['route.dashboard', 'route.dispatched_detail'];
 const NOTIFICATION_ACTIONS: RoleActionCode[] = ['route.notifications'];
+const PORTAL_BUSINESS_ACTIONS: RoleActionCode[] = ['route.portal_intake_review', 'route.salary_returns'];
 const WORK_ORDER_BUSINESS_ACTIONS: RoleActionCode[] = ['route.work_orders', 'route.work_order_create', 'route.work_order_import', 'route.work_order_detail'];
 const BUSINESS_SUB_ROUTE_ACTIONS: RoleActionCode[] = ['route.onboarding_contact', 'route.onboarding_contract', 'route.onboarding_data_entry', 'route.onboarding_social_insurance', 'route.resignation_contact', 'route.data_entry_resign', 'route.social_insurance_resign'];
 const MODULE_BATCH_BASE_ACTIONS: RoleActionCode[] = ['dispatched_order.batch_import', 'dispatched_order.batch_export', 'dispatched_order.batch_accept'];
@@ -139,14 +144,14 @@ const SOCIAL_INSURANCE_RESIGN_MODULE_ACTIONS: RoleActionCode[] = ['route.onboard
 
 export const DEFAULT_MATRIX: RoleActionMatrix = {
   admin: ALL_ACTIONS,
-  biz_manager: ['work_order.view_all', 'work_order.export', 'route.dashboard', 'route.dispatched_detail', 'route.leader_dashboard'],
-  business_owner: ['work_order.view_all', 'work_order.export', 'route.dashboard', 'route.dispatched_detail', 'route.leader_dashboard'],
-  manager: ['work_order.view_all', 'work_order.export', 'route.dashboard', 'route.dispatched_detail', 'route.leader_dashboard'],
-  biz_leader: ['work_order.view_team', 'work_order.create', 'work_order.import', 'work_order.update', 'work_order.withdraw', 'work_order.void', 'work_order.urge', 'work_order.export', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, ...WORK_ORDER_BUSINESS_ACTIONS, ...BUSINESS_SUB_ROUTE_ACTIONS, 'route.offboarding', 'dispatched_order.batch_urge', 'route.leader_dashboard'],
-  business_group_leader: ['work_order.view_team', 'work_order.create', 'work_order.import', 'work_order.update', 'work_order.withdraw', 'work_order.void', 'work_order.urge', 'work_order.export', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, ...WORK_ORDER_BUSINESS_ACTIONS, ...BUSINESS_SUB_ROUTE_ACTIONS, 'route.offboarding', 'dispatched_order.batch_urge', 'route.leader_dashboard'],
-  biz_member: ['work_order.view', 'work_order.create', 'work_order.import', 'work_order.update', 'work_order.withdraw', 'work_order.void', 'work_order.urge', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, ...WORK_ORDER_BUSINESS_ACTIONS, ...BUSINESS_SUB_ROUTE_ACTIONS, 'dispatched_order.batch_urge'],
-  business_group_member: ['work_order.view', 'work_order.create', 'work_order.import', 'work_order.update', 'work_order.withdraw', 'work_order.void', 'work_order.urge', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, ...WORK_ORDER_BUSINESS_ACTIONS, ...BUSINESS_SUB_ROUTE_ACTIONS, 'dispatched_order.batch_urge'],
-  salesperson: ['work_order.view', 'work_order.create', 'work_order.import', 'work_order.update', 'work_order.withdraw', 'work_order.void', 'work_order.urge', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, ...WORK_ORDER_BUSINESS_ACTIONS, ...BUSINESS_SUB_ROUTE_ACTIONS, 'dispatched_order.batch_urge'],
+  biz_manager: ['work_order.view_all', 'work_order.export', 'route.dashboard', 'route.dispatched_detail', 'route.leader_dashboard', ...PORTAL_BUSINESS_ACTIONS],
+  business_owner: ['work_order.view_all', 'work_order.export', 'route.dashboard', 'route.dispatched_detail', 'route.leader_dashboard', ...PORTAL_BUSINESS_ACTIONS],
+  manager: ['work_order.view_all', 'work_order.export', 'route.dashboard', 'route.dispatched_detail', 'route.leader_dashboard', ...PORTAL_BUSINESS_ACTIONS],
+  biz_leader: ['work_order.view_team', 'work_order.create', 'work_order.import', 'work_order.update', 'work_order.withdraw', 'work_order.void', 'work_order.urge', 'work_order.export', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, ...WORK_ORDER_BUSINESS_ACTIONS, ...BUSINESS_SUB_ROUTE_ACTIONS, 'route.offboarding', 'dispatched_order.batch_urge', 'route.leader_dashboard', ...PORTAL_BUSINESS_ACTIONS],
+  business_group_leader: ['work_order.view_team', 'work_order.create', 'work_order.import', 'work_order.update', 'work_order.withdraw', 'work_order.void', 'work_order.urge', 'work_order.export', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, ...WORK_ORDER_BUSINESS_ACTIONS, ...BUSINESS_SUB_ROUTE_ACTIONS, 'route.offboarding', 'dispatched_order.batch_urge', 'route.leader_dashboard', ...PORTAL_BUSINESS_ACTIONS],
+  biz_member: ['work_order.view', 'work_order.create', 'work_order.import', 'work_order.update', 'work_order.withdraw', 'work_order.void', 'work_order.urge', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, ...WORK_ORDER_BUSINESS_ACTIONS, ...BUSINESS_SUB_ROUTE_ACTIONS, 'dispatched_order.batch_urge', ...PORTAL_BUSINESS_ACTIONS],
+  business_group_member: ['work_order.view', 'work_order.create', 'work_order.import', 'work_order.update', 'work_order.withdraw', 'work_order.void', 'work_order.urge', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, ...WORK_ORDER_BUSINESS_ACTIONS, ...BUSINESS_SUB_ROUTE_ACTIONS, 'dispatched_order.batch_urge', ...PORTAL_BUSINESS_ACTIONS],
+  salesperson: ['work_order.view', 'work_order.create', 'work_order.import', 'work_order.update', 'work_order.withdraw', 'work_order.void', 'work_order.urge', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, ...WORK_ORDER_BUSINESS_ACTIONS, ...BUSINESS_SUB_ROUTE_ACTIONS, 'dispatched_order.batch_urge', ...PORTAL_BUSINESS_ACTIONS],
   shared_leader: ['work_order.view_team', 'work_order.export', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, 'route.leader_dashboard', ...CONTRACT_MODULE_ACTIONS, ...ONBOARDING_CONTACT_MODULE_ACTIONS, ...RESIGNATION_CONTACT_MODULE_ACTIONS],
   shared_team_owner: ['work_order.view_team', 'work_order.export', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, 'route.leader_dashboard', ...CONTRACT_MODULE_ACTIONS, ...ONBOARDING_CONTACT_MODULE_ACTIONS, ...RESIGNATION_CONTACT_MODULE_ACTIONS],
   data_entry_leader: ['work_order.view_team', 'work_order.export', ...DASHBOARD_ACTIONS, ...NOTIFICATION_ACTIONS, 'route.leader_dashboard', ...DATA_ENTRY_MODULE_ACTIONS, ...DATA_ENTRY_RESIGN_MODULE_ACTIONS],
