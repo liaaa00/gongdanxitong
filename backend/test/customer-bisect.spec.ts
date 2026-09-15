@@ -87,7 +87,10 @@ describe('Customer portal authoritative business boundary',()=>{
     expect(workbook.getWorksheet('__portal')?.state).toBe('veryHidden');
     expect(workbook.worksheets[0].getRow(1).values).toContain('离职原因');
   });
-  it('imports its own onboarding workbook with the second-row header and forwards batch materials', async () => {
-
+  it.skip('imports its own onboarding workbook with the second-row header and forwards batch materials', () => {
+    // ef691d9（T02-C3 一次性 bisect 脚本转正）只登记了用例名，断言体从未入库，
+    // 造成 describe 未闭合的语法破碎（TS1005）。此处先显式 skip 恢复编译与运行，
+    // 待后续按门户导入行为补真实断言（勿静默删除用例名）。
+  });
 });
 
