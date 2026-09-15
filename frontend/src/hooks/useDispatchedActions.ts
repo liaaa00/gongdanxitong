@@ -139,7 +139,10 @@ export function useDispatchedActions({ orderId, order, onOrderUpdated }: UseDisp
       const normalizedReason = reason?.trim() || undefined;
       const updated = await resubmitDispatchedOrder(orderId, { moduleCode: order?.module_code, reason: normalizedReason });
       onOrderUpdated(updated);
-      message.success('已重新提交该子工单');
+      // BUG-02（B 方案，仅文案口径）：重提后子工单回到 pending（未接单）并通知处理人，
+      // 主工单可能停留在 pending 而不是 processing。提示语必须说明"等待处理人接单"，
+      // 避免用户把 pending 理解为"还没派发出去 / 工单没动"。不改后端状态机。
+      message.success('已重新提交，子工单已重新派发，等待处理人接单');
       return updated;
     } catch {
       message.error('重新提交失败');

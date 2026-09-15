@@ -1,10 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 
+const mockMessageSuccess = vi.fn();
+const mockMessageError = vi.fn();
+
 vi.mock('antd', () => ({
   App: {
     useApp: () => ({
-      message: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
+      message: {
+        success: (...args: unknown[]) => mockMessageSuccess(...args),
+        error: (...args: unknown[]) => mockMessageError(...args),
+        info: vi.fn(),
+      },
     }),
   },
 }));
@@ -59,7 +66,8 @@ describe('useDispatchedActions', () => {
       useDispatchedActions({ orderId: 'd1', order: baseOrder, onOrderUpdated: onUpdated }),
     );
     await act(async () => { await result.current.handleAccept(); });
-    expect(mockAccept).toHaveBeenCalledWith('d1', undefined);
+    // 接单服务签名仅接收 id（acceptDispatchedOrder(id)），与实现保持一致。
+    expect(mockAccept).toHaveBeenCalledWith('d1');
     expect(mockGetDispatchedOrder).toHaveBeenCalledWith('d1');
     await waitFor(() => expect(onUpdated).toHaveBeenCalledTimes(2));
   });
@@ -71,7 +79,7 @@ describe('useDispatchedActions', () => {
       useDispatchedActions({ orderId: 'd1', order: baseOrder, onOrderUpdated: onUpdated }),
     );
     await act(async () => { await result.current.handleAccept(); });
-    expect(mockAccept).toHaveBeenCalledWith('d1', undefined);
+    expect(mockAccept).toHaveBeenCalledWith('d1');
     expect(onUpdated).not.toHaveBeenCalled();
   });
 
@@ -139,6 +147,9 @@ describe('useDispatchedActions', () => {
 
     expect(mockResubmit).toHaveBeenCalledWith('d1', { moduleCode: 'contract', reason: '以员工辞职报告真实日期为准' });
     await waitFor(() => expect(onUpdated).toHaveBeenCalledWith(expect.objectContaining({ status: 'pending' })));
+    // BUG-02（B 方案）：重提后子单回到 pending（未接单）并重新派发，主单不直达 processing。
+    // 文案必须传达"等待处理人接单"，不得让用户误判为"重提了但工单没动"。
+    expect(mockMessageSuccess).toHaveBeenCalledWith('已重新提交，子工单已重新派发，等待处理人接单');
   });
 
   it('keeps the resubmit reason optional', async () => {
@@ -151,5 +162,6 @@ describe('useDispatchedActions', () => {
     await act(async () => { await result.current.handleResubmit('   '); });
 
     expect(mockResubmit).toHaveBeenCalledWith('d1', { moduleCode: 'contract', reason: undefined });
+    expect(mockMessageSuccess).toHaveBeenCalledWith('已重新提交，子工单已重新派发，等待处理人接单');
   });
 });
