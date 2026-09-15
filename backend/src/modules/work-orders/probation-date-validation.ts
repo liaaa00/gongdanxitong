@@ -25,7 +25,9 @@ export function validateProbationDates(data: Record<string, unknown>): Array<{ f
     if (probationStart && probationStart < start) errors.push({ fieldCode: 'probation_start_date', reason: '试用期开始日期不能早于合同开始日期' });
     if (end < start || (probationStart && end < probationStart)) fail('试用期结束日期不能早于合同开始日期或试用期开始日期');
     if (contractEnd && end > contractEnd) fail('试用期结束日期不能晚于合同结束日期');
-    const months = data.contract_term_type === '无固定期限' ? 6 : contractEnd! <= addMonths(start, 12) ? 1 : contractEnd! <= addMonths(start, 36) ? 2 : 6;
+    // The last contract day is inclusive: Aug 21 through Aug 20 is a full year.
+    const exclusiveContractEnd = contractEnd ? new Date(contractEnd.getTime() + 86400000) : null;
+    const months = data.contract_term_type === '无固定期限' ? 6 : exclusiveContractEnd! < addMonths(start, 12) ? 1 : exclusiveContractEnd! < addMonths(start, 36) ? 2 : 6;
     if (end > addMonths(start, months)) fail(`当前劳动合同期限下试用期结束日期不能超过合同开始后${months}个月`);
   }
   return errors;

@@ -72,7 +72,16 @@ test('entering contract dates does not opt an employee into probation; clearing 
   assert.equal(nodes.probation_start_date.value, '');
   assert.equal(nodes.probation_end_date.required, false);
   assert.equal(nodes.probation_salary.required, false);
-  assert.equal(nodes.probation_end_date.max, '2026-10-10');
+  assert.equal(nodes.probation_end_date.max, '2026-11-10');
+  nodes.contract_start_date.value = '2026-08-21';
+  nodes.contract_end_date.value = '2029-08-20';
+  context.updateContractDates();
+  assert.equal(nodes.probation_end_date.max, '2027-02-21');
+  nodes.contract_end_date.value = '2029-08-19';
+  context.updateContractDates();
+  assert.equal(nodes.probation_end_date.max, '2026-10-21');
+  nodes.contract_start_date.value = '2026-09-10';
+  nodes.contract_end_date.value = '2027-09-09';
 
   nodes.probation_start_date.value = '2026-09-10';
   context.updateProbationDates();

@@ -230,7 +230,7 @@ describe('WorkOrderValidationService submit validation', () => {
       response: expect.objectContaining({
         details: expect.objectContaining({
           invalid: expect.arrayContaining([
-            expect.objectContaining({ fieldCode: 'probation_end_date', reason: expect.stringContaining('不能超过合同开始后1个月') }),
+            expect.objectContaining({ fieldCode: 'probation_end_date', reason: expect.stringContaining('不能超过合同开始后2个月') }),
           ]),
         }),
       }),
@@ -239,13 +239,14 @@ describe('WorkOrderValidationService submit validation', () => {
 
   it.each([
     ['2026-08-01', '2027-08-01', '2026-09-01', true],
-    ['2026-08-01', '2027-08-01', '2026-09-02', false],
+    ['2026-08-01', '2027-07-30', '2026-09-02', false],
     ['2026-08-01', '2027-08-02', '2026-10-01', true],
-    ['2026-08-01', '2029-08-01', '2026-10-02', false],
+    ['2026-08-01', '2029-07-30', '2026-10-02', false],
+    ['2026-08-21', '2029-08-20', '2027-02-20', true],
     ['2026-08-01', '2029-08-02', '2027-02-01', true],
     ['2026-08-01', undefined, '2027-02-02', false],
     ['2026-01-31', '2027-01-30', '2026-02-28', true],
-    ['2026-01-31', '2027-01-30', '2026-03-01', false],
+    ['2026-01-31', '2027-01-29', '2026-03-01', false],
     ['2028-01-31', '2029-01-30', '2028-02-29', true],
     ['2026-02-01', '2027-01-31', '2026-02-30', false],
   ])('checks exact calendar boundaries: %s / %s / %s', async (start, end, probationEnd, valid) => {

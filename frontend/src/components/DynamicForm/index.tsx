@@ -487,7 +487,8 @@ function DynamicForm({
                 const contractEnd = currentValues.contract_end_date ? dayjs(currentValues.contract_end_date as string) : null;
                 const open = currentValues.contract_term_type === '无固定期限';
                 if (!open && (!contractEnd || !contractEnd.isValid())) return true;
-                const months = open ? 6 : !contractEnd!.isAfter(start.add(12, 'month'), 'day') ? 1 : !contractEnd!.isAfter(start.add(36, 'month'), 'day') ? 2 : 6;
+                const exclusiveContractEnd = contractEnd?.add(1, 'day');
+                const months = open ? 6 : exclusiveContractEnd!.isBefore(start.add(12, 'month'), 'day') ? 1 : exclusiveContractEnd!.isBefore(start.add(36, 'month'), 'day') ? 2 : 6;
                 const probationStart = currentValues.probation_start_date ? dayjs(currentValues.probation_start_date as string) : null;
                 return date.isBefore(start, 'day') || date.isAfter(start.add(months, 'month'), 'day')
                   || Boolean(contractEnd && !open && date.isAfter(contractEnd, 'day'))

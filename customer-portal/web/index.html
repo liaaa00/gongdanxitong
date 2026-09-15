@@ -1227,7 +1227,8 @@ excelInput.addEventListener('change', () => updateFileDropzone(excelInput, excel
       const probationStart = document.getElementById('probation_start_date').value;
       end.required = false;
       end.min = probationStart && probationStart > start ? probationStart : start;
-      const months = !isOpen && contractEnd && contractEnd <= addMonths(start, 12) ? 1 : !isOpen && contractEnd && contractEnd <= addMonths(start, 36) ? 2 : 6;
+      const exclusiveContractEnd = contractEnd ? new Date(new Date(contractEnd + 'T00:00:00Z').getTime() + 86400000).toISOString().slice(0, 10) : '';
+      const months = !isOpen && exclusiveContractEnd && exclusiveContractEnd < addMonths(start, 12) ? 1 : !isOpen && exclusiveContractEnd && exclusiveContractEnd < addMonths(start, 36) ? 2 : 6;
       const limit = addMonths(start, months);
       end.max = !isOpen && contractEnd && contractEnd < limit ? contractEnd : limit;
       for (const id of ['probation_salary', 'probation_other_salary']) {
