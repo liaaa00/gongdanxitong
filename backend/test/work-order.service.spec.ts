@@ -1080,4 +1080,127 @@ describe('WorkOrderService unit tests', () => {
     expect(workOrderRepository.save).not.toHaveBeenCalled();
   });
 
+  // ---------------------------------------------------------------------------
+  // BUG-01 回归（T04-QA）：submit/resubmit 响应体必须返回事务提交后的最新状态。
+  // 旧缺陷：loadDetail 在 transaction 回调内执行，外层 repository 走连接池另一条
+  // 连接，Postgres READ COMMITTED 下读不到本事务未提交的 status 写入 → 响应体
+  // 回吐提交前快照（draft）。
+  // 替身建模（关键）：模拟真实隔离级别——事务内 save 只进 pending 缓冲，
+  // 仅当 transaction 回调成功 resolve（=COMMIT）后才把 pending 刷成可见值；
+  // 外层 findOne 永远只读"已提交可见值"。因此若被测代码在提交前用外层读，
+  // 读到的是初始 draft → 断言红；挪到提交后读到 processing → 断言绿。
+  // ---------------------------------------------------------------------------
+  function makeSubmitIsolationHarness(initial: WorkOrder) {
+    const visible = { status: initial.status, submittedAt: initial.submittedAt ?? null };
+    const pending = { status: initial.status, submittedAt: initial.submittedAt ?? null };
+    let inTransaction = false;
+    const stats = { outerReadsDuringTx: 0 };
+    const clone = (extra: Partial<WorkOrder> = {}) => Object.assign(new WorkOrder(), {
+      ...initial,
+      dispatchedOrders: [],
+      creator: initial.creator,
+      department: initial.department,
+      customer: initial.customer,
+      ...extra,
+    });
+    const txWorkOrderRepo = createRepositoryMock<WorkOrder>();
+    txWorkOrderRepo.findOne.mockResolvedValue(clone({ status: visible.status }));
+    txWorkOrderRepo.save.mockImplementation(async (input: WorkOrder) => {
+      if (!inTransaction) throw new Error('事务外仓储不得写入工单主状态');
+      pending.status = input.status;
+      pending.submittedAt = input.submittedAt ?? pending.submittedAt;
+      return input;
+    });
+    const txDispatchedRepo = createRepositoryMock<DispatchedOrder>();
+    txDispatchedRepo.save.mockImplementation(async (input) => {
+      const children = Array.isArray(input) ? input : [input];
+      return children.map((child, index) => Object.assign({}, child, { id: `do-${index + 1}` }));
+    });
+    txDispatchedRepo.find.mockResolvedValue([]);
+    const txNotificationRepo = createRepositoryMock<Notification>();
+    const txOperationLogRepo = createRepositoryMock<OperationLog>();
+    const txModuleHandlerRepo = createRepositoryMock<ModuleHandler>();
+    txModuleHandlerRepo.findOne.mockImplementation(async ({ where }: { where: { moduleCode: string } }) => ({ handlerId: `handler-${where.moduleCode}` }));
+    const manager: TransactionManagerMock = {
+      query: jest.fn(async () => []),
+      getRepository: jest.fn((entity: unknown) => {
+        if (entity === WorkOrder) return txWorkOrderRepo as unknown as RepositoryMock<unknown>;
+        if (entity === DispatchedOrder) return txDispatchedRepo as unknown as RepositoryMock<unknown>;
+        if (entity === ModuleHandler) return txModuleHandlerRepo as unknown as RepositoryMock<unknown>;
+        if (entity === Notification) return txNotificationRepo as unknown as RepositoryMock<unknown>;
+        return txOperationLogRepo as unknown as RepositoryMock<unknown>;
+      }),
+    };
+    workOrderRepository.manager.transaction.mockImplementation(async (callback: (m: TransactionManagerMock) => Promise<unknown>) => {
+      inTransaction = true;
+      try {
+        const r = await callback(manager);
+        // COMMIT：把事务内未提交写入刷成对外可见
+        visible.status = pending.status;
+        visible.submittedAt = pending.submittedAt;
+        return r;
+      } finally {
+        inTransaction = false;
+      }
+    });
+    workOrderRepository.findOne.mockImplementation(async () => {
+      if (inTransaction) stats.outerReadsDuringTx += 1;
+      return clone({
+        status: visible.status,
+        submittedAt: visible.submittedAt,
+        dispatchedOrders: [makeDispatched({ id: 'do-1', moduleCode: 'contract' })],
+      });
+    });
+    const qb = createQueryBuilderMock<WorkOrder>([] as WorkOrder[], 0);
+    (qb as never as { getOne: jest.Mock }).getOne = jest.fn(async () => null);
+    txWorkOrderRepo.createQueryBuilder.mockReturnValue(qb);
+    return { manager, visible, stats };
+  }
+
+  it('BUG-01: submit response body reflects post-commit status processing, not pre-commit draft', async () => {
+    const draft = makeWorkOrder({ submittedAt: null });
+    const { visible, stats } = makeSubmitIsolationHarness(draft);
+
+    const result = await service.submit('wo-1', {}, makeUser());
+
+    expect(visible.status).toBe(WorkOrderStatus.PROCESSING); // DB 已提交真实状态
+    expect(result.workOrder.status).toBe(WorkOrderStatus.PROCESSING); // 响应体必须一致
+    expect(stats.outerReadsDuringTx).toBe(0); // 提交前不得用外层仓储读取详情
+  });
+
+  it('BUG-01: returned-branch submit response body reflects post-commit status processing', async () => {
+    const returned = makeWorkOrder({ status: WorkOrderStatus.RETURNED, submittedAt: fixedDate });
+    const { manager, visible, stats } = makeSubmitIsolationHarness(returned);
+    const returnedChild = makeDispatched({ id: 'do-ret', moduleCode: 'contract', status: DispatchedOrderStatus.RETURNED });
+    (manager.getRepository(DispatchedOrder) as unknown as RepositoryMock<DispatchedOrder>).find.mockImplementation(async () => [returnedChild]);
+
+    const result = await service.submit('wo-1', {}, makeUser());
+
+    expect(visible.status).toBe(WorkOrderStatus.PROCESSING);
+    expect(result.workOrder.status).toBe(WorkOrderStatus.PROCESSING);
+    expect(stats.outerReadsDuringTx).toBe(0);
+  });
+
+  it('BUG-01: resubmit response body is loaded after the transaction commits', async () => {
+    const processing = makeWorkOrder({ status: WorkOrderStatus.PROCESSING, submittedAt: fixedDate });
+    const { manager, visible, stats } = makeSubmitIsolationHarness(processing);
+
+    // 用真实 WorkOrderResubmitService 验证提交后读取的口径（不改状态机 PENDING 分支）
+    const { WorkOrderResubmitService } = await import('src/modules/work-orders/work-order-resubmit.service');
+    const resubmitService = new WorkOrderResubmitService(
+      workOrderRepository as unknown as Repository<WorkOrder>,
+      dispatchedOrderRepository as unknown as Repository<DispatchedOrder>,
+      notificationRepository as unknown as Repository<Notification>,
+      operationLogRepository as unknown as Repository<OperationLog>,
+      validationService as unknown as WorkOrderValidationService,
+      { getVisibleFieldsForScenario: jest.fn(async () => []), getPermissionsForUser: jest.fn(async () => new Map()) } as never,
+    );
+    const result = await resubmitService.resubmit('wo-1', {}, makeUser());
+
+    expect(visible.status).toBe(WorkOrderStatus.PENDING); // 重提后 DB=pending（状态机口径不变）
+    expect(result.workOrder.status).toBe(WorkOrderStatus.PENDING); // 响应体与已提交一致
+    expect(stats.outerReadsDuringTx).toBe(0); // loadDetail 必须在提交之后
+    expect(manager.query).toHaveBeenCalledWith('SELECT pg_advisory_xact_lock(hashtext($1))', ['work_order:resubmit:wo-1']);
+  });
+
 });

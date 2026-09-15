@@ -465,7 +465,10 @@ export class WorkOrderService {
     user: JwtUserPayload,
   ): Promise<{ workOrder: WorkOrderDetailItem; dispatchedOrders: WorkOrderSubOrderItem[] }> {
     this.assertBusinessOwnerReadOnly(user);
-    return this.workOrderRepository.manager.transaction(async (manager) => {
+    // BUG-01 修复：loadDetail 必须放在事务提交之后。事务内 this.workOrderRepository
+    // 走的是连接池的另一个连接，看不到本事务未提交的 status 写入，曾导致响应体
+    // 返回提交前的过期快照（draft）。这里事务内只回传 id 与子单，提交后再读详情。
+    const result = await this.workOrderRepository.manager.transaction(async (manager) => {
       await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`work_order:submit:${id}`]);
       const workOrderRepo = manager.getRepository(WorkOrder);
       const dispatchedRepo = manager.getRepository(DispatchedOrder);
@@ -555,7 +558,7 @@ export class WorkOrderService {
         const visibleChildren = (await dispatchedRepo.find({ where: { parentOrderId: workOrder.id }, relations: { handler: true } }))
           .filter((child) => isDispatchModuleVisibleForOrderType(child.moduleCode, workOrder.orderType));
         return {
-          workOrder: await this.loadDetail(workOrder.id),
+          workOrderId: workOrder.id,
           dispatchedOrders: toWorkOrderSubOrderItems(visibleChildren),
         };
       }
@@ -648,10 +651,15 @@ export class WorkOrderService {
       const visibleChildren = (childrenWithHandlers.length > 0 ? childrenWithHandlers : savedChildren)
         .filter((child) => isDispatchModuleVisibleForOrderType(child.moduleCode, workOrder.orderType));
       return {
-        workOrder: await this.loadDetail(workOrder.id),
+        workOrderId: workOrder.id,
         dispatchedOrders: toWorkOrderSubOrderItems(visibleChildren),
       };
     });
+    // 事务已提交，此时用外部仓储读取到的是持久化后的最新状态（processing）。
+    return {
+      workOrder: await this.loadDetail(result.workOrderId),
+      dispatchedOrders: result.dispatchedOrders,
+    };
   }
 
   async withdraw(
