@@ -77,7 +77,7 @@ if (-not $BackendOnly) {
 
 if (-not $FrontendOnly) {
   Write-Step 'Customer portal backend regression'
-  Invoke-InDir $Backend 'npm' @('test', '--', '--runTestsByPath', 'test/restore-business-import-migration.spec.ts', 'test/role-action-permission-baseline.spec.ts', 'test/import-permissions.spec.ts')
+  Invoke-InDir $Backend 'npm' @('test', '--', '--runTestsByPath', 'test/restore-business-import-migration.spec.ts', 'test/restore-business-create-migration.spec.ts', 'test/role-action-permission-baseline.spec.ts', 'test/import-permissions.spec.ts')
   Invoke-InDir $Backend 'npm' @('test', '--', '--runTestsByPath', 'test/customer-rules.service.spec.ts', 'test/customer-rules.controller.spec.ts', 'test/customer-portal-accounts.service.spec.ts', 'test/customer-portal-accounts.controller.spec.ts', 'test/customer-portal.service.spec.ts', 'test/customer-portal.salary-workbench.spec.ts', 'test/customer-portal-upload-compensation.spec.ts', 'test/customer-portal-permissions.spec.ts', 'test/admin-field-permission-conflict.spec.ts', 'test/completion-email.service.spec.ts', 'test/completion-email-delivery.service.spec.ts', 'test/dispatched-order.service.spec.ts', 'test/audit.interceptor.spec.ts')
   Invoke-InDir $Backend 'npm' @('test', '--', '--runTestsByPath', 'test/portal-rule-application.service.spec.ts', 'test/import.service.spec.ts', 'test/work-order.service.spec.ts')
   Write-Step 'Dispatch behavior net + SQL/CORS fixes (T03)'

@@ -3063,3 +3063,20 @@
 - **影响面自查（硬约束达成）**：后端代码零改动；状态机/枚举/DTO 零改动；`dispatch`、路由、`routeVisibility`、权限、乐观锁、筛选参数零改动；未覆盖 `docs/业务规则回归清单.md` 任何旧规则（§1 九状态标签、§13 显示文案、§38 退回目标与补料回环均原样保留），故无需同步修改该清单。
 - **commit**：见本条所在提交（`fix(ui):` 前缀）。
 - **未提交无关文件**：`.feature-edit-link`（submodule dirty 指针，按 §5.2 惯例保留不提交）。
+
+## 2026-09-15 · 恢复业务员主工单「新建单个工单」按钮权限（本地）
+
+- **现象**：业务员的入职主工单页与离职主工单页只剩「批量导入」，「新建」按钮消失。
+- **根因链**：
+  1. 迁移 `20260911001000-AddPortalBusinessRoutes` 往 `roleActionPermissions.v1.{beilun,out_of_province}` 写入**稀疏覆盖**（每角色仅 portal 两个 route 动作），而 `RoleActionPermissionService.getMatrix` 是 `{...DEFAULT, ...stored}` **整角色替换**语义——存矩阵中出现的角色会整体顶掉默认，抹掉了默认的全部 `work_order.*` 与 `route.work_order_*` 动作。
+  2. 补救迁移 `20260914220000-RestoreBusinessMainOrderImport` 只补回 `work_order.import` + `route.work_order_import`（所以导入按钮回来了），**漏补** `work_order.create` + `route.work_order_create`（新建按钮仍消失），且只修了 beilun 一个 scope。
+- **改动**：
+  1. 新增迁移 `backend/src/database/migrations/20260915000000-RestoreBusinessMainOrderCreate.ts`：按 09-14 同模式（FOR UPDATE、幂等去重、down 不回收），给 `business_group_member/business_group_leader/biz_member/biz_leader/salesperson` 五个角色补 `work_order.create` + `route.work_order_create`，**覆盖 beilun 与 out_of_province 两个 scope**。
+  2. 新增 `backend/test/restore-business-create-migration.spec.ts`：断言两 scope 增补正确、非目标角色不被动、幂等、无存储行时不创建。
+  3. `回归测试.ps1` 权限回归清单加入新 spec。
+- **如何验证**：
+  - 后端 `nest build` 通过（EXIT=0）。
+  - jest（项目 `test/jest-unit.json` 配置）新旧两个权限迁移 spec 共 5 用例全绿。
+  - `migration:run` 在本地库（127.0.0.1:5433/ticket_system）依次执行 09-14 四批 + 新 09-15 迁移成功；psql 直查 `system_settings` 确认两 scope × 5 角色的动作数组均含 `work_order.create`/`route.work_order_create`（beilun 同时含 import）。
+- **影响面自查**：前端零改动（按钮本就由 `allowedActions` 驱动）；不改 service 的整角色替换语义（属权限中心行为口径，改动超出本次需求）；不覆盖 `docs/业务规则回归清单.md` 任何旧规则。管理员后续在权限中心的手工配置不受影响（迁移只加不减、幂等）。
+- **服务器状态**：生产库已跑到 `RestoreBusinessMainOrderImport` 但**尚未**有本 09-15 create 修复——同步时随构建产物一并带过去（服务器形态跑的是 dist 迁移）。
