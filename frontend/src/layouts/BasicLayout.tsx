@@ -21,6 +21,7 @@ import {
 import { useUserStore } from '@/stores/userStore';
 import { logout as logoutApi } from '@/services/auth';
 import { canAccessPath } from '@/config/routeVisibility';
+import { SHOW_BUSINESS_SCOPE_SWITCHER } from '@/config/featureFlags';
 import { ROLE, userHasAnyCanonicalRole, type CanonicalRole } from '@/constants/roles';
 import { getNotifications, getUnreadCountByBucket, getNotificationBucket, markNotificationRead } from '@/services/notifications';
 import type { NotificationBucketKey, NotificationItem, UnreadCountByBucket } from '@/services/notifications';
@@ -906,6 +907,10 @@ const BasicLayout: React.FC = () => {
         </button>
       )}
       menuExtraRender={(layoutProps) => {
+        // 2026-09-15 应用户要求临时隐藏「业务范围（北仑/菜鸟）」区域；
+        // 恢复只需把 config/featureFlags.ts 的 SHOW_BUSINESS_SCOPE_SWITCHER 改回 true。
+        // 仅隐藏 UI 入口，路由/接口的业务范围隔离不受影响。
+        if (!SHOW_BUSINESS_SCOPE_SWITCHER) return null;
         const collapsed = Boolean(layoutProps.collapsed);
         const isOutOfProvince = effectiveBusinessScope === BUSINESS_SCOPE.OUT_OF_PROVINCE;
         const scopeLabel = isOutOfProvince ? '菜鸟' : '北仑';

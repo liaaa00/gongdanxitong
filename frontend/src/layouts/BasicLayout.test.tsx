@@ -6,6 +6,7 @@ import BasicLayout, { buildKeepAliveCacheKey } from './BasicLayout';
 import { markNotificationRead } from '@/services/notifications';
 import { KEEP_ALIVE_ROUTE_ACTIVATED_EVENT } from '@/utils/listPageState';
 import { DEFAULT_MATRIX } from '@/services/roleActionPermissions';
+import { SHOW_BUSINESS_SCOPE_SWITCHER } from '@/config/featureFlags';
 // Role codes are kept as literals in hoisted mocks.
 
 type TestMenuItem = { name?: string; path?: string; key?: string; children?: TestMenuItem[] };
@@ -219,7 +220,7 @@ describe('BasicLayout menu visibility', () => {
     expect(menuPaths()).not.toContain('/admin/import-templates');
   });
 
-  it('hides the scope area for ordinary Beilun users, locks fixed accounts, and lets authorized users switch', () => {
+  it('hides the scope area for ordinary Beilun users and keeps fixed out-of-province menus intact', () => {
     mockUserState.user = mockUserState.makeUser(['business_group_member'], 'beilun');
     const beilunView = renderLayout(['/dashboard']);
     expect(screen.getByTestId('layout-extra')).toBeEmptyDOMElement();
@@ -237,12 +238,26 @@ describe('BasicLayout menu visibility', () => {
     expect(menuText()).toContain('单项业务办理');
     expect(menuText()).not.toContain('增减员批量导入');
     expect(menuText()).not.toContain('我的工单');
-    expect(screen.getByText('菜鸟')).toBeInTheDocument();
-    expect(screen.queryByText('北仑')).not.toBeInTheDocument();
-    expect(screen.queryByText('省外')).not.toBeInTheDocument();
     expect(window.localStorage.getItem('business_scope_v1')).toBe('out_of_province');
     businessView.unmount();
 
+    if (SHOW_BUSINESS_SCOPE_SWITCHER) {
+      // 开关打开时：省外固定账号仍显示「菜鸟」范围 Tag（无切换 Segmented）
+      mockUserState.user = mockUserState.makeUser(['business_group_member'], 'out_of_province');
+      const tagView = renderLayout(['/out-of-province/increase']);
+      expect(screen.getByText('菜鸟')).toBeInTheDocument();
+      expect(screen.queryByText('北仑')).not.toBeInTheDocument();
+      tagView.unmount();
+    } else {
+      // 开关关闭时（2026-09-15 临时隐藏业务范围区域）：layout-extra 一律为空
+      mockUserState.user = mockUserState.makeUser(['business_group_member'], 'out_of_province');
+      const hiddenView = renderLayout(['/out-of-province/increase']);
+      expect(screen.getByTestId('layout-extra')).toBeEmptyDOMElement();
+      hiddenView.unmount();
+    }
+  });
+
+  it.runIf(SHOW_BUSINESS_SCOPE_SWITCHER)('lets authorized users switch scope when the feature flag is on', () => {
     window.localStorage.setItem('business_scope_v1', 'beilun');
     mockUserState.user = mockUserState.makeUser(['business_group_member', 'business_scope_switcher']);
     mockUserState.user.permissions = ['business_scope.switch', ...DEFAULT_MATRIX.business_group_member];
@@ -263,6 +278,17 @@ describe('BasicLayout menu visibility', () => {
     expect(menuText()).toContain('离职管理');
     expect(menuText()).toContain('在职管理');
     expect(menuText()).not.toContain('我的工单');
+  });
+
+  it.runIf(!SHOW_BUSINESS_SCOPE_SWITCHER)('hides the scope switcher even from authorized users while the feature flag is off', () => {
+    window.localStorage.setItem('business_scope_v1', 'beilun');
+    mockUserState.user = mockUserState.makeUser(['business_group_member', 'business_scope_switcher']);
+    mockUserState.user.permissions = ['business_scope.switch', ...DEFAULT_MATRIX.business_group_member];
+    renderLayout(['/dashboard']);
+
+    expect(screen.getByTestId('layout-extra')).toBeEmptyDOMElement();
+    expect(screen.queryByText('业务范围')).not.toBeInTheDocument();
+    expect(screen.queryByText('菜鸟')).not.toBeInTheDocument();
   });
 
   it('shows only approved welfare specialist menus in each business scope', () => {

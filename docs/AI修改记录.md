@@ -3080,3 +3080,14 @@
   - `migration:run` 在本地库（127.0.0.1:5433/ticket_system）依次执行 09-14 四批 + 新 09-15 迁移成功；psql 直查 `system_settings` 确认两 scope × 5 角色的动作数组均含 `work_order.create`/`route.work_order_create`（beilun 同时含 import）。
 - **影响面自查**：前端零改动（按钮本就由 `allowedActions` 驱动）；不改 service 的整角色替换语义（属权限中心行为口径，改动超出本次需求）；不覆盖 `docs/业务规则回归清单.md` 任何旧规则。管理员后续在权限中心的手工配置不受影响（迁移只加不减、幂等）。
 - **服务器状态**：生产库已跑到 `RestoreBusinessMainOrderImport` 但**尚未**有本 09-15 create 修复——同步时随构建产物一并带过去（服务器形态跑的是 dist 迁移）。
+
+## 2026-09-15 · 临时隐藏左侧菜单「业务范围（北仑/菜鸟）」区域（本地）
+
+- **需求**：业务员/管理员左侧菜单底部的「业务范围」区域（北仑/菜鸟 切换 Segmented、固定账号范围 Tag、折叠态图标按钮）整体先隐藏，待管理员通知后再恢复。
+- **改动**：
+  1. 新增 `frontend/src/config/featureFlags.ts`，导出 `SHOW_BUSINESS_SCOPE_SWITCHER = false` 特性开关（恢复只需改回 `true` 这一行）。
+  2. `frontend/src/layouts/BasicLayout.tsx` 的 `menuExtraRender` 开头加 `if (!SHOW_BUSINESS_SCOPE_SWITCHER) return null;`——展开/折叠两态、含省外固定 Tag 一并隐藏；注释说明仅隐藏 UI 入口。
+  3. `frontend/src/layouts/BasicLayout.test.tsx` 把原「授权用户切换」用例拆为 `it.runIf(SHOW_BUSINESS_SCOPE_SWITCHER)` 与 `it.runIf(!SHOW_BUSINESS_SCOPE_SWITCHER)` 两态自适应断言，普通北仑账号隐藏、省外菜单过滤等无关断言全部保留，开关翻转时测试不腐。
+- **为什么这样改**：用户要求「先隐藏、我让你打开的时候再打开」，特性开关是最小、可一键回退、不留死代码的方案；不动路由守卫/接口层的业务范围隔离（回归清单 §30「按权限显示」口径、§20/§32 数据隔离均保持有效，仅隐藏侧栏控件）。
+- **如何验证**：`BasicLayout.test.tsx` 41 passed | 1 skipped（开关关→切换器用例自动跳过）；`tsc --noEmit -p tsconfig.json` EXIT=0。
+- **影响面自查**：后端零改动；路由守卫、`business_scope` 数据隔离、登录跳转、localStorage scope 读写逻辑全部不变；仅侧栏底部一处 UI 控件的显隐；`BusinessScopeSwitcher` 组件本未被引用（死代码），不触碰。
