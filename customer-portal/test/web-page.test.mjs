@@ -31,6 +31,16 @@ test('phase-one customer portal exposes the agreed entry points', async () => {
   assert.doesNotMatch(page, /验证码登录|获取验证码|任意 6 位数字|不发送真实验证码|海曙未来科技有限公司/);
   assert.match(page, /<h1 id="onboarding-title">入职办理<\/h1>/);
   assert.match(page, /<h1 id="resignation-title">离职办理<\/h1>/);
+  assert.doesNotMatch(page, /<p class="eyebrow">入职办理<\/p>|<p class="eyebrow">离职办理<\/p>|<p class="eyebrow">薪资确认<\/p>/);
+  assert.doesNotMatch(page, /草稿已自动保存/);
+  assert.doesNotMatch(page, /<span class="customer-chip">草稿/);
+  assert.match(page, /id="onboarding-draft-badge" class="customer-chip draft-badge hidden"/);
+  assert.match(page, /id="resignation-draft-badge" class="customer-chip draft-badge hidden"/);
+  assert.match(page, /id="salary_type_display" class="static-readonly">按月<\/output><input type="hidden" id="salary_type" name="salary_type" value="按月"/);
+  assert.doesNotMatch(page, /提交离职办理|提交薪资确认|确认提交<\/button>|提交资料/);
+  assert.doesNotMatch(page, /salary-draft/);
+  assert.match(page, /id="resignation-save-draft"/);
+  assert.match(page, /id="onboarding-submit" class="primary-button hidden" type="submit">提交<\/button>/);
   assert.match(page, /薪资确认/);
   assert.doesNotMatch(page, /提交员工入职资料|提交员工离职资料|本月薪资信息确认|本月待确认/);
   assert.doesNotMatch(page, /reminder-title|本月提醒/);
@@ -141,8 +151,8 @@ test('customer-facing pages keep templates and hide internal operating rules', a
   assert.match(page, /id="download-resignation-template"/);
   assert.match(page, /先下载离职 Excel 模板/);
   assert.match(page, /function downloadStandardTemplate\(businessType\)/);
-  assert.match(page, /最近200条记录/);
-  assert.doesNotMatch(page, /近两年记录|账单日前 3 个工作日提醒客户|前 2 个工作日再次催办客户|前 1 个工作日升级提醒业务员/);
+  assert.match(page, /最近一年，最多\s*200\s*条/);
+  assert.doesNotMatch(page, /最近200条记录|近两年记录|账单日前 3 个工作日提醒客户|前 2 个工作日再次催办客户|前 1 个工作日升级提醒业务员/);
   assert.doesNotMatch(page, /附件统一走共享邮箱|不绑定工单附件 ID|内部客户规则已自动带入默认规则|离职证明由后台|业务员审核流程/);
   assert.ok(page.includes('onboarding-change-mode'));
   assert.ok(page.includes('resignation-change-mode'));

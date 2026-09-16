@@ -16,7 +16,7 @@ const FIELD_NAMES: Record<string, string> = {
   employee_name: '姓名', id_card_no: '身份证号码', gender: '性别',
   birth_date: '出生日期', age: '年龄', household_type: '户籍性质', ethnicity: '民族',
   education: '学历', graduation_school: '毕业院校', major: '专业', graduation_date: '毕业时间',
-  mobile: '移动电话', email: '电子邮件', current_address: '现住地址', household_address: '户籍地址', postal_code: '邮编',
+  mobile: '移动电话', email: '电子邮件', current_address: '现住址（文书送达地址）', household_address: '户籍地址', postal_code: '邮编',
   contract_term_type: '合同期限形式', contract_term: '合同期限', contract_start_date: '合同开始日期', contract_end_date: '合同终止日期',
   probation_start_date: '试用期开始日期', probation_months: '试用期(月)', probation_end_date: '试用期结束日期',
   work_city: '工作城市', work_hour_system: '工时制', work_cycle: '工作制周期',

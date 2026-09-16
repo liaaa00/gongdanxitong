@@ -344,9 +344,9 @@ export class CustomerPortalService {
   async progress(input: PortalInput) {
     const session = await this.session(input, false);
     const allowed = businessTypesForPermissions(session.businessPermissions);
-    const since = new Date();
-    since.setMonth(since.getMonth() - 6);
-    const rows = await this.submissions.find({ where: {customerId:session.customer.id,businessType:In(allowed),createdAt:MoreThanOrEqual(since)},order:{createdAt:'DESC'},take:200 });
+    const twelveMonthsAgo = new Date();
+    twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+    const rows = await this.submissions.find({ where: {customerId:session.customer.id,businessType:In(allowed),createdAt:MoreThanOrEqual(twelveMonthsAgo)},order:{createdAt:'DESC'},take:200 });
     const orders = rows.some((row)=>row.workOrderId) ? await this.orders.find({where:{id:In(rows.map((row)=>row.workOrderId).filter(Boolean)),customerId:session.customer.id},relations:{dispatchedOrders:true}}) : [];
     const mails = rows.length ? await this.mails.find({where:[{portalSubmissionId:In(rows.map((row)=>row.id))},...(orders.length?[{workOrderId:In(orders.map((row)=>row.id)),customerId:session.customer.id}]:[])],order:{createdAt:'DESC'}}) : [];
     const list = rows.map((row)=> {

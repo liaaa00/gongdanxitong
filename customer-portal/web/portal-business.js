@@ -2,6 +2,100 @@ let activePortalSession = null; let portalSessionGeneration = 0;
 const portalSchemas = {};
 const pendingPortalRequests = new Map();
 
+/* ---- portal drafts: real localStorage persistence, namespaced per account+business+subject ---- */
+const PORTAL_DRAFT_PREFIX = 'portalDraftStore:';
+const PORTAL_DRAFT_SUBJECT = 'primary'; // 本期主体固定主主体；多主体批次改为真实主体标识即可复用 key 结构
+function portalDraftId() { return activePortalSession?.account?.id || 'anon'; }
+function portalDraftKeyFor(business) { return PORTAL_DRAFT_PREFIX + portalDraftId() + ':' + business + ':' + PORTAL_DRAFT_SUBJECT; }
+const DraftStore = {
+  load(business) {
+    try {
+      const raw = localStorage.getItem(portalDraftKeyFor(business));
+      if (!raw) return null;
+      const value = JSON.parse(raw);
+      return value && typeof value === 'object' && value.fields && typeof value.fields === 'object' ? value : null;
+    } catch { return null; }
+  },
+  save(business, fields, files) {
+    const record = { fields, fileNames: (files || []).map((name) => String(name)), savedAt: Date.now() };
+    try {
+      localStorage.setItem(portalDraftKeyFor(business), JSON.stringify(record));
+      return record;
+    } catch {
+      try { localStorage.removeItem(portalDraftKeyFor(business)); } catch {}
+      return null;
+    }
+  },
+  clear(business) { try { localStorage.removeItem(portalDraftKeyFor(business)); } catch {} },
+};
+function formatDraftTime(savedAt) {
+  const stamp = Number(savedAt);
+  if (!Number.isFinite(stamp)) return '';
+  const date = new Date(stamp);
+  const pad = (value) => String(value).padStart(2, '0');
+  return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate()) + ' ' + pad(date.getHours()) + ':' + pad(date.getMinutes());
+}
+function markDraftSaved(business) {
+  const badge = document.getElementById(business + '-draft-badge');
+  const time = document.getElementById(business + '-draft-time');
+  const saved = DraftStore.load(business);
+  if (!badge || !saved) return false;
+  if (time) time.textContent = formatDraftTime(saved.savedAt);
+  badge.classList.remove('hidden');
+  return true;
+}
+function saveDraftFromForm(business) {
+  const snapshotFn = (typeof window !== 'undefined' && typeof window['portalDraftSnapshot_' + business] === 'function')
+    ? window['portalDraftSnapshot_' + business] : null;
+  const snapshot = snapshotFn ? snapshotFn() : null;
+  if (!snapshot) return false;
+  const saved = DraftStore.save(business, snapshot.fields, snapshot.fileNames);
+  return saved ? markDraftSaved(business) : false;
+}
+function clearDraftAfterSubmit(business) {
+  DraftStore.clear(business);
+  const badge = document.getElementById(business + '-draft-badge');
+  if (badge) badge.classList.add('hidden');
+}
+function hideDraftRestoreCard(business) {
+  const card = document.getElementById(business + '-draft-restore');
+  if (card) { card.innerHTML = ''; card.classList.add('hidden'); }
+}
+function offerPortalDraft(business) {
+  const saved = DraftStore.load(business);
+  if (!saved) return false;
+  const apply = (typeof window !== 'undefined' && typeof window['applyPortalDraft_' + business] === 'function')
+    ? window['applyPortalDraft_' + business] : null;
+  const time = formatDraftTime(saved.savedAt);
+  const card = document.getElementById(business + '-draft-restore');
+  if (!card) return false;
+  card.innerHTML = '<span>检测到未提交的草稿（保存时间 ' + escapeHtml(time || '未知') + '）。附件文件不会保存草稿，需重新上传'
+    + (saved.fileNames && saved.fileNames.length ? '：' + escapeHtml(saved.fileNames.join('、')) : '') + '。</span>'
+    + '<span class="draft-restore-actions"><button class="primary-button" type="button" data-draft-apply="' + business + '">继续填写草稿</button>'
+    + '<button class="quiet-button" type="button" data-draft-discard="' + business + '">放弃草稿，重新填写</button></span>';
+  card.classList.remove('hidden');
+  card.querySelectorAll('[data-draft-apply]').forEach((button) => button.addEventListener('click', () => {
+    if (apply) apply(saved);
+    hideDraftRestoreCard(business);
+    markDraftSaved(business);
+    showToast('草稿已恢复，请核对内容（附件需重新上传）。');
+  }));
+  card.querySelectorAll('[data-draft-discard]').forEach((button) => button.addEventListener('click', () => {
+    DraftStore.clear(business);
+    hideDraftRestoreCard(business);
+    const badge = document.getElementById(business + '-draft-badge');
+    if (badge) badge.classList.add('hidden');
+    showToast('已放弃草稿，请重新填写。');
+  }));
+  return true;
+}
+let draftSaveTimer = 0;
+function scheduleDraftSave(business) {
+  window.clearTimeout(draftSaveTimer);
+  draftSaveTimer = window.setTimeout(() => { saveDraftFromForm(business); }, 800);
+}
+/* ---- end portal drafts ---- */
+
 class PortalSessionChangedError extends Error {
   constructor() { super('portal session changed'); this.code = 'PORTAL_SESSION_CHANGED'; }
 }
@@ -172,10 +266,9 @@ async function refreshPortalProgress(){
   const rows=result.list.map((row,index)=>{
     const done=row.status==='completed';
     const values=[row.requestNo,row.subject,names[row.businessType],String(row.createdAt).slice(0,10)];
-    const mail=row.completionEmailStatus==='sent'?'结果邮件已发送':row.completionEmailStatus==='failed'?'结果邮件待重试':row.completionEmailStatus?'结果邮件待发送':'';
     const correction = row.status === 'needs_correction';
     const action = correction && row.businessType !== 'salary' ? '<button type="button" class="quiet-button progress-correction" data-correction-index="'+index+'">修改并重新提交</button>' : '';
-    return {html:values.map((value)=>'<td>'+escapeHtml(value||'-')+'</td>').join('')+'<td><span class="status '+(done?'done':'processing')+'">'+escapeHtml(labels[row.status]||'办理中')+'</span></td>',result:[row.result,mail].filter(Boolean).join('；'),done,action,row};
+    return {html:values.map((value)=>'<td>'+escapeHtml(value||'-')+'</td>').join('')+'<td><span class="status '+(done?'done':'processing')+'">'+escapeHtml(labels[row.status]||'办理中')+'</span></td>',result:row.result,done,action,row};
   });
   document.getElementById('progress-rows').innerHTML=rows.map((row)=>'<tr data-progress-status="'+(row.done?'done':'processing')+'">'+row.html+'<td>'+escapeHtml(row.result||'等待办理结果')+(row.action||'')+'</td></tr>').join('')||'<tr><td colspan="6">暂无办理记录</td></tr>';
   window.portalCorrectionRows = result.list;
@@ -242,7 +335,7 @@ function beginPortalCorrection(row){
 
 async function submitOnboarding(){
   if(portalState.submittingOnboarding)return;
-  const button=document.getElementById('onboarding-next');portalState.submittingOnboarding=true;button.disabled=true;
+  const button=document.getElementById('onboarding-next');const submitButton=document.getElementById('onboarding-submit');portalState.submittingOnboarding=true;button.disabled=true;if(submitButton)submitButton.disabled=true;
   const generation=portalSessionGeneration; const accountId=activePortalSession?.account?.id; const token=portalLinkToken();
   try{
     const fields=onboardingPayload();
@@ -252,8 +345,24 @@ async function submitOnboarding(){
     const result=await portalCall(correctionId?'/portal/resubmit':'/portal/onboarding',{fields,files,...(correctionId?{submissionId:correctionId,businessType:'onboarding'}:{})},correctionId?'resubmit-'+correctionId:'onboarding');
     assertPortalSession(generation, accountId, token);
     if(correctionId)clearPortalCorrection(); onboardingFeedback('资料已受理，编号：'+result.workOrderNo+'；可在办理进度查看结果。',false);
+    clearDraftAfterSubmit('onboarding'); resetOnboardingForm();
     await refreshPortalProgress();showToast('入职资料已受理');
-  }catch(error){if(!isPortalSessionChanged(error))onboardingFeedback(error.message,true);}finally{portalState.submittingOnboarding=false;button.disabled=false;}
+  }catch(error){if(!isPortalSessionChanged(error))onboardingFeedback(error.message,true);}finally{portalState.submittingOnboarding=false;button.disabled=false;if(submitButton)submitButton.disabled=portalState.onboardingStep!==4;}
+}
+
+function resetOnboardingForm(){
+  const form=document.getElementById('onboarding-form');
+  if(form)form.reset();
+  portalState.onboardingFiles=[]; renderOnboardingAttachments();
+  portalState.onboardingRequestId=null; portalState.importFileId=null; portalState.importMapping={};
+  updateContractDates(); updateProbationDates();
+  setOnboardingStep(1);
+  document.getElementById('onboarding-prev').disabled=false;
+  const next=document.getElementById('onboarding-next'); next.disabled=false; next.textContent='下一步';
+  const submit=document.getElementById('onboarding-submit'); if(submit){submit.disabled=false;submit.classList.remove('hidden');}
+  const badge=document.getElementById('onboarding-draft-badge'); if(badge)badge.classList.add('hidden');
+  hideDraftRestoreCard('onboarding');
+  resetOnboardingMode();
 }
 
 async function submitResignation(){
@@ -271,7 +380,9 @@ async function submitResignation(){
     const files=await filesForPortal(portalState.resignationFiles); assertPortalSession(generation, accountId, token);
     const result=await portalCall(correctionId?'/portal/resubmit':'/portal/resignation',{fields,files,...(correctionId?{submissionId:correctionId,businessType:'resignation'}:{})},correctionId?'resubmit-'+correctionId:'resignation');
     assertPortalSession(generation, accountId, token);
-    if(correctionId)clearPortalCorrection(); box.textContent='资料已受理，编号：'+result.workOrderNo;box.className='form-feedback visible';await refreshPortalProgress();
+    if(correctionId)clearPortalCorrection(); box.textContent='资料已受理，编号：'+result.workOrderNo;box.className='form-feedback visible';
+    clearDraftAfterSubmit('resignation'); hideDraftRestoreCard('resignation');
+    await refreshPortalProgress();
   }catch(error){if(!isPortalSessionChanged(error)){box.textContent=error.message;box.className='form-feedback visible error';}}finally{button.disabled=false;}
 }
 

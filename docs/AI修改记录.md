@@ -3119,3 +3119,17 @@
   - `/api/health`=200；后端 healthy；新前端包「业务范围」文案文件数 2→1（A/B 对比回滚镜像证实隐藏生效，剩余 1 处为保留的权限页等非菜单入口文案）。
 - **回滚路径**：`docker tag rollback + compose up` 即回旧镜像；数据可 `pg_restore` pre-migration.dump；源码在 backup-src/。
 - **影响面自查**：未上传任何本地数据库/seed/数据文件（本地仅 126 主单 vs 服务器 288，误传会覆盖生产，已通过仅传 src 文件+哈希清单杜绝）；省外数据隔离、权限中心手工配置等旧规则均不变。
+
+## 2026-09-16 · 门户修改更新批次1：字段口径后端落地（本地）
+
+- **范围**：①户籍地址 `household_address` 必填→非必填；②现住址显示名"现住地址"→"现住址（文书送达地址）"并从"基本信息"挪到"合同与用工信息"分组（编码不动、`need_onboarding_contact=否` 时条件必填保持、help_text 按字段表补齐）；③学历 `education` 6 项→8 项（"高中/职高/中专"合并项拆为 高中/职高/中专），历史工单已存合并值不强改、兼容读取；④客户门户办理进度窗口回看 12 个月覆盖原 6 个月实现，保留 take:200 上限。门户草稿、customer-portal/web UI（index.html / portal-business.js，另一 Agent 并行处理中）及多主体账号均不在本条范围；省外"现居住地址"口径独立未动。
+- **为什么这样改**：用户 2026-09-16 对四项口径拍板（覆盖旧规则，§17 已同步），并以其提供的字段表为对账事实源；seed 对已存在记录是 continue，运行时 `field_configs` 变更必须走显式 migration，新装环境靠 seed 同步保持一致。
+- **落点**：
+  1. 新增迁移 `backend/src/database/migrations/20260916000100-AdjustPortalFieldVocabulary.ts`（三条 UPDATE + 可回滚 down，不触碰历史工单 `extra_data` 的 education 旧值）。
+  2. `backend/src/database/seeds/seed-fields.ts` 同步三处（分组映射、必填开关、显示名/帮助文案/学历选项），保证新装环境一致。
+  3. 后端别名字典与文案：`imports/field-validation.service.ts`、`ai/ai-mapping.service.ts`（HEADER_ALIASES.current_address 增"现住址（文书送达地址）""现住址"、保留"现住地址"历史别名）、`imports/excel-parser.service.ts`（KNOWN_FIELD_LABELS 同步新旧名）、`work-orders/work-order-validation.service.ts`（错误文案新名）、`notifications/notification-display.util.ts`（FALLBACK 标签新名）；`customer-portal/customer-portal.service.ts` progress() setMonth(-6)→(-12)。
+  4. 前端 fallback 5 文件：`services/fields.ts`（现住址新名/新组/helpText、户籍非必填、学历 8 项）、`services/workOrders.ts`（fallback 与表头映射字典：新名为主、旧名"现住地址"留兼容 key）、`services/fieldPermissions.ts`（标签新名）、`utils/detailViewTemplateLayout.ts`（详情默认模板现住址挪"合同信息"组）、`pages/InServiceOrders/outOfProvince.ts`（历史别名数组增"现住址（文书送达地址）"）。
+  5. 测试：`backend/test/import.service.spec.ts` 户籍空值断言反向改写（空可提交）+ 新增旧表头"现住地址"经别名仍映射成功用例；`backend/test/customer-portal.service.spec.ts` 新增 progress 窗口断言（11 个月前可见、13 个月不可见、since=now-12M、take:200）。
+- **如何验证**：backend `npm run build` 绿；6 个重点 spec（import.service / customer-portal.service / module-fields-baseline / seed-field-permissions / work-order-validation / import-template-config）117/117 通过；补跑 import-template.service、excel-parser.service、ai-mapping.service 全绿。`test/onboarding-import-template-seed.spec.ts` L65 `contract_term` 断言失败为**预存问题**：本批未触碰该 spec 与 `seed-import-template-fields.ts`（该列早已移出模板列序），已用 stash→clean HEAD 复现→pop 验尸确认与本批无关，留给模板负责人处理，不顺手"修好"。
+- **回归与前端实测记录**（根目录 `回归测试.ps1 -SkipBuild`，全程 ≥60 分钟）：前端 21 vitest 文件 21/21 全过（routeVisibility 33 / BasicLayout 等）；后端 6 个 nest jest 批次 5+13+3+3+7 = **31 套件全过**（含本批新增断言③④）；customer-portal npm test 49 用例 48/1 失败 — 失败为 `customer-portal/test/web-page.test.mjs:1:1` 报 `SyntaxError: Invalid regular expression flags`，属另一 Agent 并行维护的 portal 范围（红线内）预存问题，与本批字段口径无关。Frontend 字段相关 spec：fields.test.ts 1 失败（`keeps base and probation salary as text…` 断言 probation_salary.conditional_required，与本批"现住/户籍/学历"口径无关，属旧测试陈旧）；outOfProvince.test / BasicLayout.test / routeVisibility.test **3 套件 78 passed | 1 skipped**（"现住地址"字面量在本批相关 vitest 中无失败），前端"现住地址"字面量仅落 e2e/import-smoke.spec.ts（不在日常回归入口）。脚本整体退出码 1 = portal web-page.test.mjs 预存失败单点拉低，与本批字段改动无关。
+

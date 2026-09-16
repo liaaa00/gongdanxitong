@@ -98,11 +98,11 @@ export function buildDetailTemplateFieldList(
 const DEFAULT_DETAIL_FIELD_GROUPS: DetailTemplateFieldGroup[] = [
   {
     title: '基础信息',
-    fieldCodes: ['customer_name', 'customer_code', 'outsource_type', 'position', 'position_type', 'employee_name', 'id_card_type', 'id_card_no', 'gender', 'birth_date', 'age', 'household_type', 'ethnicity', 'marital_status', 'mobile', 'email', 'current_address', 'household_address', 'postal_code', 'business_mode', 'employee_type'],
+    fieldCodes: ['customer_name', 'customer_code', 'outsource_type', 'position', 'position_type', 'employee_name', 'id_card_type', 'id_card_no', 'gender', 'birth_date', 'age', 'household_type', 'ethnicity', 'marital_status', 'mobile', 'email', 'household_address', 'postal_code', 'business_mode', 'employee_type'],
   },
   {
     title: '合同信息',
-    fieldCodes: ['contract_term_type', 'contract_term', 'contract_start_date', 'contract_end_date', 'probation_start_date', 'probation_months', 'probation_end_date', 'work_city', 'work_hour_system', 'work_cycle', 'need_company_contract', 'need_esign', 'esign_platform', 'contract_subject', 'contract_template', 'special_contract_template_name', 'need_contract_urge'],
+    fieldCodes: ['contract_term_type', 'contract_term', 'contract_start_date', 'contract_end_date', 'probation_start_date', 'probation_months', 'probation_end_date', 'work_city', 'work_hour_system', 'work_cycle', 'current_address', 'need_company_contract', 'need_esign', 'esign_platform', 'contract_subject', 'contract_template', 'special_contract_template_name', 'need_contract_urge'],
   },
   {
     title: '薪资与发薪',

@@ -49,7 +49,7 @@ const fields = [
     { field: 'need_company_contract', op: 'EQ', value: '是' },
     { field: 'need_esign', op: 'EQ', value: '2.否' },
   ] } }),
-  field({ fieldCode: 'household_address', fieldName: '户籍地址', isRequired: true, defaultRequired: true }),
+  field({ fieldCode: 'household_address', fieldName: '户籍地址', isRequired: false, defaultRequired: false }),
   field({ fieldCode: 'household_type', fieldName: '户籍性质', fieldType: FieldType.DROPDOWN, dropdownOptions: ['农业', '非农业'] }),
   field({ fieldCode: 'need_onboarding_contact', fieldName: '入职材料是否需要集约收集', fieldType: FieldType.DROPDOWN, isRequired: true, defaultRequired: true, dropdownOptions: ['是', '否'] }),
   field({ fieldCode: 'bank_name', fieldName: '开户银行' }),
@@ -249,6 +249,34 @@ describe('ImportFieldValidationService scenarios', () => {
 
     expect(result.ok).toBe(false);
     expect(result.errors).toContainEqual(expect.objectContaining({ fieldCode: 'current_address', reason: 'required' }));
+  });
+
+  // 批次1口径（2026-09-16）：current_address 显示名改为「现住址（文书送达地址）」，
+  // 历史客户 Excel 旧表头「现住地址」必须仍能通过 HEADER_ALIASES 自动匹配到新列名 mapping。
+  it('maps legacy header 现住地址 onto current_address after the display-name change', async () => {
+    const renamedFields = fields.map((item) =>
+      item.fieldCode === 'current_address'
+        ? ({ ...item, fieldName: '现住址（文书送达地址）' } as FieldConfig)
+        : item,
+    );
+    const renamedMapping: MappingItemInput[] = mapping.map((item) =>
+      item.fieldCode === 'current_address'
+        ? { ...item, header: '现住址（文书送达地址）' }
+        : item,
+    );
+    const result = await service.validateRow({
+      rowNo: 3,
+      // raw 只有旧表头列「现住地址」（历史客户文件），mapping 头是新模板名
+      raw: validRow({ 现住地址: '浙江杭州文三路2号' }),
+      mapping: renamedMapping,
+      fields: renamedFields,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.normalized).toMatchObject({ current_address: '浙江杭州文三路2号' });
+    expect(result.warnings).toContainEqual(
+      expect.objectContaining({ fieldCode: 'current_address', code: 'header_alias' }),
+    );
   });
 
   it('does not require onboarding contact conditional fields when need_onboarding_contact is no', async () => {
@@ -616,7 +644,8 @@ describe('ImportFieldValidationService scenarios', () => {
     expect(result.errors).toContainEqual(expect.objectContaining({ fieldCode: 'contract_template', reason: 'required' }));
   });
 
-  it('keeps other missing required fields as required errors', async () => {
+  // 批次1口径（2026-09-16）：户籍地址改为非必填，空值可提交；同时保留对其他必填字段的拦截。
+  it('accepts a row when household_address is empty (批次1: 户籍地址改为非必填)', async () => {
     const result = await service.validateRow({
       rowNo: 15,
       raw: validRow({ 姓名: '郑十一', 户籍地址: '' }),
@@ -624,8 +653,20 @@ describe('ImportFieldValidationService scenarios', () => {
       fields,
     });
 
+    expect(result.ok).toBe(true);
+    expect(result.errors).not.toContainEqual(expect.objectContaining({ fieldCode: 'household_address' }));
+  });
+
+  it('keeps other missing required fields as required errors', async () => {
+    const result = await service.validateRow({
+      rowNo: 15,
+      raw: validRow({ 姓名: '郑十一', 入职材料是否需要集约收集: '' }),
+      mapping,
+      fields,
+    });
+
     expect(result.ok).toBe(false);
-    expect(result.errors).toContainEqual(expect.objectContaining({ fieldCode: 'household_address', reason: 'required' }));
+    expect(result.errors).toContainEqual(expect.objectContaining({ fieldCode: 'need_onboarding_contact', reason: 'required' }));
   });
 
   it('uses import template configuration for candidate fields and row validation', async () => {

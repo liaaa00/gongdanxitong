@@ -31,7 +31,7 @@ const STRICT_REQUIRED_FIELD_NAMES: Record<string, string> = {
   customer_name: '客户名称',
   customer_code: '客户代码',
   province: '省份',
-  current_address: '现住地址',
+  current_address: '现住址（文书送达地址）',
   social_insurance_result: '社保是否办结',
   medical_insurance_result: '医保是否办结',
   housing_fund_result: '公积金是否办结',

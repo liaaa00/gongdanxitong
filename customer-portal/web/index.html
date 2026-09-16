@@ -171,6 +171,13 @@
     .form-feedback { display: none; margin: 18px 28px 0; padding: 12px 14px; border: 1px solid #b9dcce; border-left: 4px solid var(--green); border-radius: 5px; color: #1e624a; background: var(--green-soft); font-size: 14px; }
     .form-feedback.visible { display: block; }
     .form-feedback.error { border-color: #e9b9b4; border-left-color: var(--danger); color: #8a3229; background: var(--danger-soft); }
+    .static-readonly { display: flex; align-items: center; min-height: 42px; padding: 10px 13px; border: 1px solid #dbe4ee; border-radius: 10px; color: #5d7188; background: #f7faff; font-size: 14px; }
+    .page-head-side { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+    .draft-badge { border-color: #bfe3d2; color: #1e624a; background: #f2fbf6; }
+    .draft-restore-card { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin: 18px 0 0; padding: 14px 18px; border: 1px solid #f0d9a8; border-left: 4px solid #c68825; border-radius: 12px; color: #6d5b3f; background: #fff9ec; font-size: 13px; line-height: 1.6; }
+    .draft-restore-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+    .draft-restore .primary-button { min-height: 36px; padding: 0 14px; font-size: 13px; }
+    .draft-restore .quiet-button { min-height: 36px; padding: 0 12px; font-size: 13px; }
     .condition-row { display: none; }
     .condition-row.visible { display: grid; }
 
@@ -754,9 +761,10 @@
 
         <section id="onboarding" class="page" aria-labelledby="onboarding-title">
           <div class="page-head">
-            <div><p class="eyebrow">入职办理</p><h1 id="onboarding-title">入职办理</h1><p>按步骤填写员工资料，提交后可在办理进度查看状态。</p></div>
-            <span class="customer-chip">草稿已自动保存</span>
+            <div><h1 id="onboarding-title">入职办理</h1><p>按步骤填写员工资料，提交后可在办理进度查看状态。</p></div>
+            <span id="onboarding-draft-badge" class="customer-chip draft-badge hidden" role="status">草稿已保存 · <span id="onboarding-draft-time"></span></span>
           </div>
+          <div id="onboarding-draft-restore" class="draft-restore-card hidden" role="status"></div>
           <div id="onboarding-mode-picker" class="mode-picker" aria-label="选择入职录入方式"><h2>先选择录入方式</h2><p>批量导入必须使用系统提供的标准 Excel 模板；少量员工可选择单条录入。</p><div class="mode-picker-actions"><button class="mode-card" type="button" data-onboarding-mode="bulk"><strong>批量导入</strong><span>下载标准模板后一次提交多名员工</span></button><button class="mode-card" type="button" data-onboarding-mode="single"><strong>单条录入</strong><span>按四步向导填写一名员工资料</span></button></div></div>
           <div id="onboarding-tools" class="onboarding-tools hidden" aria-label="入职办理快捷工具">
             <div class="mode-change-row"><button id="onboarding-change-mode" class="quiet-button" type="button">返回选择录入方式</button></div>
@@ -769,14 +777,6 @@
                 <div class="import-actions"><button id="preview-import" class="secondary-button" type="button">上传</button><button id="confirm-import" class="primary-button hidden" type="button">确认导入</button></div>
                 <p id="import-status" class="tool-status">请先下载模板，再上传文件。</p>
                 <div id="import-preview" class="import-preview hidden"></div>
-              </div>
-            </section>
-            <section id="onboarding-attachment-card" class="tool-card attachment-card" aria-labelledby="attachment-title">
-              <header><div class="tool-card-heading"><span class="tool-kicker">材料补充</span><div class="tool-title-row"><span class="tool-icon" aria-hidden="true">↑</span><div><h3 id="attachment-title">入职附件上传</h3><p>身份证明、上家单位离职证明等材料可随本次申请一起提交。</p></div></div></div><span class="tool-badge">最多 5 个</span></header>
-              <div class="tool-card-body">
-                <label class="file-dropzone" id="attachment-dropzone"><span class="file-dropzone-icon" aria-hidden="true">＋</span><span class="file-dropzone-copy"><strong id="attachment-file-name" class="file-drop-name">选择附件材料</strong><small class="file-drop-hint">支持 PDF、图片、Office 和 ZIP 格式</small></span><input id="onboarding-attachments" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,.zip"></label>
-                <ul id="onboarding-attachment-list" class="attachment-list" aria-live="polite"><li class="tool-meta">尚未选择附件</li></ul>
-                <p id="attachment-status" class="tool-status">附件会随本次入职申请一起提交。</p>
               </div>
             </section>
           </div>
@@ -818,7 +818,7 @@
                 <div class="field"><label for="probation_start_date">试用期开始日期</label><input id="probation_start_date" name="probation_start_date" type="date"></div>
                 <div class="field" id="probation-end-row"><label for="probation_end_date">试用期结束日期</label><input id="probation_end_date" name="probation_end_date" type="date"></div>
                 <div class="field"><label for="working_hours"><span class="required">*</span>工时制</label><select id="working_hours" name="working_hours" required><option value="">请选择</option><option>标准工时</option><option>综合工时</option><option>不定时工时</option></select></div>
-                <div class="field"><label for="salary_type"><span class="required">*</span>工资形式</label><select id="salary_type" name="salary_type" required><option value="按月">按月</option></select></div>
+                <div class="field"><label for="salary_type_display"><span class="required">*</span>工资形式</label><output id="salary_type_display" class="static-readonly">按月</output><input type="hidden" id="salary_type" name="salary_type" value="按月"><small class="field-help">当前主体仅支持“按月”计薪；如有其他形式请联系客服。</small></div>
                 <div class="field"><label for="base_salary"><span class="required">*</span>基本工资</label><input id="base_salary" name="base_salary" type="text" maxlength="500" required placeholder="可填写数字、货币格式或文字说明"></div>
                 <div class="field"><label for="other_salary">其他工资项目（如有）</label><input id="other_salary" name="other_salary" type="text" maxlength="1000" placeholder="例如：绩效工资按考核结果发放"></div>
                 <div class="field condition-row" id="probation-salary-row"><label for="probation_salary">试用期基本工资</label><input id="probation_salary" name="probation_salary" type="text" maxlength="500" placeholder="可填写数字、货币格式或文字说明"></div>
@@ -852,23 +852,30 @@
               <button id="onboarding-prev" class="secondary-button" type="button">上一步</button>
               <div class="form-actions-right">
                 <button id="onboarding-next" class="primary-button" type="button">下一步</button>
+                <button id="onboarding-submit" class="primary-button hidden" type="submit">提交</button>
               </div>
             </div>
           </form>
+          <section id="onboarding-attachment-card" class="tool-card attachment-card hidden" aria-labelledby="attachment-title">
+            <header><div class="tool-card-heading"><span class="tool-kicker">材料补充</span><div class="tool-title-row"><span class="tool-icon" aria-hidden="true">↑</span><div><h3 id="attachment-title">入职附件上传</h3><p>身份证明、上家单位离职证明等材料可随本次申请一起提交。</p></div></div></div><span class="tool-badge">最多 5 个</span></header>
+            <div class="tool-card-body">
+              <label class="file-dropzone" id="attachment-dropzone"><span class="file-dropzone-icon" aria-hidden="true">＋</span><span class="file-dropzone-copy"><strong id="attachment-file-name" class="file-drop-name">选择附件材料</strong><small class="file-drop-hint">支持 PDF、图片、Office 和 ZIP 格式</small></span><input id="onboarding-attachments" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,.zip"></label>
+              <ul id="onboarding-attachment-list" class="attachment-list" aria-live="polite"><li class="tool-meta">尚未选择附件</li></ul>
+              <p id="attachment-status" class="tool-status">附件会随本次入职申请一起提交。</p>
+            </div>
+          </section>
         </section>
 
         <section id="resignation" class="page" aria-labelledby="resignation-title">
-          <div class="page-head"><div><p class="eyebrow">离职办理</p><h1 id="resignation-title">离职办理</h1><p>填写员工离职信息，提交后可在办理进度查看状态。</p></div><span class="customer-chip">支持单条和批量办理</span></div>
+          <div class="page-head"><div><h1 id="resignation-title">离职办理</h1><p>填写员工离职信息，提交后可在办理进度查看状态。</p></div><span class="customer-chip">支持单条和批量办理</span></div>
+          <div id="resignation-draft-badge" class="customer-chip draft-badge hidden" role="status" style="margin:-14px 0 18px 0">草稿已保存 · <span id="resignation-draft-time"></span></div>
+          <div id="resignation-draft-restore" class="draft-restore-card hidden" role="status"></div>
           <div id="resignation-mode-picker" class="mode-picker" aria-label="选择离职办理方式"><h2>先选择办理方式</h2><p>批量办理必须使用系统提供的标准离职 Excel 模板；少量员工可选择单条录入。</p><div class="mode-picker-actions"><button class="mode-card" type="button" data-resignation-mode="bulk"><strong>批量导入</strong><span>下载标准模板后一次提交多名员工</span></button><button class="mode-card" type="button" data-resignation-mode="single"><strong>单条录入</strong><span>按表单填写一名员工的离职资料</span></button></div></div>
           <div id="resignation-tools" class="onboarding-tools hidden" aria-label="离职办理工具">
             <div class="mode-change-row"><button id="resignation-change-mode" class="quiet-button" type="button">返回选择办理方式</button></div>
             <section id="resignation-import-card" class="tool-card import-card" aria-labelledby="resignation-import-title">
               <header><div class="tool-card-heading"><span class="tool-kicker">批量办理</span><div class="tool-title-row"><span class="tool-icon" aria-hidden="true">▦</span><div><h3 id="resignation-import-title">离职标准 Excel 批量导入</h3><p>先下载模板并填写离职资料，再上传表格完成批量提交。</p></div></div></div><span class="tool-badge">标准模板</span></header>
               <div class="tool-card-body"><div class="template-download"><div class="template-download-copy"><strong>先下载离职 Excel 模板</strong><span>请使用下载的表头填写，上传后将检查系统字段规则。</span></div><button id="download-resignation-template" class="quiet-button" type="button">下载模板</button></div><div class="import-actions"><label class="file-dropzone" id="resignation-excel-dropzone"><span class="file-dropzone-icon" aria-hidden="true">XLS</span><span class="file-dropzone-copy"><strong id="resignation-excel-file-name" class="file-drop-name">选择离职 Excel 文件</strong><small class="file-drop-hint">支持 .xlsx / .xls，单个文件不超过 10MB</small></span><input id="resignation-excel" type="file" accept=".xlsx,.xls"></label><button id="preview-resignation-import" class="secondary-button" type="button">上传</button><button id="confirm-resignation-import" class="primary-button hidden" type="button">提交批量离职</button></div><p id="resignation-import-status" class="tool-status">请先下载模板，再上传文件。</p></div>
-            </section>
-            <section class="tool-card attachment-card" aria-labelledby="resignation-attachment-title">
-              <header><div class="tool-card-heading"><span class="tool-kicker">材料补充</span><div class="tool-title-row"><span class="tool-icon" aria-hidden="true">↑</span><div><h3 id="resignation-attachment-title">离职附件上传</h3><p>辞职报告或其他解除劳动关系证明等材料可随本次申请一起提交。</p></div></div></div><span class="tool-badge">最多 5 个</span></header>
-              <div class="tool-card-body"><label class="file-dropzone" id="resignation-attachment-dropzone"><span class="file-dropzone-icon" aria-hidden="true">＋</span><span class="file-dropzone-copy"><strong id="resignation-attachment-file-name" class="file-drop-name">选择附件材料</strong><small class="file-drop-hint">支持 PDF、图片、Office 和 ZIP 格式</small></span><input id="resignation-attachments" name="attachment" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,.zip"></label><ul id="resignation-attachment-list" class="attachment-list" aria-live="polite"><li class="tool-meta">尚未选择附件</li></ul><p id="resignation-attachment-status" class="tool-status">附件会随本次离职申请一起提交。</p></div>
             </section>
           </div>
           <form id="resignation-form" class="form-shell hidden" novalidate>
@@ -885,12 +892,16 @@
                 <div class="field"><label for="resignation_reason"><span class="required">*</span>离职原因</label><select id="resignation_reason" name="resignation_reason" required><option value="">加载离职原因后选择</option></select></div>
               </div>
             </section>
-            <div class="form-actions"><span class="privacy-note">提交后可在“办理进度”查看状态。</span><div class="form-actions-right"><button class="secondary-button" type="reset">清空</button><button class="primary-button" type="submit">提交离职办理</button></div></div>
+            <div class="form-actions"><span class="privacy-note">提交后可在“办理进度”查看状态。</span><div class="form-actions-right"><button class="secondary-button" type="reset">清空</button><button id="resignation-save-draft" class="secondary-button" type="button">保存草稿</button><button class="primary-button" type="submit">提交</button></div></div>
           </form>
+          <section id="resignation-attachment-card" class="tool-card attachment-card hidden" aria-labelledby="resignation-attachment-title">
+            <header><div class="tool-card-heading"><span class="tool-kicker">材料补充</span><div class="tool-title-row"><span class="tool-icon" aria-hidden="true">↑</span><div><h3 id="resignation-attachment-title">离职附件上传</h3><p>辞职报告或其他解除劳动关系证明等材料可随本次申请一起提交。</p></div></div></div><span class="tool-badge">最多 5 个</span></header>
+            <div class="tool-card-body"><label class="file-dropzone" id="resignation-attachment-dropzone"><span class="file-dropzone-icon" aria-hidden="true">＋</span><span class="file-dropzone-copy"><strong id="resignation-attachment-file-name" class="file-drop-name">选择附件材料</strong><small class="file-drop-hint">支持 PDF、图片、Office 和 ZIP 格式</small></span><input id="resignation-attachments" name="attachment" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,.zip"></label><ul id="resignation-attachment-list" class="attachment-list" aria-live="polite"><li class="tool-meta">尚未选择附件</li></ul><p id="resignation-attachment-status" class="tool-status">附件会随本次离职申请一起提交。</p></div>
+          </section>
         </section>
 
         <section id="salary" class="page" aria-labelledby="salary-title">
-          <div class="page-head"><div><p class="eyebrow">薪资确认</p><h1 id="salary-title">薪资信息确认</h1><p>请确认薪资所属年月，并按页面提示完成提交。</p></div><span class="customer-chip">所属期：<strong id="salary-period-chip">—</strong></span></div>
+          <div class="page-head"><div><h1 id="salary-title">薪资信息确认</h1><p>请确认薪资所属年月，并按页面提示完成提交。</p></div><span class="customer-chip">所属期：<strong id="salary-period-chip">—</strong></span></div>
           <section class="section-panel salary-confirm-panel">
             <header><div><span class="salary-panel-kicker">薪资所属期</span><h2>确认 <span id="salary-period-heading">—</span> 薪资情况</h2><p>仅需完成以下选择；有变动时再补充对应资料。</p></div></header>
             <div class="body"><div class="salary-flow">
@@ -910,7 +921,7 @@
                 </div>
                 <div id="salary-text-view" class="salary-method-panel hidden"><div class="field"><label for="salary_change_note"><span class="required">*</span>薪资变化说明</label><textarea id="salary_change_note" maxlength="2000" placeholder="例如：张三新增绩效奖金 1,000 元；李四薪资扣款 300 元。"></textarea><small class="field-help">请写明涉及人员和变化事项，无需填写完整员工明细。</small></div></div>
                 <div id="salary-attachment-view" class="salary-method-panel hidden"><label class="file-dropzone salary-file-dropzone" for="salary-attachments"><span class="file-dropzone-icon" aria-hidden="true">＋</span><span class="file-dropzone-copy"><strong id="salary-attachment-file-name" class="file-drop-name">选择薪资文件</strong><small class="file-drop-hint">支持 PDF、图片、Office 和 ZIP 格式</small></span><input id="salary-attachments" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,.zip"></label><p id="salary-attachment-status" class="tool-status">尚未选择文件。</p></div>
-                <div class="salary-submit-row"><button id="salary-submit" class="primary-button" type="button">提交薪资确认</button></div>
+                <div class="salary-submit-row"><button id="salary-submit" class="primary-button" type="button">提交</button></div>
               </section>
               <section id="salary-same-view" class="salary-branch salary-ready-card hidden"><span class="salary-ready-icon" aria-hidden="true">✓</span><div><h3>已选择“无变动”</h3><p>请确认选择无误后提交该所属期薪资确认。</p></div><button id="salary-same-submit" class="primary-button" type="button">确认并提交</button></section>
             </div></div>
@@ -918,7 +929,7 @@
         </section>
 
         <section id="progress" class="page" aria-labelledby="progress-title">
-          <div class="page-head"><div><p class="eyebrow">办理进度</p><h1 id="progress-title">服务办理记录</h1><p>查看最近一年的提交记录和处理状态。</p></div><span class="customer-chip">最近200条记录</span></div>
+          <div class="page-head"><div><p class="eyebrow">办理进度</p><h1 id="progress-title">服务办理记录</h1><p>查看最近一年（最多 200 条）办理记录的提交情况和当前状态。</p></div><span class="customer-chip">最近一年，最多 200 条</span></div>
           <div class="toolbar">
             <div class="progress-filter" aria-label="进度筛选">
               <button class="filter-button active" data-progress-filter="all" type="button">全部</button>
@@ -944,7 +955,7 @@
     <div class="modal">
       <h2 id="modal-title">二次确认薪资提交</h2>
       <p id="modal-message">请确认所选薪资所属期的资料准确，确认后即可提交。</p>
-      <div class="modal-actions"><button id="modal-cancel" class="secondary-button" type="button">返回核对</button><button id="modal-confirm" class="primary-button" type="button">确认提交</button></div>
+      <div class="modal-actions"><button id="modal-cancel" class="secondary-button" type="button">返回核对</button><button id="modal-confirm" class="primary-button" type="button">提交</button></div>
     </div>
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
@@ -1049,7 +1060,14 @@
         indicator.classList.toggle('complete', number < portalState.onboardingStep);
       });
       document.getElementById('onboarding-prev').style.visibility = portalState.onboardingStep === 1 ? 'hidden' : 'visible';
-      document.getElementById('onboarding-next').textContent = portalState.onboardingStep === 4 ? '提交资料' : '下一步';
+      const nextButton = document.getElementById('onboarding-next');
+      const submitButton = document.getElementById('onboarding-submit');
+      nextButton.classList.toggle('hidden', portalState.onboardingStep === 4);
+      nextButton.textContent = '下一步';
+      if (submitButton) {
+        submitButton.classList.toggle('hidden', portalState.onboardingStep !== 4);
+        submitButton.disabled = portalState.submittingOnboarding === true;
+      }
       document.getElementById('onboarding-feedback').classList.remove('visible');
     }
 
@@ -1127,7 +1145,7 @@
       list.innerHTML = portalState.onboardingFiles.map((item, index) => '<li class="attachment-item"><span class="attachment-name" title="' + escapeHtml(item.file.name) + '">' + escapeHtml(item.file.name) + ' <small>(' + formatFileSize(item.file.size) + ' · ' + escapeHtml(item.bizPurposeLabel) + ')</small></span><button class="quiet-button" type="button" data-remove-attachment="' + index + '">移除</button></li>').join('');
       dropzone.classList.add('has-file');
       fileName.textContent = '已选择 ' + portalState.onboardingFiles.length + ' 个附件';
-      list.querySelectorAll('[data-remove-attachment]').forEach((button) => button.addEventListener('click', () => { portalState.onboardingFiles.splice(Number(button.dataset.removeAttachment), 1); renderOnboardingAttachments(); }));
+      list.querySelectorAll('[data-remove-attachment]').forEach((button) => button.addEventListener('click', () => { portalState.onboardingFiles.splice(Number(button.dataset.removeAttachment), 1); renderOnboardingAttachments(); scheduleDraftSave('onboarding'); }));
     }
     function renderResignationAttachments() {
       const list = document.getElementById('resignation-attachment-list');
@@ -1142,7 +1160,7 @@
       list.innerHTML = portalState.resignationFiles.map((item, index) => '<li class="attachment-item"><span class="attachment-name" title="' + escapeHtml(item.file.name) + '">' + escapeHtml(item.file.name) + ' <small>(' + formatFileSize(item.file.size) + ' · ' + escapeHtml(item.bizPurposeLabel) + ')</small></span><button class="quiet-button" type="button" data-remove-resignation-attachment="' + index + '">移除</button></li>').join('');
       dropzone.classList.add('has-file');
       fileName.textContent = '已选择 ' + portalState.resignationFiles.length + ' 个附件';
-      list.querySelectorAll('[data-remove-resignation-attachment]').forEach((button) => button.addEventListener('click', () => { portalState.resignationFiles.splice(Number(button.dataset.removeResignationAttachment), 1); renderResignationAttachments(); }));
+      list.querySelectorAll('[data-remove-resignation-attachment]').forEach((button) => button.addEventListener('click', () => { portalState.resignationFiles.splice(Number(button.dataset.removeResignationAttachment), 1); renderResignationAttachments(); scheduleDraftSave('resignation'); }));
     }
     document.getElementById('resignation-attachments').addEventListener('change', (event) => {
       const purpose = { value: 'other' };
@@ -1157,6 +1175,7 @@
       event.target.value = '';
       renderResignationAttachments();
       if (portalState.resignationFiles.length) setToolStatus('resignation-attachment-status', '已选择 ' + portalState.resignationFiles.length + ' 个附件，提交离职资料后保留在本次办理信息中。');
+      scheduleDraftSave('resignation');
     });
     const excelInput = document.getElementById('onboarding-excel');
     const excelDropzone = document.getElementById('excel-dropzone');
@@ -1181,7 +1200,7 @@ excelInput.addEventListener('change', () => updateFileDropzone(excelInput, excel
         if (portalState.onboardingFiles.length >= 5) { setToolStatus('attachment-status', '最多只能选择5个附件。', true); break; }
         portalState.onboardingFiles.push({ file, bizPurpose: purpose.value, bizPurposeLabel: purposeLabel });
       }
-      event.target.value = ''; renderOnboardingAttachments(); if (portalState.onboardingFiles.length) setToolStatus('attachment-status', '已选择 ' + portalState.onboardingFiles.length + ' 个附件。');
+      event.target.value = ''; renderOnboardingAttachments(); if (portalState.onboardingFiles.length) setToolStatus('attachment-status', '已选择 ' + portalState.onboardingFiles.length + ' 个附件。'); scheduleDraftSave('onboarding');
     });
     const importFieldOptions = [['employee_name','姓名'],['id_card_type','证件类型'],['id_card_no','证件号码'],['mobile','移动电话'],['email','电子邮件'],['position','岗位'],['position_type','岗位类型'],['contract_term_type','合同期限形式'],['contract_start_date','合同开始日期'],['contract_end_date','合同终止日期'],['probation_end_date','试用期结束日期'],['work_city','工作城市'],['work_hour_system','工时制'],['salary_form','工资形式'],['base_salary','基本工资'],['social_location','缴纳地'],['start_month','社保起缴月'],['social_base','社保缴费工资'],['fund_base','公积金缴费工资'],['bank_location','开户地'],['bank_account','银行卡号']];
 
@@ -1194,9 +1213,51 @@ excelInput.addEventListener('change', () => updateFileDropzone(excelInput, excel
 
     document.getElementById('onboarding-next').addEventListener('click', () => {
       if (!currentStepValid()) { onboardingFeedback('请完成当前步骤中的必填信息。', true); return; }
-      if (portalState.onboardingStep < 4) { setOnboardingStep(portalState.onboardingStep + 1); return; }
+      if (portalState.onboardingStep < 4) { saveDraftFromForm('onboarding'); setOnboardingStep(portalState.onboardingStep + 1); }
+    });
+    document.getElementById('onboarding-form').addEventListener('submit', (event) => {
+      event.preventDefault();
+      if (portalState.onboardingStep !== 4) { setOnboardingStep(Math.min(4, portalState.onboardingStep + 1)); return; }
+      if (!currentStepValid()) { onboardingFeedback('请完成当前步骤中的必填信息。', true); return; }
       submitOnboarding();
     });
+
+    /* ---- draft snapshots (exposed for portal-business.js draft kernel) ---- */
+    function setFieldById(id, value) { const node = document.getElementById(id); if (node && value != null) node.value = String(value); }
+    window.portalDraftSnapshot_onboarding = function () {
+      const form = document.getElementById('onboarding-form');
+      const fields = {};
+      for (const [name, value] of new FormData(form).entries()) { if (name !== 'onboarding-consent' && value !== '') fields[name] = value; }
+      return { fields, fileNames: portalState.onboardingFiles.map((item) => item.file.name) };
+    };
+    window.applyPortalDraft_onboarding = function (saved) {
+      const fields = saved.fields || {};
+      for (const key of ['household_type', 'education', 'marital_status']) {
+        setFieldById(key, key in fields ? fields[key] : '');
+      }
+      for (const [name, value] of Object.entries(fields)) {
+        const node = document.getElementById(name);
+        if (node && node.type !== 'file' && node.name === name) node.value = String(value);
+      }
+      updateContractDates();
+      updateProbationDates();
+      const consent = document.getElementById('onboarding-consent'); if (consent) consent.checked = false;
+      portalState.onboardingFiles = []; renderOnboardingAttachments();
+      setOnboardingStep(1);
+    };
+    window.portalDraftSnapshot_resignation = function () {
+      const fields = {};
+      for (const [name, value] of new FormData(document.getElementById('resignation-form')).entries()) { if (value !== '') fields[name] = value; }
+      return { fields, fileNames: portalState.resignationFiles.map((item) => item.file.name) };
+    };
+    window.applyPortalDraft_resignation = function (saved) {
+      const form = document.getElementById('resignation-form');
+      form.reset();
+      for (const [name, value] of Object.entries(saved.fields || {})) {
+        for (const node of form.elements) { if (node.name === name && node.type !== 'file' && node.type !== 'submit' && node.type !== 'reset') node.value = String(value); }
+      }
+      portalState.resignationFiles = []; renderResignationAttachments();
+    };
 
     function addMonths(dateValue, months) {
       if (!dateValue || !months) return '';
@@ -1254,7 +1315,7 @@ excelInput.addEventListener('change', () => updateFileDropzone(excelInput, excel
       document.getElementById('onboarding-stepper').classList.toggle('hidden', mode !== 'single');
       document.getElementById('onboarding-import-card').classList.toggle('hidden', mode !== 'bulk');
       document.getElementById('onboarding-attachment-card').classList.remove('hidden');
-      if (mode === 'single') setOnboardingStep(1);
+      if (mode === 'single') { setOnboardingStep(1); offerPortalDraft('onboarding'); }
     }
 
     function resetOnboardingMode() {
@@ -1278,6 +1339,8 @@ excelInput.addEventListener('change', () => updateFileDropzone(excelInput, excel
       document.getElementById('resignation-tools').classList.remove('hidden');
       document.getElementById('resignation-form').classList.toggle('hidden', mode !== 'single');
       document.getElementById('resignation-import-card').classList.toggle('hidden', mode !== 'bulk');
+      document.getElementById('resignation-attachment-card').classList.toggle('hidden', mode !== 'single');
+      if (mode === 'single') offerPortalDraft('resignation');
     }
 
     function resetResignationMode() {
@@ -1317,6 +1380,16 @@ excelInput.addEventListener('change', () => updateFileDropzone(excelInput, excel
 
     document.getElementById('resignation-form').addEventListener('reset', () => { portalState.resignationFiles = []; renderResignationAttachments(); setToolStatus('resignation-attachment-status', '附件选择已清空。'); });
     document.getElementById('resignation-form').addEventListener('submit', (event) => { event.preventDefault(); submitResignation(); });
+
+    /* ---- draft autosave + explicit save button ---- */
+    document.getElementById('onboarding-form').addEventListener('input', () => scheduleDraftSave('onboarding'));
+    document.getElementById('onboarding-form').addEventListener('change', () => scheduleDraftSave('onboarding'));
+    document.getElementById('resignation-form').addEventListener('input', () => scheduleDraftSave('resignation'));
+    document.getElementById('resignation-form').addEventListener('change', () => scheduleDraftSave('resignation'));
+    document.getElementById('resignation-save-draft').addEventListener('click', () => {
+      if (saveDraftFromForm('resignation')) showToast('离职草稿已保存；附件文件不随草稿保存，下次需重新上传。');
+      else showToast('草稿保存失败，请检查浏览器存储设置。');
+    });
 
     function setSalaryMode(mode) {
       portalState.salaryMode = mode;

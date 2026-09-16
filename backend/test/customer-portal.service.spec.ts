@@ -42,6 +42,34 @@ describe('Customer portal authoritative business boundary',()=>{
     expect(result.list[0].result).toContain('已办结');expect(result.list[0].steps).toHaveLength(1);
     expect(JSON.stringify(result)).not.toContain('internal-user');expect(JSON.stringify(result)).not.toContain('内部备注');
   });
+
+  // 批次1口径（2026-09-16）：办理进度窗口回看 12 个月（原 6 个月），保留 200 条上限。
+  // 11 个月前的记录应落入窗口（since ≤ 11 个月前），13 个月前的记录应被窗口排除（since > 13 个月前）。
+  it('looks back 12 months and keeps the 200-row cap for the progress window', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-09-16T08:00:00Z'));
+    try {
+      const { service, submissions } = fixture();
+      await service.progress({ linkToken: token });
+      expect(submissions.find).toHaveBeenCalledTimes(1);
+      const call = submissions.find.mock.calls[0][0];
+      const operator = call.where.createdAt as { value?: Date; _value?: Date; type?: string };
+      expect(operator.type).toBe('moreThanOrEqual');
+      const since = new Date(operator.value ?? operator._value!);
+      const elevenMonthsAgo = new Date('2025-10-16T08:00:00Z');
+      const thirteenMonthsAgo = new Date('2025-08-16T08:00:00Z');
+      // 11 个月前：在回看窗口内（since 早于等于该时间点）
+      expect(since.getTime()).toBeLessThanOrEqual(elevenMonthsAgo.getTime());
+      // 13 个月前：超出 12 个月窗口，必须被排除（since 晚于该时间点）
+      expect(since.getTime()).toBeGreaterThan(thirteenMonthsAgo.getTime());
+      // 精确口径：since = 2025-09-16（now - 12 个月）
+      expect(Number.isNaN(since.getTime())).toBe(false);
+      const oneYearAgo = new Date('2025-09-16T08:00:00Z');
+      expect(Math.abs(since.getTime() - oneYearAgo.getTime())).toBeLessThan(60_000);
+      expect(call.take).toBe(200);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
   it('derives the configured prior salary month across a year boundary', async () => {
     jest.useFakeTimers().setSystemTime(new Date('2027-01-15T00:00:00Z'));
     try {

@@ -199,3 +199,73 @@ test('portal correction guard allows returned fields and rejects changes to all 
   assert.equal(context.correctionFieldViolation(original, { ...original, social_location: '宁波' }, ['employee_name']), 'social_location');
   assert.equal(context.correctionFieldViolation(original, { employee_name: '张三', social_location: '上海' }, ['employee_name']), 'mobile');
 });
+
+/* ---- portal drafts: localStorage kernel in portal-business.js ---- */
+function draftKernel(context) {
+  const start = business.indexOf('/* ---- portal drafts:');
+  const end = business.indexOf('/* ---- end portal drafts ----');
+  assert.ok(start >= 0 && end > start, 'portal drafts kernel block is present');
+  const store = new Map();
+  const ctx = {
+    activePortalSession: { account: { id: 'acct-1' } },
+    localStorage: {
+      getItem: (key) => (store.has(key) ? store.get(key) : null),
+      setItem: (key, value) => { if (ctx.quotaFail) throw new Error('QuotaExceededError'); store.set(key, String(value)); },
+      removeItem: (key) => { store.delete(key); },
+    },
+    window: { clearTimeout: () => {}, setTimeout: () => 0 },
+    document: { getElementById: () => null },
+    escapeHtml: (value) => String(value),
+    showToast: () => {},
+    quotaFail: false,
+    ...context,
+  };
+  vm.createContext(ctx);
+  vm.runInContext(business.slice(start, end) + '\nthis.draft = { DraftStore, portalDraftKeyFor, portalDraftId, clearDraftAfterSubmit };', ctx);
+  return ctx;
+}
+
+test('DraftStore round-trips fields and file names through the namespaced key', () => {
+  const ctx = draftKernel();
+  const saved = ctx.draft.DraftStore.save('onboarding', { employee_name: '张三', salary_type: '按月' }, ['身份证.png']);
+  assert.ok(saved && Number.isFinite(saved.savedAt));
+  const loaded = ctx.draft.DraftStore.load('onboarding');
+  assert.equal(JSON.stringify(loaded.fields), JSON.stringify({ employee_name: '张三', salary_type: '按月' }));
+  assert.equal(JSON.stringify(loaded.fileNames), JSON.stringify(['身份证.png']));
+  assert.match(ctx.draft.portalDraftKeyFor('onboarding'), /^portalDraftStore:acct-1:onboarding:primary$/);
+});
+
+test('DraftStore keys isolate accounts and businesses; clearing after submit removes only that draft', () => {
+  const ctx = draftKernel();
+  ctx.draft.DraftStore.save('onboarding', { employee_name: '甲' }, []);
+  ctx.draft.DraftStore.save('resignation', { employee_name: '乙' }, []);
+  assert.ok(ctx.draft.DraftStore.load('onboarding'));
+  assert.ok(ctx.draft.DraftStore.load('resignation'));
+  ctx.draft.DraftStore.clear('onboarding');
+  assert.equal(ctx.draft.DraftStore.load('onboarding'), null, 'submit clears this draft');
+  assert.ok(ctx.draft.DraftStore.load('resignation'), 'other business draft untouched');
+  ctx.activePortalSession = { account: { id: 'acct-2' } };
+  assert.equal(ctx.draft.DraftStore.load('resignation'), null, 'a different account sees nothing');
+  ctx.activePortalSession = { account: { id: 'acct-1' } };
+  assert.ok(ctx.draft.DraftStore.load('resignation'), 'original account still sees its resignation draft');
+});
+
+test('DraftStore falls back to null on corrupted payloads and on quota failures', () => {
+  const ctx = draftKernel();
+  ctx.localStorage.setItem(ctx.draft.portalDraftKeyFor('onboarding'), 'not-json');
+  assert.equal(ctx.draft.DraftStore.load('onboarding'), null);
+  ctx.quotaFail = true;
+  assert.equal(ctx.draft.DraftStore.save('onboarding', { employee_name: '张' }, []), null);
+  assert.equal(ctx.draft.DraftStore.load('onboarding'), null, 'quota failure clears stale draft instead of faking success');
+});
+
+test('submitOnboarding and submitResignation clear their drafts; service result drops the mail suffix', () => {
+  const onboardingBody = business.slice(business.indexOf('async function submitOnboarding'), business.indexOf('async function submitResignation'));
+  const resignationBody = business.slice(business.indexOf('async function submitResignation'), business.indexOf('async function submitSalary'));
+  assert.match(onboardingBody, /clearDraftAfterSubmit\('onboarding'\); resetOnboardingForm\(\);/);
+  assert.match(resignationBody, /clearDraftAfterSubmit\('resignation'\); hideDraftRestoreCard\('resignation'\);/);
+  assert.doesNotMatch(business, /const mail=row\.completionEmailStatus/);
+  assert.doesNotMatch(business, /\[row\.result,mail\]\.filter\(Boolean\)\.join\(/);
+  assert.match(business, /result:row\.result,/);
+  assert.match(business, /function resetOnboardingForm\(\)\{[\s\S]*?form\.reset\(\);[\s\S]*?next\.disabled=false;[\s\S]*?hideDraftRestoreCard\('onboarding'\);[\s\S]*?resetOnboardingMode\(\);/);
+});

@@ -109,7 +109,7 @@ const EXTRA_ALIASES: Record<string, string[]> = {
   position_type: ['position_type', 'positionType', '岗位类型'],
   marital_status: ['marital_status', 'maritalStatus', '婚姻状况'],
   household_type: ['household_type', 'householdType', '户籍性质'],
-  current_address: ['current_address', 'currentAddress', '现住地址', '现居住地址'],
+  current_address: ['current_address', 'currentAddress', '现住地址', '现住址（文书送达地址）', '现居住地址'],
   household_address: ['household_address', 'householdAddress', '户籍地址'],
   employee_type: ['employee_type', 'employeeType', '人员类型'],
   contract_term_type: ['contract_term_type', 'contractTermType', '合同期限形式'],

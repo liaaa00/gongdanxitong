@@ -54,7 +54,7 @@ export const FALLBACK_FIELD_LABELS: Record<string, string> = {
   ethnicity: '民族',
   mobile: '移动电话',
   email: '电子邮件',
-  current_address: '现住地址',
+  current_address: '现住址（文书送达地址）',
   household_address: '户籍地址',
   contract_term_type: '合同期限形式',
   contract_term: '合同期限',
