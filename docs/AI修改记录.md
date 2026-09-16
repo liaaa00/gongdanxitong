@@ -3091,3 +3091,14 @@
 - **为什么这样改**：用户要求「先隐藏、我让你打开的时候再打开」，特性开关是最小、可一键回退、不留死代码的方案；不动路由守卫/接口层的业务范围隔离（回归清单 §30「按权限显示」口径、§20/§32 数据隔离均保持有效，仅隐藏侧栏控件）。
 - **如何验证**：`BasicLayout.test.tsx` 41 passed | 1 skipped（开关关→切换器用例自动跳过）；`tsc --noEmit -p tsconfig.json` EXIT=0。
 - **影响面自查**：后端零改动；路由守卫、`business_scope` 数据隔离、登录跳转、localStorage scope 读写逻辑全部不变；仅侧栏底部一处 UI 控件的显隐；`BusinessScopeSwitcher` 组件本未被引用（死代码），不触碰。
+
+## 2026-09-16 · 恢复省外(out_of_province)业务角色主工单批量导入权限（本地）
+
+- **需求**：用户确认 2026-09-15 同步清单中「省外 import 缺失」项后追加授权恢复。
+- **根因**：同 09-15 条——09-11 稀疏覆盖抹掉两 scope 的 `work_order.*`；09-14 补救迁移只写了 beilun 一个 key，省外五角色的 `work_order.import`/`route.work_order_import` 一直缺失（服务器与本地板载实测均 import=0）。
+- **改动**：
+  1. 新增迁移 `backend/src/database/migrations/20260916000000-RestoreProvinceMainOrderImport.ts`：仅对 `roleActionPermissions.v1.out_of_province` 的 `business_group_member/business_group_leader/biz_member/biz_leader/salesperson` 补 `work_order.import` + `route.work_order_import`（幂等、FOR UPDATE、down 不回收，与 09-14/09-15 同模式）。
+  2. 新增 `backend/test/restore-province-import-migration.spec.ts`（含「绝不触碰 beilun key」断言）。
+  3. `回归测试.ps1` 权限组加入新 spec。
+- **如何验证**：jest 两 spec 4/4 绿；`nest build` EXIT=0；本地库 `migration:run` 执行新迁移成功；psql 直查 `system_settings`：两 scope × 5 角色 `create`/`import` 全为 t。
+- **影响面自查**：只动 out_of_province 一个设置 key；不覆盖回归清单旧规则（§30 权限可见性、§20 数据隔离不变）；管理员后续手工配置不受影响（只加不减、幂等）。
