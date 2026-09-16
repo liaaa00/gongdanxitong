@@ -3102,3 +3102,20 @@
   3. `回归测试.ps1` 权限组加入新 spec。
 - **如何验证**：jest 两 spec 4/4 绿；`nest build` EXIT=0；本地库 `migration:run` 执行新迁移成功；psql 直查 `system_settings`：两 scope × 5 角色 `create`/`import` 全为 t。
 - **影响面自查**：只动 out_of_province 一个设置 key；不覆盖回归清单旧规则（§30 权限可见性、§20 数据隔离不变）；管理员后续手工配置不受影响（只加不减、幂等）。
+
+## 2026-09-16 · 同步生产服务器（192.168.26.195，restore-20260916 发布）
+
+- **需求/背景**：本地三笔提交（e6b4782 恢复新建按钮权限、952f3f3 隐藏业务范围区域、15ad038 恢复省外 import）经用户批准后同步生产。用户硬约束：**本地工单数据一律不上传、服务器业务数据零影响**。
+- **改动（全部为源码文件，无任何数据文件）**：
+  1. 上传 14 个源码文件（LF 归一化 + 服务器端 sha256 逐一校验一致）：8 个内容差异 src/test 文件 + 新增 `backend/src/config/cors.ts`、两条新迁移（09-15 create / 09-16 省外 import）、两个 spec、`frontend/src/config/featureFlags.ts`。被覆盖文件原件先备份到 `.releases/restore-20260916/backup-src/`。
+  2. 迁移前 `pg_dump -Fc` 全库备份（3,100,374 字节，sha256=2b829344…），存 `.releases/restore-20260916/pre-migration.dump`。
+  3. 现网镜像打回滚 tag：`work-order-system-{backend,frontend}:rollback-restore-20260916`。
+  4. `docker compose build backend frontend && up -d`（AUTO_SEED=false 实测确认，entrypoint 只跑迁移不跑 seed）。
+  5. 刷新 `SOURCE_COMMIT=15ad038 …deployed_at=2026-09-16`（此前 194b460 标记与实际代码不符）。
+- **如何验证（全部实测通过）**：
+  - 容器启动日志：`2 migrations are new` → `RestoreBusinessMainOrderCreate` + `RestoreProvinceMainOrderImport` 均 executed successfully；`Skipping database seeds`。
+  - 权限矩阵：两 scope × 5 角色 `work_order.create`/`import` + 两路由动作全部 True（此前 beilun create=0、省外 create/import 全 0）。
+  - **数据零影响铁证**：work_orders=288、dispatched_orders=1035、in_service_orders=1、users=43、customers=223、notifications=2307 与迁移前基线逐项相等；migrations 137→139（仅 +2 条新迁移记录，属预期）。
+  - `/api/health`=200；后端 healthy；新前端包「业务范围」文案文件数 2→1（A/B 对比回滚镜像证实隐藏生效，剩余 1 处为保留的权限页等非菜单入口文案）。
+- **回滚路径**：`docker tag rollback + compose up` 即回旧镜像；数据可 `pg_restore` pre-migration.dump；源码在 backup-src/。
+- **影响面自查**：未上传任何本地数据库/seed/数据文件（本地仅 126 主单 vs 服务器 288，误传会覆盖生产，已通过仅传 src 文件+哈希清单杜绝）；省外数据隔离、权限中心手工配置等旧规则均不变。
