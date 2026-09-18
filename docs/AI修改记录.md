@@ -3246,3 +3246,21 @@
 - **改动**：`frontend/src/components/MaterialsUpload/index.tsx` 白名单数组与 accept 增加 zip，错误提示文案同步；`index.test.tsx` 补 2 用例（zip 放行走完整上传流、exe 仍被拦截），并修复测试基建缺陷——antd App.useApp mock 每次渲染返回新 message 引用导致 useCallback/useEffect 无限循环，改为模块级稳定引用。后端黑名单本就放行 zip，零改动。
 - **验证**：组件测试 4/4 通过（DOM 确认 accept 含 .zip）；frontend `tsc --noEmit` 退出码 0；`回归测试.ps1 -SkipBuild` 全量跑到 `==== Business regression done ====` 无失败。
 - **是否覆盖旧规则**：否。仅扩白名单，不改变 20MB 上限与后端黑名单兜底口径。
+
+## 2026-09-18 · 同步生产服务器（192.168.26.195，presync-20260918 发布）
+
+- **需求/背景**：用户批准将本地 3 个提交（e06c69c 字段口径、c1e7a69 同步记录、4239dae 门户批次3收尾）同步生产。硬约束：本地业务数据一律不上传、服务器业务数据零影响。
+- **同步前对账（只读探针）**：服务器基线 = 15ad038（迁移 139 条，镜像 9-16 构建）。本地 HEAD 与服务器共同 802 文件中 771 一致、31 内容差异、13 仅本地（3 条新迁移 + 1 实体 + 9 门户测试）。服务器侧待生效：学历 6 项、户籍必填、现住址旧名旧组、无 customer_portal_account_links 表、胡嘉逸仅 contract 1 模块。
+- **改动（全部为源码文件，无任何数据文件）**：
+  1. 备份：`pg_dump -Fc` 全库 3,128,517 字节（sha256=6e5fb75f…）存 `.releases/presync-20260918/pre-migration.dump`；现网镜像打回滚 tag `rollback-presync-20260918`；31 个被覆盖文件原件备份至 `backup-src/`。
+  2. 上传 44 文件（31 差异 + 13 新增，LF 归一化，服务器端逐文件 SHA256 校验 44/44 一致）；刷新 `.release-marker` SOURCE_COMMIT=4239dae。
+  3. `docker compose build backend frontend && up -d`（AUTO_SEED=false 实测确认，entrypoint 只跑迁移不跑 seed）。
+- **如何验证（全部实测通过）**：
+  - 容器日志：`3 migrations are new` → AdjustPortalFieldVocabulary / CreatePortalAccountLinks / AlignHujiayiModuleHandlers 均 executed successfully；`Skipping database seeds`；迁移 139→142。
+  - 字段口径：学历 8 项、户籍地址 is_required=f、现住址（文书送达地址）落"合同与用工信息"组。
+  - `customer_portal_account_links` 表已创建；胡嘉逸激活模块 = contract/renewal_contract/resignation_cert 3 个（与杨纯对齐）。
+  - **数据零影响铁证**：work_orders=297、dispatched_orders=1071、in_service_orders=2、users=43、customers=231、notifications=2336、operation_logs=5020、customer_portal_accounts=0 与同步前基线逐项相等。
+  - `/api/health` 与首页均 200；backend healthy（10 秒内）；前端新包 index-CLQ8ALuu.js 已被引用且含 zip 上传逻辑。
+- **回滚路径**：镜像 `rollback-presync-20260918` tag 一键回退；数据可 `pg_restore` pre-migration.dump；源码在 backup-src/；3 条迁移均有可逆 down。
+- **收尾**：本地 main 3 个提交已推送 origin（c1e7a69..4239dae；本机 git 代理 127.0.0.1:7897 失联，改用 `git -c http.proxy=` 直连成功）。
+- **影响面自查**：未上传任何本地数据库/seed/数据文件；省外数据隔离、权限中心手工配置等旧规则不变；AdjustPortalFieldVocabulary 对 field_configs 的三项 UPDATE 属用户 9-16 拍板口径的预期变更。
