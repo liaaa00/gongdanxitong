@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { Customer, CustomerPortalRule, FieldConfig, WorkOrder, WorkOrderCompletionEmail } from 'src/entities';
+import { Customer, CustomerPortalAccountLink, CustomerPortalRule, FieldConfig, WorkOrder, WorkOrderCompletionEmail } from 'src/entities';
 import { CustomerPortalSubmission } from 'src/entities/customer-portal-submission.entity';
 import { CustomerPortalAccountsModule } from '../customer-portal-accounts/customer-portal-accounts.module';
 import { ImportsModule } from '../imports/imports.module';
@@ -14,5 +14,5 @@ import { PortalReviewService } from './portal-review.service';
 import { PortalReviewController, PortalReviewWorkbenchController } from './portal-review.controller';
 import { PortalNotificationConfigModule } from '../portal-notifications/portal-notification-config.module';
 
-@Module({imports:[TypeOrmModule.forFeature([CustomerPortalSubmission,CustomerPortalRule,Customer,FieldConfig,WorkOrder,WorkOrderCompletionEmail]),CustomerPortalAccountsModule,ImportsModule,WorkOrderModule,UploadModule,CustomerRulesModule,ContractSubjectsModule,PortalNotificationConfigModule],controllers:[CustomerPortalPublicController, CustomerPortalController, PortalReviewController, PortalReviewWorkbenchController],providers:[CustomerPortalService, PortalReviewService]})
+@Module({imports:[TypeOrmModule.forFeature([CustomerPortalSubmission,CustomerPortalAccountLink,CustomerPortalRule,Customer,FieldConfig,WorkOrder,WorkOrderCompletionEmail]),CustomerPortalAccountsModule,ImportsModule,WorkOrderModule,UploadModule,CustomerRulesModule,ContractSubjectsModule,PortalNotificationConfigModule],controllers:[CustomerPortalPublicController, CustomerPortalController, PortalReviewController, PortalReviewWorkbenchController],providers:[CustomerPortalService, PortalReviewService]})
 export class CustomerPortalModule {}

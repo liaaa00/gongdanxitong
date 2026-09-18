@@ -103,6 +103,12 @@
     .page-head h1 { margin: 2px 0 0; font-size: 28px; letter-spacing: 0; }
     .page-head p { margin: 9px 0 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
     .customer-chip { display: inline-flex; align-items: center; min-height: 32px; padding: 0 10px; border: 1px solid #d7e4e7; border-radius: 4px; color: #31515e; background: #fff; font-size: 13px; white-space: nowrap; }
+    .subject-picker-wrap { display: inline-flex; align-items: center; gap: 8px; min-height: 32px; }
+    .subject-picker-label { color: var(--muted, #5b7280); font-size: 13px; white-space: nowrap; }
+    .subject-picker { min-height: 34px; padding: 0 10px; border: 1px solid #d7e4e7; border-radius: 4px; background: #fff; color: #1d3c47; font-size: 13px; }
+    .subject-picker:focus { outline: 2px solid rgba(35, 103, 209, .25); border-color: #2367d1; }
+    .subject-picker:disabled { color: #7d939d; background: #f4f7f8; cursor: not-allowed; }
+    .form-field-full { grid-column: 1 / -1; }
 
     .stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
     .stat { min-height: 114px; padding: 18px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
@@ -690,7 +696,7 @@
     <header class="topbar">
       <div class="brand"><span class="brand-logo-wrap"><img class="brand-logo" src="/assets/company-logo.png" alt="公司标志"></span><span class="portal-name">客户门户</span></div>
       <div class="topbar-actions">
-        <span class="tenant"><i class="tenant-dot" aria-hidden="true"></i><span><strong id="portal-customer-name">客户工作台</strong><small id="portal-customer-code">客户代码：-</small></span></span>
+        <span class="tenant"><i class="tenant-dot" aria-hidden="true"></i><span><strong id="portal-customer-name">客户工作台</strong><small id="portal-customer-code">当前主体：-</small></span></span>
         <button id="portal-change-password" class="quiet-button" type="button">修改密码</button>
 <button id="logout" class="header-action" type="button">退出</button>
       </div>
@@ -715,7 +721,7 @@
               <h1 id="dashboard-title">工作台</h1>
               <p>近期服务事项和最新处理结果。</p>
             </div>
-            <span class="customer-chip">客户代码：—</span>
+            <span class="customer-chip" id="dashboard-subject-chip">当前主体：—</span>
           </div>
 
           <div class="stat-grid" aria-label="服务概览">
@@ -752,7 +758,7 @@
             <header><h2 id="recent-title">最近办理</h2><button class="quiet-button" type="button" data-view="progress">更多记录</button></header>
             <div class="body table-wrap">
               <table>
-                <thead><tr><th>办理编号</th><th>员工</th><th>业务类型</th><th>提交日期</th><th>当前状态</th></tr></thead>
+                <thead><tr><th>办理编号</th><th>办理主体</th><th>员工</th><th>业务类型</th><th>提交日期</th><th>当前状态</th></tr></thead>
                 <tbody id="dashboard-recent"><tr><td colspan="6">加载办理记录后显示</td></tr></tbody>
               </table>
             </div>
@@ -762,6 +768,10 @@
         <section id="onboarding" class="page" aria-labelledby="onboarding-title">
           <div class="page-head">
             <div><h1 id="onboarding-title">入职办理</h1><p>按步骤填写员工资料，提交后可在办理进度查看状态。</p></div>
+            <div class="subject-picker-wrap">
+              <label class="subject-picker-label" for="onboarding-subject-select">办理主体</label>
+              <select id="onboarding-subject-select" class="subject-picker" aria-label="选择办理主体"></select>
+            </div>
             <span id="onboarding-draft-badge" class="customer-chip draft-badge hidden" role="status">草稿已保存 · <span id="onboarding-draft-time"></span></span>
           </div>
           <div id="onboarding-draft-restore" class="draft-restore-card hidden" role="status"></div>
@@ -790,8 +800,13 @@
             <div id="onboarding-feedback" class="form-feedback" role="status" aria-live="polite"></div>
 
             <section class="form-section active" data-step-panel="1" aria-labelledby="onboarding-step-1">
-              <div class="section-heading"><div><h2 id="onboarding-step-1">员工基本信息</h2><p>请按员工有效证件如实填写。</p></div><span class="inline-note">身份证、手机等敏感信息将按权限加密处理。</span></div>
+              <div class="section-heading"><div><h2 id="onboarding-step-1">选择办理主体与员工基本信息</h2><p>先确认本次办理所属主体，再按员工有效证件如实填写。</p></div><span class="inline-note">身份证、手机等敏感信息将按权限加密处理。</span></div>
               <div class="form-grid">
+                <div class="form-field form-field-full">
+                  <label for="onboarding-wizard-subject">办理主体</label>
+                  <select id="onboarding-wizard-subject" aria-label="选择办理主体"></select>
+                  <small class="field-hint" id="onboarding-wizard-subject-hint">本次入职资料将提交给所选主体，切换主体会清空已填内容。</small>
+                </div>
                 <div class="field"><label for="employee_name"><span class="required">*</span>姓名</label><input id="employee_name" name="employee_name" required maxlength="50" placeholder="请输入员工姓名"></div>
                 <div class="field"><label for="id_card_type"><span class="required">*</span>证件类型</label><select id="id_card_type" name="id_card_type" required><option>中国居民身份证</option><option>港澳台居住证</option><option>外国人永久居留证</option><option>其他有效证件</option></select></div>
                 <div class="field"><label for="id_card_no"><span class="required">*</span>证件号码</label><input id="id_card_no" name="id_card_no" required maxlength="20" placeholder="请输入证件号码"></div>
@@ -801,8 +816,6 @@
                 <div class="field"><label for="ethnicity">民族</label><input id="ethnicity" name="ethnicity" placeholder="选填"></div>
                 <div class="field"><label for="education">学历</label><select id="education" name="education"><option value="">请选择</option><option>高中及以下</option><option>大专</option><option>本科</option><option>硕士及以上</option></select></div>
                 <div class="field"><label for="marital_status">婚姻状况</label><select id="marital_status" name="marital_status"><option value="">请选择</option><option>未婚</option><option>已婚</option><option>其他</option></select></div>
-                <div class="field full"><label for="household_address">户籍地址</label><input id="household_address" name="household_address" placeholder="按证件地址填写"></div>
-                <div class="field full"><label for="current_address">现住地址</label><input id="current_address" name="current_address" placeholder="请输入现住地址"></div>
               </div>
             </section>
 
@@ -817,12 +830,14 @@
                 <div class="field condition-row visible" id="contract-end-row"><label for="contract_end_date">合同终止日期</label><input id="contract_end_date" name="contract_end_date" type="date"></div>
                 <div class="field"><label for="probation_start_date">试用期开始日期</label><input id="probation_start_date" name="probation_start_date" type="date"></div>
                 <div class="field" id="probation-end-row"><label for="probation_end_date">试用期结束日期</label><input id="probation_end_date" name="probation_end_date" type="date"></div>
-                <div class="field"><label for="working_hours"><span class="required">*</span>工时制</label><select id="working_hours" name="working_hours" required><option value="">请选择</option><option>标准工时</option><option>综合工时</option><option>不定时工时</option></select></div>
-                <div class="field"><label for="salary_type_display"><span class="required">*</span>工资形式</label><output id="salary_type_display" class="static-readonly">按月</output><input type="hidden" id="salary_type" name="salary_type" value="按月"><small class="field-help">当前主体仅支持“按月”计薪；如有其他形式请联系客服。</small></div>
+                <div class="field"><label for="working_hours"><span class="required">*</span>工时制</label><select id="working_hours" name="working_hours" required><option value="">请选择</option><option>标准工时制</option><option>综合工时制</option><option>不定时工时制</option></select></div>
+                <div class="field"><label for="salary_type"><span class="required">*</span>工资形式</label><input id="salary_type" name="salary_type" list="salary-type-options" maxlength="20" value="按月" required placeholder="默认按月，可输入其他形式"><datalist id="salary-type-options"><option value="按月"></option><option value="按日"></option><option value="按小时"></option><option value="计件"></option></datalist><small class="field-help">默认按月计薪；如工资形式与所选不同，可直接输入，如“按日”“计件”。</small></div>
                 <div class="field"><label for="base_salary"><span class="required">*</span>基本工资</label><input id="base_salary" name="base_salary" type="text" maxlength="500" required placeholder="可填写数字、货币格式或文字说明"></div>
                 <div class="field"><label for="other_salary">其他工资项目（如有）</label><input id="other_salary" name="other_salary" type="text" maxlength="1000" placeholder="例如：绩效工资按考核结果发放"></div>
                 <div class="field condition-row" id="probation-salary-row"><label for="probation_salary">试用期基本工资</label><input id="probation_salary" name="probation_salary" type="text" maxlength="500" placeholder="可填写数字、货币格式或文字说明"></div>
                 <div class="field condition-row" id="probation-other-salary-row"><label for="probation_other_salary">试用期其他工资项目（如有）</label><input id="probation_other_salary" name="probation_other_salary" type="text" maxlength="1000" placeholder="可填写金额或文字说明"></div>
+                <div class="field full"><label for="household_address">户籍地址</label><input id="household_address" name="household_address" maxlength="500" placeholder="按证件地址填写"></div>
+                <div class="field full"><label for="current_address">现住地址</label><input id="current_address" name="current_address" maxlength="500" placeholder="请输入现住地址"></div>
               </div>
             </section>
 
@@ -867,7 +882,7 @@
         </section>
 
         <section id="resignation" class="page" aria-labelledby="resignation-title">
-          <div class="page-head"><div><h1 id="resignation-title">离职办理</h1><p>填写员工离职信息，提交后可在办理进度查看状态。</p></div><span class="customer-chip">支持单条和批量办理</span></div>
+          <div class="page-head"><div><h1 id="resignation-title">离职办理</h1><p>填写员工离职信息，提交后可在办理进度查看状态。</p></div><div class="subject-picker-wrap"><label class="subject-picker-label" for="resignation-subject-select">办理主体</label><select id="resignation-subject-select" class="subject-picker" aria-label="选择办理主体"></select></div><span class="customer-chip">支持单条和批量办理</span></div>
           <div id="resignation-draft-badge" class="customer-chip draft-badge hidden" role="status" style="margin:-14px 0 18px 0">草稿已保存 · <span id="resignation-draft-time"></span></div>
           <div id="resignation-draft-restore" class="draft-restore-card hidden" role="status"></div>
           <div id="resignation-mode-picker" class="mode-picker" aria-label="选择离职办理方式"><h2>先选择办理方式</h2><p>批量办理必须使用系统提供的标准离职 Excel 模板；少量员工可选择单条录入。</p><div class="mode-picker-actions"><button class="mode-card" type="button" data-resignation-mode="bulk"><strong>批量导入</strong><span>下载标准模板后一次提交多名员工</span></button><button class="mode-card" type="button" data-resignation-mode="single"><strong>单条录入</strong><span>按表单填写一名员工的离职资料</span></button></div></div>
@@ -901,7 +916,7 @@
         </section>
 
         <section id="salary" class="page" aria-labelledby="salary-title">
-          <div class="page-head"><div><h1 id="salary-title">薪资信息确认</h1><p>请确认薪资所属年月，并按页面提示完成提交。</p></div><span class="customer-chip">所属期：<strong id="salary-period-chip">—</strong></span></div>
+          <div class="page-head"><div><h1 id="salary-title">薪资信息确认</h1><p>请确认薪资所属年月，并按页面提示完成提交。</p></div><div class="subject-picker-wrap"><label class="subject-picker-label" for="salary-subject-select">办理主体</label><select id="salary-subject-select" class="subject-picker" aria-label="选择办理主体"></select></div><span class="customer-chip">所属期：<strong id="salary-period-chip">—</strong></span></div>
           <section class="section-panel salary-confirm-panel">
             <header><div><span class="salary-panel-kicker">薪资所属期</span><h2>确认 <span id="salary-period-heading">—</span> 薪资情况</h2><p>仅需完成以下选择；有变动时再补充对应资料。</p></div></header>
             <div class="body"><div class="salary-flow">
@@ -940,8 +955,8 @@
           <section class="section-panel">
             <div class="table-wrap">
               <table>
-                <thead><tr><th>办理编号</th><th>员工/所属期</th><th>业务类型</th><th>提交日期</th><th>当前状态</th><th>服务结果</th></tr></thead>
-                <tbody id="progress-rows"><tr><td colspan="6">加载办理记录后显示</td></tr></tbody>
+                <thead><tr><th>办理编号</th><th>办理主体</th><th>员工/所属期</th><th>业务类型</th><th>提交日期</th><th>当前状态</th><th>服务结果</th></tr></thead>
+                <tbody id="progress-rows"><tr><td colspan="7">加载办理记录后显示</td></tr></tbody>
               </table>
             </div>
           </section>

@@ -1,4 +1,4 @@
-import { BusinessScope, Customer, CustomerPortalAccount, CustomerPortalRule, OperationLog, WorkOrderCompletionEmail } from 'src/entities';
+import { BusinessScope, Customer, CustomerPortalAccount, CustomerPortalAccountLink, CustomerPortalRule, OperationLog, WorkOrderCompletionEmail } from 'src/entities';
 import { PortalNotificationsService } from 'src/modules/portal-notifications/portal-notifications.service';
 import { DEFAULT_PORTAL_NOTIFICATION_CONFIG } from 'src/modules/portal-notifications/portal-notification.config';
 
@@ -10,6 +10,8 @@ function setup() {
     { id: 'disabled-a', customerId: 'customer-a', loginEmail: 'disabled@example.test', businessPermissions: ['salary'], isActive: false },
     { id: 'salary-b', customerId: 'customer-b', loginEmail: 'other@example.test', businessPermissions: ['salary'], isActive: true },
   ];
+  // 默认关联与迁移回填口径一致：每账号一条单成员主主体关联，旧单主体用例行为不变。
+  const links: CustomerPortalAccountLink[] = accounts.map((account) => ({ accountId: account.id, customerId: account.customerId, isPrimary: true } as CustomerPortalAccountLink));
   const rules = customers.map((customer) => ({ customerId: customer.id, isActive: true, salaryRules: { billingDay: 15, reminderEnabled: true, payrollMonthMode: 'current' } }));
   const queue: WorkOrderCompletionEmail[] = [];
   const logs: any[] = [];
@@ -33,6 +35,7 @@ function setup() {
     getRepository: (entity: any) => {
       if (entity === WorkOrderCompletionEmail) return mailRepo;
       if (entity === OperationLog) return { create: (value: any) => value, save: async (value: any) => { logs.push(value); return value; } };
+      if (entity === CustomerPortalAccountLink) return { find: async ({ where }: any) => select(links, where) };
       const rows = entity === Customer ? customers : entity === CustomerPortalAccount ? accounts : entity === CustomerPortalRule ? rules : [];
       return { find: async ({ where }: any) => select(rows, where) };
     },
@@ -40,7 +43,7 @@ function setup() {
   const source: any = { transaction: async (fn: any) => fn(manager) };
   const settings = { get: jest.fn(async () => ({ settings: { ...DEFAULT_PORTAL_NOTIFICATION_CONFIG }, calendar: {} })) };
   const eligibility = { salarySubmitted: jest.fn(async (_customerId: string, _month: string, _manager: any) => false), staffRecipients: jest.fn(async (_customerId: string, _manager: any) => ['business@example.test']), evaluate: jest.fn(async (_row: any, _now: any, _manager: any): Promise<{ recipients: string[]; cancelReason?: string }> => ({ recipients: ['current@example.test'] })) };
-  return { service: new PortalNotificationsService(source, settings as any, eligibility as any), queue, manager, customers, accounts, rules, settings, eligibility, mailRepo, logs, loseLock: () => { acquired = false; } };
+  return { service: new PortalNotificationsService(source, settings as any, eligibility as any), queue, manager, customers, accounts, links, rules, settings, eligibility, mailRepo, logs, loseLock: () => { acquired = false; } };
 }
 
 describe('PortalNotificationsService', () => {
@@ -53,6 +56,19 @@ describe('PortalNotificationsService', () => {
     expect(h.queue.map((row) => row.toRecipients)).toEqual([['salary@example.test'], ['other@example.test']]);
     expect(h.queue.every((row) => row.notificationContext?.kind === 'salary_monthly')).toBe(true);
     expect(h.eligibility.salarySubmitted).not.toHaveBeenCalled();
+  });
+  it('queues one notice per subject for an account linked to multiple subjects, so the same account and month do not exclude each other', async () => {
+    const h = setup();
+    h.eligibility.salarySubmitted.mockResolvedValue(true);
+    // 批次3：账号 salary-a 额外挂载 customer-b；同账号同月两个主体各自独立入队（dedup key 含主体段）。
+    h.links.push({ accountId: 'salary-a', customerId: 'customer-b', isPrimary: false } as CustomerPortalAccountLink);
+    const now = new Date('2026-09-01T01:00:00Z');
+    expect((await h.service.runDue(now)).queued).toBe(3);
+    const keys = h.queue.map((row) => row.deduplicationKey ?? '');
+    expect(new Set(keys).size).toBe(3);
+    expect(keys.filter((key) => key.includes(':customer-b:'))).toHaveLength(2);
+    expect(keys.every((key) => key.startsWith('portal:monthly:'))).toBe(true);
+    expect((await h.service.runDue(now)).queued).toBe(0);
   });
   it('queues 3 and 2 day reminders only for unsubmitted target periods', async () => {
     const h = setup();

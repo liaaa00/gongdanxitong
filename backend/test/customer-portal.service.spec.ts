@@ -15,6 +15,8 @@ function fixture(){
   const auth={session:jest.fn().mockResolvedValue(session)};
   const templateConfig={list:jest.fn().mockResolvedValue([])};
   const submissions={find:jest.fn().mockResolvedValue([])};
+  // 批次3：默认关联=迁移回填口径的单成员主主体关联；批次3用例可覆写 links.find。
+  const links={find:jest.fn().mockResolvedValue([{accountId:session.account.id,customerId,isPrimary:true,customer:{id:customerId,customerName:'客户',customerCode:'SAME',isActive:true,businessScope:BusinessScope.BEILUN}}])};
   const customers={findOne:jest.fn().mockImplementation(async ({ where }) => where.businessScope === 'beilun' ? { id: customerId, businessScope: 'beilun' } : null)};
   const validation={validateRow:jest.fn().mockImplementation(async({raw})=>({ok:true,normalized:raw,errors:[]}))};
   const transaction=jest.fn();
@@ -25,8 +27,8 @@ function fixture(){
   const orders={createQueryBuilder:jest.fn(),find:jest.fn().mockResolvedValue([])};
   const mails={find:jest.fn().mockResolvedValue([])};
   const workOrders={createDraft:jest.fn().mockResolvedValue({id:'draft-id',orderNo:'WO-PORTAL'})};
-  const service=new CustomerPortalService(auth as never,{transaction,query} as never,submissions as never,rules as never,customers as never,{find:jest.fn().mockResolvedValue(fields)} as never,orders as never,mails as never,workOrders as never,new ImportTemplateService(templateConfig as never),templateConfig as never,validation as never,new ExcelParserService(),{} as never,contractSubjects as never,ruleApplication as never);
-  return {service,auth,submissions,transaction,query,fields,customers,rules,contractSubjects,ruleApplication,orders,workOrders,validation};
+  const service=new CustomerPortalService(auth as never,{transaction,query} as never,submissions as never,links as never,rules as never,customers as never,{find:jest.fn().mockResolvedValue(fields)} as never,orders as never,mails as never,workOrders as never,new ImportTemplateService(templateConfig as never),templateConfig as never,validation as never,new ExcelParserService(),{} as never,contractSubjects as never,ruleApplication as never);
+  return {service,auth,submissions,links,transaction,query,fields,customers,rules,contractSubjects,ruleApplication,orders,workOrders,validation};
 }
 
 describe('Customer portal authoritative business boundary',()=>{
@@ -178,7 +180,7 @@ describe('Customer portal authoritative business boundary',()=>{
   });
   it('restricts progress to the signed customer and granted business types',async()=>{
     const {service,submissions}=fixture();const result=await service.progress({linkToken:token});
-    expect(submissions.find.mock.calls[0][0].where.customerId).toBe(customerId);
+    expect(submissions.find.mock.calls[0][0].where.customerId.value).toEqual([customerId]);
     expect(submissions.find.mock.calls[0][0].where.businessType.value).toEqual(['onboarding','resignation','salary']);
     expect(result).toMatchObject({list:[],total:0,summary:{completed:0,processing:0}});
   });
@@ -272,6 +274,46 @@ describe('Customer portal authoritative business boundary',()=>{
     const outOfProvinceUser = { sub: 'u1', username: 'u1', roles: ['admin'], businessScope: BusinessScope.OUT_OF_PROVINCE };
     await expect(service.listSalary(customerId, outOfProvinceUser as never)).rejects.toThrow('客户不存在');
     expect(customers.findOne).toHaveBeenCalledWith({ where: { id: customerId, businessScope: BusinessScope.OUT_OF_PROVINCE } });
+  });
+
+  /* ---- 批次3：多主体门户账号（回归清单 §44 多主体口径） ---- */
+
+  const FORGED_SUBJECT='99999999-9999-4999-8999-999999999999';
+  const forgedInputs=[
+    { name:'schema', call:(service:CustomerPortalService)=>service.schema({linkToken:token,businessType:'onboarding',subjectId:FORGED_SUBJECT}) },
+    { name:'submit', call:(service:CustomerPortalService)=>service.submit({linkToken:token,businessType:'salary',requestId:'forged-subject',subjectId:FORGED_SUBJECT,fields:{month:'2026-09',mode:'same'}},{} as never) },
+    { name:'importRows', call:(service:CustomerPortalService)=>service.importRows({linkToken:token,businessType:'resignation',subjectId:FORGED_SUBJECT,fileName:'batch.xlsx',contentBase64:Buffer.from('PK-forged').toString('base64')},{} as never,false) },
+    { name:'attachments', call:(service:CustomerPortalService)=>service.attachments({linkToken:token,businessType:'salary',subjectId:FORGED_SUBJECT,requestId:'forged-attachment',files:[{name:'a.pdf',mimeType:'application/pdf',contentBase64:Buffer.from('%PDF-1.7').toString('base64')}]}) },
+  ] as const;
+  it.each(forgedInputs)('rejects a forged subject outside the linked set with 403 before any write: $name',async({call})=>{
+    const {service,transaction}=fixture();
+    await expect(call(service)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(call(service)).rejects.toThrow('无权办理所选主体的业务');
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it('keeps progress scoped to the visible subject set while the subject gate still blocks forged ids',async()=>{
+    const subjectB='66666666-6666-4666-8666-666666666666';
+    const {service,submissions,links}=fixture();
+    links.find.mockResolvedValue([
+      {accountId:session.account.id,customerId,isPrimary:true,customer:{id:customerId,customerName:'客户A',isActive:true,businessScope:BusinessScope.BEILUN}},
+      {accountId:session.account.id,customerId:subjectB,isPrimary:false,customer:{id:subjectB,customerName:'客户B',isActive:true,businessScope:BusinessScope.BEILUN}},
+    ]);
+    await service.progress({linkToken:token});
+    expect(submissions.find.mock.calls[0][0].where.customerId.value).toEqual([customerId,subjectB]);
+  });
+
+  it('rejects a mixed-subject import batch wholly before any partial success',async()=>{
+    const subjectB='66666666-6666-4666-8666-666666666666';
+    const {service,transaction,links}=fixture();
+    links.find.mockResolvedValue([
+      {accountId:session.account.id,customerId,isPrimary:true,customer:{id:customerId,customerName:'客户A',isActive:true,businessScope:BusinessScope.BEILUN}},
+      {accountId:session.account.id,customerId:subjectB,isPrimary:false,customer:{id:subjectB,customerName:'客户B',isActive:true,businessScope:BusinessScope.BEILUN}},
+    ]);
+    // 模板由主主体 A 生成（B1=主体A），携带 subjectId=B 提交即混主体批次 → 元数据校验整批拒绝。
+    const template=await service.template({linkToken:token,businessType:'resignation'});
+    await expect(service.importRows({linkToken:token,businessType:'resignation',subjectId:subjectB,fileName:template.fileName,contentBase64:template.contentBase64},{} as never,true)).rejects.toThrow('模板客户');
+    expect(transaction).not.toHaveBeenCalled();
   });
 });
 

@@ -154,11 +154,13 @@ test('resignation omits a blank optional email and submits a valid full stop yea
       resignation_date: '2027-01-04', social_stop_month: '2027-01', social_location: '上海', resignation_reason: '个人原因',
     }); } },
     portalSessionGeneration: 1, activePortalSession: { account: { id: 'account-a' } }, portalLinkToken: () => 'token-a',
+    currentSubjectId: () => 'aaaa1111-1111-4111-8111-111111111111',
     portalState: { resignationFiles: [] }, filesForPortal: async () => [], assertPortalSession() {}, isPortalSessionChanged: () => false,
     portalCall: async (path, payload) => { sent = { path, payload }; return { workOrderNo: 'RS-1' }; }, refreshPortalProgress: async () => {},
   });
   await context.submitResignation();
   assert.equal(sent.path, '/portal/resignation');
+  assert.equal(sent.payload.subjectId, 'aaaa1111-1111-4111-8111-111111111111', 'batch submission carries the active subject id');
   assert.equal(sent.payload.fields.social_stop_month, '2027-01');
   assert.equal(sent.payload.fields.social_location, '上海');
   assert.equal(Object.hasOwn(sent.payload.fields, 'email'), false);
@@ -177,6 +179,7 @@ for (const kind of ['onboarding', 'resignation']) {
     const context = runFunctions(businessFunction('runPortalImport'), {
       document: { getElementById: node }, portalState: { onboardingFiles: selected, resignationFiles: selected },
       portalSessionGeneration: 1, activePortalSession: { account: { id: 'account-a' } }, portalLinkToken: () => 'token-a',
+      currentSubjectId: (kind) => (kind === 'onboarding' ? 'aaaa1111-1111-4111-8111-111111111111' : 'bbbb2222-2222-4222-8222-222222222222'),
       fileAsBase64: async () => 'eGxzeA==', filesForPortal: async (files) => { assert.equal(files, selected); return [attachment]; },
       assertPortalSession() {}, isPortalSessionChanged: () => false, setToolStatus() {}, escapeHtml: (value) => String(value),
       portalCall: async (path, payload) => { calls.push({ path, payload }); return { successCount: 1, failureCount: 0, details: [{ rowNumber: 2, success: true, message: '已受理' }] }; },
@@ -188,6 +191,7 @@ for (const kind of ['onboarding', 'resignation']) {
     for (const call of calls) {
       assert.equal(call.payload.contentBase64, 'eGxzeA==');
       assert.equal(call.payload.files[0], attachment);
+      assert.equal(call.payload.subjectId, kind === 'onboarding' ? 'aaaa1111-1111-4111-8111-111111111111' : 'bbbb2222-2222-4222-8222-222222222222', 'import batch carries the active subject id');
     }
   });
 }
@@ -257,6 +261,51 @@ test('DraftStore falls back to null on corrupted payloads and on quota failures'
   ctx.quotaFail = true;
   assert.equal(ctx.draft.DraftStore.save('onboarding', { employee_name: '张' }, []), null);
   assert.equal(ctx.draft.DraftStore.load('onboarding'), null, 'quota failure clears stale draft instead of faking success');
+});
+
+/* ---- 批次3：多主体草稿隔离（回归清单 §44 多主体口径） ---- */
+const SUBJECT_A = 'aaaa1111-1111-4111-8111-111111111111';
+const SUBJECT_B = 'bbbb2222-2222-4222-8222-222222222222';
+
+test('draft keys carry the real subject id segment instead of a placeholder', () => {
+  const select = element(SUBJECT_A);
+  const ctx = draftKernel({
+    activePortalSession: { account: { id: 'acct-1' }, primarySubjectId: SUBJECT_A },
+    document: { getElementById: (id) => (id === 'onboarding-subject-select' ? select : null) },
+  });
+  ctx.draft.DraftStore.save('onboarding', { employee_name: '甲' }, []);
+  assert.match(ctx.draft.portalDraftKeyFor('onboarding'), new RegExp(`^portalDraftStore:acct-1:onboarding:${SUBJECT_A}$`));
+  // 无业务下拉时回退到主主体真值
+  assert.match(ctx.draft.portalDraftKeyFor('salary'), new RegExp(`:salary:${SUBJECT_A}$`));
+});
+
+test('switching subjects never crosses drafts: each subject keeps its own fields per business', () => {
+  const onboardingSelect = element(SUBJECT_A);
+  const resignationSelect = element(SUBJECT_A);
+  const ctx = draftKernel({
+    activePortalSession: { account: { id: 'acct-1' }, primarySubjectId: SUBJECT_A },
+    document: { getElementById: (id) => (id === 'onboarding-subject-select' ? onboardingSelect : id === 'resignation-subject-select' ? resignationSelect : null) },
+  });
+  ctx.draft.DraftStore.save('onboarding', { employee_name: '主体A草稿' }, []);
+  ctx.draft.DraftStore.save('resignation', { employee_name: '主体A离职草稿' }, []);
+
+  onboardingSelect.value = SUBJECT_B;
+  resignationSelect.value = SUBJECT_B;
+  assert.equal(ctx.draft.DraftStore.load('onboarding'), null, 'subject B must not see subject A onboarding draft');
+  assert.equal(ctx.draft.DraftStore.load('resignation'), null, 'subject B must not see subject A resignation draft');
+
+  ctx.draft.DraftStore.save('onboarding', { employee_name: '主体B草稿' }, []);
+  onboardingSelect.value = SUBJECT_A;
+  resignationSelect.value = SUBJECT_A;
+  assert.equal(ctx.draft.DraftStore.load('onboarding').fields.employee_name, '主体A草稿', 'subject A draft survives the round trip');
+  assert.equal(ctx.draft.DraftStore.load('resignation').fields.employee_name, '主体A离职草稿');
+  onboardingSelect.value = SUBJECT_B;
+  resignationSelect.value = SUBJECT_B;
+  assert.equal(ctx.draft.DraftStore.load('onboarding').fields.employee_name, '主体B草稿');
+  assert.equal(ctx.draft.DraftStore.load('resignation'), null, 'subject B resignation draft stays separate');
+  ctx.draft.DraftStore.clear('onboarding');
+  onboardingSelect.value = SUBJECT_A;
+  assert.ok(ctx.draft.DraftStore.load('onboarding'), 'clearing subject B draft leaves subject A draft untouched');
 });
 
 test('submitOnboarding and submitResignation clear their drafts; service result drops the mail suffix', () => {

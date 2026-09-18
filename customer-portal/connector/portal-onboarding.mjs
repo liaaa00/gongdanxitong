@@ -8,7 +8,6 @@ const BANK_TEXT_PATTERN = /^[^\s()[\]{}<>（）【】]+$/;
 const BANK_ACCOUNT_PATTERN = /^\d{8,30}$/;
 const CONTRACT_TERM_TYPES = new Set(['固定期限', '无固定期限', '任务期限']);
 const WORK_HOUR_SYSTEMS = new Set(['标准工时制', '综合工时制', '不定时工时制']);
-const SALARY_FORMS = new Set(['按月']);
 const TOKEN_VERSION = 1;
 const TOKEN_AUDIENCE = 'customer-portal';
 // Keep the public portal attachment limit below the 50 MB reverse-proxy body limit
@@ -151,6 +150,11 @@ export function createPortalLinkToken(context, secret) {
   if (!isPlainObject(context) || !UUID_PATTERN.test(String(context.customerId || ''))) {
     throw new PortalRequestError('INVALID_PORTAL_LINK', 'customerId must be a UUID');
   }
+  // 批次3：ops 直发 token 仅限单成员账号。多主体账号的主体集合由内部侧配置，
+  // 直发 token 一旦写死单主体会绕过多主体口径，多成员账号须走内部门户登录获取会话。
+  if (Array.isArray(context.subjectIds) && context.subjectIds.length > 1) {
+    throw new PortalRequestError('INVALID_PORTAL_LINK', 'direct-issued portal tokens are limited to single-subject accounts; configure subjects from the internal console instead');
+  }
 
   const payload = {
     v: TOKEN_VERSION,
@@ -251,9 +255,6 @@ export function normalizeOnboardingFields(fields) {
   }
   if (!WORK_HOUR_SYSTEMS.has(normalized.work_hour_system)) {
     throw new PortalRequestError('INVALID_FIELDS', 'work_hour_system is invalid');
-  }
-  if (!SALARY_FORMS.has(normalized.salary_form)) {
-    throw new PortalRequestError('INVALID_FIELDS', 'salary_form must be 按月');
   }
   if (normalized.start_month && !MONTH_PATTERN.test(normalized.start_month)) {
     throw new PortalRequestError('INVALID_FIELDS', 'start_month must use 1月-12月');

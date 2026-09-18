@@ -4,7 +4,10 @@ param(
   [switch]$SkipBuild
 )
 
-$ErrorActionPreference = 'Stop'
+# Continue 而非 Stop：PS 5.1 在输出重定向场景会把 npm/vitest 的 stderr warning 包装成
+# NativeCommandError，EAP=Stop 会误终止整个回归。真实失败仍由 Invoke-InDir 的
+# LASTEXITCODE 显式检查 throw 兜住，行为不变。
+$ErrorActionPreference = 'Continue'
 $OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path

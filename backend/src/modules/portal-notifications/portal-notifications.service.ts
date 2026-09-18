@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { DataSource, EntityManager, In } from 'typeorm';
-import { BusinessScope, Customer, CustomerPortalAccount, CustomerPortalRule, OperationLog, WorkOrderCompletionEmail } from 'src/entities';
+import { BusinessScope, Customer, CustomerPortalAccount, CustomerPortalAccountLink, CustomerPortalRule, OperationLog, WorkOrderCompletionEmail } from 'src/entities';
 import { PortalNotificationContext } from 'src/entities/work-order-completion-email.entity';
 import { PortalNotificationSettingsService } from './portal-notification-settings.service';
 import { PortalNotificationEligibilityService } from './portal-notification-eligibility.service';
@@ -38,15 +38,27 @@ export class PortalNotificationsService {
       const stats = { queued: 0, alreadySubmitted: 0 };
       if (!customers.length) return stats;
       const rules = await manager.getRepository(CustomerPortalRule).find({ where: { customerId: In(customers.map((item) => item.id)), isActive: true } });
-      const accounts = await manager.getRepository(CustomerPortalAccount).find({ where: { customerId: In(customers.map((item) => item.id)), isActive: true } });
+      const accounts = await manager.getRepository(CustomerPortalAccount).find({ where: { isActive: true } });
+      // 批次3：账号↔主体经关联集合匹配。一个主体可被多个账号挂载，一个账号可挂载多个主体；
+      // 通知按"主体×账号×期次"入队（dedup key 含主体段），同一账号挂载多主体时各主体独立提醒。
+      const accountIds = accounts.map((item) => item.id);
+      const links = accountIds.length ? await manager.getRepository(CustomerPortalAccountLink).find({ where: { accountId: In(accountIds) } }) : [];
+      const accountsBySubject = new Map<string, CustomerPortalAccount[]>();
+      for (const link of links) {
+        const account = accounts.find((item) => item.id === link.accountId);
+        if (!account) continue;
+        const bucket = accountsBySubject.get(link.customerId) ?? [];
+        if (!bucket.includes(account)) bucket.push(account);
+        accountsBySubject.set(link.customerId, bucket);
+      }
       for (const customer of customers) {
         const rule = rules.find((item) => item.customerId === customer.id);
-        const salaryAccounts = accounts.filter((item) => item.customerId === customer.id && item.businessPermissions.includes('salary'));
+        const salaryAccounts = (accountsBySubject.get(customer.id) ?? []).filter((item) => item.businessPermissions.includes('salary'));
         if (!rule || !salaryAccounts.length) continue;
         if (settings.monthlyEnabled && today.endsWith('-01')) {
           const month = salaryPeriod(today.slice(0, 7), rule.salaryRules?.payrollMonthMode);
           for (const account of salaryAccounts) stats.queued += await this.enqueue(manager, settings, customer,
-            { kind: 'salary_monthly', accountId: account.id, salaryMonth: month, scheduledDate: today }, [account.loginEmail], {}, `portal:monthly:${account.id}:${today.slice(0, 7)}`);
+            { kind: 'salary_monthly', accountId: account.id, salaryMonth: month, scheduledDate: today }, [account.loginEmail], {}, `portal:monthly:${customer.id}:${account.id}:${month}`);
         }
         const billingDay = rule.salaryRules?.billingDay;
         if (!settings.reminderEnabled || rule.salaryRules?.reminderEnabled === false || !Number.isInteger(billingDay) || !billingDay || billingDay < 1 || billingDay > 28) continue;
@@ -63,7 +75,7 @@ export class PortalNotificationsService {
               { kind: 'salary_escalation', salaryMonth: month, billingDate, scheduledDate: today, offset: 1 }, recipients, {}, `portal:reminder:${customer.id}:${billingDate}:1:staff`);
           } else {
             for (const account of salaryAccounts) stats.queued += await this.enqueue(manager, settings, customer,
-              { kind: 'salary_reminder', accountId: account.id, salaryMonth: month, billingDate, scheduledDate: today, offset: due.offset }, [account.loginEmail], {}, `portal:reminder:${account.id}:${billingDate}:${due.offset}`);
+              { kind: 'salary_reminder', accountId: account.id, salaryMonth: month, billingDate, scheduledDate: today, offset: due.offset }, [account.loginEmail], {}, `portal:reminder:${customer.id}:${account.id}:${billingDate}:${due.offset}`);
           }
         }
       }

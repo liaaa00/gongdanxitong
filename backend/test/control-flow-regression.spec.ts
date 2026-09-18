@@ -208,9 +208,12 @@ describe('five control-flow regression coverage', () => {
     expect(bracket).toBeDefined();
     const scope = { where: jest.fn(), orWhere: jest.fn() };
     bracket!.whereFactory(scope);
-    const moduleScopeCall = scope.orWhere.mock.calls.find(([clause]) => clause === 'd.handler_id IS NULL AND d.module_code IN (:...modules)');
+    // 合同团队成员的未指派池子句使用 poolModules 参数键（合同模块已由团队共享谓词覆盖，
+    // 池子句仅承载其余可见模块，例如 resignation_cert）；非合同团队成员仍使用 modules 参数键。
+    const moduleScopeCall = scope.orWhere.mock.calls.find(([clause]) => clause === 'd.handler_id IS NULL AND d.module_code IN (:...poolModules)' || clause === 'd.handler_id IS NULL AND d.module_code IN (:...modules)');
     expect(moduleScopeCall).toBeDefined();
-    expect((moduleScopeCall![1] as { modules: string[] }).modules).toContain(moduleCode);
+    const poolParams = moduleScopeCall![1] as { poolModules?: string[]; modules?: string[] };
+    expect((poolParams.poolModules ?? poolParams.modules)!).toContain(moduleCode);
   });
 
   // 0603：江璐是杨纯（劳动合同新签/续签）+ 毛雅妮（入职联系/离职材料收集）的合集。

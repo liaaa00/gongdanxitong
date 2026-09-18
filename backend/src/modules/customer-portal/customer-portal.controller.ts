@@ -19,6 +19,7 @@ class PortalFileDto implements PortalFile {
 class PortalInputDto implements PortalInput {
   @IsString() @MaxLength(4096) linkToken!:string;
   @IsOptional() @IsIn(PORTAL_BUSINESS_TYPES) businessType?:PortalBusinessType;
+  @IsOptional() @IsUUID() subjectId?:string;
   @IsOptional() @IsString() @MaxLength(100) requestId?:string;
   @IsOptional() @IsUUID() submissionId?:string;
   @IsOptional() @IsObject() fields?:Record<string,unknown>;

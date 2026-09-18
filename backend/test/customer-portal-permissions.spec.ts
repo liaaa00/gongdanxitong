@@ -86,7 +86,7 @@ describe('customer portal assignment permissions', () => {
     const assigneeRepository: any = { findOne: jest.fn(async ({ where }: any) => where.customerId === C1 ? { customerId: C1 } : null) };
     const ruleRepository: any = { findOne: jest.fn().mockResolvedValue({ isActive: true, onboardingDefaults: {}, resignationDefaults: {}, salaryRules: { billingDay: 20 }, sharedEmailRules: { mailbox: 'shared@example.test' } }) };
     const notifications: any = { enqueueAccountActivation: jest.fn() };
-    const service = new CustomerPortalAccountsService(accountRepository, customerRepository, { get: jest.fn(() => 'portal-test-secret-which-is-longer-than-32-characters') } as any, ruleRepository, notifications, assigneeRepository);
+    const service = new CustomerPortalAccountsService(accountRepository, customerRepository, { get: jest.fn(() => 'portal-test-secret-which-is-longer-than-32-characters') } as any, ruleRepository, notifications, { find: jest.fn().mockResolvedValue([]) } as any, assigneeRepository);
 
     await expect(service.list(C1, user(['business_group_member']))).resolves.toHaveLength(1);
     await expect(service.list(C2, user(['business_group_member']))).rejects.toBeInstanceOf(ForbiddenException);

@@ -630,7 +630,10 @@ export class DashboardService {
       'business_group_member',
       'salesperson',
     ]);
-    if (fixedBusinessAccount) return user.businessScope ?? BusinessScope.BEILUN;
+    // 后道处理人（合同/入离职联系/报岗/社保等）的模块数据固定跟账号业务线走，
+    // 不采纳前端请求参数：前端 businessScope 来自与登录态解耦的 localStorage，
+    // 可能被同浏览器其他账号的口径切换或跨标签页残留污染，导致仪表盘按错误口径查询而显示全 0。
+    if (fixedBusinessAccount || this.isBackendHandler(user)) return user.businessScope ?? BusinessScope.BEILUN;
     return requestedScope ?? user.businessScope ?? BusinessScope.BEILUN;
   }
 

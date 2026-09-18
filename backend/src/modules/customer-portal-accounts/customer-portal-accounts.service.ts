@@ -11,10 +11,11 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { AppConfig } from 'src/config/configuration';
-import { BusinessScope, Customer, CustomerAssignee, CustomerPortalAccount, CustomerPortalRule } from 'src/entities';
+import { BusinessScope, Customer, CustomerAssignee, CustomerPortalAccount, CustomerPortalAccountLink, CustomerPortalRule } from 'src/entities';
 import { hasAnyRole, hasManagementScopeRole, isAdminRole, WORK_ORDER_CREATOR_ROLES } from 'src/common/auth/role-permissions';
+import { isUUID } from 'class-validator';
 import { JwtUserPayload } from 'src/modules/auth/auth.types';
 import { PortalNotificationsService } from 'src/modules/portal-notifications/portal-notifications.service';
 
@@ -80,6 +81,8 @@ export class CustomerPortalAccountsService {
     @InjectRepository(CustomerPortalRule)
     private readonly ruleRepository: Repository<CustomerPortalRule>,
     private readonly notifications: PortalNotificationsService,
+    @InjectRepository(CustomerPortalAccountLink)
+    private readonly linkRepository: Repository<CustomerPortalAccountLink>,
     @Optional() @InjectRepository(CustomerAssignee)
     private readonly customerAssigneeRepository?: Repository<CustomerAssignee>,
   ) {}
@@ -90,7 +93,89 @@ export class CustomerPortalAccountsService {
       where: { customerId },
       order: { createdAt: 'ASC' },
     });
-    return rows.map((row) => this.toView(row));
+    const accountIds = rows.map((row) => row.id);
+    const links = accountIds.length
+      ? await this.linkRepository.find({ where: { accountId: In(accountIds) }, relations: { customer: true } })
+      : [];
+    return rows.map((row) => ({
+      ...this.toView(row),
+      ...this.subjectsView(links.filter((link) => link.accountId === row.id)),
+    }));
+  }
+
+  /** 内部侧主体列表视图：可见性口径与门户一致（激活 + 北仑）。 */
+  private subjectsView(links: CustomerPortalAccountLink[]) {
+    const visible = links
+      .filter((link) => link.customer?.isActive && link.customer.businessScope === BusinessScope.BEILUN)
+      .sort((left, right) => Number(right.isPrimary) - Number(left.isPrimary));
+    return {
+      primarySubjectId: visible.find((link) => link.isPrimary)?.customerId ?? null,
+      subjects: visible.map((link) => ({ id: link.customerId, name: link.customer.customerName, isPrimary: link.isPrimary })),
+    };
+  }
+
+  async listSubjects(customerId: string, accountId: string, user?: JwtUserPayload) {
+    await this.getCustomer(customerId, user);
+    await this.getAccount(customerId, accountId);
+    const links = await this.linkRepository.find({ where: { accountId }, relations: { customer: true } });
+    return this.subjectsView(links);
+  }
+
+  /**
+   * 批次3：配置账号关联的主体集合。
+   * - 主主体不可取消（拍板③）：primarySubjectId 缺省保持现主主体，且必须 ∈ subjects；
+   * - 非主主体增删不动主主体；主主体切换需该主体规则齐备（ensureRuleReady）；
+   * - 变更必 bump session_version 踢在途 token。
+   */
+  async setSubjects(customerId: string, accountId: string, input: { subjects?: string[]; primarySubjectId?: string }, user?: JwtUserPayload) {
+    await this.getCustomer(customerId, user, true);
+    const row = await this.getAccount(customerId, accountId);
+    const requested = input.subjects;
+    if (!Array.isArray(requested) || requested.length < 1) throw new BadRequestException('请至少选择一个主体');
+    if (new Set(requested).size !== requested.length) throw new BadRequestException('主体列表存在重复项');
+    if (requested.some((id) => !isUUID(id))) throw new BadRequestException('主体标识无效');
+    const currentLinks = await this.linkRepository.find({ where: { accountId: row.id } });
+    const existing = new Map(currentLinks.map((link) => [link.customerId, link]));
+    const currentPrimaryId = currentLinks.find((link) => link.isPrimary)?.customerId ?? row.customerId;
+    const primarySubjectId = input.primarySubjectId === undefined ? currentPrimaryId : input.primarySubjectId;
+    if (!isUUID(primarySubjectId) || !requested.includes(primarySubjectId)) {
+      throw new BadRequestException('主主体必须包含在主体集合中，不可取消');
+    }
+    const primaryChanged = primarySubjectId !== currentPrimaryId;
+    if (primaryChanged) {
+      // 仅主主体切换校验规则齐备；新增非主主体缺失规则走"留待内部审核"例外（拍板①）。
+      await this.ensureRuleReady(primarySubjectId, normalizePortalBusinessPermissions(row.businessPermissions));
+    }
+    const customers = await this.customerRepository.find({ where: { id: In([...new Set([...requested, customerId])]) } });
+    const customerById = new Map(customers.map((customer) => [customer.id, customer]));
+    const invalid = requested.find((id) => !customerById.get(id)?.isActive || customerById.get(id)?.businessScope !== BusinessScope.BEILUN);
+    if (invalid) throw new BadRequestException('所选主体不存在、已停用或不属于北仑口径');
+    const primaryCustomer = customerById.get(primarySubjectId);
+    if (!primaryCustomer) throw new BadRequestException('主主体不存在');
+
+    await this.accountRepository.manager.transaction(async (manager) => {
+      const linkRepo = manager.getRepository(CustomerPortalAccountLink);
+      const keep = new Set(requested);
+      for (const link of currentLinks) {
+        if (!keep.has(link.customerId)) await linkRepo.remove(link);
+        else if (link.isPrimary !== (link.customerId === primarySubjectId)) {
+          link.isPrimary = link.customerId === primarySubjectId;
+          await linkRepo.save(link);
+        }
+      }
+      for (const id of requested) {
+        if (existing.has(id)) continue;
+        await linkRepo.save(linkRepo.create({ accountId: row.id, customerId: id, isPrimary: id === primarySubjectId }));
+      }
+      // 关联集合变更必 bump session_version，踢掉在途 token（拍板②配套）。
+      // 主主体切换同步 accounts.customer_id，保持"主主体=账号归属客户"的既有外键语义。
+      await manager.getRepository(CustomerPortalAccount).update(
+        { id: row.id, customerId: row.customerId, sessionVersion: row.sessionVersion },
+        { sessionVersion: row.sessionVersion + 1, ...(primaryChanged ? { customerId: primarySubjectId } : {}) },
+      );
+    });
+    const links = await this.linkRepository.find({ where: { accountId: row.id }, relations: { customer: true } });
+    return this.subjectsView(links);
   }
 
   async create(customerId: string, input: SavePortalAccountInput, user?: JwtUserPayload) {
@@ -115,6 +200,10 @@ export class CustomerPortalAccountsService {
     });
     return this.accountRepository.manager.transaction(async (manager) => {
       const saved = await manager.getRepository(CustomerPortalAccount).save(row);
+      // 批次3：账号创建即写入唯一主主体关联，存量语义不变（单主体账号恰好一条 is_primary=true）。
+      await manager.getRepository(CustomerPortalAccountLink).save(
+        manager.getRepository(CustomerPortalAccountLink).create({ accountId: saved.id, customerId, isPrimary: true }),
+      );
       if (saved.isActive) await this.notifications.enqueueAccountActivation(manager, this.activationNoticeAccount(saved), customer);
       return this.toView(saved);
     });
@@ -229,8 +318,12 @@ export class CustomerPortalAccountsService {
     return { row, claims };
   }
 
-  private sessionView(row: CustomerPortalAccount, expiresAt = Math.floor(Date.now() / 1000) + this.sessionSeconds(), linkToken?: string) {
+  /** 会话视图：customer 为主主体（兼容既有门户头部展示），subjects 为批次3可见主体全集。 */
+  private async sessionView(row: CustomerPortalAccount, expiresAt = Math.floor(Date.now() / 1000) + this.sessionSeconds(), linkToken?: string) {
     const businessPermissions = normalizePortalBusinessPermissions(row.businessPermissions);
+    const links = await this.linkRepository.find({ where: { accountId: row.id }, relations: { customer: true } });
+    const visible = links.filter((link) => link.customer?.isActive && link.customer.businessScope === BusinessScope.BEILUN)
+      .sort((left, right) => Number(right.isPrimary) - Number(left.isPrimary));
     return {
       linkToken: linkToken || this.createLinkToken(row, expiresAt),
       expiresAt,
@@ -248,6 +341,8 @@ export class CustomerPortalAccountsService {
         customerCode: row.customer.customerCode,
         customerName: row.customer.customerName,
       },
+      primarySubjectId: visible.find((link) => link.isPrimary)?.customerId ?? row.customerId,
+      subjects: visible.map((link) => ({ id: link.customerId, name: link.customer.customerName, isPrimary: link.isPrimary })),
     };
   }
 

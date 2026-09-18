@@ -7,6 +7,7 @@ import {
   createCustomerPortalAccount,
   getCustomerPortalAccounts,
   resetCustomerPortalPassword,
+  setCustomerPortalAccountSubjects,
   updateCustomerPortalAccount,
   PORTAL_BUSINESS_OPTIONS,
   type CustomerPortalAccountItem,
@@ -46,10 +47,12 @@ const CustomerPortalAccounts: React.FC = () => {
   const [accountOpen, setAccountOpen] = useState(false);
   const [passwordAccount, setPasswordAccount] = useState<CustomerPortalAccountItem | null>(null);
   const [saving, setSaving] = useState(false);
-  const [form] = Form.useForm<SaveCustomerPortalAccountInput>();
+  const [form] = Form.useForm<SaveCustomerPortalAccountInput & { subjects?: string[]; primarySubjectId?: string }>();
   const [passwordForm] = Form.useForm<{ password: string; mustChangePassword: boolean }>();
   const selectedPermissions: PortalBusinessPermission[] = Form.useWatch('businessPermissions', form) || [];
   const selectedActive = Form.useWatch('isActive', form);
+  const selectedSubjects: string[] = Form.useWatch('subjects', form) || [];
+  const selectedPrimarySubject = Form.useWatch('primarySubjectId', form);
 
   const currentCustomer = useMemo(() => customers.find((item) => item.customerId === customerId), [customers, customerId]);
 
@@ -138,13 +141,15 @@ const CustomerPortalAccounts: React.FC = () => {
       isActive: account.isActive,
       mustChangePassword: account.mustChangePassword,
       businessPermissions: account.businessPermissions,
+      subjects: account.subjects?.length ? account.subjects.map((item) => item.id) : [account.customerId],
+      primarySubjectId: account.primarySubjectId || account.customerId,
     });
     setAccountOpen(true);
   };
 
   const saveAccount = async () => {
     if (!customerId) return;
-    let values: SaveCustomerPortalAccountInput;
+    let values: SaveCustomerPortalAccountInput & { subjects?: string[]; primarySubjectId?: string };
     try { values = await form.validateFields(); } catch { return; }
     const missing = missingRules(currentCustomer, permissionsToValidate(values));
     if (missing.length) {
@@ -154,7 +159,21 @@ const CustomerPortalAccounts: React.FC = () => {
     setSaving(true);
     try {
       if (editing) {
-        await updateCustomerPortalAccount(customerId, editing.id, values);
+        // 批次3：剥离 subjects / primarySubjectId 后再 PUT，避免全局 ValidationPipe(forbidNonWhitelisted) 拒 400；
+        // 主体集合仍走下方独立 setSubjects 接口。
+        const { subjects, primarySubjectId, ...accountValues } = values;
+        await updateCustomerPortalAccount(customerId, editing.id, accountValues);
+        // 批次3：主体集合变更走独立接口（后端负责主主体不可取消校验 + bump session_version 踢在途 token）。
+        const nextSubjects = (subjects || []).filter(Boolean);
+        const originalSubjectIds = editing.subjects?.length ? editing.subjects.map((item) => item.id) : [editing.customerId];
+        const primaryChanged = (primarySubjectId || editing.primarySubjectId || editing.customerId) !== (editing.primarySubjectId || editing.customerId);
+        if (nextSubjects.length && ([...nextSubjects].sort().join(',') !== [...originalSubjectIds].sort().join(',') || primaryChanged)) {
+          await setCustomerPortalAccountSubjects(customerId, editing.id, {
+            subjects: nextSubjects,
+            primarySubjectId: primarySubjectId || editing.primarySubjectId || editing.customerId,
+          });
+          message.info('主体集合已更新，该账号的在途登录已失效，需重新登录');
+        }
         message.success('门户账号已更新');
       } else {
         await createCustomerPortalAccount(customerId, values);
@@ -215,11 +234,26 @@ const CustomerPortalAccounts: React.FC = () => {
             loading={loading}
             dataSource={accounts}
             locale={{ emptyText: <Empty description="当前客户还没有门户账号" /> }}
-            scroll={{ x: 1080 }}
+            scroll={{ x: 1300 }}
             pagination={false}
             columns={[
               { title: '登录邮箱', dataIndex: 'loginEmail', width: 240 },
               { title: '联系人', dataIndex: 'contactName', width: 150 },
+              {
+                title: '关联主体',
+                width: 220,
+                render: (_, row) => {
+                  const subjects = row.subjects?.length ? row.subjects : [{ id: row.customerId, name: '', isPrimary: true }];
+                  return (
+                    <Space size={4} wrap>
+                      {subjects.map((item) => {
+                        const name = item.name || customers.find((customer) => customer.customerId === item.id)?.customerName || item.id.slice(0, 8);
+                        return <Tag key={item.id} color={item.isPrimary ? 'geekblue' : 'default'}>{item.isPrimary ? '★ ' : ''}{name}</Tag>;
+                      })}
+                    </Space>
+                  );
+                },
+              },
               { title: '业务权限', width: 220, render: (_, row) => <Space size={4} wrap>{PORTAL_BUSINESS_OPTIONS.filter((item) => row.businessPermissions?.includes(item.value)).map((item) => <Tag key={item.value} color="blue">{item.label}</Tag>)}</Space> },
               { title: '状态', width: 100, render: (_, row) => <Tag color={row.isActive ? 'success' : 'default'}>{row.isActive ? '启用' : '停用'}</Tag> },
               { title: '首次改密', width: 100, render: (_, row) => row.mustChangePassword ? <Tag color="warning">需要</Tag> : <Tag>不需要</Tag> },
@@ -236,6 +270,64 @@ const CustomerPortalAccounts: React.FC = () => {
           <Form.Item name="contactName" label="联系人姓名/备注" rules={[{ required: true, message: '请输入联系人姓名或备注' }, { max: 100 }]}><Input placeholder="例如：张女士（增减员联系人）" /></Form.Item>
           {!editing && <Form.Item name="password" label="初始密码" rules={[{ required: true, message: '请输入初始密码' }, { pattern: /^(?=.*[A-Za-z])(?=.*\d).{8,72}$/, message: '8 至 72 位，且同时包含字母和数字' }]}><Input.Password autoComplete="new-password" /></Form.Item>}
           <Form.Item name="businessPermissions" label="业务权限" extra="增员和减员共用一个权限；薪资单独授权" rules={[{ required: true, type: 'array', min: 1, message: '请至少选择一项业务权限' }]}><Checkbox.Group options={PORTAL_BUSINESS_OPTIONS} /></Form.Item>
+          {editing && (
+            <>
+              <Form.Item
+                name="subjects"
+                label="关联主体"
+                extra="一个账号可挂载多个主体办理业务；主主体停用将阻断整个账号登录"
+                rules={[
+                  { required: true, type: 'array', min: 1, message: '请至少选择一个关联主体' },
+                  {
+                    validator: (_, value: string[] | undefined) => {
+                      // 拍板③：主主体不可取消——编辑时原主主体必须保留在集合中。
+                      const originalPrimary = editing.primarySubjectId || editing.customerId;
+                      if (value && !value.includes(originalPrimary)) {
+                        return Promise.reject(new Error('主主体不可取消，请保留原主主体'));
+                      }
+                      return Promise.resolve();
+                    },
+                  },
+                ]}
+              >
+                <Select
+                  mode="multiple"
+                  placeholder="请选择关联主体"
+                  options={customers.map((item) => ({ value: item.customerId, label: `${item.customerName}（${item.customerCode || '-'}）` }))}
+                  onChange={(next: string[]) => {
+                    // 主主体被移出集合时自动回落到原主主体或首个选项。
+                    const current = form.getFieldValue('primarySubjectId') as string | undefined;
+                    if (!next?.includes(current || '')) {
+                      form.setFieldValue('primarySubjectId', next?.includes(editing.primarySubjectId || editing.customerId) ? (editing.primarySubjectId || editing.customerId) : (next?.[0] || undefined));
+                    }
+                  }}
+                />
+              </Form.Item>
+              <Form.Item
+                name="primarySubjectId"
+                label="主主体"
+                extra="门户登录默认以主主体展示；主主体切换要求该主体办理规则齐备"
+                rules={[
+                  { required: true, message: '请选择主主体' },
+                  {
+                    validator: (_, value: string | undefined) => {
+                      const subjects = (form.getFieldValue('subjects') as string[] | undefined) || [];
+                      if (value && !subjects.includes(value)) return Promise.reject(new Error('主主体必须包含在关联主体集合中'));
+                      return Promise.resolve();
+                    },
+                  },
+                ]}
+              >
+                <Select
+                  placeholder="请选择主主体"
+                  options={selectedSubjects.map((id) => {
+                    const match = customers.find((item) => item.customerId === id);
+                    return { value: id, label: match ? `${match.customerName}（${match.customerCode || '-'}）` : id };
+                  })}
+                />
+              </Form.Item>
+            </>
+          )}
           {selectedMissingRules.length > 0 && <Alert type="warning" showIcon message="所选业务的办理规则尚未完成" description={selectedMissingRules.join('、')} style={{ marginBottom: 16 }} />}
           <Form.Item name="isActive" label="启用账号" valuePropName="checked"><Switch /></Form.Item>
           <Form.Item name="mustChangePassword" label="下次登录必须修改密码" valuePropName="checked"><Switch /></Form.Item>

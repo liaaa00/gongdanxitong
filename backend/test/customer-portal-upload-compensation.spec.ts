@@ -69,7 +69,9 @@ function fixture(options: { queueError?: Error; commitError?: Error; commitSucce
   const rules = { findOne: jest.fn(async () => ({ sharedEmailRules: { mailbox: 'shared@example.test' }, completionEmailEnabled: true, completionEmailTo: ['recipient@example.test'], completionEmailCc: [] })) };
   const customers = { findOne: jest.fn(async () => ({ id: customerId, customerName: '配置客户名称' })) };
   const notificationSettings = { render: jest.fn(async () => ({ subject: '共享办结主题', body: '共享办结正文' })) };
-  const service = new CustomerPortalService(auth as never, dataSource as never, submissions as never, rules as never, customers as never, {} as never, {} as never, mails as never, {} as never, {} as never, {} as never, {} as never, new ExcelParserService(), uploads as never, {} as never, {} as never, undefined, notificationSettings as never);
+  // 批次3：构造函数新增 links 仓库（resolveActiveSubject 依赖），mock 返回主主体关联，避免主主体停用阻断。
+  const links = { find: jest.fn(async () => [{ accountId, customerId, isPrimary: true, customer: { id: customerId, customerName: '配置客户名称', isActive: true, businessScope: BusinessScope.BEILUN } }]) };
+  const service = new CustomerPortalService(auth as never, dataSource as never, submissions as never, links as never, rules as never, customers as never, {} as never, {} as never, mails as never, {} as never, {} as never, {} as never, {} as never, new ExcelParserService(), uploads as never, {} as never, {} as never, undefined, notificationSettings as never);
   const invoke = (nextEntry: Entry, files = [file]) => {
     entry = nextEntry;
     if (entry === 'completeSalary') return service.completeSalary(submissionId, customerId, '已核验完成', user as never);

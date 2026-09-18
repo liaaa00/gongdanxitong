@@ -57,8 +57,9 @@ describe('WorkOrderImportService', () => {
     expect(payload.extraData).toMatchObject({
       gender: '男',
       birth_date: '1990-01-01',
-      probation_end_date: '2026-08-31',
     });
+    // 2026-09-16 口径：试用期字段全部非必填，不再依据试用期月数自动生成结束日期。
+    expect(payload.extraData.probation_end_date).toBeUndefined();
     expect(typeof payload.extraData.age).toBe('number');
     expect(inServiceOrdersService.create).not.toHaveBeenCalled();
   });

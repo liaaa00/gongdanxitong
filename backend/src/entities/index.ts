@@ -44,4 +44,5 @@ export * from './work-order-completion-email.entity';
 export * from './work-order.entity';
 
 export { CustomerPortalSubmission } from './customer-portal-submission.entity';
+export { CustomerPortalAccountLink } from './customer-portal-account-link.entity';
 export { PortalNotificationSetting } from './portal-notification-setting.entity';

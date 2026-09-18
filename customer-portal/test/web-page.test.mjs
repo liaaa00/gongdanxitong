@@ -36,7 +36,9 @@ test('phase-one customer portal exposes the agreed entry points', async () => {
   assert.doesNotMatch(page, /<span class="customer-chip">草稿/);
   assert.match(page, /id="onboarding-draft-badge" class="customer-chip draft-badge hidden"/);
   assert.match(page, /id="resignation-draft-badge" class="customer-chip draft-badge hidden"/);
-  assert.match(page, /id="salary_type_display" class="static-readonly">按月<\/output><input type="hidden" id="salary_type" name="salary_type" value="按月"/);
+  assert.match(page, /id="salary_type" name="salary_type" list="salary-type-options" maxlength="20" value="按月" required/);
+  assert.doesNotMatch(page, /salary_type_display|static-readonly">按月|仅支持“按月”计薪/);
+  assert.match(page, /<option>标准工时制<\/option><option>综合工时制<\/option><option>不定时工时制<\/option>/);
   assert.doesNotMatch(page, /提交离职办理|提交薪资确认|确认提交<\/button>|提交资料/);
   assert.doesNotMatch(page, /salary-draft/);
   assert.match(page, /id="resignation-save-draft"/);

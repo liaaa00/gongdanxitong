@@ -427,6 +427,30 @@ describe('DashboardService', () => {
     expect(sql).not.toContain("wo.business_scope = 'beilun'");
   });
 
+  it('ignores forged scope for backend handler accounts and keeps account scope', async () => {
+    // 后道处理人（如 onboarding_specialist）的仪表盘口径固定跟账号业务线走：
+    // 前端拦截器会从 localStorage 附加 businessScope（可能与登录账号不一致），
+    // 若后端照单全收，毛雅妮等后道角色会按 out_of_province 查询导致卡片全 0。
+    const query = jest.fn(async (sql: string) => {
+      if (String(sql).includes('notifications')) return [{ count: 0 }];
+      if (String(sql).includes('SELECT module_code FROM module_handlers')) return [{ module_code: 'onboarding_contact' }, { module_code: 'resignation_contact' }];
+      if (String(sql).includes('FROM dispatched_orders')) return [{ totalThisMonth: 3, pendingTotal: 2, pendingThisMonth: 1, completed: 1, voided: 0 }];
+      return [];
+    });
+    const service = new DashboardService({ query, transaction: jest.fn(async (callback: (manager: { query: typeof query }) => unknown) => callback({ query })) } as never, validationStub);
+
+    await service.getDashboardCards({ sub: 'maoyani', roles: ['onboarding_specialist'], businessScope: BusinessScope.BEILUN } as never, undefined, undefined, 'backend', BusinessScope.OUT_OF_PROVINCE);
+
+    const cardsCall = (query.mock.calls as unknown[][]).find(([sql]) => String(sql).includes('FROM dispatched_orders'));
+    expect(cardsCall).toBeDefined();
+    expect(cardsCall![1]).toEqual(['maoyani', expect.any(String), ['onboarding_contact', 'resignation_contact']]);
+    const sql = String(cardsCall![0]);
+    expect(sql).toContain("wo.business_scope = 'beilun'");
+    expect(sql).toContain("io.business_scope = 'beilun'");
+    expect(sql).not.toContain("wo.business_scope = 'out_of_province'");
+    expect(sql).not.toContain("io.business_scope = 'out_of_province'");
+  });
+
   it('allows all frontend-visible leader trend roles at controller metadata level', () => {
     const roles = new Reflector().get<string[]>(ROLES_KEY, DashboardController.prototype.leaderTrend);
 

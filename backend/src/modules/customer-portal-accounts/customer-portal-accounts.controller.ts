@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Post, Put, UseInterceptors } from '@nestjs/common';
-import { ArrayMaxSize, ArrayMinSize, ArrayUnique, IsArray, IsBoolean, IsEmail, IsIn, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, ArrayUnique, IsArray, IsBoolean, IsEmail, IsIn, IsOptional, IsString, IsUUID, Matches, MaxLength } from 'class-validator';
 import { Audit } from 'src/common/decorators/audit.decorator';
 import { Public } from 'src/common/decorators/public.decorator';
 import { Roles } from 'src/common/decorators/roles.decorator';
@@ -83,6 +83,19 @@ class ResetPortalPasswordDto {
   mustChangePassword?: boolean;
 }
 
+class SetPortalAccountSubjectsDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(50)
+  @ArrayUnique()
+  @IsUUID('all', { each: true })
+  subjects!: string[];
+
+  @IsOptional()
+  @IsUUID()
+  primarySubjectId?: string;
+}
+
 class PortalLoginDto {
   @IsEmail()
   @MaxLength(320)
@@ -143,6 +156,26 @@ export class CustomerPortalAccountsController {
     @CurrentUser() user: JwtUserPayload,
   ) {
     return this.service.update(customerId, accountId, payload, user);
+  }
+
+  @Get(':accountId/subjects')
+  listSubjects(
+    @Param('customerId') customerId: string,
+    @Param('accountId') accountId: string,
+    @CurrentUser() user: JwtUserPayload,
+  ) {
+    return this.service.listSubjects(customerId, accountId, user);
+  }
+
+  @Put(':accountId/subjects')
+  @Audit('customer_portal_accounts', 'set_subjects')
+  setSubjects(
+    @Param('customerId') customerId: string,
+    @Param('accountId') accountId: string,
+    @Body() payload: SetPortalAccountSubjectsDto,
+    @CurrentUser() user: JwtUserPayload,
+  ) {
+    return this.service.setSubjects(customerId, accountId, payload, user);
   }
 
   @Post(':accountId/reset-password')

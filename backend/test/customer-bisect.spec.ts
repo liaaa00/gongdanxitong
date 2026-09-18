@@ -25,8 +25,10 @@ function fixture(){
   const orders={createQueryBuilder:jest.fn(),find:jest.fn().mockResolvedValue([])};
   const mails={find:jest.fn().mockResolvedValue([])};
   const workOrders={createDraft:jest.fn().mockResolvedValue({id:'draft-id',orderNo:'WO-PORTAL'})};
-  const service=new CustomerPortalService(auth as never,{transaction,query} as never,submissions as never,rules as never,customers as never,{find:jest.fn().mockResolvedValue(fields)} as never,orders as never,mails as never,workOrders as never,new ImportTemplateService(templateConfig as never),templateConfig as never,validation as never,new ExcelParserService(),{} as never,contractSubjects as never,ruleApplication as never);
-  return {service,auth,submissions,transaction,query,fields,customers,rules,contractSubjects,ruleApplication,orders,workOrders,validation};
+  // 批次3 多主体门禁依赖 links 仓库：缺省主体=主主体，需返回一条有效北仑主链接。
+  const links={find:jest.fn().mockResolvedValue([{isPrimary:true,customerId,customer:{id:customerId,customerName:'客户',isActive:true,businessScope:'beilun'}}])};
+  const service=new CustomerPortalService(auth as never,{transaction,query} as never,submissions as never,links as never,rules as never,customers as never,{find:jest.fn().mockResolvedValue(fields)} as never,orders as never,mails as never,workOrders as never,new ImportTemplateService(templateConfig as never),templateConfig as never,validation as never,new ExcelParserService(),{} as never,contractSubjects as never,ruleApplication as never);
+  return {service,auth,submissions,transaction,query,fields,customers,rules,contractSubjects,ruleApplication,orders,workOrders,validation,links};
 }
 
 describe('Customer portal authoritative business boundary',()=>{

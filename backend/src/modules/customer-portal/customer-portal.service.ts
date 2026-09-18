@@ -4,7 +4,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { DataSource, EntityManager, In, MoreThanOrEqual, Repository } from 'typeorm';
 import { Workbook } from 'exceljs';
 import { isUUID } from 'class-validator';
-import { BusinessScope, Customer, CustomerAssignee, CustomerPortalRule, FieldConfig, FieldType, OrderType, WorkOrder, WorkOrderCompletionEmail, WorkOrderStatus } from 'src/entities';
+import { BusinessScope, Customer, CustomerAssignee, CustomerPortalAccountLink, CustomerPortalRule, FieldConfig, FieldType, OrderType, WorkOrder, WorkOrderCompletionEmail, WorkOrderStatus } from 'src/entities';
 import { CustomerPortalSubmission } from 'src/entities/customer-portal-submission.entity';
 import { CustomerPortalAccountsService, PortalBusinessType, businessTypesForPermissions } from '../customer-portal-accounts/customer-portal-accounts.service';
 import { JwtUserPayload } from '../auth/auth.types';
@@ -30,7 +30,7 @@ const MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 type Business = PortalBusinessType;
 type Session = Awaited<ReturnType<CustomerPortalAccountsService['session']>>;
 export interface PortalFile { name: string; mimeType: string; bizPurpose?: string; contentBase64: string }
-export interface PortalInput { linkToken: string; businessType?: Business; requestId?: string; submissionId?: string; fields?: Record<string, unknown>; fileName?: string; contentBase64?: string; files?: PortalFile[] }
+export interface PortalInput { linkToken: string; businessType?: Business; subjectId?: string; requestId?: string; submissionId?: string; fields?: Record<string, unknown>; fileName?: string; contentBase64?: string; files?: PortalFile[] }
 type NormalizedSalary = { month: string; mode: 'same' | 'changed'; note: string; channel: 'text' | 'attachment' | null };
 
 @Injectable()
@@ -40,6 +40,7 @@ export class CustomerPortalService {
     private readonly auth: CustomerPortalAccountsService,
     private readonly dataSource: DataSource,
     @InjectRepository(CustomerPortalSubmission) private readonly submissions: Repository<CustomerPortalSubmission>,
+    @InjectRepository(CustomerPortalAccountLink) private readonly links: Repository<CustomerPortalAccountLink>,
     @InjectRepository(CustomerPortalRule) private readonly rules: Repository<CustomerPortalRule>,
     @InjectRepository(Customer) private readonly customers: Repository<Customer>,
     @InjectRepository(FieldConfig) private readonly fields: Repository<FieldConfig>,
@@ -64,14 +65,46 @@ export class CustomerPortalService {
     return session;
   }
 
+  /**
+   * 多主体门禁（批次3拍板口径）：活动主体必须 ∈ 账号关联集合且有效。
+   * - subjectId 缺省 = 主主体（accounts.customer_id，即 session.customer）；
+   * - 主主体停用 → 整账号阻断；非主主体停用 → 仅剔除可见集合（该主体不可选不可查）；
+   * - businessScope 固定北仑（门户只服务北仑口径，回归清单 §44）；
+   * - 返回 subjectIds 为当前可见主体全集，供 progress 等跨主体查询收窄。
+   */
+  private async resolveActiveSubject(session: Session, subjectId?: string): Promise<{ customer: Customer; subjectIds: string[]; visibleLinks: CustomerPortalAccountLink[] }> {
+    const links = await this.links.find({ where: { accountId: session.account.id }, relations: { customer: true } });
+    const visible = links.filter((link) => link.customer?.isActive && link.customer.businessScope === BusinessScope.BEILUN);
+    const subjectIds = visible.map((link) => link.customerId);
+    if (subjectId !== undefined) {
+      if (!isUUID(subjectId)) throw new BadRequestException('所属主体标识无效');
+      const target = visible.find((link) => link.customerId === subjectId);
+      if (!target) throw new ForbiddenException('无权办理所选主体的业务');
+      return { customer: target.customer, subjectIds, visibleLinks: visible };
+    }
+    // 缺省 = 主主体；主主体停用整账号阻断（拍板②）
+    const primary = links.find((link) => link.isPrimary);
+    const primaryCustomer = primary?.customer;
+    if (!primaryCustomer || !primaryCustomer.isActive || primaryCustomer.businessScope !== BusinessScope.BEILUN) {
+      throw new ForbiddenException('主主体已停用，请联系业务员');
+    }
+    return { customer: primaryCustomer, subjectIds, visibleLinks: visible };
+  }
+
+  /** 登录后向门户展示的可见主体列表（按主体名称，替代内部客户代码口径）。 */
+  private subjectViewsFromLinks(visibleLinks: CustomerPortalAccountLink[]): Array<{ id: string; name: string; isPrimary: boolean }> {
+    return visibleLinks.map((link) => ({ id: link.customerId, name: link.customer.customerName, isPrimary: link.isPrimary }));
+  }
+
   async schema(input: PortalInput) {
     const session = await this.session(input);
-    const rule = await this.rules.findOne({ where: { customerId: session.customer.id, isActive: true } });
-    if (input.businessType === 'salary') return { fields: [], reminderWorkdayOffsets: [3,2,1], defaultMonth: this.defaultSalaryMonth(rule) };
+    const { customer, visibleLinks } = await this.resolveActiveSubject(session, input.subjectId);
+    const rule = await this.rules.findOne({ where: { customerId: customer.id, isActive: true } });
+    if (input.businessType === 'salary') return { fields: [], reminderWorkdayOffsets: [3,2,1], defaultMonth: this.defaultSalaryMonth(rule), subject: { id: customer.id, name: customer.customerName }, subjects: this.subjectViewsFromLinks(visibleLinks) };
     const fields = await this.editableFields(input.businessType as 'onboarding'|'resignation');
     const names = [...new Set([...(await this.contractSubjects.listFundLocations()), ...(rule?.paymentLocationRules ?? []).map((item) => item.socialLocation)])];
     const locations = await Promise.all(names.map(async (name) => ({ name, fundRatios: getAllowedFundRatios(await this.contractSubjects.findFundRuleByLocation(name)) })));
-    return { fields: fields.map((field) => ({ code: field.fieldCode, name: field.fieldName, required: field.isRequired, options: field.dropdownOptions ?? [], type: field.fieldType })), locations };
+    return { fields: fields.map((field) => ({ code: field.fieldCode, name: field.fieldName, required: field.isRequired, options: field.dropdownOptions ?? [], type: field.fieldType })), locations, subject: { id: customer.id, name: customer.customerName }, subjects: this.subjectViewsFromLinks(visibleLinks) };
   }
 
   private defaultSalaryMonth(rule: CustomerPortalRule | null): string {
@@ -83,6 +116,7 @@ export class CustomerPortalService {
 
   async template(input: PortalInput) {
     const session = await this.session(input);
+    const { customer } = await this.resolveActiveSubject(session, input.subjectId);
     if (input.businessType === 'salary') throw new BadRequestException('薪资使用变化说明或附件，无员工明细模板');
     const business = input.businessType as 'onboarding'|'resignation';
     const fields = await this.editableFields(business);
@@ -115,7 +149,7 @@ export class CustomerPortalService {
       book.worksheets[0].getCell(4, fields.length + 2).value = '';
     }
     const metadata = book.addWorksheet('__portal'); metadata.state = 'veryHidden';
-    metadata.addRows([['customerId', session.customer.id], ['businessType', business], ['schema', this.schemaHash(fields)]]);
+    metadata.addRows([['customerId', customer.id], ['businessType', business], ['schema', this.schemaHash(fields)]]);
     return { fileName: business === 'onboarding' ? '客户入职标准模板.xlsx' : '客户离职标准模板.xlsx', mimeType: MIME, contentBase64: Buffer.from(await book.xlsx.writeBuffer()).toString('base64') };
   }
 
@@ -185,7 +219,8 @@ export class CustomerPortalService {
   async submit(input: PortalInput, user?: JwtUserPayload) {
     const session = await this.session(input);
     const business = input.businessType!;
-    const rule = await this.rules.findOne({ where: { customerId: session.customer.id, isActive: true } });
+    const { customer } = await this.resolveActiveSubject(session, input.subjectId);
+    const rule = await this.rules.findOne({ where: { customerId: customer.id, isActive: true } });
     if (!/^[A-Za-z0-9._:-]{1,100}$/.test(input.requestId ?? '')) throw new BadRequestException('请求编号无效');
     const normalized: Record<string, unknown> = business === 'salary'
       ? this.normalizeSalary(input.fields ?? {}, this.defaultSalaryMonth(rule))
@@ -193,11 +228,12 @@ export class CustomerPortalService {
     if (business === 'salary' && normalized.channel === 'attachment' && !input.files?.length) throw new BadRequestException('请上传薪资文件');
     if (business === 'salary' && normalized.channel !== 'attachment' && input.files?.length) throw new BadRequestException('当前薪资填写方式不接受附件');
     const fingerprint = this.hash({ business, fields: normalized, files: input.files ?? [] });
-    const key = this.hash([session.customer.id, session.account.id, input.requestId]);
+    // 幂等键与幂等查询都以"活动主体"为准：同账号下不同主体的同请求编号互不冲突。
+    const key = this.hash([customer.id, session.account.id, input.requestId]);
     return this.withUploadCompensation(key, async (manager, createdFileIds) => {
       await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [key]);
       const repo = manager.getRepository(CustomerPortalSubmission);
-      const existing = await repo.findOne({ where: { customerId: session.customer.id, accountId: session.account.id, requestId: input.requestId! } });
+      const existing = await repo.findOne({ where: { customerId: customer.id, accountId: session.account.id, requestId: input.requestId! } });
       if (existing) {
         if (existing.inputHash !== fingerprint) throw new ConflictException('同一请求编号不能提交不同资料');
         return this.receipt(existing);
@@ -212,20 +248,20 @@ export class CustomerPortalService {
         requestNo = '';
       }
       if (business !== 'salary') {
-        const resolved = await this.ruleApplication.resolve(rule, session.customer.id, business, normalized.social_location);
+        const resolved = await this.ruleApplication.resolve(rule, customer.id, business, normalized.social_location);
         const intake = { ...normalized };
         if (business === 'resignation') intake.social_stop_month = `${Number(String(normalized.social_stop_month).slice(5))}月`;
         // Recover a draft if a prior connection failed after the existing work-order service committed it.
-        const recovered = await this.orders.createQueryBuilder('w').where('w.customer_id = :customerId', { customerId: session.customer.id }).andWhere("w.extra_data ->> 'portal_intake_key' = :key", { key }).andWhere("w.extra_data ->> 'portal_input_hash' = :fingerprint", { fingerprint }).andWhere("w.order_type = :orderType", { orderType: business }).getOne();
-        const draft = recovered ?? await this.workOrders.createDraft({ orderType: business as OrderType, customerId: session.customer.id, extraData: {
+        const recovered = await this.orders.createQueryBuilder('w').where('w.customer_id = :customerId', { customerId: customer.id }).andWhere("w.extra_data ->> 'portal_intake_key' = :key", { key }).andWhere("w.extra_data ->> 'portal_input_hash' = :fingerprint", { fingerprint }).andWhere("w.order_type = :orderType", { orderType: business }).getOne();
+        const draft = recovered ?? await this.workOrders.createDraft({ orderType: business as OrderType, customerId: customer.id, extraData: {
           ...resolved.defaults, ...intake,
           ...(resolved.branch ? { branchId: resolved.branch.id, branch_code: resolved.branch.branchCode } : {}),
           portal_configuration_pending: resolved.missing.length > 0, portal_configuration_missing: resolved.missing,
-          customer_name: session.customer.customerName, customer_code: session.customer.customerCode, portal_intake_key: key, portal_input_hash: fingerprint, portal_business_type: business,
+          customer_name: customer.customerName, customer_code: customer.customerCode, portal_intake_key: key, portal_input_hash: fingerprint, portal_business_type: business,
         } }, await this.getPortalActor(), resolved.branch?.id ?? null);
         orderId = draft.id; requestNo = draft.orderNo;
       }
-      const row = await repo.save(repo.create({ customerId: session.customer.id, accountId: session.account.id, businessType: business, requestId: input.requestId!, inputHash: fingerprint, requestNo, workOrderId: orderId, fields: normalized, status: 'received', resultNote: null, completedAt: null }));
+      const row = await repo.save(repo.create({ customerId: customer.id, accountId: session.account.id, businessType: business, requestId: input.requestId!, inputHash: fingerprint, requestNo, workOrderId: orderId, fields: normalized, status: 'received', resultNote: null, completedAt: null }));
       if (input.files?.length) await this.enqueueAttachments(row, input.files, rule, manager.getRepository(WorkOrderCompletionEmail), createdFileIds);
       return this.receipt(row);
     });
@@ -240,16 +276,18 @@ export class CustomerPortalService {
     const business = input.businessType;
     if (business !== 'onboarding' && business !== 'resignation') throw new BadRequestException('退回补正只支持增员或减员');
     if (!input.submissionId || !isUUID(input.submissionId)) throw new BadRequestException('退回受理记录无效');
-    const rule = await this.rules.findOne({ where: { customerId: session.customer.id, isActive: true } });
+    // 补正锁定原主体（拍板③）：受理记录与工单都按活动主体查询，切到其他主体查询即视为无记录。
+    const { customer } = await this.resolveActiveSubject(session, input.subjectId);
+    const rule = await this.rules.findOne({ where: { customerId: customer.id, isActive: true } });
     const normalized: Record<string, unknown> = await this.validateFields(business, input.fields ?? {});
     const fingerprint = this.hash({ business, fields: normalized, files: input.files ?? [] });
-    const submission = await this.submissions.findOne({ where: { id: input.submissionId, customerId: session.customer.id, accountId: session.account.id, businessType: business } });
+    const submission = await this.submissions.findOne({ where: { id: input.submissionId, customerId: customer.id, accountId: session.account.id, businessType: business } });
     if (!submission?.workOrderId) throw new NotFoundException('退回受理记录不存在');
     return this.withUploadCompensation(`portal-resubmit:${submission.id}`, async (manager, createdFileIds) => {
       await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`portal-resubmit:${submission.id}`]);
       const repo = manager.getRepository(CustomerPortalSubmission);
-      const row = await repo.findOne({ where: { id: submission.id, customerId: session.customer.id, accountId: session.account.id }, lock: { mode: 'pessimistic_write' } });
-      const order = await manager.getRepository(WorkOrder).findOne({ where: { id: submission.workOrderId!, customerId: session.customer.id, businessScope: BusinessScope.BEILUN }, lock: { mode: 'pessimistic_write' } });
+      const row = await repo.findOne({ where: { id: submission.id, customerId: customer.id, accountId: session.account.id }, lock: { mode: 'pessimistic_write' } });
+      const order = await manager.getRepository(WorkOrder).findOne({ where: { id: submission.workOrderId!, customerId: customer.id, businessScope: BusinessScope.BEILUN }, lock: { mode: 'pessimistic_write' } });
       if (!row || !order || order.orderType !== business || order.submittedAt || order.status !== WorkOrderStatus.DRAFT || order.extraData?.portal_review_status !== 'needs_correction') {
         throw new ConflictException('该受理记录当前不能重新提交');
       }
@@ -270,7 +308,7 @@ export class CustomerPortalService {
           throw new ConflictException(`只能修改退回补正字段：${field}`);
         }
       }
-      const resolved = await this.ruleApplication.resolve(rule, session.customer.id, business, normalized.social_location);
+      const resolved = await this.ruleApplication.resolve(rule, customer.id, business, normalized.social_location);
       const intake = { ...normalized };
       if (business === 'resignation') intake.social_stop_month = `${Number(String(normalized.social_stop_month).slice(5))}月`;
       row.inputHash = fingerprint; row.fields = normalized; row.status = 'received'; row.resultNote = null; row.completedAt = null;
@@ -314,11 +352,13 @@ export class CustomerPortalService {
     const buffer = Buffer.from(input.contentBase64, 'base64');
     if (buffer.length > 10*1024*1024 || buffer[0] !== 0x50 || buffer[1] !== 0x4b) throw new BadRequestException('文件不是有效的标准 Excel 或超过10MB');
     const business = input.businessType!;
+    // 模板元数据与导入都绑定活动主体：混主体批次在 B1 校验处整批拒绝。
+    const { customer } = await this.resolveActiveSubject(session, input.subjectId);
     const fields = await this.editableFields(business);
     const book = new Workbook();
     try { await book.xlsx.load(buffer as never); } catch { throw new BadRequestException('无法读取 Excel 文件'); }
     const meta = book.getWorksheet('__portal');
-    if (!meta || meta.getCell('B1').text !== session.customer.id || meta.getCell('B2').text !== business || meta.getCell('B3').text !== this.schemaHash(fields)) throw new BadRequestException('模板客户、业务类型或字段版本不一致，请重新下载模板');
+    if (!meta || meta.getCell('B1').text !== customer.id || meta.getCell('B2').text !== business || meta.getCell('B3').text !== this.schemaHash(fields)) throw new BadRequestException('模板客户、业务类型或字段版本不一致，请重新下载模板');
     const sheet = book.worksheets[0];
     const headerRow = business === 'onboarding' ? 2 : 1;
     const expectedHeaders = ['字段名', ...fields.map((field) => field.fieldName), '附件'];
@@ -328,7 +368,8 @@ export class CustomerPortalService {
     const headers = fields.map((field) => field.fieldName);
     if (!parsed.rows.length || parsed.rows.length > 500) throw new BadRequestException('每次请导入1至500条资料');
     const details: Array<{rowNumber:number;success:boolean;message:string;workOrderNo?:string}> = [];
-    const digest = this.hash(input.contentBase64);
+    // digest 绑定活动主体：切主体后同一文件重新导入生成全新幂等键，且模板元数据校验（B1=活动主体）先行拦截混主体批次。
+    const digest = this.hash([input.subjectId ?? 'primary', input.contentBase64]);
     for (let index=0; index<parsed.rows.length; index++) {
       const rowNumber = parsed.meta.rowNumbers[index] + 1;
       const raw = Object.fromEntries(fields.map((field) => [field.fieldCode, parsed.rows[index][field.fieldName] ?? '']));
@@ -343,12 +384,14 @@ export class CustomerPortalService {
 
   async progress(input: PortalInput) {
     const session = await this.session(input, false);
+    const { subjectIds, visibleLinks } = await this.resolveActiveSubject(session);
+    const subjectNames = new Map(visibleLinks.map((link) => [link.customerId, link.customer.customerName]));
     const allowed = businessTypesForPermissions(session.businessPermissions);
     const twelveMonthsAgo = new Date();
     twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
-    const rows = await this.submissions.find({ where: {customerId:session.customer.id,businessType:In(allowed),createdAt:MoreThanOrEqual(twelveMonthsAgo)},order:{createdAt:'DESC'},take:200 });
-    const orders = rows.some((row)=>row.workOrderId) ? await this.orders.find({where:{id:In(rows.map((row)=>row.workOrderId).filter(Boolean)),customerId:session.customer.id},relations:{dispatchedOrders:true}}) : [];
-    const mails = rows.length ? await this.mails.find({where:[{portalSubmissionId:In(rows.map((row)=>row.id))},...(orders.length?[{workOrderId:In(orders.map((row)=>row.id)),customerId:session.customer.id}]:[])],order:{createdAt:'DESC'}}) : [];
+    const rows = await this.submissions.find({ where:{customerId:In(subjectIds),businessType:In(allowed),createdAt:MoreThanOrEqual(twelveMonthsAgo)},order:{createdAt:'DESC'},take:200 });
+    const orders = rows.some((row)=>row.workOrderId) ? await this.orders.find({where:{id:In(rows.map((row)=>row.workOrderId).filter(Boolean)),customerId:In(subjectIds)},relations:{dispatchedOrders:true}}) : [];
+    const mails = rows.length ? await this.mails.find({where:[{portalSubmissionId:In(rows.map((row)=>row.id))},...(orders.length?[{workOrderId:In(orders.map((row)=>row.id)),customerId:In(subjectIds)}]:[])],order:{createdAt:'DESC'}}) : [];
     const list = rows.map((row)=> {
       const order = orders.find((item)=>item.id===row.workOrderId);
       const mail = mails.find((item)=>(item.portalSubmissionId===row.id || Boolean(row.workOrderId && item.workOrderId===row.workOrderId)) && item.templateCode !== 'portal-attachments');
@@ -358,7 +401,7 @@ export class CustomerPortalService {
       const reviewStatus = String(order?.extraData?.portal_review_status ?? '');
       const customerCorrection = reviewStatus === 'needs_correction';
       const result = customerCorrection ? (String(order?.extraData?.portal_correction_reason ?? '') || '请补充或修正资料') : (order ? (steps.length ? steps.map(step=>`${step.name}：${labels[step.status] ?? '办理中'}`).join('；') : '资料已受理，等待内部审核') : row.resultNote);
-      return {id:row.id,requestNo:row.requestNo,businessType:row.businessType,subject:order?.employeeName ?? String(row.fields.month ?? ''),status:customerCorrection ? 'needs_correction' : (order?.status ?? row.status),createdAt:row.createdAt,completedAt:order?.completedAt ?? row.completedAt,result,steps,completionEmailStatus:mail?.status ?? null,correctionReason:customerCorrection ? String(order?.extraData?.portal_correction_reason ?? '') : '',correctionFields:customerCorrection && Array.isArray(order?.extraData?.portal_correction_fields) ? order.extraData.portal_correction_fields : [],fields:row.fields};
+      return {id:row.id,requestNo:row.requestNo,businessType:row.businessType,subject:order?.employeeName ?? String(row.fields.month ?? ''),subjectId:row.customerId,subjectName:subjectNames.get(row.customerId) ?? '',status:customerCorrection ? 'needs_correction' : (order?.status ?? row.status),createdAt:row.createdAt,completedAt:order?.completedAt ?? row.completedAt,result,steps,completionEmailStatus:mail?.status ?? null,correctionReason:customerCorrection ? String(order?.extraData?.portal_correction_reason ?? '') : '',correctionFields:customerCorrection && Array.isArray(order?.extraData?.portal_correction_fields) ? order.extraData.portal_correction_fields : [],fields:row.fields};
     });
     return { list, total:list.length, summary:{processing:list.filter((row)=>!['completed','void','withdrawn'].includes(row.status)).length,completed:list.filter((row)=>row.status==='completed').length}, month:new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'}).slice(0,7) };
   }
@@ -423,15 +466,17 @@ export class CustomerPortalService {
   async attachments(input: PortalInput, user?: JwtUserPayload) {
     const session = await this.session(input);
     if (!input.files?.length) throw new BadRequestException('请选择附件');
+    // 附件幂等键同样按活动主体隔离：同请求编号在不同主体下互不冲突。
+    const { customer } = await this.resolveActiveSubject(session, input.subjectId);
     const fingerprint = this.hash(input.files);
     if (!/^[A-Za-z0-9._:-]{1,100}$/.test(input.requestId ?? '')) throw new BadRequestException('请求编号无效');
-    return this.withUploadCompensation(this.hash([session.customer.id, session.account.id, input.requestId]), async (manager, createdFileIds)=> {
+    return this.withUploadCompensation(this.hash([customer.id, session.account.id, input.requestId]), async (manager, createdFileIds)=> {
       const repo=manager.getRepository(CustomerPortalSubmission);
-      await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))',[session.customer.id+session.account.id+input.requestId]);
-      const existing=await repo.findOne({where:{customerId:session.customer.id,accountId:session.account.id,requestId:input.requestId!}});
+      await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))',[customer.id+session.account.id+input.requestId]);
+      const existing=await repo.findOne({where:{customerId:customer.id,accountId:session.account.id,requestId:input.requestId!}});
       if(existing){if(existing.inputHash!==fingerprint)throw new ConflictException('请求编号已用于其他附件');return this.receipt(existing);}
-      const row=await repo.save(repo.create({customerId:session.customer.id,accountId:session.account.id,businessType:input.businessType!,requestId:input.requestId!,inputHash:fingerprint,requestNo:'ATT-'+randomUUID().slice(0,8).toUpperCase(),fields:{},status:'received'}));
-      const rule=await this.rules.findOne({where:{customerId:session.customer.id,isActive:true}});
+      const row=await repo.save(repo.create({customerId:customer.id,accountId:session.account.id,businessType:input.businessType!,requestId:input.requestId!,inputHash:fingerprint,requestNo:'ATT-'+randomUUID().slice(0,8).toUpperCase(),fields:{},status:'received'}));
+      const rule=await this.rules.findOne({where:{customerId:customer.id,isActive:true}});
       await this.enqueueAttachments(row,input.files!,rule,manager.getRepository(WorkOrderCompletionEmail),createdFileIds);
       return {...this.receipt(row),ok:Boolean(rule?.sharedEmailRules?.mailbox),status:row.status,message:rule?.sharedEmailRules?.mailbox?'附件已保存并进入共享邮箱发送队列。':'共享邮箱尚未配置，附件已保存但投递失败，请配置后重试。'};
     });

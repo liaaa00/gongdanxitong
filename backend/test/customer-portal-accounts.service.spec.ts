@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { createHmac } from 'node:crypto';
-import { BusinessScope, Customer, CustomerPortalAccount } from 'src/entities';
+import { BusinessScope, Customer, CustomerPortalAccount, CustomerPortalAccountLink } from 'src/entities';
 import { CustomerPortalAccountsService, PortalBusinessPermission } from 'src/modules/customer-portal-accounts/customer-portal-accounts.service';
 
 const ALL_PERMISSIONS: PortalBusinessPermission[] = ['employee_changes', 'salary'];
@@ -31,6 +31,7 @@ function makeCustomer(id: string, isActive = true): Customer {
 
 function makeService(customerRows = [makeCustomer('customer-1'), makeCustomer('customer-2')], portalRule: Record<string, unknown> | null = COMPLETE_RULE) {
   const accounts: CustomerPortalAccount[] = [];
+  const links: CustomerPortalAccountLink[] = [];
   let sequence = 0;
   const accountRepository: any = {
     create: jest.fn((value) => ({ ...value })),
@@ -60,6 +61,29 @@ function makeService(customerRows = [makeCustomer('customer-1'), makeCustomer('c
   };
   const customerRepository: any = {
     findOne: jest.fn(async ({ where }: any) => customerRows.find((item) => item.id === where.id) || null),
+    find: jest.fn(async ({ where }: any) => {
+      const ids: string[] = Array.isArray(where.id?.value) ? where.id.value : [where.id];
+      return customerRows.filter((item) => ids.includes(item.id));
+    }),
+  };
+  const linkRepository: any = {
+    create: jest.fn((value) => ({ ...value })),
+    save: jest.fn(async (value: CustomerPortalAccountLink) => {
+      const index = links.findIndex((item) => item.accountId === value.accountId && item.customerId === value.customerId);
+      if (index >= 0) links[index] = value; else links.push(value);
+      return value;
+    }),
+    remove: jest.fn(async (value: CustomerPortalAccountLink) => {
+      const index = links.indexOf(value);
+      if (index >= 0) links.splice(index, 1);
+      return value;
+    }),
+    find: jest.fn(async ({ where, relations }: any) => {
+      const ids: string[] = Array.isArray(where.accountId?.value) ? where.accountId.value : [where.accountId];
+      return links
+        .filter((item) => ids.includes(item.accountId))
+        .map((item) => (relations?.customer ? { ...item, customer: customerRows.find((row) => row.id === item.customerId) } : item));
+    }),
   };
   const configService: any = { get: jest.fn(() => SECRET) };
   const ruleRepository = {
@@ -68,16 +92,23 @@ function makeService(customerRows = [makeCustomer('customer-1'), makeCustomer('c
   const notifications = { enqueueAccountActivation: jest.fn(async (..._args: unknown[]) => undefined) };
   accountRepository.manager = {
     transaction: jest.fn(async (callback) => {
-      const before = accounts.map((account) => ({ ...account }));
-      try { return await callback({ getRepository: () => accountRepository }); }
-      catch (error) { accounts.splice(0, accounts.length, ...before); throw error; }
+      const beforeAccounts = accounts.map((account) => ({ ...account }));
+      const beforeLinks = links.map((link) => ({ ...link }));
+      try { return await callback({ getRepository: (entity: unknown) => entity === CustomerPortalAccountLink ? linkRepository : accountRepository }); }
+      catch (error) {
+        accounts.splice(0, accounts.length, ...beforeAccounts);
+        links.splice(0, links.length, ...beforeLinks);
+        throw error;
+      }
     }),
   };
   return {
-    service: new CustomerPortalAccountsService(accountRepository, customerRepository, configService, ruleRepository as any, notifications as any),
+    service: new CustomerPortalAccountsService(accountRepository, customerRepository, configService, ruleRepository as any, notifications as any, linkRepository),
     notifications,
     accounts,
+    links,
     accountRepository,
+    linkRepository,
     ruleRepository,
   };
 }
@@ -374,5 +405,69 @@ describe('CustomerPortalAccountsService', () => {
     const original = await service.login(ACCOUNT_INPUT.loginEmail, ACCOUNT_INPUT.password);
     customer.isActive = false;
     await expect(service.session(original.linkToken)).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  /* ---- 批次3：多主体门户账号 ---- */
+
+  it('creates exactly one primary subject link so legacy single-subject semantics stay intact', async () => {
+    const { service, links } = makeService();
+    const created = await service.create('customer-1', ACCOUNT_INPUT);
+    expect(links).toHaveLength(1);
+    expect(links[0]).toMatchObject({ accountId: created.id, customerId: 'customer-1', isPrimary: true });
+    expect(await service.listSubjects('customer-1', created.id)).toMatchObject({
+      primarySubjectId: 'customer-1',
+      subjects: [{ id: 'customer-1', name: '测试客户一', isPrimary: true }],
+    });
+  });
+
+  it('bumps the session version when the subject set changes so in-flight tokens are rejected', async () => {
+    const c1 = '11111111-1111-4111-8111-111111111111';
+    const c2 = '22222222-2222-4222-8222-222222222222';
+    const { service } = makeService([makeCustomer(c1), makeCustomer(c2)]);
+    const created = await service.create(c1, ACCOUNT_INPUT);
+    const first = await service.login(ACCOUNT_INPUT.loginEmail, ACCOUNT_INPUT.password);
+    await expect(service.session(first.linkToken)).resolves.toMatchObject({ primarySubjectId: c1 });
+
+    const next = await service.setSubjects(c1, created.id, { subjects: [c1, c2] });
+    expect(next.subjects.map((subject) => subject.id).sort()).toEqual([c1, c2]);
+    expect(next.primarySubjectId).toBe(c1);
+    expect(decodeToken(first.linkToken).sessionVersion).toBe(1);
+
+    await expect(service.session(first.linkToken)).rejects.toBeInstanceOf(UnauthorizedException);
+    const refreshed = await service.login(ACCOUNT_INPUT.loginEmail, ACCOUNT_INPUT.password);
+    expect(decodeToken(refreshed.linkToken).sessionVersion).toBe(2);
+    await expect(service.session(refreshed.linkToken)).resolves.toMatchObject({ primarySubjectId: c1 });
+  });
+
+  it('keeps the existing primary by default, rejects removing it, and switches the primary only with complete rules', async () => {
+    const c1 = '11111111-1111-4111-8111-111111111111';
+    const c2 = '22222222-2222-4222-8222-222222222222';
+    const { service, accounts, links } = makeService([makeCustomer(c1), makeCustomer(c2)]);
+    const created = await service.create(c1, ACCOUNT_INPUT);
+    await service.setSubjects(c1, created.id, { subjects: [c1, c2] });
+    expect(links.find((link) => link.isPrimary)?.customerId).toBe(c1);
+
+    await expect(service.setSubjects(c1, created.id, { subjects: [c2] })).rejects.toThrow('主主体必须包含在主体集合中');
+    expect(accounts[0].customerId).toBe(c1);
+
+    await expect(service.setSubjects(c1, created.id, { subjects: [c1, c2], primarySubjectId: c2 }))
+      .resolves.toMatchObject({ primarySubjectId: c2 });
+    expect(accounts[0].customerId).toBe(c2);
+    expect(links.filter((link) => link.isPrimary)).toHaveLength(1);
+  });
+
+  it('rejects invalid subject sets without touching stored links', async () => {
+    const c1 = '11111111-1111-4111-8111-111111111111';
+    const c2 = '22222222-2222-4222-8222-222222222222';
+    const { service, links, ruleRepository } = makeService([makeCustomer(c1), makeCustomer(c2)]);
+    const created = await service.create(c1, ACCOUNT_INPUT);
+    await expect(service.setSubjects(c1, created.id, { subjects: [] })).rejects.toThrow('请至少选择一个主体');
+    await expect(service.setSubjects(c1, created.id, { subjects: [c1, c1] })).rejects.toThrow('重复项');
+    await expect(service.setSubjects(c1, created.id, { subjects: [c1, 'not-a-uuid'] })).rejects.toThrow('主体标识无效');
+    ruleRepository.findOne.mockResolvedValue({ ...COMPLETE_RULE, resignationDefaults: {} });
+    await expect(service.setSubjects(c1, created.id, { subjects: [c1, c2], primarySubjectId: c2 }))
+      .rejects.toThrow('离职规则');
+    expect(links).toHaveLength(1);
+    expect(links[0]).toMatchObject({ customerId: c1, isPrimary: true });
   });
 });

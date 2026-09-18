@@ -2296,6 +2296,8 @@ export class DispatchedOrderService {
       order.status = DispatchedOrderStatus.PROCESSING;
 
       order.handlerId = order.handlerId ?? user.sub;
+      // 与 accept/claim 口径一致：PENDING 转 PROCESSING 即视为认领，需同时记录接单时间。
+      order.acceptedAt = new Date();
       await this.dispatchedOrderRepository.save(order);
     }
     await this.writeLog('dispatched_order', order.id, user.sub, 'batch_import_keep_processing', before, {
@@ -3347,6 +3349,14 @@ export class DispatchedOrderService {
       if (order.parentOrder.createdBy === user.sub && this.isBusinessSideUser(user)) return;
       throw new ForbiddenException('无权访问该离职证明子工单');
     }
+    // 合同模块团队认领模式：合同岗可读取合同模块全部子工单（含他人办理的历史单），
+    // 与列表 applyUserScope 的 teamVisibleModules 共享口径一致（业务规则回归清单第 5 节）。
+    // 省外账套不存在合同模块子单，显式排除以防数据异常时越权放大；其他后道模块不受影响。
+    if (
+      order.moduleCode === DispatchModuleCode.CONTRACT
+      && order.parentOrder.businessScope !== BusinessScope.OUT_OF_PROVINCE
+      && hasAnyRole(user.roles, CONTRACT_MODULE_ROLES)
+    ) return;
     if (order.parentOrder.createdBy === user.sub) return;
     if (order.handlerId === user.sub && this.canReadAssignedModule(user, order.moduleCode)) return;
     if (!order.handlerId && (await this.hasModuleAccess(user.sub, order.moduleCode, user.roles))) return;

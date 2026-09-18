@@ -741,6 +741,69 @@ describe('DispatchedOrderService', () => {
     } as JwtUserPayload)).resolves.toBeUndefined();
   });
 
+  it('allows contract team members to read contract child orders handled by others', async () => {
+    const { service } = makeService();
+    const assertCanRead = (service as unknown as {
+      assertCanRead: (order: DispatchedOrder, user: JwtUserPayload) => Promise<void>;
+    }).assertCanRead.bind(service);
+    const order = {
+      ...makeDispatchedOrder(),
+      moduleCode: 'contract',
+      handlerId: 'hujiayi',
+      parentOrder: { ...makeDispatchedOrder().parentOrder, createdBy: 'sales-1' },
+    } as DispatchedOrder;
+
+    // 合同岗读取他人办理的合同子单：列表共享口径（teamVisibleModules）在详情/导出读取上同步生效。
+    await expect(assertCanRead(order, {
+      sub: 'liuwen', username: 'liuwen', realName: '刘雯', roles: ['contract_specialist'],
+    } as JwtUserPayload)).resolves.toBeUndefined();
+    await expect(assertCanRead(order, {
+      sub: 'member-1', username: 'member', realName: '成员', roles: ['labor_contract_member'],
+    } as JwtUserPayload)).resolves.toBeUndefined();
+    await expect(assertCanRead(order, {
+      sub: 'team-1', username: 'team', realName: '团队', roles: ['contract_team'],
+    } as JwtUserPayload)).resolves.toBeUndefined();
+  });
+
+  it('does not extend contract team read sharing to other modules', async () => {
+    const { service } = makeService();
+    const assertCanRead = (service as unknown as {
+      assertCanRead: (order: DispatchedOrder, user: JwtUserPayload) => Promise<void>;
+    }).assertCanRead.bind(service);
+    const otherModuleOrder = {
+      ...makeDispatchedOrder(),
+      moduleCode: 'data_entry',
+      handlerId: 'hujiayi',
+      parentOrder: { ...makeDispatchedOrder().parentOrder, createdBy: 'sales-1' },
+    } as DispatchedOrder;
+    const contractRoles: JwtUserPayload = {
+      sub: 'liuwen', username: 'liuwen', realName: '刘雯', roles: ['contract_specialist'],
+    } as JwtUserPayload;
+
+    // 其他后道模块不因此获得团队共享读取，仍按模块处理人/主管口径收紧。
+    await expect(assertCanRead(otherModuleOrder, contractRoles)).rejects.toMatchObject({ status: HttpStatus.FORBIDDEN });
+  });
+
+  it('does not extend contract team read sharing to out-of-province contract child orders', async () => {
+    const { service } = makeService();
+    const assertCanRead = (service as unknown as {
+      assertCanRead: (order: DispatchedOrder, user: JwtUserPayload) => Promise<void>;
+    }).assertCanRead.bind(service);
+    const outOfProvinceOrder = {
+      ...makeDispatchedOrder(),
+      moduleCode: 'contract',
+      handlerId: 'hujiayi',
+      parentOrder: { ...makeDispatchedOrder().parentOrder, createdBy: 'sales-1', businessScope: BusinessScope.OUT_OF_PROVINCE },
+    } as DispatchedOrder;
+    const contractRoles: JwtUserPayload = {
+      sub: 'liuwen', username: 'liuwen', realName: '刘雯', roles: ['contract_specialist'],
+    } as JwtUserPayload;
+
+    // 省外账套不存在合同模块子单；数据异常出现省外合同子单时，合同团队共享读取不得放大，
+    // 非 supervisor 的合同岗读取他人办理的省外合同子单应被拒绝（assertCanRead 省外显式排除分支）。
+    await expect(assertCanRead(outOfProvinceOrder, contractRoles)).rejects.toMatchObject({ status: HttpStatus.FORBIDDEN });
+  });
+
   it('scopes business owner/leader child-order history by department range', async () => {
     const { service, queryBuilder } = makeService({
       find: jest.fn(async () => []),

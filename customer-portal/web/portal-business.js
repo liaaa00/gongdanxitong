@@ -4,9 +4,16 @@ const pendingPortalRequests = new Map();
 
 /* ---- portal drafts: real localStorage persistence, namespaced per account+business+subject ---- */
 const PORTAL_DRAFT_PREFIX = 'portalDraftStore:';
-const PORTAL_DRAFT_SUBJECT = 'primary'; // 本期主体固定主主体；多主体批次改为真实主体标识即可复用 key 结构
+// 批次3：主体段取当前活动主体真实 id，切主体后各主体草稿互不串扰。
+function activeSubjectId(business) {
+  if (business) {
+    const select = document.getElementById(business + '-subject-select');
+    if (select && select.value) return select.value;
+  }
+  return activePortalSession?.primarySubjectId || activePortalSession?.customer?.id || 'primary';
+}
 function portalDraftId() { return activePortalSession?.account?.id || 'anon'; }
-function portalDraftKeyFor(business) { return PORTAL_DRAFT_PREFIX + portalDraftId() + ':' + business + ':' + PORTAL_DRAFT_SUBJECT; }
+function portalDraftKeyFor(business) { return PORTAL_DRAFT_PREFIX + portalDraftId() + ':' + business + ':' + activeSubjectId(business); }
 const DraftStore = {
   load(business) {
     try {
@@ -186,14 +193,107 @@ function switchView(view) {
   if ((view==='dashboard'||view==='progress') && activePortalSession && !activePortalSession.mustChangePassword) refreshPortalProgress().catch((error)=>showToast(error.message));
 }
 
+/* ---- 批次3：多主体选择与切换 ---- */
+function portalSubjects() { return Array.isArray(activePortalSession?.subjects) ? activePortalSession.subjects : []; }
+function activeSubjectName() {
+  const subjects = portalSubjects();
+  if (!subjects.length) return activePortalSession?.customer?.customerName || '';
+  return subjects.find((item) => item.id === activePortalSession.primarySubjectId)?.name || subjects[0].name;
+}
+function currentSubjectId(business) {
+  const select = business ? document.getElementById(business + '-subject-select') : null;
+  if (select && select.value) return select.value;
+  return activePortalSession?.primarySubjectId || activePortalSession?.customer?.id || '';
+}
+function fillSubjectSelect(select, subjects, selectedId) {
+  select.replaceChildren(...subjects.map((item) => new Option(item.name, item.id)));
+  select.value = selectedId;
+  select.disabled = subjects.length <= 1; // 单主体灰显
+}
+function renderSubjectPickers() {
+  const subjects = portalSubjects();
+  const primaryId = activePortalSession?.primarySubjectId || subjects[0]?.id || '';
+  ['onboarding', 'resignation', 'salary'].forEach((business) => {
+    const select = document.getElementById(business + '-subject-select');
+    if (!select) return;
+    fillSubjectSelect(select, subjects, primaryId);
+    select.addEventListener('change', () => { switchPortalSubject(business, select.value).catch((error) => showToast(error.message)); });
+  });
+  const wizardSelect = document.getElementById('onboarding-wizard-subject');
+  if (wizardSelect) {
+    fillSubjectSelect(wizardSelect, subjects, primaryId);
+    wizardSelect.addEventListener('change', () => { switchPortalSubject('onboarding', wizardSelect.value).catch((error) => showToast(error.message)); });
+  }
+}
+/** 切主体：重拉该业务 schema（沿用 clearPortalClientState 复位公积金比例/缴纳地），并清空本地草稿缓存视图。 */
+async function switchPortalSubject(business, subjectId) {
+  if (!subjectId || subjectId === currentSubjectId(business)) return;
+  const generation = portalSessionGeneration;
+  const accountId = activePortalSession?.account?.id;
+  const token = portalLinkToken();
+  try {
+    const result = await portalCall('/portal/schema', { businessType: business, subjectId });
+    assertPortalSession(generation, accountId, token);
+    // 复用既有复位逻辑：清空表单/导入状态/缴纳地与公积金比例，防止上一主体内容串主体。
+    if (business === 'onboarding') { resetOnboardingForm(); } else {
+      const form = document.getElementById('resignation-form');
+      form?.reset();
+      portalState.resignationFiles = [];
+      if (typeof renderResignationAttachments === 'function') renderResignationAttachments();
+      portalState.resignationImportFileId = null;
+      document.getElementById(business + '-import-results')?.remove();
+      hideDraftRestoreCard('resignation');
+    }
+    portalSchemas[business] = result.fields;
+    if (business !== 'salary') {
+      portalState.locations[business] = Array.isArray(result.locations) ? result.locations : [];
+      const locationList = document.getElementById(business === 'onboarding' ? 'social-location-options' : 'resignation-social-location-options');
+      locationList?.replaceChildren(...portalState.locations[business].map((location) => new Option(location.name, location.name)));
+      const aliases = business === 'onboarding'
+        ? { contract_term_type: 'contract_type', contract_term: 'contract_duration', work_hour_system: 'working_hours', salary_form: 'salary_type', start_month: 'social_start_month' }
+        : { employee_name: 'resignation_name', id_card_no: 'resignation_id', mobile: 'resignation_mobile', email: 'resignation_email', resignation_date: 'resignation_date', social_location: 'resignation_social_location', social_stop_month: 'stop_month', resignation_reason: 'resignation_reason' };
+      for (const field of result.fields) {
+        const control = document.getElementById(aliases[field.code] || field.code);
+        if (!control || control.tagName === 'OUTPUT') continue;
+        if (control.tagName === 'SELECT' && field.options.length && field.code !== 'contract_term_type') {
+          control.replaceChildren(new Option('请选择', ''), ...field.options.map((value) => new Option(value, value)));
+        }
+        control.required = field.required;
+      }
+    }
+    // 同步三个下拉与向导下拉到新主体（业务页间共享主体选择）。
+    ['onboarding', 'resignation', 'salary'].forEach((target) => {
+      const select = document.getElementById(target + '-subject-select');
+      if (select && select.value !== subjectId && !select.disabled) select.value = subjectId;
+    });
+    const wizardSelect = document.getElementById('onboarding-wizard-subject');
+    if (wizardSelect && wizardSelect.value !== subjectId) wizardSelect.value = subjectId;
+    const header = document.getElementById('portal-customer-code');
+    if (header) header.textContent = '当前主体：' + (portalSubjects().find((item) => item.id === subjectId)?.name || '-');
+    const dashChip = document.getElementById('dashboard-subject-chip');
+    if (dashChip) dashChip.textContent = '当前主体：' + (portalSubjects().find((item) => item.id === subjectId)?.name || '-');
+    if (business !== 'salary') offerPortalDraft(business); // 恢复该主体自己的草稿（若有）
+    showToast('已切换办理主体：' + (portalSubjects().find((item) => item.id === subjectId)?.name || ''));
+  } catch (error) {
+    if (isPortalSessionChanged(error)) return;
+    // 回滚下拉选择，保持与已生效主体一致
+    const select = document.getElementById(business + '-subject-select');
+    if (select) select.value = currentSubjectId(business) || select.value;
+    showToast(error.message);
+  }
+}
+
 async function applyPortalSession(session) {
   const generation=++portalSessionGeneration;
   activePortalSession=session;
   clearPortalClientState();
   sessionStorage.setItem(PORTAL_SESSION_KEY,JSON.stringify(session));
   document.getElementById('portal-customer-name').textContent=session.customer.customerName;
-  document.getElementById('portal-customer-code').textContent='客户代码：'+(session.customer.customerCode||'-');
-  document.querySelectorAll('.customer-chip').forEach((node)=>{if(node.textContent.includes('客户代码'))node.textContent='客户代码：'+(session.customer.customerCode||'-');});
+  document.getElementById('portal-customer-code').textContent='当前主体：'+(activeSubjectName()||session.customer.customerName||'-');
+  document.querySelectorAll('.customer-chip').forEach((node)=>{if(node.textContent.includes('当前主体'))node.textContent='当前主体：'+(activeSubjectName()||session.customer.customerName||'-');});
+  const dashChip=document.getElementById('dashboard-subject-chip');
+  if(dashChip)dashChip.textContent='当前主体：'+(activeSubjectName()||session.customer.customerName||'-');
+  renderSubjectPickers();
   authPage.classList.add('hidden');
   document.getElementById('portal-password-panel').classList.toggle('hidden',!session.mustChangePassword);
   portalApp.classList.toggle('hidden',session.mustChangePassword);
@@ -210,7 +310,7 @@ async function applyPortalSession(session) {
   for(const business of ['onboarding','resignation','salary']) {
     if(!portalHasBusinessPermission(business))continue;
     try {
-      const result=await portalCall('/portal/schema',{businessType:business}); if(generation!==portalSessionGeneration||activePortalSession?.account?.id!==session.account?.id)return; portalSchemas[business]=result.fields;
+      const result=await portalCall('/portal/schema',{businessType:business,subjectId:currentSubjectId(business)}); if(generation!==portalSessionGeneration||activePortalSession?.account?.id!==session.account?.id)return; portalSchemas[business]=result.fields;
       if (business === 'salary') {
         applyPortalSalaryMonth(result.defaultMonth, salaryMonthAtLogin);
         continue;
@@ -265,15 +365,16 @@ async function refreshPortalProgress(){
   const labels={draft:'待内部审核',pending:'待办理',processing:'办理中',received:'已受理',completed:'已完结',needs_correction:'待补正',returned:'已退回',withdrawn:'已撤回',void:'已作废'};
   const rows=result.list.map((row,index)=>{
     const done=row.status==='completed';
-    const values=[row.requestNo,row.subject,names[row.businessType],String(row.createdAt).slice(0,10)];
+    // 批次3：进度表新增"办理主体"列，跨主体记录可区分归属。
+    const values=[row.requestNo,row.subjectName||row.subject||'-',row.subject,names[row.businessType],String(row.createdAt).slice(0,10)];
     const correction = row.status === 'needs_correction';
     const action = correction && row.businessType !== 'salary' ? '<button type="button" class="quiet-button progress-correction" data-correction-index="'+index+'">修改并重新提交</button>' : '';
     return {html:values.map((value)=>'<td>'+escapeHtml(value||'-')+'</td>').join('')+'<td><span class="status '+(done?'done':'processing')+'">'+escapeHtml(labels[row.status]||'办理中')+'</span></td>',result:row.result,done,action,row};
   });
-  document.getElementById('progress-rows').innerHTML=rows.map((row)=>'<tr data-progress-status="'+(row.done?'done':'processing')+'">'+row.html+'<td>'+escapeHtml(row.result||'等待办理结果')+(row.action||'')+'</td></tr>').join('')||'<tr><td colspan="6">暂无办理记录</td></tr>';
+  document.getElementById('progress-rows').innerHTML=rows.map((row)=>'<tr data-progress-status="'+(row.done?'done':'processing')+'">'+row.html+'<td>'+escapeHtml(row.result||'等待办理结果')+(row.action||'')+'</td></tr>').join('')||'<tr><td colspan="7">暂无办理记录</td></tr>';
   window.portalCorrectionRows = result.list;
   document.querySelectorAll('.progress-correction').forEach((button)=>button.addEventListener('click',()=>beginPortalCorrection(window.portalCorrectionRows[Number(button.dataset.correctionIndex)])));
-  document.getElementById('dashboard-recent').innerHTML=rows.slice(0,5).map((row)=>'<tr>'+row.html+'</tr>').join('')||'<tr><td colspan="5">暂无办理记录</td></tr>';
+  document.getElementById('dashboard-recent').innerHTML=rows.slice(0,5).map((row)=>'<tr>'+row.html+'</tr>').join('')||'<tr><td colspan="6">暂无办理记录</td></tr>';
   const stats=document.querySelectorAll('.stat-value');
   const counts=[result.summary.processing,result.summary.completed,result.list.filter((row)=>row.businessType==='salary').length,result.total];
   stats.forEach((node,index)=>{node.textContent=String(counts[index]??0);});
@@ -285,7 +386,7 @@ async function refreshPortalProgress(){
 async function downloadStandardTemplate(businessType){
   const generation=portalSessionGeneration; const accountId=activePortalSession?.account?.id; const token=portalLinkToken();
   try{
-    const result=await portalCall('/portal/template',{businessType});
+    const result=await portalCall('/portal/template',{businessType,subjectId:currentSubjectId(businessType)});
     assertPortalSession(generation, accountId, token);
     const bytes=Uint8Array.from(atob(result.contentBase64),(value)=>value.charCodeAt(0));
     const url=URL.createObjectURL(new Blob([bytes],{type:result.mimeType}));const anchor=document.createElement('a');
@@ -319,6 +420,13 @@ function clearPortalCorrection(){
   portalState.correctionBusinessType=null;
   portalState.correctionOriginalFields=null;
   portalState.correctionFields=[];
+  // 批次3：补正结束后恢复主体下拉可用性（单主体账号仍由 renderSubjectPickers 保持灰显）。
+  ['onboarding','resignation','salary'].forEach((target)=>{
+    const select=document.getElementById(target+'-subject-select');
+    if(select)select.disabled=portalSubjects().length<=1;
+  });
+  const wizardSelect=document.getElementById('onboarding-wizard-subject');
+  if(wizardSelect)wizardSelect.disabled=portalSubjects().length<=1;
 }
 
 function beginPortalCorrection(row){
@@ -327,10 +435,21 @@ function beginPortalCorrection(row){
   if(!correctionFields.length){showToast('该退回记录未指定待补字段，请联系审核人员重新退回');return;}
   portalState.correctionSubmissionId=row.id; portalState.correctionBusinessType=row.businessType;
   portalState.correctionOriginalFields={...(row.fields||{})}; portalState.correctionFields=correctionFields;
+  // 批次3（拍板③）：补正锁定受理记录原主体。强制三个下拉与向导切回原主体并禁止改选，直到补正提交或放弃。
+  if(row.subjectId){
+    ['onboarding','resignation','salary'].forEach((target)=>{
+      const select=document.getElementById(target+'-subject-select');
+      if(!select)return;
+      if(portalSubjects().some((item)=>item.id===row.subjectId)){select.value=row.subjectId;}
+      select.disabled=true;
+    });
+    const wizardSelect=document.getElementById('onboarding-wizard-subject');
+    if(wizardSelect&&portalSubjects().some((item)=>item.id===row.subjectId)){wizardSelect.value=row.subjectId;wizardSelect.disabled=true;}
+  }
   const aliases=row.businessType==='onboarding'?{contract_term_type:'contract_type',contract_term:'contract_duration',work_hour_system:'working_hours',salary_form:'salary_type',start_month:'social_start_month'}:{employee_name:'resignation_name',id_card_no:'resignation_id',mobile:'resignation_mobile',email:'resignation_email',resignation_date:'resignation_date',social_location:'resignation_social_location',social_stop_month:'stop_month',resignation_reason:'resignation_reason'};
   const fields=row.fields||{}; Object.entries(fields).forEach(([code,value])=>{const control=document.getElementById(aliases[code]||code);if(control){control.value=String(value??'');control.dispatchEvent(new Event('change',{bubbles:true}));}});
   if(row.businessType==='onboarding') switchView('onboarding'); else switchView('resignation');
-  showToast((row.correctionReason?row.correctionReason+'；':'')+'请补正：'+correctionFields.join('、')+'；其他字段不能修改');
+  showToast((row.correctionReason?row.correctionReason+'；':'')+'请补正：'+correctionFields.join('、')+'；其他字段不能修改；本次补正已锁定原办理主体');
 }
 
 async function submitOnboarding(){
@@ -342,7 +461,9 @@ async function submitOnboarding(){
     const correctionId=portalState.correctionBusinessType==='onboarding' ? portalState.correctionSubmissionId : null;
     if(correctionId)assertPortalCorrectionFields('onboarding',fields);
     const files=await filesForPortal(portalState.onboardingFiles); assertPortalSession(generation, accountId, token);
-    const result=await portalCall(correctionId?'/portal/resubmit':'/portal/onboarding',{fields,files,...(correctionId?{submissionId:correctionId,businessType:'onboarding'}:{})},correctionId?'resubmit-'+correctionId:'onboarding');
+    // 批次3：提交绑定当前所选主体；补正时主体被锁定为受理记录原主体（后端门禁强制）。
+    const subjectId = currentSubjectId('onboarding');
+    const result=await portalCall(correctionId?'/portal/resubmit':'/portal/onboarding',{fields,files,subjectId,...(correctionId?{submissionId:correctionId,businessType:'onboarding'}:{})},correctionId?'resubmit-'+correctionId:'onboarding');
     assertPortalSession(generation, accountId, token);
     if(correctionId)clearPortalCorrection(); onboardingFeedback('资料已受理，编号：'+result.workOrderNo+'；可在办理进度查看结果。',false);
     clearDraftAfterSubmit('onboarding'); resetOnboardingForm();
@@ -378,7 +499,8 @@ async function submitResignation(){
     const correctionId=portalState.correctionBusinessType==='resignation' ? portalState.correctionSubmissionId : null;
     if(correctionId)assertPortalCorrectionFields('resignation',fields);
     const files=await filesForPortal(portalState.resignationFiles); assertPortalSession(generation, accountId, token);
-    const result=await portalCall(correctionId?'/portal/resubmit':'/portal/resignation',{fields,files,...(correctionId?{submissionId:correctionId,businessType:'resignation'}:{})},correctionId?'resubmit-'+correctionId:'resignation');
+    const subjectId = currentSubjectId('resignation');
+    const result=await portalCall(correctionId?'/portal/resubmit':'/portal/resignation',{fields,files,subjectId,...(correctionId?{submissionId:correctionId,businessType:'resignation'}:{})},correctionId?'resubmit-'+correctionId:'resignation');
     assertPortalSession(generation, accountId, token);
     if(correctionId)clearPortalCorrection(); box.textContent='资料已受理，编号：'+result.workOrderNo;box.className='form-feedback visible';
     clearDraftAfterSubmit('resignation'); hideDraftRestoreCard('resignation');
@@ -392,7 +514,8 @@ async function submitSalary(){
   try{
     const items=portalState.salaryMode==='changed'&&portalState.salaryChannel==='attachment'?Array.from(document.getElementById('salary-attachments').files||[]).map((file)=>({file,bizPurpose:'salary_attachment'})):[];
     const files=await filesForPortal(items); assertPortalSession(generation, accountId, token);
-    const result=await portalCall('/portal/salary',{fields:salaryPayload(),files},'salary'); assertPortalSession(generation, accountId, token); showToast('薪资已受理：'+result.requestNo);switchView('progress');
+    const subjectId = currentSubjectId('salary');
+    const result=await portalCall('/portal/salary',{fields:salaryPayload(),files,subjectId},'salary'); assertPortalSession(generation, accountId, token); showToast('薪资已受理：'+result.requestNo);switchView('progress');
   }catch(error){if(!isPortalSessionChanged(error))showToast(error.message);}finally{button.disabled=false;}
 }
 
@@ -407,7 +530,8 @@ async function runPortalImport(business,confirm){
   try{
     const contentBase64=await fileAsBase64(file); assertPortalSession(generation, accountId, token);
     const files = await filesForPortal(onboarding ? portalState.onboardingFiles : portalState.resignationFiles); assertPortalSession(generation, accountId, token);
-    const result=await portalCall('/portal/'+business+'/import/'+(confirm?'confirm':'preview'),{fileName:file.name,contentBase64,files},confirm?'import-'+business:undefined); assertPortalSession(generation, accountId, token);
+    const subjectId = currentSubjectId(business);
+    const result=await portalCall('/portal/'+business+'/import/'+(confirm?'confirm':'preview'),{fileName:file.name,contentBase64,files,subjectId},confirm?'import-'+business:undefined); assertPortalSession(generation, accountId, token);
     let details=document.getElementById(business+'-import-results');
     if(!details){details=document.createElement('div');details.id=business+'-import-results';details.className='table-wrap import-results';document.getElementById(statusId).after(details);}
     details.innerHTML='<table><thead><tr><th>Excel行号</th><th>结果</th><th>说明</th><th>办理编号</th></tr></thead><tbody>'+result.details.map((row)=>'<tr><td>'+row.rowNumber+'</td><td>'+(row.success?'成功':'失败')+'</td><td>'+escapeHtml(row.message)+'</td><td>'+escapeHtml(row.workOrderNo||'-')+'</td></tr>').join('')+'</tbody></table>';

@@ -45,9 +45,9 @@ interface StagedFile {
   file: File;
 }
 
-// 附件格式白名单：图片、Word、PDF（与后端 20MB 上限、黑名单兜底一致，前端做正向拦截）。
-const ALLOWED_UPLOAD_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'doc', 'docx', 'pdf'];
-const UPLOAD_ACCEPT = 'image/*,.pdf,.doc,.docx';
+// 附件格式白名单：图片、Word、PDF、ZIP 压缩包（与后端 20MB 上限、黑名单兜底一致，前端做正向拦截）。
+const ALLOWED_UPLOAD_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'doc', 'docx', 'pdf', 'zip'];
+const UPLOAD_ACCEPT = 'image/*,.pdf,.doc,.docx,.zip';
 
 function isAllowedUploadFile(fileName: string): boolean {
   const ext = fileName.split('.').pop()?.toLowerCase() ?? '';
@@ -198,7 +198,7 @@ const MaterialsUpload = forwardRef<MaterialsUploadHandle, MaterialsUploadProps>(
             accept={UPLOAD_ACCEPT}
             beforeUpload={(file) => {
               if (!isAllowedUploadFile(file.name)) {
-                message.error('仅支持图片、Word、PDF 格式');
+                message.error('仅支持图片、Word、PDF、ZIP 压缩包格式');
                 return Upload.LIST_IGNORE;
               }
               setFileList([{ uid: file.uid, name: file.name, status: 'done', originFileObj: file }]);

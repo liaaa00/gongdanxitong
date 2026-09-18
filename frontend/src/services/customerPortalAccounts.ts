@@ -15,6 +15,12 @@ export function normalizePortalBusinessPermissions(value: unknown): PortalBusine
   return normalized;
 }
 
+export interface PortalSubjectItem {
+  id: string;
+  name: string;
+  isPrimary: boolean;
+}
+
 export interface CustomerPortalAccountItem {
   id: string;
   customerId: string;
@@ -23,6 +29,9 @@ export interface CustomerPortalAccountItem {
   isActive: boolean;
   mustChangePassword: boolean;
   businessPermissions: PortalBusinessPermission[];
+  /** 批次3：账号关联的主体集合与主主体。 */
+  subjects?: PortalSubjectItem[];
+  primarySubjectId?: string | null;
   lastLoginAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -35,6 +44,19 @@ export interface SaveCustomerPortalAccountInput {
   isActive: boolean;
   mustChangePassword?: boolean;
   businessPermissions: PortalBusinessPermission[];
+}
+
+export interface SetPortalAccountSubjectsInput {
+  subjects: string[];
+  primarySubjectId?: string;
+}
+
+export function listCustomerPortalAccountSubjects(customerId: string, accountId: string): Promise<{ primarySubjectId: string | null; subjects: PortalSubjectItem[] }> {
+  return request.get(`/customer-config/customers/${customerId}/accounts/${accountId}/subjects`);
+}
+
+export function setCustomerPortalAccountSubjects(customerId: string, accountId: string, payload: SetPortalAccountSubjectsInput): Promise<{ primarySubjectId: string | null; subjects: PortalSubjectItem[] }> {
+  return request.put(`/customer-config/customers/${customerId}/accounts/${accountId}/subjects`, payload);
 }
 
 export function getCustomerPortalAccounts(customerId: string): Promise<CustomerPortalAccountItem[]> {

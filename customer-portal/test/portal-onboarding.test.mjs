@@ -117,11 +117,13 @@ test('customer intake accepts the phase-one fields and rejects internal-only fie
   }), /not available to the customer/);
 });
 
-test('customer intake accepts task contracts and rejects unsupported contract or salary options', () => {
+test('customer intake accepts task contracts, free-form salary forms and rejects unsupported contract options', () => {
   const task = { ...completeFields(), contract_term_type: '任务期限' };
   assert.deepEqual(normalizeOnboardingFields(task), task);
   assert.throws(() => normalizeOnboardingFields({ ...completeFields(), contract_term_type: '按年' }), /contract_term_type/);
-  assert.throws(() => normalizeOnboardingFields({ ...completeFields(), salary_form: '按日' }), /salary_form/);
+  assert.equal(normalizeOnboardingFields({ ...completeFields(), salary_form: '按日' }).salary_form, '按日');
+  assert.equal(normalizeOnboardingFields({ ...completeFields(), salary_form: '计件' }).salary_form, '计件');
+  assert.throws(() => normalizeOnboardingFields({ ...completeFields(), salary_form: '' }), /salary_form/);
 });
 
 test('customer intake validates required, date, month, mobile and bank fields', () => {
