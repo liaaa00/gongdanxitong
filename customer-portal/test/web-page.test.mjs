@@ -23,6 +23,9 @@ test('phase-one customer portal exposes the agreed entry points', async () => {
   assert.match(page, /账号密码登录/);
   assert.match(page, /id="login-email"[^>]+type="email"/);
   assert.match(page, /id="login-password"[^>]+type="password"/);
+  assert.doesNotMatch(page, /<span class="tool-badge">最多 5 个<\/span>/);
+  assert.match(page, /\.input-prefix span \{ position: absolute; top: 50%; left: 13px; transform: translateY\(-50%\); color: #71818a; pointer-events: none; \}/);
+  assert.match(page, /\.onboarding-tools \{ display: grid; grid-template-columns: minmax\(0, 1fr\); gap: 16px; margin: 0 0 22px; \}/);
   assert.match(page, /fetch\(gatewayUrl\(\) \+ '\/portal\/auth\/login'/);
   assert.match(page, /customer_portal_session/);
   assert.match(page, /savedPortalSession\(\)\?\.linkToken/);

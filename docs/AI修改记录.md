@@ -3264,3 +3264,13 @@
 - **回滚路径**：镜像 `rollback-presync-20260918` tag 一键回退；数据可 `pg_restore` pre-migration.dump；源码在 backup-src/；3 条迁移均有可逆 down。
 - **收尾**：本地 main 3 个提交已推送 origin（c1e7a69..4239dae；本机 git 代理 127.0.0.1:7897 失联，改用 `git -c http.proxy=` 直连成功）。
 - **影响面自查**：未上传任何本地数据库/seed/数据文件；省外数据隔离、权限中心手工配置等旧规则不变；AdjustPortalFieldVocabulary 对 field_configs 的三项 UPDATE 属用户 9-16 拍板口径的预期变更。
+
+## 2026-09-18 · 门户 UI 三项修正（¥前缀/最多5个角标/导入卡铺满）
+
+- **需求/背景**：用户反馈三处门户展示问题：①社保公积金页两个缴费工资输入框的 ￥ 前缀错位（红框标注，浮在输入框上沿）；②材料补充卡右上角"最多 5 个"角标多余，要求移除并同步其他页面；③批量导入卡片未横向铺满、与下方内容不对齐。
+- **改动（仅 customer-portal/web/index.html + 测试）**：
+  1. `.input-prefix span` 改为 `top:50% + translateY(-50%)` 垂直居中，加 `pointer-events:none`，padding-left 28→32px——￥ 前缀不再随输入框高度漂移。
+  2. 移除入职（875 行）与离职（913 行）两处材料补充卡的 `<span class="tool-badge">最多 5 个</span>`；全仓搜索确认内部前端（frontend/src）无此角标，5 个上限的 JS 校验逻辑保留不变。
+  3. `.onboarding-tools` 两列布局（1.28fr/0.72fr）改单列 `minmax(0,1fr)`，批量导入卡与下方表单/附件卡同宽对齐；940px 断点处原 `grid-template-columns:1fr` 覆盖改为仅调 gap。
+- **如何验证**：customer-portal `node --test test/` 62/62 绿（web-page.test.mjs 新增 3 条断言：badge 不存在、input-prefix 新样式、onboarding-tools 单列）；`回归测试.ps1 -SkipBuild` 退出码 0（前端 21 套件、后端 5+13+3+3+7 套件、connector 62 用例全过）。
+- **影响面自查**：仅门户静态页样式与角标删除，不触及网关/连接器/后端；"最多 5 个"上传上限逻辑（1187/1215 行）未动；回归清单旧规则无冲突。

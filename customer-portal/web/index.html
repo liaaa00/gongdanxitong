@@ -167,8 +167,8 @@
     .form-grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .form-grid .full { grid-column: 1 / -1; }
     .input-prefix { position: relative; }
-    .input-prefix span { position: absolute; top: 10px; left: 12px; color: #71818a; }
-    .input-prefix input { padding-left: 28px; }
+    .input-prefix span { position: absolute; top: 50%; left: 13px; transform: translateY(-50%); color: #71818a; pointer-events: none; }
+    .input-prefix input { padding-left: 32px; }
     .derived { display: flex; align-items: center; min-height: 42px; padding: 9px 11px; border: 1px dashed #b8ccd0; border-radius: 5px; color: #507079; background: #f7fbfb; font-size: 14px; }
     .check-option { display: flex; align-items: center; gap: 9px; min-height: 42px; padding-top: 6px; color: #415762; font-size: 14px; }
     .check-option input { width: 17px; height: 17px; accent-color: var(--teal); }
@@ -205,7 +205,8 @@
     .salary-confirm .primary-button { width: 100%; }
     .file-field { display: flex; align-items: center; min-height: 42px; padding: 6px 9px; border: 1px dashed #b8cbd0; border-radius: 5px; background: #fbfdfd; }
     .file-field input { max-width: 100%; min-height: auto; padding: 0; border: 0; font-size: 13px; }
-    .onboarding-tools { display: grid; grid-template-columns: minmax(0, 1.28fr) minmax(300px, .72fr); gap: 16px; margin: 0 0 22px; }
+    .onboarding-tools { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; margin: 0 0 22px; }
+    .onboarding-tools > .mode-change-row { grid-column: 1; }
     .tool-card { position: relative; overflow: hidden; padding: 0; border: 1px solid var(--line); border-radius: 10px; background: #fff; box-shadow: 0 8px 20px rgba(38, 111, 151, .06); }
     .tool-card::before { position: absolute; inset: 0 0 auto; height: 3px; background: var(--teal); content: ''; }
     .tool-card.import-card::before { background: linear-gradient(90deg, #007cc3, #57b8ea); }
@@ -263,7 +264,7 @@
     .toast.visible { display: block; }
 
     @media (max-width: 940px) {
-      .onboarding-tools { grid-template-columns: 1fr; }
+      .onboarding-tools { gap: 14px; }
       .auth-shell { grid-template-columns: 1fr; }
       .auth-aside { min-height: auto; padding: 36px; }
       .auth-aside h1 { margin-top: 42px; }
@@ -872,7 +873,7 @@
             </div>
           </form>
           <section id="onboarding-attachment-card" class="tool-card attachment-card hidden" aria-labelledby="attachment-title">
-            <header><div class="tool-card-heading"><span class="tool-kicker">材料补充</span><div class="tool-title-row"><span class="tool-icon" aria-hidden="true">↑</span><div><h3 id="attachment-title">入职附件上传</h3><p>身份证明、上家单位离职证明等材料可随本次申请一起提交。</p></div></div></div><span class="tool-badge">最多 5 个</span></header>
+            <header><div class="tool-card-heading"><span class="tool-kicker">材料补充</span><div class="tool-title-row"><span class="tool-icon" aria-hidden="true">↑</span><div><h3 id="attachment-title">入职附件上传</h3><p>身份证明、上家单位离职证明等材料可随本次申请一起提交。</p></div></div></div></header>
             <div class="tool-card-body">
               <label class="file-dropzone" id="attachment-dropzone"><span class="file-dropzone-icon" aria-hidden="true">＋</span><span class="file-dropzone-copy"><strong id="attachment-file-name" class="file-drop-name">选择附件材料</strong><small class="file-drop-hint">支持 PDF、图片、Office 和 ZIP 格式</small></span><input id="onboarding-attachments" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,.zip"></label>
               <ul id="onboarding-attachment-list" class="attachment-list" aria-live="polite"><li class="tool-meta">尚未选择附件</li></ul>
@@ -910,7 +911,7 @@
             <div class="form-actions"><span class="privacy-note">提交后可在“办理进度”查看状态。</span><div class="form-actions-right"><button class="secondary-button" type="reset">清空</button><button id="resignation-save-draft" class="secondary-button" type="button">保存草稿</button><button class="primary-button" type="submit">提交</button></div></div>
           </form>
           <section id="resignation-attachment-card" class="tool-card attachment-card hidden" aria-labelledby="resignation-attachment-title">
-            <header><div class="tool-card-heading"><span class="tool-kicker">材料补充</span><div class="tool-title-row"><span class="tool-icon" aria-hidden="true">↑</span><div><h3 id="resignation-attachment-title">离职附件上传</h3><p>辞职报告或其他解除劳动关系证明等材料可随本次申请一起提交。</p></div></div></div><span class="tool-badge">最多 5 个</span></header>
+            <header><div class="tool-card-heading"><span class="tool-kicker">材料补充</span><div class="tool-title-row"><span class="tool-icon" aria-hidden="true">↑</span><div><h3 id="resignation-attachment-title">离职附件上传</h3><p>辞职报告或其他解除劳动关系证明等材料可随本次申请一起提交。</p></div></div></div></header>
             <div class="tool-card-body"><label class="file-dropzone" id="resignation-attachment-dropzone"><span class="file-dropzone-icon" aria-hidden="true">＋</span><span class="file-dropzone-copy"><strong id="resignation-attachment-file-name" class="file-drop-name">选择附件材料</strong><small class="file-drop-hint">支持 PDF、图片、Office 和 ZIP 格式</small></span><input id="resignation-attachments" name="attachment" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,.zip"></label><ul id="resignation-attachment-list" class="attachment-list" aria-live="polite"><li class="tool-meta">尚未选择附件</li></ul><p id="resignation-attachment-status" class="tool-status">附件会随本次离职申请一起提交。</p></div>
           </section>
         </section>
