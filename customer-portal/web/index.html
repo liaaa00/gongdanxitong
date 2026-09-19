@@ -135,15 +135,20 @@
     th, td { padding: 13px 10px; border-bottom: 1px solid #e6edef; text-align: left; font-size: 13px; white-space: nowrap; }
     th { color: #71818a; font-weight: 650; }
     td { color: #354b57; }
+    tbody tr { transition: background .15s ease; }
+    tbody tr:hover { background: #f5fafd; }
     .import-results table { min-width: 0; table-layout: fixed; }
     .import-results th, .import-results td { white-space: normal; overflow-wrap: anywhere; vertical-align: top; }
     .import-results th:nth-child(1), .import-results td:nth-child(1) { width: 62px; }
     .import-results th:nth-child(2), .import-results td:nth-child(2) { width: 48px; }
     .import-results th:nth-child(4), .import-results td:nth-child(4) { width: 112px; }
     .status { display: inline-flex; align-items: center; min-height: 24px; padding: 0 8px; border-radius: 3px; font-size: 12px; font-weight: 700; }
-    .status.processing { color: #875705; background: var(--gold-soft); }
-    .status.done { color: #1b704e; background: var(--green-soft); }
+    .status.processing, .status.pending, .status.received { color: #875705; background: var(--gold-soft); }
+    .status.done, .status.completed { color: #1b704e; background: var(--green-soft); }
     .status.draft { color: #006aa8; background: var(--teal-soft); }
+    .status.needs_correction { color: #a04d0b; background: #fdf0e3; }
+    .status.returned { color: #8a3229; background: var(--danger-soft); }
+    .status.withdrawn, .status.void { color: #5d6b76; background: #eef1f4; }
     .notice { margin: 0 0 20px; padding: 13px 15px; border: 1px solid #f0d9a8; border-left: 4px solid var(--gold); border-radius: 5px; color: #79500d; background: var(--gold-soft); font-size: 13px; line-height: 1.6; }
     .info-list { display: grid; gap: 0; }
     .info-item { display: flex; justify-content: space-between; gap: 18px; padding: 14px 0; border-bottom: 1px solid #e8eef0; font-size: 14px; }
@@ -437,6 +442,8 @@
     .mode-card::before { position: absolute; top: 22px; left: 22px; display: grid; place-items: center; width: 25px; height: 25px; border-radius: 8px; color: #2367d1; background: #eaf2ff; content: '↗'; font-weight: 800; }
     .mode-card[data-onboarding-mode="single"]::before { color: #188663; background: #e8f7f1; content: '✎'; }
     .mode-card:hover { border-color: #9ab9e8; box-shadow: 0 12px 26px rgba(35, 103, 209, .12); transform: translateY(-2px); }
+    .mode-card.active, .mode-card:active { border-color: var(--portal-primary); background: linear-gradient(135deg, #f3f8ff 0%, #eaf3ff 100%); box-shadow: 0 0 0 3px rgba(35, 103, 209, .10); }
+    .mode-card.active::after { position: absolute; top: 14px; right: 14px; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; color: #fff; background: var(--portal-primary); content: '✓'; font-size: 13px; font-weight: 800; }
     .mode-card strong { font-size: 16px; }
     .mode-card span { color: var(--portal-muted); font-size: 13px; line-height: 1.55; }
 
@@ -726,7 +733,7 @@
           </div>
 
           <div class="stat-grid" aria-label="服务概览">
-            <div class="stat"><div class="stat-label">办理中</div><div class="stat-value">—</div><div class="stat-hint">需关注处理进度</div></div>
+            <div class="stat"><div class="stat-label">办理中</div><div class="stat-value">—</div><div class="stat-hint">含待补正、已退回等需关注记录</div></div>
             <div class="stat"><div class="stat-label">已完结</div><div class="stat-value">—</div><div class="stat-hint">可查看办理结果</div></div>
             <div class="stat"><div class="stat-label">薪资受理记录</div><div class="stat-value">—</div><div class="stat-hint">按薪资所属期确认</div></div>
             <div class="stat"><div class="stat-label">办理人次</div><div class="stat-value">—</div><div class="stat-hint">入职、离职每提交 1 条计 1 人次</div></div>
@@ -949,6 +956,7 @@
           <div class="toolbar">
             <div class="progress-filter" aria-label="进度筛选">
               <button class="filter-button active" data-progress-filter="all" type="button">全部</button>
+              <button class="filter-button" data-progress-filter="attention" type="button">待处理</button>
               <button class="filter-button" data-progress-filter="processing" type="button">办理中</button>
               <button class="filter-button" data-progress-filter="done" type="button">已完结</button>
             </div>
@@ -1331,6 +1339,7 @@ excelInput.addEventListener('change', () => updateFileDropzone(excelInput, excel
       document.getElementById('onboarding-stepper').classList.toggle('hidden', mode !== 'single');
       document.getElementById('onboarding-import-card').classList.toggle('hidden', mode !== 'bulk');
       document.getElementById('onboarding-attachment-card').classList.remove('hidden');
+      document.querySelectorAll('[data-onboarding-mode]').forEach((button) => { const selected = button.dataset.onboardingMode === mode; button.classList.toggle('active', selected); button.setAttribute('aria-pressed', String(selected)); });
       if (mode === 'single') { setOnboardingStep(1); offerPortalDraft('onboarding'); }
     }
 
@@ -1342,6 +1351,7 @@ excelInput.addEventListener('change', () => updateFileDropzone(excelInput, excel
       document.getElementById('import-preview').classList.add('hidden');
       document.getElementById('confirm-import').classList.add('hidden');
       document.getElementById('import-status').textContent = '请选择 Excel 文件后预览并完成字段映射';
+      document.querySelectorAll('[data-onboarding-mode]').forEach((button) => { button.classList.remove('active'); button.setAttribute('aria-pressed', 'false'); });
       portalState.importFileId = null;
       portalState.importMapping = {};
       scrollToModePicker('onboarding-mode-picker');
@@ -1356,6 +1366,7 @@ excelInput.addEventListener('change', () => updateFileDropzone(excelInput, excel
       document.getElementById('resignation-form').classList.toggle('hidden', mode !== 'single');
       document.getElementById('resignation-import-card').classList.toggle('hidden', mode !== 'bulk');
       document.getElementById('resignation-attachment-card').classList.toggle('hidden', mode !== 'single');
+      document.querySelectorAll('[data-resignation-mode]').forEach((button) => { const selected = button.dataset.resignationMode === mode; button.classList.toggle('active', selected); button.setAttribute('aria-pressed', String(selected)); });
       if (mode === 'single') offerPortalDraft('resignation');
     }
 
@@ -1365,6 +1376,7 @@ excelInput.addEventListener('change', () => updateFileDropzone(excelInput, excel
       document.getElementById('resignation-form').classList.add('hidden');
       document.getElementById('resignation-import-status').textContent = '请先下载模板，再上传文件。';
       document.getElementById('confirm-resignation-import').classList.add('hidden');
+      document.querySelectorAll('[data-resignation-mode]').forEach((button) => { button.classList.remove('active'); button.setAttribute('aria-pressed', 'false'); });
       portalState.resignationImportFileId = null;
       scrollToModePicker('resignation-mode-picker');
     }
@@ -1390,7 +1402,7 @@ excelInput.addEventListener('change', () => updateFileDropzone(excelInput, excel
 
 
     const resignationExcelInput = document.getElementById('resignation-excel');
-    resignationExcelInput.addEventListener('change', () => { document.getElementById('resignation-excel-file-name').textContent = resignationExcelInput.files[0]?.name || '选择离职 Excel 文件'; });
+    resignationExcelInput.addEventListener('change', () => { document.getElementById('resignation-excel-dropzone').classList.toggle('has-file', resignationExcelInput.files.length > 0); document.getElementById('resignation-excel-file-name').textContent = resignationExcelInput.files[0]?.name || '选择离职 Excel 文件'; });
 
 
 
@@ -1453,6 +1465,7 @@ excelInput.addEventListener('change', () => updateFileDropzone(excelInput, excel
     initializeSalaryPeriod();
     document.getElementById('salary-attachments').addEventListener('change', (event) => {
       const files = Array.from(event.target.files || []); const invalid = files.find((file) => file.size > 30 * 1024 * 1024 || !/\.(pdf|jpg|jpeg|png|doc|docx|xls|xlsx|zip)$/i.test(file.name)); portalState.salaryAttachmentInvalid = Boolean(invalid);
+      document.querySelector('.salary-file-dropzone').classList.toggle('has-file', files.length > 0);
       document.getElementById('salary-attachment-file-name').textContent = files.length ? (files.length === 1 ? files[0].name : '已选择 ' + files.length + ' 个文件') : '选择薪资文件';
       setToolStatus('salary-attachment-status', invalid ? '文件格式不支持或超过允许大小：' + invalid.name : (files.length ? '文件已选择，提交前请确认内容准确。' : '尚未选择文件。'), Boolean(invalid));
     });

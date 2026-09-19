@@ -3286,3 +3286,19 @@
 - **如何验证**：behavior 24/24、service 56/56、dashboard 28/28、control-flow 10/10、dispatch-engine 26/26；`回归测试.ps1 -SkipBuild` 退出码 0（后端 15+259+98+60+57 全过、前端 21 套件、connector 62 用例）；backend `tsc --noEmit` 0。
 - **影响面自查**：仅放宽"合同角色 × renewal_contract"一个组合，不触及离职证明处理池、省外隔离、业务侧账号等旧口径；dashboard 仪表盘对合同岗账号新增续签模块卡片属预期修正。
 - **同步状态**：本地已提交，待服务器网络恢复后与门户 UI 三项修正（7fc92f3）一起同步生产。
+
+## 2026-09-19 · 门户体验八项修正（进度分组/状态色/选中态/上传反馈等）
+
+- **需求/背景**：用户要求继续优化门户页面。审查发现：①进度筛选把待补正/已退回/已撤回/已作废全归入"办理中"组，点"办理中"混入需客户行动的异常记录；②状态标签只有 done/processing/draft 三种颜色，异常状态无法辨识；③入职/离职办理方式卡片点击后无选中反馈；④离职 Excel 与薪资 dropzone 选文件后边框不变色（入职侧有此反馈）；⑤表格行无 hover 高亮；⑥导入按钮上传期间无 loading 文案；⑦批量导入确认成功无全局 toast；⑧主体选择器在登录/改密/会话恢复时重复挂 change 监听，一次切换可能触发多次 switchPortalSubject。
+- **改动（仅 customer-portal/web/ 两文件 + 测试）**：
+  1. `refreshPortalProgress` 行分组改三值 done/attention/processing（attention=needs_correction+returned），筛选栏新增"待处理"档；统计卡"办理中"提示语同步改为"含待补正、已退回等需关注记录"。
+  2. 状态标签改按真实 `row.status` 渲染 class（status-<status>），新增 .status.needs_correction（橙）/returned（红）/withdrawn,void（灰）及 pending/received/completed 归并映射。
+  3. mode-card 选中态：showOnboardingMode/showResignationMode 同步 toggle .active + aria-pressed；新增选中样式（主色边框+勾角标）；reset 函数清选中态。
+  4. 离职 Excel（resignation-excel-dropzone）与薪资（.salary-file-dropzone）change 时 toggle has-file。
+  5. 全局 tbody tr:hover 高亮 #f5fafd。
+  6. runPortalImport 按钮上传期间文案"上传中…/提交中…"，finally 恢复原文案。
+  7. 导入确认成功后 showToast（有失败提示查看明细，全成功提示已受理）。
+  8. 新增 bindSubjectSelectOnce：select.dataset.subjectBound 标记防重复绑定（登录/改密/会话恢复三路径不再累积监听）。
+- **如何验证**：web-page.test.mjs 新增 15 条断言锁定全部改动；customer-portal node --test 62/62 绿；`回归测试.ps1 -SkipBuild` 退出码 0（后端 15+259+98+60+57、前端 21 套件、connector 62 全过）。
+- **影响面自查**：不改后端 progress 接口与 summary 口径（前端展示层分组）；不触及 12 个月/200 条窗口、多主体门禁、补正锁定原主体等旧规则；dashboard-recent 复用同一 row.html 自动获得新状态色。
+- **同步状态**：本地已提交，待内网恢复后与 7fc92f3、452ca9a 一起同步生产。

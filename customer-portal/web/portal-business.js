@@ -210,6 +210,11 @@ function fillSubjectSelect(select, subjects, selectedId) {
   select.value = selectedId;
   select.disabled = subjects.length <= 1; // 单主体灰显
 }
+function bindSubjectSelectOnce(select, business) {
+  if (select.dataset.subjectBound === '1') return; // 会话恢复/改密会重复调用 renderSubjectPickers，避免 change 监听累积导致一次切换触发多次
+  select.dataset.subjectBound = '1';
+  select.addEventListener('change', () => { switchPortalSubject(business, select.value).catch((error) => showToast(error.message)); });
+}
 function renderSubjectPickers() {
   const subjects = portalSubjects();
   const primaryId = activePortalSession?.primarySubjectId || subjects[0]?.id || '';
@@ -217,12 +222,12 @@ function renderSubjectPickers() {
     const select = document.getElementById(business + '-subject-select');
     if (!select) return;
     fillSubjectSelect(select, subjects, primaryId);
-    select.addEventListener('change', () => { switchPortalSubject(business, select.value).catch((error) => showToast(error.message)); });
+    bindSubjectSelectOnce(select, business);
   });
   const wizardSelect = document.getElementById('onboarding-wizard-subject');
   if (wizardSelect) {
     fillSubjectSelect(wizardSelect, subjects, primaryId);
-    wizardSelect.addEventListener('change', () => { switchPortalSubject('onboarding', wizardSelect.value).catch((error) => showToast(error.message)); });
+    bindSubjectSelectOnce(wizardSelect, 'onboarding');
   }
 }
 /** 切主体：重拉该业务 schema（沿用 clearPortalClientState 复位公积金比例/缴纳地），并清空本地草稿缓存视图。 */
@@ -365,13 +370,15 @@ async function refreshPortalProgress(){
   const labels={draft:'待内部审核',pending:'待办理',processing:'办理中',received:'已受理',completed:'已完结',needs_correction:'待补正',returned:'已退回',withdrawn:'已撤回',void:'已作废'};
   const rows=result.list.map((row,index)=>{
     const done=row.status==='completed';
+    const attention=row.status==='needs_correction'||row.status==='returned';
     // 批次3：进度表新增"办理主体"列，跨主体记录可区分归属。
     const values=[row.requestNo,row.subjectName||row.subject||'-',row.subject,names[row.businessType],String(row.createdAt).slice(0,10)];
     const correction = row.status === 'needs_correction';
     const action = correction && row.businessType !== 'salary' ? '<button type="button" class="quiet-button progress-correction" data-correction-index="'+index+'">修改并重新提交</button>' : '';
-    return {html:values.map((value)=>'<td>'+escapeHtml(value||'-')+'</td>').join('')+'<td><span class="status '+(done?'done':'processing')+'">'+escapeHtml(labels[row.status]||'办理中')+'</span></td>',result:row.result,done,action,row};
+    const group=done?'done':(attention?'attention':'processing');
+    return {html:values.map((value)=>'<td>'+escapeHtml(value||'-')+'</td>').join('')+'<td><span class="status status-'+row.status+'">'+escapeHtml(labels[row.status]||'办理中')+'</span></td>',result:row.result,done,attention,group,action,row};
   });
-  document.getElementById('progress-rows').innerHTML=rows.map((row)=>'<tr data-progress-status="'+(row.done?'done':'processing')+'">'+row.html+'<td>'+escapeHtml(row.result||'等待办理结果')+(row.action||'')+'</td></tr>').join('')||'<tr><td colspan="7">暂无办理记录</td></tr>';
+  document.getElementById('progress-rows').innerHTML=rows.map((row)=>'<tr data-progress-status="'+row.group+'">'+row.html+'<td>'+escapeHtml(row.result||'等待办理结果')+(row.action||'')+'</td></tr>').join('')||'<tr><td colspan="7">暂无办理记录</td></tr>';
   window.portalCorrectionRows = result.list;
   document.querySelectorAll('.progress-correction').forEach((button)=>button.addEventListener('click',()=>beginPortalCorrection(window.portalCorrectionRows[Number(button.dataset.correctionIndex)])));
   document.getElementById('dashboard-recent').innerHTML=rows.slice(0,5).map((row)=>'<tr>'+row.html+'</tr>').join('')||'<tr><td colspan="6">暂无办理记录</td></tr>';
@@ -525,7 +532,7 @@ async function runPortalImport(business,confirm){
   const statusId=onboarding?'import-status':'resignation-import-status';
   const button=document.getElementById(onboarding?(confirm?'confirm-import':'preview-import'):(confirm?'confirm-resignation-import':'preview-resignation-import'));
   if(!file||!file.name.endsWith('.xlsx')||file.size>10*1024*1024){setToolStatus(statusId,'请选择系统标准 .xlsx 文件（不超过10MB）',true);return;}
-  button.disabled=true;
+  button.disabled=true; const buttonLabel=button.textContent; button.textContent=confirm?'提交中…':'上传中…';
   const generation=portalSessionGeneration; const accountId=activePortalSession?.account?.id; const token=portalLinkToken();
   try{
     const contentBase64=await fileAsBase64(file); assertPortalSession(generation, accountId, token);
@@ -537,8 +544,8 @@ async function runPortalImport(business,confirm){
     details.innerHTML='<table><thead><tr><th>Excel行号</th><th>结果</th><th>说明</th><th>办理编号</th></tr></thead><tbody>'+result.details.map((row)=>'<tr><td>'+row.rowNumber+'</td><td>'+(row.success?'成功':'失败')+'</td><td>'+escapeHtml(row.message)+'</td><td>'+escapeHtml(row.workOrderNo||'-')+'</td></tr>').join('')+'</tbody></table>';
     setToolStatus(statusId,(confirm?'导入结果':'校验结果')+'：成功 '+result.successCount+' 条，失败 '+result.failureCount+' 条',Boolean(result.failureCount));
     document.getElementById(onboarding?'confirm-import':'confirm-resignation-import').classList.toggle('hidden',confirm||result.successCount===0);
-    if(confirm)await refreshPortalProgress();
-  }catch(error){if(!isPortalSessionChanged(error))setToolStatus(statusId,error.message,true);}finally{button.disabled=false;}
+    if(confirm){await refreshPortalProgress();showToast(result.failureCount?'导入完成，存在失败记录，请查看明细':'批量导入已受理');}
+  }catch(error){if(!isPortalSessionChanged(error))setToolStatus(statusId,error.message,true);}finally{button.disabled=false;button.textContent=buttonLabel;}
 }
 
 document.getElementById('preview-import').addEventListener('click',()=>runPortalImport('onboarding',false));
