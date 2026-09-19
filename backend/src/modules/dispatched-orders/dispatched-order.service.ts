@@ -3638,7 +3638,7 @@ export class DispatchedOrderService {
   }
 
   private contractModuleCodes(): string[] {
-    return ['contract'];
+    return ['contract', 'renewal_contract'];
   }
 
   private onboardingContactModuleCodes(): string[] {

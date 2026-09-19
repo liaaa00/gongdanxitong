@@ -3274,3 +3274,15 @@
   3. `.onboarding-tools` 两列布局（1.28fr/0.72fr）改单列 `minmax(0,1fr)`，批量导入卡与下方表单/附件卡同宽对齐；940px 断点处原 `grid-template-columns:1fr` 覆盖改为仅调 gap。
 - **如何验证**：customer-portal `node --test test/` 62/62 绿（web-page.test.mjs 新增 3 条断言：badge 不存在、input-prefix 新样式、onboarding-tools 单列）；`回归测试.ps1 -SkipBuild` 退出码 0（前端 21 套件、后端 5+13+3+3+7 套件、connector 62 用例全过）。
 - **影响面自查**：仅门户静态页样式与角标删除，不触及网关/连接器/后端；"最多 5 个"上传上限逻辑（1187/1215 行）未动；回归清单旧规则无冲突。
+
+## 2026-09-19 · 修复胡嘉逸续签子单批量完成被拒（合同角色白名单补 renewal_contract）
+
+- **需求/背景**：用户报告生产环境胡嘉逸对"劳动合同续签"子单批量完成报"批量完成未成功，1 条失败或跳过"，换杨纯账号正常。此前 9-17 迁移已对齐两人 module_handlers 数据层配置，但问题依旧。
+- **根因（代码层实锤）**：`assertCanHandle` 权限链中 `canReadAssignedModule` → `filterModulesByRoleAllowList` → `roleAccessibleModules` 的合同角色分支只产出 `['contract']`，不含 `renewal_contract`。杨纯能过是因为她另有模块主管层级角色走 `canActAsModuleSupervisor` 旁路；胡嘉逸只有合同岗角色，只能走白名单路径，续签模块被过滤 → 5000"无权操作该子工单"。**数据对齐了、代码白名单没对齐，两层缺口叠加。**
+- **改动（方案 A，代码层根治）**：
+  1. `dispatched-order.service.ts` `contractModuleCodes()` 返回值补 `renewal_contract`（`['contract','renewal_contract']`），合同岗角色天然获得续签模块权限，与 MODULE_HANDLER_ROLES 中 `renewal_contract: CONTRACT_MODULE_ROLES` 的既有映射口径一致。
+  2. `dashboard.service.ts` `roleAccessibleModules()` 合同分支同步补 `renewal_contract`（仪表盘同源白名单）。
+  3. 测试：behavior spec 新增 3 条（合同角色办结续签子单/同角色非处理人经模块权限可办结/批量完成不再整批失败）；service spec 与 dashboard spec 各 1 条断言更新为含 renewal_contract。
+- **如何验证**：behavior 24/24、service 56/56、dashboard 28/28、control-flow 10/10、dispatch-engine 26/26；`回归测试.ps1 -SkipBuild` 退出码 0（后端 15+259+98+60+57 全过、前端 21 套件、connector 62 用例）；backend `tsc --noEmit` 0。
+- **影响面自查**：仅放宽"合同角色 × renewal_contract"一个组合，不触及离职证明处理池、省外隔离、业务侧账号等旧口径；dashboard 仪表盘对合同岗账号新增续签模块卡片属预期修正。
+- **同步状态**：本地已提交，待服务器网络恢复后与门户 UI 三项修正（7fc92f3）一起同步生产。

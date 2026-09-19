@@ -684,7 +684,7 @@ export class DashboardService {
     const modules: string[] = [];
     if (this.hasSharedTeamRole(roles)) modules.push(...this.sharedTeamModuleCodes());
     else {
-      if (hasAnyRole(roles, ['contract_specialist', 'labor_contract_member', 'contract_team'])) modules.push('contract');
+      if (hasAnyRole(roles, ['contract_specialist', 'labor_contract_member', 'contract_team'])) modules.push('contract', 'renewal_contract');
       if (hasAnyRole(roles, ['onboarding_specialist', 'onboarding_resignation_member', 'onboarding_team'])) modules.push('onboarding_contact', 'resignation_contact');
     }
     if (hasAnyRole(roles, ['data_entry_leader', 'data_entry_team', 'data_entry_supervisor', 'data_entry_specialist'])) modules.push('data_entry', 'data_entry_resign');

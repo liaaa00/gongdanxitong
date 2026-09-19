@@ -478,6 +478,42 @@ describe('DispatchedOrderService 行为测试网 (T03)', () => {
     assertBusinessError(err, 4223, HttpStatus.BAD_REQUEST, '批量完成备注必填');
   });
 
+  // ---------- 合同角色 × 续签模块权限（2026-09-18 修复：合同角色白名单须覆盖 renewal_contract） ----------
+  it('complete: 合同角色账号（无主管层级）是续签子单处理人时可办结', async () => {
+    const parent = makeWorkOrder({ extraData: {} });
+    const order = makeDispatchedOrder({ status: DispatchedOrderStatus.PROCESSING, handlerId: 'handler-1', moduleCode: DispatchModuleCode.RENEWAL_CONTRACT, parentOrder: parent });
+    const h = makeHarness({ order, updateAffected: 1 });
+
+    await expect(
+      h.service.complete('do-1', { remark: '续签完成' } as never, makeUser({ sub: 'handler-1', roles: ['labor_contract_member'] })),
+    ).resolves.toMatchObject({ id: 'do-1' });
+    expect(h.updateCaptured.set).toMatchObject({ status: DispatchedOrderStatus.COMPLETED });
+  });
+
+  it('complete: 合同角色账号（无主管层级）非处理人时仍可经模块权限办结（与杨纯/胡嘉逸对齐口径一致）', async () => {
+    const parent = makeWorkOrder({ createdBy: 'creator-1' });
+    const order = makeDispatchedOrder({ status: DispatchedOrderStatus.PROCESSING, handlerId: 'someone-else', moduleCode: DispatchModuleCode.RENEWAL_CONTRACT, parentOrder: parent });
+    const h = makeHarness({ order, updateAffected: 1 });
+    h.findOneSpy.mockRestore();
+
+    // 合同角色在 roleAllowsModule 层面对 renewal_contract 放行（与 contract 同口径），因此同角色可互办——这是修复的预期行为。
+    await expect(
+      h.service.complete('do-1', { remark: 'x' } as never, makeUser({ sub: 'contract-user', roles: ['labor_contract_member'] })),
+    ).resolves.toMatchObject({ id: 'do-1' });
+  });
+
+  it('batchComplete: 合同角色账号批量办结自己名下续签子单不再整批失败', async () => {
+    const parent = makeWorkOrder({ extraData: {} });
+    const order = makeDispatchedOrder({ status: DispatchedOrderStatus.PROCESSING, handlerId: 'handler-1', moduleCode: DispatchModuleCode.RENEWAL_CONTRACT, parentOrder: parent });
+    const h = makeHarness({ order, updateAffected: 1 });
+    const completeSpy = jest.spyOn(h.service, 'complete').mockResolvedValue({ id: 'do-1' } as never);
+
+    const result = await h.service.batchComplete({ ids: ['do-1'], remark: '批量续签完成' } as never, makeUser({ sub: 'handler-1', roles: ['labor_contract_member'] }));
+    expect(result.completed).toBe(1);
+    expect(result.skipped).toEqual([]);
+    completeSpy.mockRestore();
+  });
+
   // ---------- 办结 complete（非反馈模块 → 直接 COMPLETED） ----------
   it('complete: 数据录入子单办结为 COMPLETED、写父单额外数据并记 complete 日志', async () => {
     const parent = makeWorkOrder({ extraData: {} });

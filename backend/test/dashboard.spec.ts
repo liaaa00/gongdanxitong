@@ -113,7 +113,7 @@ describe('DashboardService', () => {
     expect(result).toEqual({ totalThisMonth: 7, processing: 2, ...pendingFields(2), completed: 5, ...rateFields(71.4), ...zeroVoided, myMessages: 4, scope: 'backend_module' });
     const cardsCall = (query.mock.calls as unknown[][]).find(([sql]) => String(sql).includes('FROM dispatched_orders'));
     expect(cardsCall).toBeDefined();
-    expect(cardsCall![1]).toEqual(['handler-1', expect.any(String), ['contract']]);
+    expect(cardsCall![1]).toEqual(['handler-1', expect.any(String), ['contract', 'renewal_contract']]);
     expect(String(cardsCall![0])).toContain("- COUNT(*) FILTER (WHERE status::text = 'completed')");
     expect(String(cardsCall![0])).toContain("- COUNT(*) FILTER (WHERE status::text IN ('void','voided') OR void_at IS NOT NULL)");
     expect(String(cardsCall![0])).not.toContain("- COUNT(*) FILTER (WHERE status::text IN ('withdraw_pending','withdrawn') AND void_at IS NULL)");

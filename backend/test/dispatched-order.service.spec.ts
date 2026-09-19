@@ -895,7 +895,7 @@ describe('DispatchedOrderService', () => {
 
     expect(scopeQb.where).toHaveBeenCalledWith(
       'd.handler_id = :userId AND d.module_code IN (:...modules)',
-      { userId: 'hujiayi', modules: ['contract', 'data_entry', 'data_entry_resign'] },
+      { userId: 'hujiayi', modules: ['contract', 'data_entry', 'renewal_contract', 'data_entry_resign'] },
     );
     expect(scopeQb.orWhere).toHaveBeenCalledWith(
       'd.module_code IN (:...teamVisibleModules)',
@@ -903,7 +903,7 @@ describe('DispatchedOrderService', () => {
     );
     expect(scopeQb.orWhere).toHaveBeenCalledWith(
       'd.handler_id IS NULL AND d.module_code IN (:...poolModules)',
-      { poolModules: ['data_entry', 'data_entry_resign'] },
+      { poolModules: ['data_entry', 'renewal_contract', 'data_entry_resign'] },
     );
   });
 
