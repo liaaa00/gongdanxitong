@@ -104,6 +104,8 @@ const userSeeds: UserSeed[] = [
     ],
   },
   { username: 'zhangpuwei', realName: '张埔微', email: 'zhangpuwei@example.com', phone: '13800000020', roles: [{ roleCode: 'biz_member', departmentCode: 'BUSINESS_GROUP_5', isPrimary: true }] },
+  { username: 'chenshi', realName: '陈诗', email: 'chenshi@example.com', phone: '13800000026', roles: [{ roleCode: 'biz_member', departmentCode: 'BUSINESS_GROUP_5', isPrimary: true }] },
+  { username: 'hechuhong', realName: '何楚红', email: 'hechuhong@example.com', phone: '13800000027', roles: [{ roleCode: 'biz_member', departmentCode: 'BUSINESS_GROUP_5', isPrimary: true }] },
   {
     username: 'annazhen',
     realName: '安娜祯',

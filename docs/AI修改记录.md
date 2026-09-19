@@ -3302,3 +3302,15 @@
 - **如何验证**：web-page.test.mjs 新增 15 条断言锁定全部改动；customer-portal node --test 62/62 绿；`回归测试.ps1 -SkipBuild` 退出码 0（后端 15+259+98+60+57、前端 21 套件、connector 62 全过）。
 - **影响面自查**：不改后端 progress 接口与 summary 口径（前端展示层分组）；不触及 12 个月/200 条窗口、多主体门禁、补正锁定原主体等旧规则；dashboard-recent 复用同一 row.html 自动获得新状态色。
 - **同步状态**：本地已提交，待内网恢复后与 7fc92f3、452ca9a 一起同步生产。
+
+## 2026-09-19 · 新增业务5组两名业务员（陈诗/何楚红）
+
+- **需求/背景**：用户要求新增陈诗、何楚红两个业务员账号，归属业务5组，给业务员权限，本地完成后随待同步队列一起上生产。
+- **改动（双轨落地，沿用系统既有模式）**：
+  1. `seed-users.ts` 追加两条（张埔微后）：chenshi/陈诗、hechuhong/何楚红，biz_member + BUSINESS_GROUP_5（北仑），占位邮箱与组员惯例一致。
+  2. 新迁移 `20260919010000-ProvisionBusinessGroup5Members.ts`：生产 AUTO_SEED=false 场景由 entrypoint 自动执行——建号（初始密码 123456 bcrypt、must_change_password=true、email NULL、business_scope=beilun）+ 挂 biz_member 主角色到业务5组；锚点（角色/部门）缺失时整体跳过；ON CONFLICT 幂等可重跑。
+  3. down 仅停用无其他部门绑定的账号，不删除（沿用福利专员迁移保守策略，避免级联清理审计记录）。
+- **权限全包核实**：biz_member 角色已存在（seed-roles.ts:15），路由 41 条/动作 22 条经 legacy-permission-baseline canonical 别名自动生效；业务5组部门已存在（seed-departments.ts:16）；客户分配关系按惯例由管理员后台手工分配，不预置。
+- **如何验证**：新迁移单测 4/4（建号字段/角色绑定/锚点缺失跳过/down 保守停用）；seed 密码保留回归 8/8；backend tsc 0；`回归测试.ps1 -SkipBuild` 退出码 0（后端 15+259+98+60+57、前端 21 套件、connector 62 全过）。
+- **影响面自查**：不触碰权限中心配置与既有用户；用户名与现有 40 个 seed 用户无冲突；生产同步后 users 43→45 属预期增量。
+- **同步状态**：本地已提交，待内网恢复后与 7fc92f3、452ca9a、1a61a39 一起同步生产（迁移自动建号，同步后验证 users=45、两人可登录、首登改密、业务员路由可用）。
